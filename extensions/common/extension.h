@@ -101,6 +101,7 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
                                     // the install.
     DISABLE_GREYLIST = 1 << 9,
     DISABLE_CORRUPTED = 1 << 10,
+    DISABLE_REMOTE_INSTALL = 1 << 11
   };
 
   enum InstallType {
@@ -118,6 +119,8 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
     virtual ~ManifestData() {}
   };
 
+  // Do not change the order of entries or remove entries in this list
+  // as this is used in UMA_HISTOGRAM_ENUMERATIONs about extensions.
   enum InitFromValueFlags {
     NO_FLAGS = 0,
 
@@ -162,15 +165,19 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
     // Unused - was part of an abandoned experiment.
     REQUIRE_PERMISSIONS_CONSENT = 1 << 8,
 
-    // |IS_EPHEMERAL| identifies ephemeral apps (experimental), which are not
-    // permanently installed.
+    // Unused - this flag has been moved to ExtensionPrefs.
     IS_EPHEMERAL = 1 << 9,
 
     // |WAS_INSTALLED_BY_OEM| installed by an OEM (e.g on Chrome OS) and should
     // be placed in a special OEM folder in the App Launcher. Note: OEM apps are
     // also installed by Default (i.e. WAS_INSTALLED_BY_DEFAULT is also true).
     WAS_INSTALLED_BY_OEM = 1 << 10,
+
+    // When adding new flags, make sure to update kInitFromValueFlagBits.
   };
+
+  // This is the highest bit index of the flags defined above.
+  static const int kInitFromValueFlagBits;
 
   static scoped_refptr<Extension> Create(const base::FilePath& path,
                                          Manifest::Location location,
@@ -332,7 +339,6 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   bool was_installed_by_oem() const {
     return (creation_flags_ & WAS_INSTALLED_BY_OEM) != 0;
   }
-  bool is_ephemeral() const { return (creation_flags_ & IS_EPHEMERAL) != 0; }
 
   // App-related.
   bool is_app() const;
@@ -502,23 +508,30 @@ struct InstalledExtensionInfo {
   // True if the extension is being updated; false if it is being installed.
   bool is_update;
 
+  // True if the extension was previously installed ephemerally and is now
+  // a regular installed extension.
+  bool from_ephemeral;
+
   // The name of the extension prior to this update. Will be empty if
   // |is_update| is false.
   std::string old_name;
 
   InstalledExtensionInfo(const Extension* extension,
                          bool is_update,
+                         bool from_ephemeral,
                          const std::string& old_name);
 };
 
 struct UnloadedExtensionInfo {
   // TODO(DHNishi): Move this enum to ExtensionRegistryObserver.
   enum Reason {
-    REASON_DISABLE,    // Extension is being disabled.
-    REASON_UPDATE,     // Extension is being updated to a newer version.
-    REASON_UNINSTALL,  // Extension is being uninstalled.
-    REASON_TERMINATE,  // Extension has terminated.
-    REASON_BLACKLIST,  // Extension has been blacklisted.
+    REASON_UNDEFINED,         // Undefined state used to initialize variables.
+    REASON_DISABLE,           // Extension is being disabled.
+    REASON_UPDATE,            // Extension is being updated to a newer version.
+    REASON_UNINSTALL,         // Extension is being uninstalled.
+    REASON_TERMINATE,         // Extension has terminated.
+    REASON_BLACKLIST,         // Extension has been blacklisted.
+    REASON_PROFILE_SHUTDOWN,  // Profile is being shut down.
   };
 
   Reason reason;

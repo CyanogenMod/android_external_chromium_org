@@ -13,7 +13,6 @@
 #include "base/files/file_path.h"
 #include "base/guid.h"
 #include "base/message_loop/message_loop.h"
-#include "base/platform_file.h"
 #include "base/prefs/testing_pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
@@ -21,8 +20,8 @@
 #include "chrome/browser/browsing_data/browsing_data_remover_test_util.h"
 #include "chrome/browser/chrome_notification_types.h"
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/mock_user_manager.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/mock_user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #endif
@@ -43,6 +42,8 @@
 #include "components/autofill/core/browser/credit_card.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/personal_data_manager_observer.h"
+#include "components/domain_reliability/clear_mode.h"
+#include "components/domain_reliability/monitor.h"
 #include "content/public/browser/cookie_store_factory.h"
 #include "content/public/browser/dom_storage_context.h"
 #include "content/public/browser/local_storage_usage_info.h"
@@ -62,6 +63,10 @@
 
 using content::BrowserThread;
 using content::StoragePartition;
+using domain_reliability::CLEAR_BEACONS;
+using domain_reliability::CLEAR_CONTEXTS;
+using domain_reliability::DomainReliabilityClearMode;
+using domain_reliability::DomainReliabilityMonitor;
 using testing::_;
 using testing::Invoke;
 using testing::WithArgs;
@@ -574,6 +579,28 @@ class RemoveLocalStorageTester {
   DISALLOW_COPY_AND_ASSIGN(RemoveLocalStorageTester);
 };
 
+class TestingProfileWithDomainReliabilityMonitor : public TestingProfile {
+ public:
+  TestingProfileWithDomainReliabilityMonitor() :
+      TestingProfile(),
+      upload_reporter_string_("test-reporter"),
+      monitor_(GetRequestContext()->GetURLRequestContext(),
+               upload_reporter_string_) {}
+
+  virtual void ClearDomainReliabilityMonitor(
+      DomainReliabilityClearMode mode,
+      const base::Closure& completion) OVERRIDE {
+    monitor_.ClearBrowsingData(mode);
+    completion.Run();
+  }
+
+  DomainReliabilityMonitor* monitor() { return &monitor_; }
+
+ private:
+  std::string upload_reporter_string_;
+  DomainReliabilityMonitor monitor_;
+};
+
 // Test Class ----------------------------------------------------------------
 
 class BrowsingDataRemoverTest : public testing::Test,
@@ -677,6 +704,14 @@ class BrowsingDataRemoverTest : public testing::Test,
             details).ptr()));
 
     registrar_.RemoveAll();
+  }
+
+  DomainReliabilityMonitor *UseProfileWithDomainReliabilityMonitor() {
+    TestingProfileWithDomainReliabilityMonitor* new_profile =
+        new TestingProfileWithDomainReliabilityMonitor();
+    DomainReliabilityMonitor* monitor = new_profile->monitor();
+    profile_.reset(new_profile);
+    return monitor;
   }
 
  protected:
@@ -1618,3 +1653,44 @@ TEST_F(BrowsingDataRemoverTest, ContentProtectionPlatformKeysRemoval) {
   chromeos::DBusThreadManager::Shutdown();
 }
 #endif
+
+TEST_F(BrowsingDataRemoverTest, DomainReliability_Null) {
+  DomainReliabilityMonitor* monitor = UseProfileWithDomainReliabilityMonitor();
+  EXPECT_FALSE(monitor->was_cleared_for_testing());
+}
+
+TEST_F(BrowsingDataRemoverTest, DomainReliability_Beacons) {
+  DomainReliabilityMonitor* monitor = UseProfileWithDomainReliabilityMonitor();
+  BlockUntilBrowsingDataRemoved(
+      BrowsingDataRemover::EVERYTHING,
+      BrowsingDataRemover::REMOVE_HISTORY, false);
+  EXPECT_TRUE(monitor->was_cleared_for_testing());
+  EXPECT_EQ(CLEAR_BEACONS, monitor->cleared_mode_for_testing());
+}
+
+TEST_F(BrowsingDataRemoverTest, DomainReliability_Beacons_ProtectedOrigins) {
+  DomainReliabilityMonitor* monitor = UseProfileWithDomainReliabilityMonitor();
+  BlockUntilBrowsingDataRemoved(
+      BrowsingDataRemover::EVERYTHING,
+      BrowsingDataRemover::REMOVE_HISTORY, true);
+  EXPECT_TRUE(monitor->was_cleared_for_testing());
+  EXPECT_EQ(CLEAR_BEACONS, monitor->cleared_mode_for_testing());
+}
+
+TEST_F(BrowsingDataRemoverTest, DomainReliability_Contexts) {
+  DomainReliabilityMonitor* monitor = UseProfileWithDomainReliabilityMonitor();
+  BlockUntilBrowsingDataRemoved(
+      BrowsingDataRemover::EVERYTHING,
+      BrowsingDataRemover::REMOVE_COOKIES, false);
+  EXPECT_TRUE(monitor->was_cleared_for_testing());
+  EXPECT_EQ(CLEAR_CONTEXTS, monitor->cleared_mode_for_testing());
+}
+
+TEST_F(BrowsingDataRemoverTest, DomainReliability_Contexts_ProtectedOrigins) {
+  DomainReliabilityMonitor* monitor = UseProfileWithDomainReliabilityMonitor();
+  BlockUntilBrowsingDataRemoved(
+      BrowsingDataRemover::EVERYTHING,
+      BrowsingDataRemover::REMOVE_COOKIES, true);
+  EXPECT_TRUE(monitor->was_cleared_for_testing());
+  EXPECT_EQ(CLEAR_CONTEXTS, monitor->cleared_mode_for_testing());
+}

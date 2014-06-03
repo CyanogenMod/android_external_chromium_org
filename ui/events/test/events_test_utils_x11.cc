@@ -23,6 +23,10 @@ unsigned int XEventState(int flags) {
       ((flags & ui::EF_CONTROL_DOWN) ? ControlMask : 0) |
       ((flags & ui::EF_ALT_DOWN) ? Mod1Mask : 0) |
       ((flags & ui::EF_CAPS_LOCK_DOWN) ? LockMask : 0) |
+      ((flags & ui::EF_ALTGR_DOWN) ? Mod5Mask : 0) |
+      ((flags & ui::EF_COMMAND_DOWN) ? Mod4Mask : 0) |
+      ((flags & ui::EF_MOD3_DOWN) ? Mod3Mask : 0) |
+      ((flags & ui::EF_NUMPAD_KEY) ? Mod2Mask : 0) |
       ((flags & ui::EF_LEFT_MOUSE_BUTTON) ? Button1Mask: 0) |
       ((flags & ui::EF_MIDDLE_MOUSE_BUTTON) ? Button2Mask: 0) |
       ((flags & ui::EF_RIGHT_MOUSE_BUTTON) ? Button3Mask: 0);
@@ -109,6 +113,7 @@ XEvent* CreateXInput2Event(int deviceid,
   xiev->detail = tracking_id;
   xiev->event_x = location.x();
   xiev->event_y = location.y();
+  xiev->event = DefaultRootWindow(gfx::GetXDisplay());
   if (evtype == XI_ButtonPress || evtype == XI_ButtonRelease) {
     xiev->buttons.mask_len = 8;
     xiev->buttons.mask = new unsigned char[xiev->buttons.mask_len];

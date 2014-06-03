@@ -13,15 +13,12 @@
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
-#include "chrome/browser/metrics/cloned_install_detector.h"
-#include "chrome/browser/metrics/machine_id_provider.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/metrics/caching_permuted_entropy_provider.h"
 #include "chrome/common/pref_names.h"
-
-#if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/settings/cros_settings.h"
-#endif
+#include "components/metrics/cloned_install_detector.h"
+#include "components/metrics/machine_id_provider.h"
+#include "components/metrics/metrics_pref_names.h"
+#include "components/variations/caching_permuted_entropy_provider.h"
 
 namespace metrics {
 
@@ -32,8 +29,8 @@ namespace {
 // [0, 7999] as the entropy source (12.97 bits of entropy).
 const int kMaxLowEntropySize = 8000;
 
-// Default prefs value for prefs::kMetricsLowEntropySource to indicate that the
-// value has not yet been set.
+// Default prefs value for ::prefs::kMetricsLowEntropySource to indicate that
+// the value has not yet been set.
 const int kLowEntropySourceNotSet = -1;
 
 // Generates a new non-identifying entropy source used to seed persistent
@@ -47,8 +44,11 @@ int GenerateLowEntropySource() {
 // static
 bool MetricsStateManager::instance_exists_ = false;
 
-MetricsStateManager::MetricsStateManager(PrefService* local_state)
+MetricsStateManager::MetricsStateManager(
+    PrefService* local_state,
+    const base::Callback<bool(void)>& is_reporting_enabled_callback)
     : local_state_(local_state),
+      is_reporting_enabled_callback_(is_reporting_enabled_callback),
       low_entropy_source_(kLowEntropySourceNotSet),
       entropy_source_returned_(ENTROPY_SOURCE_NONE) {
   ResetMetricsIDsIfNecessary();
@@ -65,51 +65,32 @@ MetricsStateManager::~MetricsStateManager() {
 }
 
 bool MetricsStateManager::IsMetricsReportingEnabled() {
-  // If the user permits metrics reporting with the checkbox in the
-  // prefs, we turn on recording.  We disable metrics completely for
-  // non-official builds.  This can be forced with a flag.
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kEnableMetricsReportingForTesting))
-    return true;
-
-  // Disable metrics reporting when field trials are forced.
-  if (command_line->HasSwitch(switches::kForceFieldTrials))
-    return false;
-
-  bool enabled = false;
-#if defined(GOOGLE_CHROME_BUILD)
-#if defined(OS_CHROMEOS)
-  chromeos::CrosSettings::Get()->GetBoolean(chromeos::kStatsReportingPref,
-                                            &enabled);
-#else
-  enabled = local_state_->GetBoolean(prefs::kMetricsReportingEnabled);
-#endif  // #if defined(OS_CHROMEOS)
-#endif  // defined(GOOGLE_CHROME_BUILD)
-  return enabled;
+  return is_reporting_enabled_callback_.Run();
 }
 
 void MetricsStateManager::ForceClientIdCreation() {
   if (!client_id_.empty())
     return;
 
-  client_id_ = local_state_->GetString(prefs::kMetricsClientID);
+  client_id_ = local_state_->GetString(::prefs::kMetricsClientID);
   if (!client_id_.empty())
     return;
 
   client_id_ = base::GenerateGUID();
-  local_state_->SetString(prefs::kMetricsClientID, client_id_);
+  local_state_->SetString(::prefs::kMetricsClientID, client_id_);
 
-  if (local_state_->GetString(prefs::kMetricsOldClientID).empty()) {
+  if (local_state_->GetString(::prefs::kMetricsOldClientID).empty()) {
     // Record the timestamp of when the user opted in to UMA.
-    local_state_->SetInt64(prefs::kMetricsReportingEnabledTimestamp,
+    local_state_->SetInt64(::prefs::kMetricsReportingEnabledTimestamp,
                            base::Time::Now().ToTimeT());
   } else {
     UMA_HISTOGRAM_BOOLEAN("UMA.ClientIdMigrated", true);
   }
-  local_state_->ClearPref(prefs::kMetricsOldClientID);
+  local_state_->ClearPref(::prefs::kMetricsOldClientID);
 }
 
-void MetricsStateManager::CheckForClonedInstall() {
+void MetricsStateManager::CheckForClonedInstall(
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
   DCHECK(!cloned_install_detector_);
 
   MachineIdProvider* provider = MachineIdProvider::CreateInstance();
@@ -117,7 +98,7 @@ void MetricsStateManager::CheckForClonedInstall() {
     return;
 
   cloned_install_detector_.reset(new ClonedInstallDetector(provider));
-  cloned_install_detector_->CheckForClonedInstall(local_state_);
+  cloned_install_detector_->CheckForClonedInstall(local_state_, task_runner);
 }
 
 scoped_ptr<const base::FieldTrial::EntropyProvider>
@@ -160,20 +141,23 @@ MetricsStateManager::CreateEntropyProvider() {
 
 // static
 scoped_ptr<MetricsStateManager> MetricsStateManager::Create(
-    PrefService* local_state) {
+    PrefService* local_state,
+    const base::Callback<bool(void)>& is_reporting_enabled_callback) {
   scoped_ptr<MetricsStateManager> result;
   // Note: |instance_exists_| is updated in the constructor and destructor.
-  if (!instance_exists_)
-    result.reset(new MetricsStateManager(local_state));
+  if (!instance_exists_) {
+    result.reset(
+        new MetricsStateManager(local_state, is_reporting_enabled_callback));
+  }
   return result.Pass();
 }
 
 // static
 void MetricsStateManager::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterBooleanPref(prefs::kMetricsResetIds, false);
-  registry->RegisterStringPref(prefs::kMetricsClientID, std::string());
-  registry->RegisterInt64Pref(prefs::kMetricsReportingEnabledTimestamp, 0);
-  registry->RegisterIntegerPref(prefs::kMetricsLowEntropySource,
+  registry->RegisterStringPref(::prefs::kMetricsClientID, std::string());
+  registry->RegisterInt64Pref(::prefs::kMetricsReportingEnabledTimestamp, 0);
+  registry->RegisterIntegerPref(::prefs::kMetricsLowEntropySource,
                                 kLowEntropySourceNotSet);
 
   ClonedInstallDetector::RegisterPrefs(registry);
@@ -181,8 +165,8 @@ void MetricsStateManager::RegisterPrefs(PrefRegistrySimple* registry) {
 
   // TODO(asvitkine): Remove these once a couple of releases have passed.
   // http://crbug.com/357704
-  registry->RegisterStringPref(prefs::kMetricsOldClientID, std::string());
-  registry->RegisterIntegerPref(prefs::kMetricsOldLowEntropySource, 0);
+  registry->RegisterStringPref(::prefs::kMetricsOldClientID, std::string());
+  registry->RegisterIntegerPref(::prefs::kMetricsOldLowEntropySource, 0);
 }
 
 int MetricsStateManager::GetLowEntropySource() {
@@ -193,10 +177,11 @@ int MetricsStateManager::GetLowEntropySource() {
     return low_entropy_source_;
 
   const CommandLine* command_line(CommandLine::ForCurrentProcess());
-  // Only try to load the value from prefs if the user did not request a reset.
+  // Only try to load the value from ::prefs if the user did not request a
+  // reset.
   // Otherwise, skip to generating a new value.
   if (!command_line->HasSwitch(switches::kResetVariationState)) {
-    int value = local_state_->GetInteger(prefs::kMetricsLowEntropySource);
+    int value = local_state_->GetInteger(::prefs::kMetricsLowEntropySource);
     // If the value is outside the [0, kMaxLowEntropySize) range, re-generate
     // it below.
     if (value >= 0 && value < kMaxLowEntropySize) {
@@ -208,10 +193,10 @@ int MetricsStateManager::GetLowEntropySource() {
 
   UMA_HISTOGRAM_BOOLEAN("UMA.GeneratedLowEntropySource", true);
   low_entropy_source_ = GenerateLowEntropySource();
-  local_state_->SetInteger(prefs::kMetricsLowEntropySource,
+  local_state_->SetInteger(::prefs::kMetricsLowEntropySource,
                            low_entropy_source_);
-  local_state_->ClearPref(prefs::kMetricsOldLowEntropySource);
-  metrics::CachingPermutedEntropyProvider::ClearCache(local_state_);
+  local_state_->ClearPref(::prefs::kMetricsOldLowEntropySource);
+  CachingPermutedEntropyProvider::ClearCache(local_state_);
 
   return low_entropy_source_;
 }
@@ -225,8 +210,8 @@ void MetricsStateManager::ResetMetricsIDsIfNecessary() {
   DCHECK(client_id_.empty());
   DCHECK_EQ(kLowEntropySourceNotSet, low_entropy_source_);
 
-  local_state_->ClearPref(prefs::kMetricsClientID);
-  local_state_->ClearPref(prefs::kMetricsLowEntropySource);
+  local_state_->ClearPref(::prefs::kMetricsClientID);
+  local_state_->ClearPref(::prefs::kMetricsLowEntropySource);
   local_state_->ClearPref(prefs::kMetricsResetIds);
 }
 

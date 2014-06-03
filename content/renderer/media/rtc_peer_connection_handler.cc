@@ -10,19 +10,20 @@
 
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/public/common/content_switches.h"
-#include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/media_stream_track.h"
 #include "content/renderer/media/peer_connection_tracker.h"
 #include "content/renderer/media/remote_media_stream_impl.h"
 #include "content/renderer/media/rtc_data_channel_handler.h"
 #include "content/renderer/media/rtc_dtmf_sender_handler.h"
 #include "content/renderer/media/rtc_media_constraints.h"
+#include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
 #include "content/renderer/media/webrtc/webrtc_media_stream_adapter.h"
 #include "content/renderer/media/webrtc_audio_capturer.h"
 #include "content/renderer/media/webrtc_audio_device_impl.h"
@@ -186,6 +187,7 @@ class CreateSessionDescriptionRequest
   virtual void OnSuccess(webrtc::SessionDescriptionInterface* desc) OVERRIDE {
     tracker_.TrackOnSuccess(desc);
     webkit_request_.requestSucceeded(CreateWebKitSessionDescription(desc));
+    delete desc;
   }
   virtual void OnFailure(const std::string& error) OVERRIDE {
     tracker_.TrackOnFailure(error);
@@ -316,23 +318,78 @@ void LocalRTCStatsResponse::addStatistic(size_t report,
   impl_.addStatistic(report, name, value);
 }
 
+namespace {
+
+class PeerConnectionUMAObserver : public webrtc::UMAObserver {
+ public:
+  PeerConnectionUMAObserver() {}
+  virtual ~PeerConnectionUMAObserver() {}
+
+  virtual void IncrementCounter(
+      webrtc::PeerConnectionUMAMetricsCounter counter) OVERRIDE {
+    UMA_HISTOGRAM_ENUMERATION("WebRTC.PeerConnection.IPMetrics",
+                              counter,
+                              webrtc::kBoundary);
+  }
+
+  virtual void AddHistogramSample(
+      webrtc::PeerConnectionUMAMetricsName type, int value) OVERRIDE {
+    switch (type) {
+      case webrtc::kTimeToConnect:
+        UMA_HISTOGRAM_MEDIUM_TIMES(
+            "WebRTC.PeerConnection.TimeToConnect",
+            base::TimeDelta::FromMilliseconds(value));
+        break;
+      case webrtc::kNetworkInterfaces_IPv4:
+        UMA_HISTOGRAM_COUNTS_100("WebRTC.PeerConnection.IPv4Interfaces",
+                                 value);
+        break;
+      case webrtc::kNetworkInterfaces_IPv6:
+        UMA_HISTOGRAM_COUNTS_100("WebRTC.PeerConnection.IPv6Interfaces",
+                                 value);
+        break;
+      default:
+        NOTREACHED();
+    }
+  }
+};
+
+base::LazyInstance<std::set<RTCPeerConnectionHandler*> >::Leaky
+    g_peer_connection_handlers = LAZY_INSTANCE_INITIALIZER;
+
+}  // namespace
+
 RTCPeerConnectionHandler::RTCPeerConnectionHandler(
     blink::WebRTCPeerConnectionHandlerClient* client,
-    MediaStreamDependencyFactory* dependency_factory)
+    PeerConnectionDependencyFactory* dependency_factory)
     : client_(client),
       dependency_factory_(dependency_factory),
       frame_(NULL),
       peer_connection_tracker_(NULL),
       num_data_channels_created_(0) {
+  g_peer_connection_handlers.Get().insert(this);
 }
 
 RTCPeerConnectionHandler::~RTCPeerConnectionHandler() {
+  g_peer_connection_handlers.Get().erase(this);
   if (peer_connection_tracker_)
     peer_connection_tracker_->UnregisterPeerConnection(this);
   STLDeleteValues(&remote_streams_);
 
   UMA_HISTOGRAM_COUNTS_10000(
       "WebRTC.NumDataChannelsPerPeerConnection", num_data_channels_created_);
+}
+
+// static
+void RTCPeerConnectionHandler::DestructAllHandlers() {
+  std::set<RTCPeerConnectionHandler*> handlers(
+      g_peer_connection_handlers.Get().begin(),
+      g_peer_connection_handlers.Get().end());
+  for (std::set<RTCPeerConnectionHandler*>::iterator handler = handlers.begin();
+       handler != handlers.end();
+       ++handler) {
+    (*handler)->client_->releasePeerConnectionHandler();
+  }
 }
 
 void RTCPeerConnectionHandler::associateWithFrame(blink::WebFrame* frame) {
@@ -364,6 +421,8 @@ bool RTCPeerConnectionHandler::initialize(
     peer_connection_tracker_->RegisterPeerConnection(
         this, servers, constraints, frame_);
 
+  uma_observer_ = new talk_base::RefCountedObject<PeerConnectionUMAObserver>();
+  native_peer_connection_->RegisterUMAObserver(uma_observer_.get());
   return true;
 }
 

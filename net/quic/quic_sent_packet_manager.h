@@ -82,12 +82,6 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   void OnIncomingAck(const ReceivedPacketInfo& received_info,
                      QuicTime ack_receive_time);
 
-  // Discards any information for the packet corresponding to |sequence_number|.
-  // If this packet has been retransmitted, information on those packets
-  // will be discarded as well.  Also discards it from the congestion window if
-  // it is present.
-  void DiscardUnackedPacket(QuicPacketSequenceNumber sequence_number);
-
   // Returns true if the non-FEC packet |sequence_number| is unacked.
   bool IsUnacked(QuicPacketSequenceNumber sequence_number) const;
 
@@ -96,7 +90,7 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
 
   // Removes the retransmittable frames from all unencrypted packets to ensure
   // they don't get retransmitted.
-  void DiscardUnencryptedPackets();
+  void NeuterUnencryptedPackets();
 
   // Returns true if the unacked packet |sequence_number| has retransmittable
   // frames.  This will only return false if the packet has been acked, if a
@@ -233,11 +227,11 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   void MarkPacketRevived(QuicPacketSequenceNumber sequence_number,
                          QuicTime::Delta delta_largest_observed);
 
-  // Marks |sequence_number| as being fully handled, either due to receipt
-  // by the peer, or having been discarded as indecipherable.  Returns an
-  // iterator to the next remaining unacked packet.
+  // Removes the retransmittability and pending properties from the packet at
+  // |it| due to receipt by the peer.  Returns an iterator to the next remaining
+  // unacked packet.
   QuicUnackedPacketMap::const_iterator MarkPacketHandled(
-      QuicPacketSequenceNumber sequence_number,
+      QuicUnackedPacketMap::const_iterator it,
       QuicTime::Delta delta_largest_observed);
 
   // Request that |sequence_number| be retransmitted after the other pending

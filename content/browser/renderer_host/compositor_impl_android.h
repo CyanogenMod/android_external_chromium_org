@@ -6,6 +6,7 @@
 #define CONTENT_BROWSER_RENDERER_HOST_COMPOSITOR_IMPL_ANDROID_H_
 
 #include "base/basictypes.h"
+#include "base/cancelable_callback.h"
 #include "base/compiler_specific.h"
 #include "base/containers/scoped_ptr_hash_map.h"
 #include "base/memory/scoped_ptr.h"
@@ -53,6 +54,7 @@ class CONTENT_EXPORT CompositorImpl
   // Destroy all surface textures associated with |child_process_id|.
   static void DestroyAllSurfaceTextures(int child_process_id);
 
+ private:
   // Compositor implementation.
   virtual void SetRootLayer(scoped_refptr<cc::Layer> root) OVERRIDE;
   virtual void SetWindowSurface(ANativeWindow* window) OVERRIDE;
@@ -61,9 +63,7 @@ class CONTENT_EXPORT CompositorImpl
   virtual void setDeviceScaleFactor(float factor) OVERRIDE;
   virtual void SetWindowBounds(const gfx::Size& size) OVERRIDE;
   virtual void SetHasTransparentBackground(bool flag) OVERRIDE;
-  virtual bool CompositeAndReadback(
-      void *pixels, const gfx::Rect& rect) OVERRIDE;
-  virtual void Composite() OVERRIDE;
+  virtual void SetNeedsComposite() OVERRIDE;
   virtual cc::UIResourceId GenerateUIResource(const SkBitmap& bitmap,
                                               bool is_transient) OVERRIDE;
   virtual cc::UIResourceId GenerateCompressedUIResource(const gfx::Size& size,
@@ -76,7 +76,7 @@ class CONTENT_EXPORT CompositorImpl
   virtual void WillBeginMainFrame(int frame_id) OVERRIDE {}
   virtual void DidBeginMainFrame() OVERRIDE {}
   virtual void Animate(base::TimeTicks frame_begin_time) OVERRIDE {}
-  virtual void Layout() OVERRIDE {}
+  virtual void Layout() OVERRIDE;
   virtual void ApplyScrollAndScale(const gfx::Vector2d& scroll_delta,
                                    float page_scale) OVERRIDE {}
   virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(bool fallback)
@@ -98,8 +98,40 @@ class CONTENT_EXPORT CompositorImpl
 
   // WindowAndroidCompositor implementation.
   virtual void AttachLayerForReadback(scoped_refptr<cc::Layer> layer) OVERRIDE;
+  virtual void RequestCopyOfOutputOnRootLayer(
+      scoped_ptr<cc::CopyOutputRequest> request) OVERRIDE;
+  virtual void OnVSync(base::TimeTicks frame_time,
+                       base::TimeDelta vsync_period) OVERRIDE;
+  virtual void SetNeedsAnimate() OVERRIDE;
 
- private:
+  enum CompositingTrigger {
+    DO_NOT_COMPOSITE,
+    COMPOSITE_IMMEDIATELY,
+    COMPOSITE_EVENTUALLY,
+  };
+  void PostComposite(CompositingTrigger trigger);
+  void Composite(CompositingTrigger trigger);
+
+  bool WillCompositeThisFrame() const {
+    return current_composite_task_ &&
+           !current_composite_task_->callback().is_null();
+  }
+  bool DidCompositeThisFrame() const {
+    return current_composite_task_ &&
+           current_composite_task_->callback().is_null();
+  }
+  bool WillComposite() const {
+    return WillCompositeThisFrame() ||
+           composite_on_vsync_trigger_ != DO_NOT_COMPOSITE;
+  }
+  void CancelComposite() {
+    DCHECK(WillComposite());
+    if (WillCompositeThisFrame())
+      current_composite_task_->Cancel();
+    current_composite_task_.reset();
+    composite_on_vsync_trigger_ = DO_NOT_COMPOSITE;
+    will_composite_immediately_ = false;
+  }
   cc::UIResourceId GenerateUIResourceFromUIResourceBitmap(
       const cc::UIResourceBitmap& bitmap,
       bool is_transient);
@@ -121,6 +153,36 @@ class CONTENT_EXPORT CompositorImpl
   UIResourceMap ui_resource_map_;
 
   gfx::NativeWindow root_window_;
+
+  // Used locally to track whether a call to LTH::Composite() did result in
+  // a posted SwapBuffers().
+  bool did_post_swapbuffers_;
+
+  // Used locally to inhibit ScheduleComposite() during Layout().
+  bool ignore_schedule_composite_;
+
+  // Whether we need to composite in general because of any invalidation or
+  // explicit request.
+  bool needs_composite_;
+
+  // Whether we need to update animations on the next composite.
+  bool needs_animate_;
+
+  // Whether we posted a task and are about to composite.
+  bool will_composite_immediately_;
+
+  // How we should schedule Composite during the next vsync.
+  CompositingTrigger composite_on_vsync_trigger_;
+
+  // The Composite operation scheduled for the current vsync interval.
+  scoped_ptr<base::CancelableClosure> current_composite_task_;
+
+  // The number of SwapBuffer calls that have not returned and ACK'd from
+  // the GPU thread.
+  unsigned int pending_swapbuffers_;
+
+  base::TimeDelta vsync_period_;
+  base::TimeTicks last_vsync_;
 
   DISALLOW_COPY_AND_ASSIGN(CompositorImpl);
 };

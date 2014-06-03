@@ -23,6 +23,7 @@
         'domain_reliability/baked_in_configs.h',
         'domain_reliability/beacon.cc',
         'domain_reliability/beacon.h',
+        'domain_reliability/clear_mode.h',
         'domain_reliability/config.cc',
         'domain_reliability/config.h',
         'domain_reliability/context.cc',
@@ -49,6 +50,8 @@
             'baked_in_configs': [
               'domain_reliability/baked_in_configs/apis_google_com.json',
               'domain_reliability/baked_in_configs/ddm_google_com.json',
+              'domain_reliability/baked_in_configs/drive_google_com.json',
+              'domain_reliability/baked_in_configs/mail_google_com.json',
               'domain_reliability/baked_in_configs/ssl_gstatic_com.json',
               'domain_reliability/baked_in_configs/www_google_com.json',
               'domain_reliability/baked_in_configs/www_youtube_com.json',

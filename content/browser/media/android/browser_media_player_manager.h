@@ -16,9 +16,10 @@
 #include "base/memory/scoped_vector.h"
 #include "base/time/time.h"
 #include "content/browser/android/content_video_view.h"
+#include "content/common/content_export.h"
 #include "content/common/media/cdm_messages_enums.h"
 #include "content/common/media/media_player_messages_enums_android.h"
-#include "content/public/browser/web_contents_observer.h"
+#include "ipc/ipc_message.h"
 #include "media/base/android/media_player_android.h"
 #include "media/base/android/media_player_manager.h"
 #include "ui/gfx/rect_f.h"
@@ -26,37 +27,34 @@
 
 namespace media {
 class DemuxerAndroid;
-class MediaDrmBridge;
+class MediaKeys;
 }
 
 namespace content {
 class BrowserDemuxerAndroid;
 class ContentViewCoreImpl;
 class ExternalVideoSurfaceContainer;
+class RenderFrameHost;
 class WebContents;
 
-// This class manages all the MediaPlayerAndroid objects. It receives
-// control operations from the the render process, and forwards
-// them to corresponding MediaPlayerAndroid object. Callbacks from
-// MediaPlayerAndroid objects are converted to IPCs and then sent to the
-// render process.
+// This class manages all the MediaPlayerAndroid and CDM objects.
+// It receives control operations from the the render process, and forwards
+// them to corresponding MediaPlayerAndroid or CDM object. Callbacks from
+// MediaPlayerAndroid and CDM objects are converted to IPCs and then sent to
+// the render process.
 class CONTENT_EXPORT BrowserMediaPlayerManager
-    : public WebContentsObserver,
-      public media::MediaPlayerManager {
+    : public media::MediaPlayerManager {
  public:
   // Permits embedders to provide an extended version of the class.
-  typedef BrowserMediaPlayerManager* (*Factory)(RenderViewHost*);
+  typedef BrowserMediaPlayerManager* (*Factory)(RenderFrameHost*);
   static void RegisterFactory(Factory factory);
 
   // Returns a new instance using the registered factory if available.
-  static BrowserMediaPlayerManager* Create(RenderViewHost* rvh);
+  static BrowserMediaPlayerManager* Create(RenderFrameHost* rfh);
 
   ContentViewCoreImpl* GetContentViewCore() const;
 
   virtual ~BrowserMediaPlayerManager();
-
-  // WebContentsObserver overrides.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // Fullscreen video playback controls.
   virtual void FullscreenPlayerPlay();
@@ -68,6 +66,9 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   // Called when browser player wants the renderer media element to seek.
   // Any actual seek started by renderer will be handled by browser in OnSeek().
   void OnSeekRequest(int player_id, const base::TimeDelta& time_to_seek);
+
+  // Pauses all video players manages by this class.
+  void PauseVideo();
 
   // media::MediaPlayerManager overrides.
   virtual void OnTimeUpdate(
@@ -90,7 +91,7 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   virtual media::MediaResourceGetter* GetMediaResourceGetter() OVERRIDE;
   virtual media::MediaPlayerAndroid* GetFullscreenPlayer() OVERRIDE;
   virtual media::MediaPlayerAndroid* GetPlayer(int player_id) OVERRIDE;
-  virtual media::MediaDrmBridge* GetDrmBridge(int cdm_id) OVERRIDE;
+  virtual media::MediaKeys* GetCdm(int cdm_id) OVERRIDE;
   virtual void DestroyAllMediaPlayers() OVERRIDE;
   virtual void RequestFullScreen(int player_id) OVERRIDE;
   virtual void OnSessionCreated(int cdm_id,
@@ -112,10 +113,6 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   void DetachExternalVideoSurface(int player_id);
   void OnFrameInfoUpdated();
 #endif  // defined(VIDEO_HOLE)
-
- protected:
-  // Clients must use Create() or subclass constructor.
-  explicit BrowserMediaPlayerManager(RenderViewHost* render_view_host);
 
   // Message handlers.
   virtual void OnEnterFullscreen(int player_id);
@@ -147,6 +144,16 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   void OnReleaseSession(int cdm_id, uint32 session_id);
   void OnSetCdm(int player_id, int cdm_id);
   void OnDestroyCdm(int cdm_id);
+#if defined(VIDEO_HOLE)
+  void OnNotifyExternalSurface(
+      int player_id, bool is_request, const gfx::RectF& rect);
+#endif  // defined(VIDEO_HOLE)
+
+ protected:
+  // Clients must use Create() or subclass constructor.
+  explicit BrowserMediaPlayerManager(RenderFrameHost* render_frame_host);
+
+  WebContents* web_contents() const { return web_contents_; }
 
   // Cancels all pending session creations associated with |cdm_id|.
   void CancelAllPendingSessionCreations(int cdm_id);
@@ -164,14 +171,19 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
       int player_id,
       media::MediaPlayerAndroid* player);
 
-  // Adds a new MediaDrmBridge for the given |key_system|, |cdm_id|, and
-  // |frame_url|.
-  void AddDrmBridge(int cdm_id,
-                    const std::string& key_system,
-                    const GURL& frame_url);
+  // Adds a new CDM identified by |cdm_id| for the given |key_system| and
+  // |security_origin|.
+  void AddCdm(int cdm_id,
+              const std::string& key_system,
+              const GURL& security_origin);
 
-  // Removes the DRM bridge with the specified id.
-  void RemoveDrmBridge(int cdm_id);
+  // Removes the CDM with the specified id.
+  void RemoveCdm(int cdm_id);
+
+  int RoutingID();
+
+  // Helper function to send messages to RenderFrameObserver.
+  bool Send(IPC::Message* msg);
 
  private:
   // If |permitted| is false, it does nothing but send
@@ -208,21 +220,27 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   virtual void OnMediaResourcesReleased(int player_id);
 
 #if defined(VIDEO_HOLE)
-  void OnNotifyExternalSurface(
-      int player_id, bool is_request, const gfx::RectF& rect);
   void OnRequestExternalSurface(int player_id, const gfx::RectF& rect);
 #endif  // defined(VIDEO_HOLE)
+
+  RenderFrameHost* const render_frame_host_;
 
   // An array of managed players.
   ScopedVector<media::MediaPlayerAndroid> players_;
 
-  // An array of managed media DRM bridges.
-  ScopedVector<media::MediaDrmBridge> drm_bridges_;
+  // A map from CDM IDs to managed CDMs.
+  typedef std::map<int, media::MediaKeys*> CdmMap;
+  CdmMap cdm_map_;
 
-  // Map from DrmBridge cdm_id to MediaPlayerAndroid player_id to indicate that
-  // the DrmBridge is set on the MediaPlayerAndroid object.
-  typedef std::map<int, int> DrmBridgePlayerMap;
-  DrmBridgePlayerMap drm_bridge_player_map_;
+  // Map from CDM ID to MediaPlayerAndroid player ID to indicate that
+  // the CDM is set on the MediaPlayerAndroid object.
+  // TODO(xhwang): Register a callback in the CDM to resume playback so that we
+  // can remove this map. See http://crbug.com/373327
+  typedef std::map<int, int> CdmToPlayerMap;
+  CdmToPlayerMap cdm_to_player_map_;
+
+  // Map from CDM ID to CDM's security origin.
+  std::map<int, GURL> cdm_security_origin_map_;
 
   // The fullscreen video view object or NULL if video is not played in
   // fullscreen.
@@ -238,7 +256,7 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   // Whether the fullscreen player has been Release()-d.
   bool fullscreen_player_is_released_;
 
-  WebContents* web_contents_;
+  WebContents* const web_contents_;
 
   // Object for retrieving resources media players.
   scoped_ptr<media::MediaResourceGetter> media_resource_getter_;

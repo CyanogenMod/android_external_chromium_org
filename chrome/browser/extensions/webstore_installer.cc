@@ -48,6 +48,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
@@ -133,15 +134,6 @@ void GetDownloadFilePath(
 
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
                           base::Bind(callback, file));
-}
-
-bool UseSeparateWebstoreDownloadDirectory() {
-  const char kFieldTrial[] = "WebstoreDownloadDirectory";
-  const char kSeparateDirectoryUnderUDD[] = "SeparateDirectoryUnderUDD";
-
-  std::string field_trial_group =
-      base::FieldTrialList::FindFullName(kFieldTrial);
-  return field_trial_group == kSeparateDirectoryUnderUDD;
 }
 
 void MaybeAppendAuthUserParameter(const std::string& authuser, GURL* url) {
@@ -286,6 +278,7 @@ WebstoreInstaller::WebstoreInstaller(Profile* profile,
                                      scoped_ptr<Approval> approval,
                                      InstallSource source)
     : content::WebContentsObserver(web_contents),
+      extension_registry_observer_(this),
       profile_(profile),
       delegate_(delegate),
       id_(id),
@@ -299,10 +292,9 @@ WebstoreInstaller::WebstoreInstaller(Profile* profile,
 
   registrar_.Add(this, chrome::NOTIFICATION_CRX_INSTALLER_DONE,
                  content::NotificationService::AllSources());
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_INSTALLED,
-                 content::Source<Profile>(profile->GetOriginalProfile()));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_INSTALL_ERROR,
                  content::Source<CrxInstaller>(NULL));
+  extension_registry_observer_.Add(ExtensionRegistry::Get(profile));
 }
 
 void WebstoreInstaller::Start() {
@@ -384,40 +376,6 @@ void WebstoreInstaller::Observe(int type,
       break;
     }
 
-    case chrome::NOTIFICATION_EXTENSION_INSTALLED: {
-      CHECK(profile_->IsSameProfile(content::Source<Profile>(source).ptr()));
-      const Extension* extension =
-          content::Details<const InstalledExtensionInfo>(details)->extension;
-      if (pending_modules_.empty())
-        return;
-      SharedModuleInfo::ImportInfo info = pending_modules_.front();
-      if (extension->id() != info.extension_id)
-        return;
-      pending_modules_.pop_front();
-
-      if (pending_modules_.empty()) {
-        CHECK_EQ(extension->id(), id_);
-        ReportSuccess();
-      } else {
-        const Version version_required(info.minimum_version);
-        if (version_required.IsValid() &&
-            extension->version()->CompareTo(version_required) < 0) {
-          // It should not happen, CrxInstaller will make sure the version is
-          // equal or newer than version_required.
-          ReportFailure(kDependencyNotFoundError,
-              FAILURE_REASON_DEPENDENCY_NOT_FOUND);
-        } else if (!SharedModuleInfo::IsSharedModule(extension)) {
-          // It should not happen, CrxInstaller will make sure it is a shared
-          // module.
-          ReportFailure(kDependencyNotSharedModuleError,
-              FAILURE_REASON_DEPENDENCY_NOT_SHARED_MODULE);
-        } else {
-          DownloadNextPendingModule();
-        }
-      }
-      break;
-    }
-
     case chrome::NOTIFICATION_EXTENSION_INSTALL_ERROR: {
       CrxInstaller* crx_installer = content::Source<CrxInstaller>(source).ptr();
       CHECK(crx_installer);
@@ -438,6 +396,42 @@ void WebstoreInstaller::Observe(int type,
 
     default:
       NOTREACHED();
+  }
+}
+
+void WebstoreInstaller::OnExtensionWillBeInstalled(
+    content::BrowserContext* browser_context,
+    const Extension* extension,
+    bool is_update,
+    bool from_ephemeral,
+    const std::string& old_name) {
+  CHECK(profile_->IsSameProfile(Profile::FromBrowserContext(browser_context)));
+  if (pending_modules_.empty())
+    return;
+  SharedModuleInfo::ImportInfo info = pending_modules_.front();
+  if (extension->id() != info.extension_id)
+    return;
+  pending_modules_.pop_front();
+
+  if (pending_modules_.empty()) {
+    CHECK_EQ(extension->id(), id_);
+    ReportSuccess();
+  } else {
+    const Version version_required(info.minimum_version);
+    if (version_required.IsValid() &&
+        extension->version()->CompareTo(version_required) < 0) {
+      // It should not happen, CrxInstaller will make sure the version is
+      // equal or newer than version_required.
+      ReportFailure(kDependencyNotFoundError,
+                    FAILURE_REASON_DEPENDENCY_NOT_FOUND);
+    } else if (!SharedModuleInfo::IsSharedModule(extension)) {
+      // It should not happen, CrxInstaller will make sure it is a shared
+      // module.
+      ReportFailure(kDependencyNotSharedModuleError,
+                    FAILURE_REASON_DEPENDENCY_NOT_SHARED_MODULE);
+    } else {
+      DownloadNextPendingModule();
+    }
   }
 }
 
@@ -565,15 +559,9 @@ void WebstoreInstaller::DownloadCrx(
   download_url_ = GetWebstoreInstallURL(extension_id, source);
   MaybeAppendAuthUserParameter(approval_->authuser, &download_url_);
 
-  base::FilePath download_path;
-  if (UseSeparateWebstoreDownloadDirectory()) {
-    base::FilePath user_data_dir;
-    PathService::Get(chrome::DIR_USER_DATA, &user_data_dir);
-    download_path = user_data_dir.Append(kWebstoreDownloadFolder);
-  } else {
-    download_path = DownloadPrefs::FromDownloadManager(
-        BrowserContext::GetDownloadManager(profile_))->DownloadPath();
-  }
+  base::FilePath user_data_dir;
+  PathService::Get(chrome::DIR_USER_DATA, &user_data_dir);
+  base::FilePath download_path = user_data_dir.Append(kWebstoreDownloadFolder);
 
   base::FilePath download_directory(g_download_directory_for_tests ?
       *g_download_directory_for_tests : download_path);

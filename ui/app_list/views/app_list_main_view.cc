@@ -38,6 +38,8 @@ const int kInnerPadding = 1;
 // The maximum allowed time to wait for icon loading in milliseconds.
 const int kMaxIconLoadingWaitTimeInMs = 50;
 
+const int kContentsViewIndex = 1;
+
 }  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -107,7 +109,7 @@ AppListMainView::AppListMainView(AppListViewDelegate* delegate,
 void AppListMainView::AddContentsView() {
   contents_view_ = new ContentsView(
       this, pagination_model_, model_, delegate_);
-  AddChildView(contents_view_);
+  AddChildViewAt(contents_view_, kContentsViewIndex);
 
   search_box_view_->set_contents_view(contents_view_);
 
@@ -165,6 +167,17 @@ void AppListMainView::ModelChanged() {
   Layout();
 }
 
+void AppListMainView::OnContentsViewShowStateChanged() {
+  search_box_view_->SetVisible(contents_view_->show_state() !=
+                               ContentsView::SHOW_START_PAGE);
+}
+
+void AppListMainView::OnStartPageSearchButtonPressed() {
+  search_box_view_->SetVisible(true);
+  search_box_view_->search_box()->SetText(base::string16());
+  search_box_view_->RequestFocus();
+}
+
 void AppListMainView::SetDragAndDropHostOfCurrentAppList(
     ApplicationDragAndDropHost* drag_and_drop_host) {
   contents_view_->SetDragAndDropHostOfCurrentAppList(drag_and_drop_host);
@@ -175,11 +188,10 @@ bool AppListMainView::ShouldCenterWindow() const {
 }
 
 void AppListMainView::PreloadIcons(gfx::NativeView parent) {
-  ui::ScaleFactor scale_factor = ui::SCALE_FACTOR_100P;
+  float scale_factor = 1.0f;
   if (parent)
     scale_factor = ui::GetScaleFactorForNativeView(parent);
 
-  float scale = ui::GetImageScale(scale_factor);
   // |pagination_model| could have -1 as the initial selected page and
   // assumes first page (i.e. index 0) will be used in this case.
   const int selected_page = std::max(0, pagination_model_->selected_page());
@@ -193,10 +205,10 @@ void AppListMainView::PreloadIcons(gfx::NativeView parent) {
   pending_icon_loaders_.clear();
   for (int i = start_model_index; i < end_model_index; ++i) {
     AppListItem* item = model_->top_level_item_list()->item_at(i);
-    if (item->icon().HasRepresentation(scale))
+    if (item->icon().HasRepresentation(scale_factor))
       continue;
 
-    pending_icon_loaders_.push_back(new IconLoader(this, item, scale));
+    pending_icon_loaders_.push_back(new IconLoader(this, item, scale_factor));
   }
 }
 

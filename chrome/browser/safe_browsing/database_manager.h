@@ -76,7 +76,7 @@ class SafeBrowsingDatabaseManager
     safe_browsing_util::ListType check_type;  // See comment in constructor.
     std::vector<SBThreatType> expected_threats;
     std::vector<SBPrefix> prefix_hits;
-    std::vector<SBFullHashResult> full_hits;
+    std::vector<SBFullHashResult> cache_hits;
 
     // Vends weak pointers for TimeoutCallback().  If the response is
     // received before the timeout fires, factory is destructed and
@@ -173,16 +173,18 @@ class SafeBrowsingDatabaseManager
   // Check if the CSD malware IP matching kill switch is turned on.
   virtual bool IsMalwareKillSwitchOn();
 
+  // Check if the CSD whitelist kill switch is turned on.
+  virtual bool IsCsdWhitelistKillSwitchOn();
+
   // Called on the IO thread to cancel a pending check if the result is no
   // longer needed.
   void CancelCheck(Client* client);
 
   // Called on the IO thread when the SafeBrowsingProtocolManager has received
   // the full hash results for prefix hits detected in the database.
-  void HandleGetHashResults(
-      SafeBrowsingCheck* check,
-      const std::vector<SBFullHashResult>& full_hashes,
-      bool can_cache);
+  void HandleGetHashResults(SafeBrowsingCheck* check,
+                            const std::vector<SBFullHashResult>& full_hashes,
+                            const base::TimeDelta& cache_lifetime);
 
   // Log the user perceived delay caused by SafeBrowsing. This delay is the time
   // delta starting from when we would have started reading data from the
@@ -287,10 +289,6 @@ class SafeBrowsingDatabaseManager
   // Runs on the db thread to reset the database. We assume that resetting the
   // database is a synchronous operation.
   void OnResetDatabase();
-
-  // Store in-memory the GetHash response. Runs on the database thread.
-  void CacheHashResults(const std::vector<SBPrefix>& prefixes,
-                        const std::vector<SBFullHashResult>& full_hashes);
 
   // Internal worker function for processing full hashes.
   void OnHandleGetHashResults(SafeBrowsingCheck* check,

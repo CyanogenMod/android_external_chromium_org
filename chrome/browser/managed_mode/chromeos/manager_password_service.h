@@ -10,13 +10,15 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/chromeos/login/extended_authenticator.h"
+#include "chrome/browser/chromeos/login/auth/extended_authenticator.h"
 #include "chrome/browser/managed_mode/managed_user_shared_settings_service.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service.h"
 #include "chrome/browser/managed_mode/managed_users.h"
 #include "components/keyed_service/core/keyed_service.h"
 
 namespace chromeos {
+
+class UserContext;
 
 // Handles managed user password change that is detected while manager is
 // signed in.
@@ -52,7 +54,7 @@ class ManagerPasswordService
   void OnAddKeySuccess(const UserContext& master_key_context,
                        const std::string& user_id,
                        scoped_ptr<base::DictionaryValue> password_data);
-  void OnContextTransformed(const UserContext& master_key_context);
+  void OnKeyTransformedIfNeeded(const UserContext& master_key_context);
   void OnNewManagerKeySuccess(const UserContext& master_key_context);
   void OnOldManagedUserKeyDeleted(const UserContext& master_key_context);
   void OnOldManagerKeyDeleted(const UserContext& master_key_context);

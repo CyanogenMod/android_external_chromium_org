@@ -10,7 +10,7 @@
 #include "base/memory/scoped_vector.h"
 #include "mojo/embedder/embedder.h"
 #include "mojo/gles2/gles2_support_impl.h"
-#include "mojo/public/cpp/shell/application.h"
+#include "mojo/public/cpp/application/application.h"
 #include "mojo/service_manager/background_service_loader.h"
 #include "mojo/service_manager/service_loader.h"
 #include "mojo/service_manager/service_manager.h"
@@ -83,7 +83,7 @@ Context::Context()
               scoped_ptr<net::NetworkDelegate>(new NetworkDelegate()),
               storage_.profile_path()) {
   setup.Get();
-  CommandLine* cmdline = CommandLine::ForCurrentProcess();
+  base::CommandLine* cmdline = base::CommandLine::ForCurrentProcess();
   scoped_ptr<DynamicServiceRunnerFactory> runner_factory;
   if (cmdline->HasSwitch(switches::kEnableMultiprocess))
     runner_factory.reset(new OutOfProcessDynamicServiceRunnerFactory());
@@ -100,7 +100,8 @@ Context::Context()
       scoped_ptr<ServiceLoader>(
           new BackgroundServiceLoader(
               scoped_ptr<ServiceLoader>(new NativeViewportServiceLoader(this)),
-              "native_viewport")),
+              "native_viewport",
+              base::MessageLoop::TYPE_UI)),
       GURL("mojo:mojo_native_viewport_service"));
 #if defined(USE_AURA)
   // TODO(sky): need a better way to find this. It shouldn't be linked in.

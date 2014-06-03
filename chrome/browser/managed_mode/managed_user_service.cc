@@ -10,7 +10,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/managed_mode/custodian_profile_downloader_service.h"
 #include "chrome/browser/managed_mode/custodian_profile_downloader_service_factory.h"
@@ -19,10 +18,11 @@
 #include "chrome/browser/managed_mode/managed_user_registration_utility.h"
 #include "chrome/browser/managed_mode/managed_user_settings_service.h"
 #include "chrome/browser/managed_mode/managed_user_settings_service_factory.h"
-#include "chrome/browser/managed_mode/managed_user_shared_settings_service.h"
 #include "chrome/browser/managed_mode/managed_user_shared_settings_service_factory.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service_factory.h"
+#include "chrome/browser/managed_mode/permission_request_creator_apiary.h"
+#include "chrome/browser/managed_mode/permission_request_creator_sync.h"
 #include "chrome/browser/managed_mode/supervised_user_pref_mapping_service.h"
 #include "chrome/browser/managed_mode/supervised_user_pref_mapping_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -37,14 +37,13 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/managed_mode_private/managed_mode_handler.h"
 #include "chrome/common/pref_names.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/signin/core/browser/signin_manager_base.h"
-#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_source.h"
 #include "content/public/browser/user_metrics.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension_set.h"
 #include "google_apis/gaia/google_service_auth_error.h"
@@ -53,23 +52,13 @@
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/supervised_user_manager.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #endif
 
 using base::DictionaryValue;
 using base::UserMetricsAction;
 using content::BrowserThread;
-
-const char kManagedUserAccessRequestKeyPrefix[] =
-    "X-ManagedUser-AccessRequests";
-const char kManagedUserAccessRequestTime[] = "timestamp";
-const char kManagedUserName[] = "name";
-
-// Key for the notification setting of the custodian. This is a shared setting
-// so we can include the setting in the access request data that is used to
-// trigger notifications.
-const char kNotificationSetting[] = "custodian-notification-setting";
 
 ManagedUserService::URLFilterContext::URLFilterContext()
     : ui_url_filter_(new ManagedModeURLFilter),
@@ -136,10 +125,12 @@ void ManagedUserService::URLFilterContext::SetManualURLs(
 
 ManagedUserService::ManagedUserService(Profile* profile)
     : profile_(profile),
+      extension_registry_observer_(this),
       waiting_for_sync_initialization_(false),
       is_profile_active_(false),
       elevated_for_testing_(false),
       did_shutdown_(false),
+      waiting_for_permissions_(false),
       weak_ptr_factory_(this) {
 }
 
@@ -342,30 +333,19 @@ void ManagedUserService::OnStateChanged() {
       << "Credentials rejected";
 }
 
-void ManagedUserService::Observe(int type,
-                          const content::NotificationSource& source,
-                          const content::NotificationDetails& details) {
-  switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED: {
-      const extensions::Extension* extension =
-          content::Details<extensions::Extension>(details).ptr();
-      if (!extensions::ManagedModeInfo::GetContentPackSiteList(
-              extension).empty()) {
-        UpdateSiteLists();
-      }
-      break;
-    }
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED: {
-      const extensions::UnloadedExtensionInfo* extension_info =
-          content::Details<extensions::UnloadedExtensionInfo>(details).ptr();
-      if (!extensions::ManagedModeInfo::GetContentPackSiteList(
-              extension_info->extension).empty()) {
-        UpdateSiteLists();
-      }
-      break;
-    }
-    default:
-      NOTREACHED();
+void ManagedUserService::OnExtensionLoaded(
+    content::BrowserContext* browser_context,
+    const extensions::Extension* extension) {
+  if (!extensions::ManagedModeInfo::GetContentPackSiteList(extension).empty()) {
+    UpdateSiteLists();
+  }
+}
+void ManagedUserService::OnExtensionUnloaded(
+    content::BrowserContext* browser_context,
+    const extensions::Extension* extension,
+    extensions::UnloadedExtensionInfo::Reason reason) {
+  if (!extensions::ManagedModeInfo::GetContentPackSiteList(extension).empty()) {
+    UpdateSiteLists();
   }
 }
 
@@ -444,6 +424,9 @@ void ManagedUserService::UpdateSiteLists() {
 }
 
 bool ManagedUserService::AccessRequestsEnabled() {
+  if (waiting_for_permissions_)
+    return false;
+
   ProfileSyncService* service =
       ProfileSyncServiceFactory::GetForProfile(profile_);
   GoogleServiceAuthError::State state = service->GetAuthError().state();
@@ -453,6 +436,13 @@ bool ManagedUserService::AccessRequestsEnabled() {
           state == GoogleServiceAuthError::SERVICE_UNAVAILABLE);
 }
 
+void ManagedUserService::OnPermissionRequestIssued() {
+  waiting_for_permissions_ = false;
+  // TODO(akuegel): Figure out how to show the result of issuing the permission
+  // request in the UI. Currently, we assume the permission request was created
+  // successfully.
+}
+
 void ManagedUserService::AddAccessRequest(const GURL& url) {
   // Normalize the URL.
   GURL normalized_url = ManagedModeURLFilter::Normalize(url);
@@ -460,35 +450,11 @@ void ManagedUserService::AddAccessRequest(const GURL& url) {
   // Escape the URL.
   std::string output(net::EscapeQueryParamValue(normalized_url.spec(), true));
 
-  // Add the prefix.
-  std::string key = ManagedUserSettingsService::MakeSplitSettingKey(
-      kManagedUserAccessRequestKeyPrefix, output);
-
-  scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue);
-
-  // TODO(sergiu): Use sane time here when it's ready.
-  dict->SetDouble(kManagedUserAccessRequestTime, base::Time::Now().ToJsTime());
-
-  dict->SetString(kManagedUserName,
-                  profile_->GetPrefs()->GetString(prefs::kProfileName));
-
-  // Copy the notification setting of the custodian.
-  std::string managed_user_id =
-      profile_->GetPrefs()->GetString(prefs::kManagedUserId);
-  const base::Value* value =
-      ManagedUserSharedSettingsServiceFactory::GetForBrowserContext(profile_)
-          ->GetValue(managed_user_id, kNotificationSetting);
-  bool notifications_enabled = false;
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableAccessRequestNotifications)) {
-    notifications_enabled = true;
-  } else if (value) {
-    bool success = value->GetAsBoolean(&notifications_enabled);
-    DCHECK(success);
-  }
-  dict->SetBoolean(kNotificationSetting, notifications_enabled);
-
-  GetSettingsService()->UploadItem(key, dict.PassAs<base::Value>());
+  waiting_for_permissions_ = true;
+  permissions_creator_->CreatePermissionRequest(
+      output,
+      base::Bind(&ManagedUserService::OnPermissionRequestIssued,
+                 weak_ptr_factory_.GetWeakPtr()));
 }
 
 ManagedUserService::ManualBehavior ManagedUserService::GetManualBehaviorForHost(
@@ -568,6 +534,18 @@ void ManagedUserService::Init() {
   ProfileOAuth2TokenService* token_service =
       ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
   token_service->LoadCredentials(managed_users::kManagedUserPseudoEmail);
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kPermissionRequestApiUrl)) {
+    permissions_creator_ =
+        PermissionRequestCreatorApiary::CreateWithProfile(profile_);
+  } else {
+    PrefService* pref_service = profile_->GetPrefs();
+    permissions_creator_.reset(new PermissionRequestCreatorSync(
+        settings_service,
+        ManagedUserSharedSettingsServiceFactory::GetForBrowserContext(profile_),
+        pref_service->GetString(prefs::kProfileName),
+        pref_service->GetString(prefs::kManagedUserId)));
+  }
 
   extensions::ExtensionSystem* extension_system =
       extensions::ExtensionSystem::Get(profile_);
@@ -576,11 +554,8 @@ void ManagedUserService::Init() {
   if (management_policy)
     extension_system->management_policy()->RegisterProvider(this);
 
-  registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
-                 content::Source<Profile>(profile_));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
-                 content::Source<Profile>(profile_));
+  extension_registry_observer_.Add(
+      extensions::ExtensionRegistry::Get(profile_));
 
   pref_change_registrar_.Init(profile_->GetPrefs());
   pref_change_registrar_.Add(

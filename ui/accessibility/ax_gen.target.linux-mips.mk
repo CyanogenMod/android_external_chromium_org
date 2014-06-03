@@ -30,7 +30,7 @@ $(gyp_shared_intermediate_dir)/ui/accessibility/generated_schemas.cc: $(gyp_shar
 
 
 ### Generated for rule "ui_accessibility_accessibility_gyp_ax_gen_target_genapi_idl":
-# "{'inputs': ['../../tools/json_schema_compiler/cc_generator.py', '../../tools/json_schema_compiler/code.py', '../../tools/json_schema_compiler/compiler.py', '../../tools/json_schema_compiler/cpp_generator.py', '../../tools/json_schema_compiler/cpp_type_generator.py', '../../tools/json_schema_compiler/cpp_util.py', '../../tools/json_schema_compiler/h_generator.py', '../../tools/json_schema_compiler/idl_schema.py', '../../tools/json_schema_compiler/model.py', '../../tools/json_schema_compiler/util.cc', '../../tools/json_schema_compiler/util.h', '../../tools/json_schema_compiler/util_cc_helper.py'], 'process_outputs_as_sources': '1', 'extension': 'idl', 'msvs_external_rule': '1', 'outputs': ['$(gyp_shared_intermediate_dir)/ui/accessibility/%(INPUT_ROOT)s.cc', '$(gyp_shared_intermediate_dir)/ui/accessibility/%(INPUT_ROOT)s.h'], 'rule_name': 'genapi_idl', 'rule_sources': ['ax_enums.idl'], 'action': ['python', '../../tools/json_schema_compiler/compiler.py', '$(RULE_SOURCES)', '--root=../..', '--destdir=$(gyp_shared_intermediate_dir)', '--namespace=', '--generator=cpp', '--impl-dir=chrome/browser/extensions/api'], 'message': 'Generating C++ code from $(RULE_SOURCES) IDL files'}":
+# "{'inputs': ['../../tools/json_schema_compiler/cc_generator.py', '../../tools/json_schema_compiler/code.py', '../../tools/json_schema_compiler/compiler.py', '../../tools/json_schema_compiler/cpp_generator.py', '../../tools/json_schema_compiler/cpp_type_generator.py', '../../tools/json_schema_compiler/cpp_util.py', '../../tools/json_schema_compiler/h_generator.py', '../../tools/json_schema_compiler/idl_schema.py', '../../tools/json_schema_compiler/model.py', '../../tools/json_schema_compiler/util.cc', '../../tools/json_schema_compiler/util.h', '../../tools/json_schema_compiler/util_cc_helper.py'], 'process_outputs_as_sources': '1', 'extension': 'idl', 'msvs_external_rule': '1', 'outputs': ['$(gyp_shared_intermediate_dir)/ui/accessibility/%(INPUT_DIRNAME)s/%(INPUT_ROOT)s.cc', '$(gyp_shared_intermediate_dir)/ui/accessibility/%(INPUT_DIRNAME)s/%(INPUT_ROOT)s.h'], 'rule_name': 'genapi_idl', 'rule_sources': ['ax_enums.idl'], 'action': ['python', '../../tools/json_schema_compiler/compiler.py', '$(RULE_SOURCES)', '--root=../..', '--destdir=$(gyp_shared_intermediate_dir)', '--namespace=', '--generator=cpp', '--impl-dir=chrome/browser/extensions/api'], 'message': 'Generating C++ code from $(RULE_SOURCES) IDL files'}":
 $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.cc: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.cc: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.cc: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -87,6 +87,7 @@ MY_CFLAGS_Debug := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
+	-Wno-unused-local-typedefs \
 	-EL \
 	-mhard-float \
 	-ffunction-sections \
@@ -119,12 +120,17 @@ MY_DEFS_Debug := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
+	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
+	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
+	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DVIDEO_HOLE=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
@@ -174,6 +180,7 @@ MY_CFLAGS_Release := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
+	-Wno-unused-local-typedefs \
 	-EL \
 	-mhard-float \
 	-ffunction-sections \
@@ -206,12 +213,17 @@ MY_DEFS_Release := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
+	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
+	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
+	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DVIDEO_HOLE=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \

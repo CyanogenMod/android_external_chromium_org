@@ -66,7 +66,6 @@
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_destroyer.h"
-#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/repost_form_warning_controller.h"
 #include "chrome/browser/search/search.h"
@@ -149,8 +148,8 @@
 #include "chrome/common/profiling.h"
 #include "chrome/common/search_types.h"
 #include "chrome/common/url_constants.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/browser/bookmark_utils.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/startup_metric_utils/startup_metric_utils.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/devtools_manager.h"
@@ -347,8 +346,7 @@ Browser::Browser(const CreateParams& params)
       tab_restore_service_delegate_(new BrowserTabRestoreServiceDelegate(this)),
       synced_window_delegate_(new BrowserSyncedWindowDelegate(this)),
       bookmark_bar_state_(BookmarkBar::HIDDEN),
-      command_controller_(new chrome::BrowserCommandController(
-          this, g_browser_process->profile_manager())),
+      command_controller_(new chrome::BrowserCommandController(this)),
       window_has_shown_(false),
       chrome_updater_factory_(this),
       weak_factory_(this),
@@ -380,7 +378,8 @@ Browser::Browser(const CreateParams& params)
                  content::Source<Profile>(profile_->GetOriginalProfile()));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<Profile>(profile_->GetOriginalProfile()));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
                  content::Source<Profile>(profile_->GetOriginalProfile()));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_PROCESS_TERMINATED,
                  content::NotificationService::AllSources());
@@ -447,6 +446,11 @@ Browser::Browser(const CreateParams& params)
 }
 
 Browser::~Browser() {
+  // Stop observing notifications before continuing with destruction. Profile
+  // destruction will unload extensions and reentrant calls to Browser:: should
+  // be avoided while it is being torn down.
+  registrar_.RemoveAll();
+
   // The tab strip should not have any tabs at this point.
   DCHECK(tab_strip_model_->empty());
   tab_strip_model_->RemoveObserver(this);
@@ -1617,7 +1621,6 @@ bool Browser::IsFullscreenForTabOrPending(
 void Browser::RegisterProtocolHandler(WebContents* web_contents,
                                       const std::string& protocol,
                                       const GURL& url,
-                                      const base::string16& title,
                                       bool user_gesture) {
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
@@ -1625,7 +1628,7 @@ void Browser::RegisterProtocolHandler(WebContents* web_contents,
     return;
 
   ProtocolHandler handler =
-      ProtocolHandler::CreateProtocolHandler(protocol, url, title);
+      ProtocolHandler::CreateProtocolHandler(protocol, url);
 
   ProtocolHandlerRegistry* registry =
       ProtocolHandlerRegistryFactory::GetForProfile(profile);
@@ -1940,7 +1943,7 @@ void Browser::Observe(int type,
           IDC_BOOKMARK_ALL_TABS,
           !chrome::ShouldRemoveBookmarkOpenPagesUI(profile_));
     // fallthrough
-    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED:
+    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED:
       // During window creation on Windows we may end up calling into
       // SHAppBarMessage, which internally spawns a nested message loop. This
       // makes it possible for us to end up here before window creation has

@@ -17,6 +17,7 @@
 #include "base/timer/timer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_impl_io_data.h"
+#include "components/domain_reliability/clear_mode.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/host_zoom_map.h"
 
@@ -25,6 +26,7 @@ class PrefService;
 class PrefServiceSyncable;
 class ShortcutsBackend;
 class SSLConfigServiceManager;
+class TrackedPreferenceValidationDelegate;
 
 #if defined(OS_CHROMEOS)
 namespace chromeos {
@@ -92,17 +94,16 @@ class ProfileImpl : public Profile {
   virtual void RequestProtectedMediaIdentifierPermission(
       int render_process_id,
       int render_view_id,
-      int bridge_id,
-      int group_id,
-      const GURL& requesting_frame,
+      const GURL& origin,
       const ProtectedMediaIdentifierPermissionCallback& callback) OVERRIDE;
   virtual void CancelProtectedMediaIdentifierPermissionRequests(
-      int group_id) OVERRIDE;
+      int render_process_id,
+      int render_view_id,
+      const GURL& origin) OVERRIDE;
   virtual content::ResourceContext* GetResourceContext() OVERRIDE;
   virtual content::GeolocationPermissionContext*
       GetGeolocationPermissionContext() OVERRIDE;
-  virtual content::BrowserPluginGuestManagerDelegate*
-      GetGuestManagerDelegate() OVERRIDE;
+  virtual content::BrowserPluginGuestManager* GetGuestManager() OVERRIDE;
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
 
   // Profile implementation:
@@ -132,17 +133,20 @@ class ProfileImpl : public Profile {
   virtual base::Time GetStartTime() const OVERRIDE;
   virtual net::URLRequestContextGetter* CreateRequestContext(
       content::ProtocolHandlerMap* protocol_handlers,
-      content::ProtocolHandlerScopedVector protocol_interceptors) OVERRIDE;
+      content::URLRequestInterceptorScopedVector request_interceptors) OVERRIDE;
   virtual net::URLRequestContextGetter* CreateRequestContextForStoragePartition(
       const base::FilePath& partition_path,
       bool in_memory,
       content::ProtocolHandlerMap* protocol_handlers,
-      content::ProtocolHandlerScopedVector protocol_interceptors) OVERRIDE;
+      content::URLRequestInterceptorScopedVector request_interceptors) OVERRIDE;
   virtual base::FilePath last_selected_directory() OVERRIDE;
   virtual void set_last_selected_directory(const base::FilePath& path) OVERRIDE;
   virtual chrome_browser_net::Predictor* GetNetworkPredictor() OVERRIDE;
   virtual void ClearNetworkingHistorySince(
       base::Time time,
+      const base::Closure& completion) OVERRIDE;
+  virtual void ClearDomainReliabilityMonitor(
+      domain_reliability::DomainReliabilityClearMode mode,
       const base::Closure& completion) OVERRIDE;
   virtual GURL GetHomePage() OVERRIDE;
   virtual bool WasCreatedByVersionOrLater(const std::string& version) OVERRIDE;
@@ -238,6 +242,10 @@ class ProfileImpl : public Profile {
   scoped_ptr<policy::CloudPolicyManager> cloud_policy_manager_;
 #endif
   scoped_ptr<policy::ProfilePolicyConnector> profile_policy_connector_;
+
+  // Keep |pref_validation_delegate_| above |prefs_| so that the former outlives
+  // the latter.
+  scoped_ptr<TrackedPreferenceValidationDelegate> pref_validation_delegate_;
 
   // Keep |prefs_| on top for destruction order because |extension_prefs_|,
   // |net_pref_observer_|, |io_data_| and others store pointers to |prefs_| and

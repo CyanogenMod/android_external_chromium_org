@@ -9,6 +9,7 @@
 #include "base/file_util.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/download/drag_download_util.h"
 #include "content/browser/frame_host/interstitial_page_impl.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
@@ -98,13 +99,26 @@ bool ShouldNavigateBack(const NavigationController& controller,
          controller.CanGoBack();
 }
 
+// Update the |web contents| to be |visible|.
+void UpdateWebContentsVisibility(WebContentsImpl* web_contents, bool visible) {
+  if (visible) {
+    if (!web_contents->should_normally_be_visible())
+      web_contents->WasShown();
+  } else {
+    if (web_contents->should_normally_be_visible())
+      web_contents->WasHidden();
+  }
+}
+
 RenderWidgetHostViewAura* ToRenderWidgetHostViewAura(
     RenderWidgetHostView* view) {
   if (!view || RenderViewHostFactory::has_factory())
     return NULL;  // Can't cast to RenderWidgetHostViewAura in unit tests.
-  RenderProcessHostImpl* process = static_cast<RenderProcessHostImpl*>(
-      view->GetRenderWidgetHost()->GetProcess());
-  if (process->IsGuest())
+
+  RenderViewHost* rvh = RenderViewHost::From(view->GetRenderWidgetHost());
+  WebContentsImpl* web_contents = static_cast<WebContentsImpl*>(
+      rvh ? WebContents::FromRenderViewHost(rvh) : NULL);
+  if (BrowserPluginGuest::IsGuest(web_contents))
     return NULL;
   return static_cast<RenderWidgetHostViewAura*>(view);
 }
@@ -132,8 +146,7 @@ class OverscrollWindowDelegate : public ImageWindowDelegate {
     if (entry && entry->screenshot().get()) {
       std::vector<gfx::ImagePNGRep> image_reps;
       image_reps.push_back(gfx::ImagePNGRep(entry->screenshot(),
-          ui::GetImageScale(
-              ui::GetScaleFactorForNativeView(web_contents_window()))));
+          ui::GetScaleFactorForNativeView(web_contents_window())));
       image = gfx::Image(image_reps);
     }
     SetImage(image);
@@ -718,6 +731,7 @@ WebContentsViewAura::~WebContentsViewAura() {
     return;
 
   window_observer_.reset();
+  window_->RemoveObserver(this);
 
   // Window needs a valid delegate during its destructor, so we explicitly
   // delete it here.
@@ -1045,6 +1059,7 @@ void WebContentsViewAura::CreateView(
   window_->SetType(ui::wm::WINDOW_TYPE_CONTROL);
   window_->SetTransparent(false);
   window_->Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  window_->AddObserver(this);
   aura::Window* root_window = context ? context->GetRootWindow() : NULL;
   if (root_window) {
     // There are places where there is no context currently because object
@@ -1068,7 +1083,7 @@ void WebContentsViewAura::CreateView(
   // The use cases for WindowObserver do not apply to Browser Plugins:
   // 1) guests do not support NPAPI plugins.
   // 2) guests' window bounds are supposed to come from its embedder.
-  if (!web_contents_->GetRenderProcessHost()->IsGuest())
+  if (!BrowserPluginGuest::IsGuest(web_contents_))
     window_observer_.reset(new WindowObserver(this));
 
   // delegate_->GetDragDestDelegate() creates a new delegate on every call.
@@ -1257,8 +1272,6 @@ void WebContentsViewAura::OnOverscrollUpdate(float delta_x, float delta_y) {
     return;
 
   aura::Window* target = GetWindowToAnimateForOverscroll();
-  ui::ScopedLayerAnimationSettings settings(target->layer()->GetAnimator());
-  settings.SetPreemptionStrategy(ui::LayerAnimator::IMMEDIATELY_SET_NEW_TARGET);
   gfx::Vector2d translate = GetTranslationForOverscroll(delta_x, delta_y);
   gfx::Transform transform;
 
@@ -1429,10 +1442,6 @@ void WebContentsViewAura::OnWindowDestroyed(aura::Window* window) {
 }
 
 void WebContentsViewAura::OnWindowTargetVisibilityChanged(bool visible) {
-  if (visible)
-    web_contents_->WasShown();
-  else
-    web_contents_->WasHidden();
 }
 
 bool WebContentsViewAura::HasHitTestMask() const {
@@ -1472,17 +1481,25 @@ void WebContentsViewAura::OnMouseEvent(ui::MouseEvent* event) {
 // WebContentsViewAura, aura::client::DragDropDelegate implementation:
 
 void WebContentsViewAura::OnDragEntered(const ui::DropTargetEvent& event) {
-  if (drag_dest_delegate_)
-    drag_dest_delegate_->DragInitialize(web_contents_);
-
+  current_rvh_for_drag_ = web_contents_->GetRenderViewHost();
   current_drop_data_.reset(new DropData());
 
   PrepareDropData(current_drop_data_.get(), event.data());
   blink::WebDragOperationsMask op = ConvertToWeb(event.source_operations());
 
+  // Give the delegate an opportunity to cancel the drag.
+  if (!web_contents_->GetDelegate()->CanDragEnter(web_contents_,
+                                                  *current_drop_data_.get(),
+                                                  op)) {
+    current_drop_data_.reset(NULL);
+    return;
+  }
+
+  if (drag_dest_delegate_)
+    drag_dest_delegate_->DragInitialize(web_contents_);
+
   gfx::Point screen_pt =
       gfx::Screen::GetScreenFor(GetNativeView())->GetCursorScreenPoint();
-  current_rvh_for_drag_ = web_contents_->GetRenderViewHost();
   web_contents_->GetRenderViewHost()->DragTargetDragEnter(
       *current_drop_data_.get(), event.location(), screen_pt, op,
       ConvertAuraEventFlagsToWebInputEventModifiers(event.flags()));
@@ -1497,6 +1514,9 @@ int WebContentsViewAura::OnDragUpdated(const ui::DropTargetEvent& event) {
   DCHECK(current_rvh_for_drag_);
   if (current_rvh_for_drag_ != web_contents_->GetRenderViewHost())
     OnDragEntered(event);
+
+  if (!current_drop_data_)
+    return ui::DragDropTypes::DRAG_NONE;
 
   blink::WebDragOperationsMask op = ConvertToWeb(event.source_operations());
   gfx::Point screen_pt =
@@ -1516,6 +1536,9 @@ void WebContentsViewAura::OnDragExited() {
   if (current_rvh_for_drag_ != web_contents_->GetRenderViewHost())
     return;
 
+  if (!current_drop_data_)
+    return;
+
   web_contents_->GetRenderViewHost()->DragTargetDragLeave();
   if (drag_dest_delegate_)
     drag_dest_delegate_->OnDragLeave();
@@ -1528,6 +1551,9 @@ int WebContentsViewAura::OnPerformDrop(const ui::DropTargetEvent& event) {
   if (current_rvh_for_drag_ != web_contents_->GetRenderViewHost())
     OnDragEntered(event);
 
+  if (!current_drop_data_)
+    return ui::DragDropTypes::DRAG_NONE;
+
   web_contents_->GetRenderViewHost()->DragTargetDrop(
       event.location(),
       gfx::Screen::GetScreenFor(GetNativeView())->GetCursorScreenPoint(),
@@ -1536,6 +1562,24 @@ int WebContentsViewAura::OnPerformDrop(const ui::DropTargetEvent& event) {
     drag_dest_delegate_->OnDrop();
   current_drop_data_.reset();
   return ConvertFromWeb(current_drag_op_);
+}
+
+void WebContentsViewAura::OnWindowParentChanged(aura::Window* window,
+                                                aura::Window* parent) {
+  // On Windows we will get called with a parent of NULL as part of the shut
+  // down process. As such we do only change the visibility when a parent gets
+  // set.
+  if (parent)
+    UpdateWebContentsVisibility(web_contents_, window->IsVisible());
+}
+
+void WebContentsViewAura::OnWindowVisibilityChanged(aura::Window* window,
+                                                    bool visible) {
+  // Ignore any visibility changes in the hierarchy below.
+  if (window != window_.get() && window_->Contains(window))
+    return;
+
+  UpdateWebContentsVisibility(web_contents_, visible);
 }
 
 }  // namespace content

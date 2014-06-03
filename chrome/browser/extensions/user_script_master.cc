@@ -7,6 +7,7 @@
 #include <string>
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/version.h"
@@ -166,12 +167,10 @@ void UserScriptMaster::ScriptReloader::StartLoad(
 UserScriptMaster::ScriptReloader::~ScriptReloader() {}
 
 void UserScriptMaster::ScriptReloader::NotifyMaster(
-    base::SharedMemory* memory) {
-  // The master went away, so these new scripts aren't useful anymore.
-  if (!master_)
-    delete memory;
-  else
-    master_->NewScriptsAvailable(memory);
+    scoped_ptr<base::SharedMemory> memory) {
+  // The master could go away
+  if (master_)
+    master_->NewScriptsAvailable(memory.Pass());
 
   // Drop our self-reference.
   // Balances StartLoad().
@@ -284,7 +283,7 @@ SubstitutionMap* UserScriptMaster::ScriptReloader::GetLocalizationMessages(
 }
 
 // Pickle user scripts and return pointer to the shared memory.
-static base::SharedMemory* Serialize(const UserScriptList& scripts) {
+static scoped_ptr<base::SharedMemory> Serialize(const UserScriptList& scripts) {
   Pickle pickle;
   pickle.WriteUInt64(scripts.size());
   for (size_t i = 0; i < scripts.size(); i++) {
@@ -312,10 +311,10 @@ static base::SharedMemory* Serialize(const UserScriptList& scripts) {
   options.size = pickle.size();
   options.share_read_only = true;
   if (!shared_memory.Create(options))
-    return NULL;
+    return scoped_ptr<base::SharedMemory>();
 
   if (!shared_memory.Map(pickle.size()))
-    return NULL;
+    return scoped_ptr<base::SharedMemory>();
 
   // Copy the pickle to shared memory.
   memcpy(shared_memory.memory(), pickle.data(), pickle.size());
@@ -323,9 +322,10 @@ static base::SharedMemory* Serialize(const UserScriptList& scripts) {
   base::SharedMemoryHandle readonly_handle;
   if (!shared_memory.ShareReadOnlyToProcess(base::GetCurrentProcessHandle(),
                                             &readonly_handle))
-    return NULL;
+    return scoped_ptr<base::SharedMemory>();
 
-  return new base::SharedMemory(readonly_handle, /*read_only=*/true);
+  return make_scoped_ptr(new base::SharedMemory(readonly_handle,
+                                                /*read_only=*/true));
 }
 
 // This method will be called on the file thread.
@@ -336,10 +336,11 @@ void UserScriptMaster::ScriptReloader::RunLoad(
   // Scripts now contains list of up-to-date scripts. Load the content in the
   // shared memory and let the master know it's ready. We need to post the task
   // back even if no scripts ware found to balance the AddRef/Release calls.
-  BrowserThread::PostTask(
-      master_thread_id_, FROM_HERE,
-      base::Bind(
-          &ScriptReloader::NotifyMaster, this, Serialize(user_scripts)));
+  BrowserThread::PostTask(master_thread_id_,
+                          FROM_HERE,
+                          base::Bind(&ScriptReloader::NotifyMaster,
+                                     this,
+                                     base::Passed(Serialize(user_scripts))));
 }
 
 UserScriptMaster::UserScriptMaster(Profile* profile)
@@ -359,10 +360,8 @@ UserScriptMaster::~UserScriptMaster() {
     script_reloader_->DisownMaster();
 }
 
-void UserScriptMaster::NewScriptsAvailable(base::SharedMemory* handle) {
-  // Ensure handle is deleted or released.
-  scoped_ptr<base::SharedMemory> handle_deleter(handle);
-
+void UserScriptMaster::NewScriptsAvailable(
+    scoped_ptr<base::SharedMemory> handle) {
   if (pending_load_) {
     // While we were loading, there were further changes.  Don't bother
     // notifying about these scripts and instead just immediately reload.
@@ -385,18 +384,21 @@ void UserScriptMaster::NewScriptsAvailable(base::SharedMemory* handle) {
     }
 
     // We've got scripts ready to go.
-    shared_memory_.swap(handle_deleter);
+    shared_memory_ = handle.Pass();
 
     for (content::RenderProcessHost::iterator i(
             content::RenderProcessHost::AllHostsIterator());
          !i.IsAtEnd(); i.Advance()) {
-      SendUpdate(i.GetCurrentValue(), handle);
+      SendUpdate(i.GetCurrentValue(),
+                 shared_memory_.get(),
+                 changed_extensions_);
     }
+    changed_extensions_.clear();
 
     content::NotificationService::current()->Notify(
         chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
         content::Source<Profile>(profile_),
-        content::Details<base::SharedMemory>(handle));
+        content::Details<base::SharedMemory>(shared_memory_.get()));
   }
 }
 
@@ -422,6 +424,7 @@ void UserScriptMaster::OnExtensionLoaded(
     user_scripts_.back().set_incognito_enabled(incognito_enabled);
   }
   if (extensions_service_ready_) {
+    changed_extensions_.insert(extension->id());
     if (script_reloader_.get()) {
       pending_load_ = true;
     } else {
@@ -444,6 +447,7 @@ void UserScriptMaster::OnExtensionUnloaded(
       new_user_scripts.push_back(*iter);
   }
   user_scripts_ = new_user_scripts;
+  changed_extensions_.insert(extension->id());
   if (script_reloader_.get()) {
     pending_load_ = true;
   } else {
@@ -467,8 +471,11 @@ void UserScriptMaster::Observe(int type,
           process->GetBrowserContext());
       if (!profile_->IsSameProfile(profile))
         return;
-      if (ScriptsReady())
-        SendUpdate(process, GetSharedMemory());
+      if (ScriptsReady()) {
+        SendUpdate(process,
+                   GetSharedMemory(),
+                   std::set<std::string>());  // Include all extensions.
+      }
       break;
     }
     default:
@@ -491,10 +498,12 @@ void UserScriptMaster::StartLoad() {
   script_reloader_->StartLoad(user_scripts_, extensions_info_);
 }
 
-void UserScriptMaster::SendUpdate(content::RenderProcessHost* process,
-                                  base::SharedMemory* shared_memory) {
+void UserScriptMaster::SendUpdate(
+    content::RenderProcessHost* process,
+    base::SharedMemory* shared_memory,
+    const std::set<std::string>& changed_extensions) {
   // Don't allow injection of content scripts into <webview>.
-  if (process->IsGuest())
+  if (process->IsIsolatedGuest())
     return;
 
   Profile* profile = Profile::FromBrowserContext(process->GetBrowserContext());
@@ -512,8 +521,10 @@ void UserScriptMaster::SendUpdate(content::RenderProcessHost* process,
   if (!shared_memory->ShareToProcess(handle, &handle_for_process))
     return;  // This can legitimately fail if the renderer asserts at startup.
 
-  if (base::SharedMemory::IsHandleValid(handle_for_process))
-    process->Send(new ExtensionMsg_UpdateUserScripts(handle_for_process));
+  if (base::SharedMemory::IsHandleValid(handle_for_process)) {
+    process->Send(new ExtensionMsg_UpdateUserScripts(handle_for_process,
+                                                     changed_extensions));
+  }
 }
 
 }  // namespace extensions

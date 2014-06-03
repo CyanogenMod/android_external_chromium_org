@@ -9,13 +9,13 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/login_manager_test.h"
 #include "chrome/browser/chromeos/login/managed/managed_user_test_base.h"
 #include "chrome/browser/chromeos/login/managed/supervised_user_authentication.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/login/supervised_user_manager.h"
-#include "chrome/browser/chromeos/login/webui_login_view.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/ui/webui_login_view.h"
+#include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
 #include "chrome/browser/chromeos/net/network_portal_detector_test_impl.h"
 #include "chrome/browser/chromeos/settings/stub_cros_settings_provider.h"
 #include "chrome/browser/managed_mode/managed_user_constants.h"
@@ -90,12 +90,12 @@ class SupervisedUserTransactionCleanupTest2
 };
 
 IN_PROC_BROWSER_TEST_F(SupervisedUserCreationTest,
-                       PRE_PRE_PRE_CreateAndRemoveSupervisedUser) {
+                       DISABLED_PRE_PRE_PRE_CreateAndRemoveSupervisedUser) {
   PrepareUsers();
 }
 
 IN_PROC_BROWSER_TEST_F(SupervisedUserCreationTest,
-                       PRE_PRE_CreateAndRemoveSupervisedUser) {
+                       DISABLED_PRE_PRE_CreateAndRemoveSupervisedUser) {
   StartFlowLoginAsManager();
   FillNewUserData(kTestSupervisedUserDisplayName);
   StartUserCreation("managed-user-creation-next-button",
@@ -103,22 +103,22 @@ IN_PROC_BROWSER_TEST_F(SupervisedUserCreationTest,
 }
 
 IN_PROC_BROWSER_TEST_F(SupervisedUserCreationTest,
-                       PRE_CreateAndRemoveSupervisedUser) {
+                       DISABLED_PRE_CreateAndRemoveSupervisedUser) {
   SigninAsSupervisedUser(true, 0, kTestSupervisedUserDisplayName);
 }
 
 IN_PROC_BROWSER_TEST_F(SupervisedUserCreationTest,
-                       CreateAndRemoveSupervisedUser) {
+                       DISABLED_CreateAndRemoveSupervisedUser) {
   RemoveSupervisedUser(3, 0, kTestSupervisedUserDisplayName);
 }
 
 IN_PROC_BROWSER_TEST_F(SupervisedUserOwnerCreationTest,
-                       PRE_PRE_PRE_CreateAndRemoveSupervisedUser) {
+                       DISABLED_PRE_PRE_PRE_CreateAndRemoveSupervisedUser) {
   PrepareUsers();
 }
 
 IN_PROC_BROWSER_TEST_F(SupervisedUserOwnerCreationTest,
-                       PRE_PRE_CreateAndRemoveSupervisedUser) {
+                       DISABLED_PRE_PRE_CreateAndRemoveSupervisedUser) {
   StartFlowLoginAsManager();
   FillNewUserData(kTestSupervisedUserDisplayName);
   StartUserCreation("managed-user-creation-next-button",
@@ -126,22 +126,22 @@ IN_PROC_BROWSER_TEST_F(SupervisedUserOwnerCreationTest,
 }
 
 IN_PROC_BROWSER_TEST_F(SupervisedUserOwnerCreationTest,
-                       PRE_CreateAndRemoveSupervisedUser) {
+                       DISABLED_PRE_CreateAndRemoveSupervisedUser) {
   SigninAsSupervisedUser(true, 0, kTestSupervisedUserDisplayName);
 }
 
 IN_PROC_BROWSER_TEST_F(SupervisedUserOwnerCreationTest,
-                       CreateAndRemoveSupervisedUser) {
+                       DISABLED_CreateAndRemoveSupervisedUser) {
   RemoveSupervisedUser(3, 0, kTestSupervisedUserDisplayName);
 }
 
 IN_PROC_BROWSER_TEST_F(SupervisedUserTransactionCleanupTest,
-                       PRE_PRE_CreateAndCancelSupervisedUser) {
+                       DISABLED_PRE_PRE_CreateAndCancelSupervisedUser) {
   PrepareUsers();
 }
 
 IN_PROC_BROWSER_TEST_F(SupervisedUserTransactionCleanupTest,
-                       PRE_CreateAndCancelSupervisedUser) {
+                       DISABLED_PRE_CreateAndCancelSupervisedUser) {
   StartFlowLoginAsManager();
   FillNewUserData(kTestSupervisedUserDisplayName);
 
@@ -167,7 +167,7 @@ IN_PROC_BROWSER_TEST_F(SupervisedUserTransactionCleanupTest,
 
 IN_PROC_BROWSER_TEST_(
     SupervisedUserTransactionCleanupTest,
-    CreateAndCancelSupervisedUser,
+    DISABLED_CreateAndCancelSupervisedUser,
     SupervisedUserTransactionCleanupTest2,
     testing::internal::GetTypeId<SupervisedUserTransactionCleanupTest>()) {
   // Make sure there is no supervised user in list.

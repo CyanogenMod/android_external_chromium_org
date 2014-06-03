@@ -5,14 +5,11 @@
 #ifndef MOJO_SERVICES_PUBLIC_CPP_VIEW_MANAGER_LIB_VIEW_TREE_NODE_PRIVATE_H_
 #define MOJO_SERVICES_PUBLIC_CPP_VIEW_MANAGER_LIB_VIEW_TREE_NODE_PRIVATE_H_
 
-#include <vector>
-
 #include "base/basictypes.h"
 
 #include "mojo/services/public/cpp/view_manager/view_tree_node.h"
 
 namespace mojo {
-namespace services {
 namespace view_manager {
 
 class ViewTreeNodePrivate {
@@ -42,6 +39,13 @@ class ViewTreeNodePrivate {
   void LocalRemoveChild(ViewTreeNode* child) {
     node_->LocalRemoveChild(child);
   }
+  void LocalSetActiveView(View* view) {
+    node_->LocalSetActiveView(view);
+  }
+  void LocalSetBounds(const gfx::Rect& old_bounds,
+                      const gfx::Rect& new_bounds) {
+    node_->LocalSetBounds(old_bounds, new_bounds);
+  }
 
  private:
   ViewTreeNode* node_;
@@ -50,7 +54,6 @@ class ViewTreeNodePrivate {
 };
 
 }  // namespace view_manager
-}  // namespace services
 }  // namespace mojo
 
 #endif  // MOJO_SERVICES_PUBLIC_CPP_VIEW_MANAGER_LIB_VIEW_TREE_NODE_PRIVATE_H_

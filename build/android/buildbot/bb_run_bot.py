@@ -164,7 +164,9 @@ def GetBotStepMap():
       B('fyi-component-builder-tests-dbg',
         H(compile_step, extra_gyp='component=shared_library'),
         T(std_tests, ['--experimental', flakiness_server])),
-      B('gpu-builder-tests-dbg', H(compile_step), T(['gpu'])),
+      B('gpu-builder-tests-dbg',
+        H(compile_step),
+        T(['gpu'], ['--install=ContentShell'])),
       # Pass empty T([]) so that logcat monitor and device status check are run.
       B('perf-bisect-builder-tests-dbg', H(['bisect_perf_regression']), T([])),
       B('perf-tests-rel', H(std_test_steps),
@@ -273,6 +275,17 @@ def RunBotCommands(options, commands, env):
 
 
 def main(argv):
+  proc = subprocess.Popen(
+      ['/bin/hostname', '-f'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+  hostname_stdout, hostname_stderr = proc.communicate()
+  if proc.returncode == 0:
+    print 'Running on: ' + hostname_stdout
+  else:
+    print >> sys.stderr, 'WARNING: failed to run hostname'
+    print >> sys.stderr, hostname_stdout
+    print >> sys.stderr, hostname_stderr
+    sys.exit(1)
+
   parser = GetRunBotOptParser()
   options, args = parser.parse_args(argv[1:])
   if args:

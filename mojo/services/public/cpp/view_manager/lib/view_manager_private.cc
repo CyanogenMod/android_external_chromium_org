@@ -5,7 +5,6 @@
 #include "mojo/services/public/cpp/view_manager/lib/view_manager_private.h"
 
 namespace mojo {
-namespace services {
 namespace view_manager {
 
 ViewManagerPrivate::ViewManagerPrivate(ViewManager* manager)
@@ -13,6 +12,7 @@ ViewManagerPrivate::ViewManagerPrivate(ViewManager* manager)
 ViewManagerPrivate::~ViewManagerPrivate() {}
 
 void ViewManagerPrivate::AddNode(TransportNodeId node_id, ViewTreeNode* node) {
+  DCHECK(!manager_->nodes_[node_id]);
   manager_->nodes_[node_id] = node;
 }
 
@@ -22,6 +22,16 @@ void ViewManagerPrivate::RemoveNode(TransportNodeId node_id) {
     manager_->nodes_.erase(it);
 }
 
+void ViewManagerPrivate::AddView(TransportViewId view_id, View* view) {
+  DCHECK(!manager_->views_[view_id]);
+  manager_->views_[view_id] = view;
+}
+
+void ViewManagerPrivate::RemoveView(TransportViewId view_id) {
+  ViewManager::IdToViewMap::iterator it = manager_->views_.find(view_id);
+  if (it != manager_->views_.end())
+    manager_->views_.erase(it);
+}
+
 }  // namespace view_manager
-}  // namespace services
 }  // namespace mojo

@@ -134,14 +134,6 @@ void CompleteWithKeyOrError(const Status& status,
   }
 }
 
-bool IsAlgorithmAsymmetric(const blink::WebCryptoAlgorithm& algorithm) {
-  // TODO(padolph): include all other asymmetric algorithms once they are
-  // defined, e.g. EC and DH.
-  return (algorithm.id() == blink::WebCryptoAlgorithmIdRsaEsPkcs1v1_5 ||
-          algorithm.id() == blink::WebCryptoAlgorithmIdRsaSsaPkcs1v1_5 ||
-          algorithm.id() == blink::WebCryptoAlgorithmIdRsaOaep);
-}
-
 // Gets a task runner for the current thread. The current thread is either:
 //
 //   * The main Blink thread
@@ -407,7 +399,8 @@ void DoGenerateKeyReply(scoped_ptr<GenerateKeyState> state) {
 
 void DoGenerateKey(scoped_ptr<GenerateKeyState> passed_state) {
   GenerateKeyState* state = passed_state.get();
-  state->is_asymmetric = IsAlgorithmAsymmetric(state->algorithm);
+  state->is_asymmetric =
+      webcrypto::IsAlgorithmAsymmetric(state->algorithm.id());
   if (state->is_asymmetric) {
     state->status = webcrypto::GenerateKeyPair(state->algorithm,
                                                state->extractable,
@@ -422,8 +415,6 @@ void DoGenerateKey(scoped_ptr<GenerateKeyState> passed_state) {
       DCHECK_EQ(state->algorithm.id(), state->private_key.algorithm().id());
       DCHECK_EQ(true, state->public_key.extractable());
       DCHECK_EQ(state->extractable, state->private_key.extractable());
-      DCHECK_EQ(state->usage_mask, state->public_key.usages());
-      DCHECK_EQ(state->usage_mask, state->private_key.usages());
     }
   } else {
     blink::WebCryptoKey* key = &state->public_key;
@@ -519,11 +510,9 @@ void DoWrapKeyReply(scoped_ptr<WrapKeyState> state) {
 
 void DoWrapKey(scoped_ptr<WrapKeyState> passed_state) {
   WrapKeyState* state = passed_state.get();
-  // TODO(eroman): The parameter ordering of webcrypto::WrapKey() is
-  //               inconsistent with that of blink::WebCrypto::wrapKey().
   state->status = webcrypto::WrapKey(state->format,
-                                     state->wrapping_key,
                                      state->key,
+                                     state->wrapping_key,
                                      state->wrap_algorithm,
                                      &state->buffer);
 
@@ -554,10 +543,13 @@ void DoUnwrapKey(scoped_ptr<UnwrapKeyState> passed_state) {
 }  // namespace
 
 WebCryptoImpl::WebCryptoImpl() {
-  webcrypto::Init();
 }
 
 WebCryptoImpl::~WebCryptoImpl() {
+}
+
+void WebCryptoImpl::EnsureInit() {
+  webcrypto::Init();
 }
 
 void WebCryptoImpl::encrypt(const blink::WebCryptoAlgorithm& algorithm,

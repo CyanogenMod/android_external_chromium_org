@@ -201,8 +201,9 @@ class GFX_EXPORT Canvas {
   // Adds |rect| to the current clip.
   void ClipRect(const Rect& rect);
 
-  // Adds |path| to the current clip.
-  void ClipPath(const SkPath& path);
+  // Adds |path| to the current clip. |do_anti_alias| is true if the clip
+  // should be antialiased.
+  void ClipPath(const SkPath& path, bool do_anti_alias);
 
   // Returns true if the current clip is empty.
   bool IsClipEmpty() const;
@@ -442,18 +443,6 @@ class GFX_EXPORT Canvas {
   // Test whether the provided rectangle intersects the current clip rect.
   bool IntersectsClipRectInt(int x, int y, int w, int h);
   bool IntersectsClipRect(const Rect& rect);
-
-  // Returns the image rep which best matches the canvas |image_scale_|.
-  // Returns a null image rep if |image| contains no image reps.
-  // Builds mip map for returned image rep if necessary.
-  //
-  // An optional additional user defined scale can be provided.
-  const ImageSkiaRep& GetImageRepToPaint(const ImageSkia& image) const;
-  const ImageSkiaRep& GetImageRepToPaint(
-      const ImageSkia& image,
-      float image_scale,
-      float user_defined_scale_factor_x,
-      float user_defined_scale_factor_y) const;
 
   // Helper for the DrawImageInt functions declared above. The |pixel|
   // parameter if true indicates that the bounds and the image are to

@@ -11,7 +11,6 @@
 #include "base/memory/scoped_vector.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/stringprintf.h"
-#include "device/bluetooth/bluetooth_out_of_band_pairing_data.h"
 #include "device/bluetooth/bluetooth_profile_win.h"
 #include "device/bluetooth/bluetooth_service_record_win.h"
 #include "device/bluetooth/bluetooth_socket_thread.h"
@@ -39,7 +38,7 @@ BluetoothDeviceWin::BluetoothDeviceWin(
       net_log_(net_log),
       net_log_source_(net_log_source) {
   name_ = state.name;
-  address_ = state.address;
+  address_ = CanonicalizeAddress(state.address);
   bluetooth_class_ = state.bluetooth_class;
   visible_ = state.visible;
   connected_ = state.connected;
@@ -221,14 +220,7 @@ void BluetoothDeviceWin::ConnectToService(
   NOTIMPLEMENTED();
 }
 
-void BluetoothDeviceWin::SetOutOfBandPairingData(
-    const BluetoothOutOfBandPairingData& data,
-    const base::Closure& callback,
-    const ErrorCallback& error_callback) {
-  NOTIMPLEMENTED();
-}
-
-void BluetoothDeviceWin::ClearOutOfBandPairingData(
+void BluetoothDeviceWin::StartConnectionMonitor(
     const base::Closure& callback,
     const ErrorCallback& error_callback) {
   NOTIMPLEMENTED();

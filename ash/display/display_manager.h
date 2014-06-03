@@ -105,7 +105,7 @@ class ASH_EXPORT DisplayManager
 
   void set_delegate(Delegate* delegate) { delegate_ = delegate; }
 
-  // When set to true, the MonitorManager calls OnDisplayBoundsChanged
+  // When set to true, the MonitorManager calls OnDisplayMetricsChanged
   // even if the display's bounds didn't change. Used to swap primary
   // display.
   void set_force_bounds_changed(bool force_bounds_changed) {
@@ -252,6 +252,7 @@ class ASH_EXPORT DisplayManager
   // SoftwareMirroringController override:
 #if defined(OS_CHROMEOS)
   virtual void SetSoftwareMirroring(bool enabled) OVERRIDE;
+  virtual bool SoftwareMirroringEnabled() const OVERRIDE;
 #endif
   bool software_mirroring_enabled() const {
     return second_display_mode_ == MIRRORING;

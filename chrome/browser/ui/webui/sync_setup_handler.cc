@@ -24,12 +24,14 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/signin_header_helper.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_navigator.h"
+#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/singleton_tabs.h"
 #include "chrome/browser/ui/sync/signin_histogram.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
@@ -39,6 +41,7 @@
 #include "chrome/common/url_constants.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_error_controller.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "components/sync_driver/sync_prefs.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
@@ -517,13 +520,26 @@ void SyncSetupHandler::DisplayGaiaLoginInNewTabOrWindow() {
         ProfileOAuth2TokenServiceFactory::GetForProfile(browser->profile())->
             signin_error_controller();
     DCHECK(error_controller->HasError());
-    url = signin::GetReauthURL(browser->profile(),
-                               error_controller->error_account_id());
+    if (switches::IsNewProfileManagement()) {
+      browser->window()->ShowAvatarBubbleFromAvatarButton(
+          BrowserWindow::AVATAR_BUBBLE_MODE_REAUTH,
+          signin::GAIA_SERVICE_TYPE_NONE);
+    } else {
+      url = signin::GetReauthURL(browser->profile(),
+                                 error_controller->error_account_id());
+    }
   } else {
-    url = signin::GetPromoURL(signin::SOURCE_SETTINGS, true);
+    if (switches::IsNewProfileManagement()) {
+      browser->window()->ShowAvatarBubbleFromAvatarButton(
+          BrowserWindow::AVATAR_BUBBLE_MODE_SIGNIN,
+          signin::GAIA_SERVICE_TYPE_NONE);
+    } else {
+      url = signin::GetPromoURL(signin::SOURCE_SETTINGS, true);
+    }
   }
 
-  chrome::ShowSingletonTab(browser, url);
+  if (url.is_valid())
+    chrome::ShowSingletonTab(browser, url);
 }
 #endif
 
@@ -729,8 +745,11 @@ void SyncSetupHandler::HandleConfigure(const base::ListValue* args) {
 }
 
 void SyncSetupHandler::HandleShowSetupUI(const base::ListValue* args) {
-  ProfileSyncService* service = GetSyncService();
-  DCHECK(service);
+  if (!GetSyncService()) {
+    DLOG(WARNING) << "Cannot display sync UI when sync is disabled";
+    CloseUI();
+    return;
+  }
 
   SigninManagerBase* signin =
       SigninManagerFactory::GetForProfile(GetProfile());

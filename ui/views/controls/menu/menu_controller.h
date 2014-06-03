@@ -37,6 +37,7 @@ namespace views {
 class MenuButton;
 class MenuHostRootView;
 class MenuItemView;
+class MenuMessageLoop;
 class MouseEvent;
 class SubmenuView;
 class View;
@@ -90,6 +91,10 @@ class VIEWS_EXPORT MenuController : public WidgetObserver {
 
   // Whether or not drag operation is in progress.
   bool drag_in_progress() const { return drag_in_progress_; }
+
+  // Returns the owner of child windows.
+  // WARNING: this may be NULL.
+  Widget* owner() { return owner_; }
 
   // Get the anchor position wich is used to show this menu.
   MenuAnchorPosition GetAnchorPosition() { return state_.anchor; }
@@ -150,6 +155,7 @@ class VIEWS_EXPORT MenuController : public WidgetObserver {
   friend class internal::MenuEventDispatcher;
   friend class internal::MenuMessagePumpDispatcher;
   friend class internal::MenuRunnerImpl;
+  friend class MenuControllerTest;
   friend class MenuHostRootView;
   friend class MenuItemView;
   friend class SubmenuView;
@@ -471,8 +477,11 @@ class VIEWS_EXPORT MenuController : public WidgetObserver {
   void SetActiveMouseView(View* view);
   View* GetActiveMouseView();
 
-  // Sets exit type.
+  // Sets exit type. Calling this can terminate the active nested message-loop.
   void SetExitType(ExitType type);
+
+  // Terminates the current nested message-loop.
+  void TerminateNestedMessageLoop();
 
   // Returns true if SetExitType() should quit the message loop.
   bool ShouldQuitNow() const;
@@ -594,7 +603,7 @@ class VIEWS_EXPORT MenuController : public WidgetObserver {
   // Set to true if the menu item was selected by touch.
   bool item_selected_by_touch_;
 
-  scoped_ptr<ui::ScopedEventDispatcher> nested_dispatcher_;
+  scoped_ptr<MenuMessageLoop> message_loop_;
 
   DISALLOW_COPY_AND_ASSIGN(MenuController);
 };

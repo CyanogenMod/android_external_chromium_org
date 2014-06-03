@@ -265,11 +265,6 @@ public class ContentViewCore
     private final RenderCoordinates.NormalizedPoint mEndHandlePoint;
     private final RenderCoordinates.NormalizedPoint mInsertionHandlePoint;
 
-    // Cached copy of the visible rectangle defined by two points. Needed to determine
-    // visibility of insertion/selection handles.
-    private final RenderCoordinates.NormalizedPoint mTopLeftVisibilityClippingPoint;
-    private final RenderCoordinates.NormalizedPoint mBottomRightVisibilityClippingPoint;
-
     // Tracks whether a selection is currently active.  When applied to selected text, indicates
     // whether the last selected text is still highlighted.
     private boolean mHasSelection;
@@ -305,9 +300,6 @@ public class ContentViewCore
     // Temporary notification to tell onSizeChanged to focus a form element,
     // because the OSK was just brought up.
     private final Rect mFocusPreOSKViewportRect = new Rect();
-
-    // Whether we received a new frame since consumePendingRendererFrame() was last called.
-    private boolean mPendingRendererFrame = false;
 
     // On single tap this will store the x, y coordinates of the touch.
     private int mSingleTapX;
@@ -366,8 +358,6 @@ public class ContentViewCore
         mStartHandlePoint = mRenderCoordinates.createNormalizedPoint();
         mEndHandlePoint = mRenderCoordinates.createNormalizedPoint();
         mInsertionHandlePoint = mRenderCoordinates.createNormalizedPoint();
-        mTopLeftVisibilityClippingPoint = mRenderCoordinates.createNormalizedPoint();
-        mBottomRightVisibilityClippingPoint = mRenderCoordinates.createNormalizedPoint();
         mAccessibilityManager = (AccessibilityManager)
                 getContext().getSystemService(Context.ACCESSIBILITY_SERVICE);
         mGestureStateListeners = new ObserverList<GestureStateListener>();
@@ -609,7 +599,8 @@ public class ContentViewCore
         };
 
         mNativeContentViewCore = nativeInit(
-                nativeWebContents, viewAndroidNativePointer, windowNativePointer);
+                nativeWebContents, viewAndroidNativePointer, windowNativePointer,
+                mRetainedJavaScriptObjects);
         mWebContents = nativeGetWebContentsAndroid(mNativeContentViewCore);
         mContentSettings = new ContentSettings(this, mNativeContentViewCore);
         initializeContainerView(internalDispatcher);
@@ -835,7 +826,8 @@ public class ContentViewCore
                 params.mPostData,
                 params.mBaseUrlForDataUrl,
                 params.mVirtualUrlForDataUrl,
-                params.mCanLoadLocalResources);
+                params.mCanLoadLocalResources,
+                params.mIsRendererInitiated);
     }
 
     /**
@@ -883,17 +875,6 @@ public class ContentViewCore
     public boolean isShowingInterstitialPage() {
         return mNativeContentViewCore == 0 ?
                 false : nativeIsShowingInterstitialPage(mNativeContentViewCore);
-    }
-
-    /**
-     * Mark any new frames that have arrived since this function was last called as non-pending.
-     *
-     * @return Whether there was a pending frame from the renderer.
-     */
-    public boolean consumePendingRendererFrame() {
-        boolean hadPendingFrame = mPendingRendererFrame;
-        mPendingRendererFrame = false;
-        return hadPendingFrame;
     }
 
     /**
@@ -1206,10 +1187,10 @@ public class ContentViewCore
 
     @SuppressWarnings("unused")
     @CalledByNative
-    private void onTapEventNotConsumed(int x, int y) {
+    private void onSingleTapEventAck(boolean consumed, int x, int y) {
         for (mGestureStateListenersIterator.rewind();
                 mGestureStateListenersIterator.hasNext();) {
-            mGestureStateListenersIterator.next().onUnhandledTapEvent(x, y);
+            mGestureStateListenersIterator.next().onSingleTap(consumed, x, y);
         }
     }
 
@@ -1571,6 +1552,15 @@ public class ContentViewCore
     }
 
     /**
+     * Selects the word around the caret, if any.
+     * The caller can check if selection actually occurred by listening to OnSelectionChanged.
+     */
+    public void selectWordAroundCaret() {
+        if (mNativeContentViewCore == 0) return;
+        nativeSelectWordAroundCaret(mNativeContentViewCore);
+    }
+
+    /**
      * @see View#onWindowFocusChanged(boolean)
      */
     public void onWindowFocusChanged(boolean hasWindowFocus) {
@@ -1922,7 +1912,6 @@ public class ContentViewCore
             };
 
             mSelectionHandleController.hideAndDisallowAutomaticShowing();
-            updateInsertionSelectionVisibleBounds();
         }
 
         return mSelectionHandleController;
@@ -1961,7 +1950,6 @@ public class ContentViewCore
             };
 
             mInsertionHandleController.hideAndDisallowAutomaticShowing();
-            updateInsertionSelectionVisibleBounds();
         }
 
         return mInsertionHandleController;
@@ -2071,6 +2059,11 @@ public class ContentViewCore
                 } catch (android.content.ActivityNotFoundException ex) {
                     // If no app handles it, do nothing.
                 }
+            }
+
+            @Override
+            public boolean isSelectionPassword() {
+                return mImeAdapter.isSelectionPassword();
             }
 
             @Override
@@ -2294,7 +2287,6 @@ public class ContentViewCore
         getContentViewClient().onOffsetsForFullscreenChanged(
                 controlsOffsetPix, contentOffsetYPix, overdrawBottomHeightPix);
 
-        mPendingRendererFrame = true;
         if (mBrowserAccessibilityManager != null) {
             mBrowserAccessibilityManager.notifyFrameInfoInitialized();
         }
@@ -2461,32 +2453,6 @@ public class ContentViewCore
         }
     }
 
-    @CalledByNative
-    private void setSelectionRootBounds(Rect bounds) {
-        mTopLeftVisibilityClippingPoint.setLocalDip(bounds.left, bounds.top);
-        mBottomRightVisibilityClippingPoint.setLocalDip(bounds.right, bounds.bottom);
-        updateInsertionSelectionVisibleBounds();
-    }
-
-    private void updateInsertionSelectionVisibleBounds() {
-        if (mSelectionHandleController == null && mInsertionHandleController == null) {
-            return;
-        }
-
-        int x1 = Math.round(mTopLeftVisibilityClippingPoint.getXPix());
-        int y1 = Math.round(mTopLeftVisibilityClippingPoint.getYPix());
-        int x2 = Math.round(mBottomRightVisibilityClippingPoint.getXPix());
-        int y2 = Math.round(mBottomRightVisibilityClippingPoint.getYPix());
-
-        if (mSelectionHandleController != null) {
-            mSelectionHandleController.setVisibleClippingRectangle(x1, y1, x2, y2);
-        }
-
-        if (mInsertionHandleController != null) {
-            mInsertionHandleController.setVisibleClippingRectangle(x1, y1, x2, y2);
-        }
-    }
-
     @SuppressWarnings("unused")
     @CalledByNative
     private static void onEvaluateJavaScriptResult(
@@ -2505,13 +2471,7 @@ public class ContentViewCore
 
     @SuppressWarnings("unused")
     @CalledByNative
-    private void onRenderProcessSwap() {
-        attachImeAdapter();
-    }
-
-    @SuppressWarnings("unused")
-    @CalledByNative
-    private void onWebContentsConnected() {
+    private void onRenderProcessChange() {
         attachImeAdapter();
     }
 
@@ -2702,8 +2662,7 @@ public class ContentViewCore
             Class<? extends Annotation> requiredAnnotation) {
         if (mNativeContentViewCore != 0 && object != null) {
             mJavaScriptInterfaces.put(name, object);
-            nativeAddJavascriptInterface(mNativeContentViewCore, object, name, requiredAnnotation,
-                    mRetainedJavaScriptObjects);
+            nativeAddJavascriptInterface(mNativeContentViewCore, object, name, requiredAnnotation);
         }
     }
 
@@ -3082,7 +3041,7 @@ public class ContentViewCore
     }
 
     private native long nativeInit(long webContentsPtr,
-            long viewAndroidPtr, long windowAndroidPtr);
+            long viewAndroidPtr, long windowAndroidPtr, HashSet<Object> retainedObjectSet);
 
     @CalledByNative
     private ContentVideoViewClient getContentVideoViewClient() {
@@ -3125,7 +3084,8 @@ public class ContentViewCore
             byte[] postData,
             String baseUrlForDataUrl,
             String virtualUrlForDataUrl,
-            boolean canLoadLocalResources);
+            boolean canLoadLocalResources,
+            boolean isRendererInitiated);
 
     private native String nativeGetURL(long nativeContentViewCoreImpl);
 
@@ -3212,6 +3172,8 @@ public class ContentViewCore
 
     private native void nativeScrollFocusedEditableNodeIntoView(long nativeContentViewCoreImpl);
 
+    private native void nativeSelectWordAroundCaret(long nativeContentViewCoreImpl);
+
     private native void nativeClearHistory(long nativeContentViewCoreImpl);
 
     private native void nativeEvaluateJavaScript(long nativeContentViewCoreImpl,
@@ -3236,7 +3198,7 @@ public class ContentViewCore
             long nativeContentViewCoreImpl, boolean allow);
 
     private native void nativeAddJavascriptInterface(long nativeContentViewCoreImpl, Object object,
-            String name, Class requiredAnnotation, HashSet<Object> retainedObjectSet);
+            String name, Class requiredAnnotation);
 
     private native void nativeRemoveJavascriptInterface(long nativeContentViewCoreImpl,
             String name);

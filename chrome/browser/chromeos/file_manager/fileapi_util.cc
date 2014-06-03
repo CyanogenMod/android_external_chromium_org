@@ -168,10 +168,17 @@ void FileDefinitionListConverter::OnResolvedURL(
   EntryDefinition entry_definition;
   entry_definition.file_system_root_url = info.root_url.spec();
   entry_definition.file_system_name = info.name;
-  DCHECK(type == fileapi::FileSystemContext::RESOLVED_ENTRY_NOT_FOUND ||
-         iterator->is_directory ==
-             (type == fileapi::FileSystemContext::RESOLVED_ENTRY_DIRECTORY));
-  entry_definition.is_directory = iterator->is_directory;
+  switch (type) {
+    case fileapi::FileSystemContext::RESOLVED_ENTRY_FILE:
+      entry_definition.is_directory = false;
+      break;
+    case fileapi::FileSystemContext::RESOLVED_ENTRY_DIRECTORY:
+      entry_definition.is_directory = true;
+      break;
+    case fileapi::FileSystemContext::RESOLVED_ENTRY_NOT_FOUND:
+      entry_definition.is_directory = iterator->is_directory;
+      break;
+  }
   entry_definition.error = base::File::FILE_OK;
 
   // Construct a target Entry.fullPath value from the virtual path and the

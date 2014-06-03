@@ -8,6 +8,7 @@
 #include "base/values.h"
 #include "chromeos/network/network_event_log.h"
 #include "chromeos/network/network_profile_handler.h"
+#include "chromeos/network/network_type_pattern.h"
 #include "chromeos/network/network_util.h"
 #include "chromeos/network/shill_property_util.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
@@ -130,12 +131,22 @@ bool NetworkState::InitialPropertiesReceived(
   if (!properties.HasKey(shill::kTypeProperty)) {
     NET_LOG_ERROR("NetworkState has no type",
                   shill_property_util::GetNetworkIdFromProperties(properties));
-  } else {
-    changed |= UpdateName(properties);
+    return false;
   }
+  // Ensure that the network has a valid name.
+  changed |= UpdateName(properties);
+
+  // Set the has_ca_cert_nss_ property.
   bool had_ca_cert_nss = has_ca_cert_nss_;
   has_ca_cert_nss_ = IsCaCertNssSet(properties);
   changed |= had_ca_cert_nss != has_ca_cert_nss_;
+
+  // By convention, all visible WiFi networks have a SignalStrength > 0.
+  if (type() == shill::kTypeWifi) {
+    if (signal_strength_ <= 0)
+      signal_strength_ = 1;
+  }
+
   return changed;
 }
 
@@ -250,6 +261,10 @@ std::string NetworkState::GetDnsServersAsString() const {
 
 std::string NetworkState::GetNetmask() const {
   return network_util::PrefixLengthToNetmask(prefix_length_);
+}
+
+void NetworkState::SetGuid(const std::string& guid) {
+  guid_ = guid;
 }
 
 bool NetworkState::UpdateName(const base::DictionaryValue& properties) {

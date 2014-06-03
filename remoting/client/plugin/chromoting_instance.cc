@@ -8,6 +8,11 @@
 #include <string>
 #include <vector>
 
+#if defined(OS_NACL)
+#include <sys/mount.h>
+#include <nacl_io/nacl_io.h>
+#endif
+
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/json/json_reader.h"
@@ -21,7 +26,7 @@
 #include "base/values.h"
 #include "crypto/random.h"
 #include "jingle/glue/thread_wrapper.h"
-#include "media/base/media.h"
+#include "media/base/yuv_convert.h"
 #include "net/socket/ssl_server_socket.h"
 #include "ppapi/cpp/completion_callback.h"
 #include "ppapi/cpp/dev/url_util_dev.h"
@@ -37,6 +42,8 @@
 #include "remoting/client/frame_consumer_proxy.h"
 #include "remoting/client/plugin/delegating_signal_strategy.h"
 #include "remoting/client/plugin/media_source_video_renderer.h"
+#include "remoting/client/plugin/normalizing_input_filter_cros.h"
+#include "remoting/client/plugin/normalizing_input_filter_mac.h"
 #include "remoting/client/plugin/pepper_audio_player.h"
 #include "remoting/client/plugin/pepper_input_handler.h"
 #include "remoting/client/plugin/pepper_port_allocator.h"
@@ -47,6 +54,7 @@
 #include "remoting/protocol/host_stub.h"
 #include "remoting/protocol/libjingle_transport_factory.h"
 #include "third_party/libjingle/source/talk/base/helpers.h"
+#include "third_party/libjingle/source/talk/base/ssladapter.h"
 #include "url/gurl.h"
 
 // Windows defines 'PostMessage', so we have to undef it.
@@ -205,11 +213,28 @@ ChromotingInstance::ChromotingInstance(PP_Instance pp_instance)
       context_(plugin_task_runner_.get()),
       input_tracker_(&mouse_input_filter_),
       key_mapper_(&input_tracker_),
-      normalizing_input_filter_(CreateNormalizingInputFilter(&key_mapper_)),
-      input_handler_(this, normalizing_input_filter_.get()),
+      input_handler_(this),
       use_async_pin_dialog_(false),
       use_media_source_rendering_(false),
       weak_factory_(this) {
+#if defined(OS_NACL)
+  // In NaCl global resources need to be initialized differently because they
+  // are not shared with Chrome.
+  thread_task_runner_handle_.reset(
+      new base::ThreadTaskRunnerHandle(plugin_task_runner_));
+  thread_wrapper_.reset(
+      new jingle_glue::JingleThreadWrapper(plugin_task_runner_));
+  media::InitializeCPUSpecificYUVConversions();
+#else
+  jingle_glue::JingleThreadWrapper::EnsureForCurrentMessageLoop();
+#endif
+
+#if defined(OS_NACL)
+  nacl_io_init_ppapi(pp_instance, pp::Module::Get()->get_browser_interface());
+  mount("", "/etc", "memfs", 0, "");
+  mount("", "/usr", "memfs", 0, "");
+#endif
+
   RequestInputEvents(PP_INPUTEVENT_CLASS_MOUSE | PP_INPUTEVENT_CLASS_WHEEL);
   RequestFilteringInputEvents(PP_INPUTEVENT_CLASS_KEYBOARD);
 
@@ -221,7 +246,12 @@ ChromotingInstance::ChromotingInstance(PP_Instance pp_instance)
   char random_seed[kRandomSeedSize];
   crypto::RandBytes(random_seed, sizeof(random_seed));
   talk_base::InitRandom(random_seed, sizeof(random_seed));
-#endif  // defined(USE_OPENSSL)
+#else
+  // Libjingle's SSL implementation is not really used, but it has to be
+  // initialized for NSS builds to make sure that RNG is initialized in NSS,
+  // because libjingle uses it.
+  talk_base::InitializeSSL();
+#endif  // !defined(USE_OPENSSL)
 
   // Send hello message.
   scoped_ptr<base::DictionaryValue> data(new base::DictionaryValue());
@@ -264,18 +294,15 @@ bool ChromotingInstance::Init(uint32_t argc,
 
   VLOG(1) << "Started ChromotingInstance::Init";
 
-  // Check to make sure the media library is initialized.
-  // http://crbug.com/91521.
-  if (!media::IsMediaLibraryInitialized()) {
-    LOG(ERROR) << "Media library not initialized.";
-    return false;
-  }
-
-  // Check that the calling content is part of an app or extension.
+  // Check that the calling content is part of an app or extension. This is only
+  // necessary for non-PNaCl version of the plugin. Also PPB_URLUtil_Dev doesn't
+  // work in NaCl at the moment so the check fails in NaCl builds.
+#if !defined(OS_NACL)
   if (!IsCallerAppOrExtension()) {
     LOG(ERROR) << "Not an app or extension";
     return false;
   }
+#endif
 
   // Start all the threads.
   context_.Start();
@@ -339,11 +366,16 @@ void ChromotingInstance::HandleMessage(const pp::Var& message) {
     HandleAllowMouseLockMessage();
   } else if (method == "enableMediaSourceRendering") {
     HandleEnableMediaSourceRendering();
+  } else if (method == "sendMouseInputWhenUnfocused") {
+    HandleSendMouseInputWhenUnfocused();
   }
 }
 
 void ChromotingInstance::DidChangeFocus(bool has_focus) {
   DCHECK(plugin_task_runner_->BelongsToCurrentThread());
+
+  if (!IsConnected())
+    return;
 
   input_handler_.DidChangeFocus(has_focus);
 }
@@ -620,14 +652,36 @@ void ChromotingInstance::HandleConnect(const base::DictionaryValue& data) {
     }
   }
 
+#if defined(OS_NACL)
+  std::string key_filter;
+  if (!data.GetString("keyFilter", &key_filter)) {
+    NOTREACHED();
+    normalizing_input_filter_.reset(new protocol::InputFilter(&key_mapper_));
+  } else if (key_filter == "mac") {
+    normalizing_input_filter_.reset(
+        new NormalizingInputFilterMac(&key_mapper_));
+  } else if (key_filter == "cros") {
+    normalizing_input_filter_.reset(
+        new NormalizingInputFilterCros(&key_mapper_));
+  } else {
+    DCHECK(key_filter.empty());
+    normalizing_input_filter_.reset(new protocol::InputFilter(&key_mapper_));
+  }
+#elif defined(OS_MACOSX)
+  normalizing_input_filter_.reset(new NormalizingInputFilterMac(&key_mapper_));
+#elif defined(OS_CHROMEOS)
+  normalizing_input_filter_.reset(new NormalizingInputFilterCros(&key_mapper_));
+#else
+  normalizing_input_filter_.reset(new protocol::InputFilter(&key_mapper_));
+#endif
+  input_handler_.set_input_stub(normalizing_input_filter_.get());
+
   ConnectWithConfig(config, local_jid);
 }
 
 void ChromotingInstance::ConnectWithConfig(const ClientConfig& config,
                                            const std::string& local_jid) {
   DCHECK(plugin_task_runner_->BelongsToCurrentThread());
-
-  jingle_glue::JingleThreadWrapper::EnsureForCurrentMessageLoop();
 
   if (use_media_source_rendering_) {
     video_renderer_.reset(new MediaSourceVideoRenderer(this));
@@ -783,7 +837,7 @@ void ChromotingInstance::HandleSendClipboardItem(
   protocol::ClipboardEvent event;
   event.set_mime_type(mime_type);
   event.set_data(item);
-  host_connection_->clipboard_stub()->InjectClipboardEvent(event);
+  host_connection_->clipboard_forwarder()->InjectClipboardEvent(event);
 }
 
 void ChromotingInstance::HandleNotifyClientResolution(
@@ -916,6 +970,10 @@ void ChromotingInstance::HandleAllowMouseLockMessage() {
 
 void ChromotingInstance::HandleEnableMediaSourceRendering() {
   use_media_source_rendering_ = true;
+}
+
+void ChromotingInstance::HandleSendMouseInputWhenUnfocused() {
+  input_handler_.set_send_mouse_input_when_unfocused(true);
 }
 
 ChromotingStats* ChromotingInstance::GetStats() {

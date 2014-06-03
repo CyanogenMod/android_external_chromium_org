@@ -12,9 +12,7 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_V
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_accessibility_ax_gen_gyp,,,$(GYP_VAR_PREFIX))/ui_accessibility_ax_gen_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_base_ui_base_gyp,,,$(GYP_VAR_PREFIX))/ui_base_ui_base_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp,,,$(GYP_VAR_PREFIX))/skia_skia_library_gyp.a
+	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_accessibility_ax_gen_gyp,,,$(GYP_VAR_PREFIX))/ui_accessibility_ax_gen_gyp.a
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -27,7 +25,6 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
-	components/user_prefs/pref_registry_syncable.cc \
 	components/user_prefs/user_prefs.cc
 
 
@@ -44,6 +41,7 @@ MY_CFLAGS_Debug := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
+	-Wno-unused-local-typedefs \
 	-EL \
 	-mhard-float \
 	-ffunction-sections \
@@ -76,32 +74,20 @@ MY_DEFS_Debug := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
+	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
+	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
+	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DVIDEO_HOLE=1' \
 	'-DUSER_PREFS_IMPLEMENTATION' \
 	'-DMOJO_USE_SYSTEM_IMPL' \
-	'-DPOSIX_AVOID_MMAP' \
-	'-DSK_ENABLE_INST_COUNT=0' \
-	'-DSK_SUPPORT_GPU=1' \
-	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
-	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
-	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
-	'-DGR_GL_IGNORE_ES3_MSAA=0' \
-	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
-	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
-	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
-	'-DSK_BUILD_FOR_ANDROID' \
-	'-DSK_USE_POSIX_THREADS' \
-	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
-	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -128,19 +114,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/WebKit/Source \
 	$(gyp_shared_intermediate_dir) \
 	$(LOCAL_PATH)/third_party/WebKit \
-	$(LOCAL_PATH)/third_party/skia/src/core \
-	$(LOCAL_PATH)/third_party/skia/include/core \
-	$(LOCAL_PATH)/third_party/skia/include/effects \
-	$(LOCAL_PATH)/third_party/skia/include/pdf \
-	$(LOCAL_PATH)/third_party/skia/include/gpu \
-	$(LOCAL_PATH)/third_party/skia/include/lazy \
-	$(LOCAL_PATH)/third_party/skia/include/pathops \
-	$(LOCAL_PATH)/third_party/skia/include/pipe \
-	$(LOCAL_PATH)/third_party/skia/include/ports \
-	$(LOCAL_PATH)/third_party/skia/include/utils \
-	$(LOCAL_PATH)/skia/ext \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -170,6 +143,7 @@ MY_CFLAGS_Release := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
+	-Wno-unused-local-typedefs \
 	-EL \
 	-mhard-float \
 	-ffunction-sections \
@@ -202,32 +176,20 @@ MY_DEFS_Release := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
+	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
+	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
+	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DVIDEO_HOLE=1' \
 	'-DUSER_PREFS_IMPLEMENTATION' \
 	'-DMOJO_USE_SYSTEM_IMPL' \
-	'-DPOSIX_AVOID_MMAP' \
-	'-DSK_ENABLE_INST_COUNT=0' \
-	'-DSK_SUPPORT_GPU=1' \
-	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
-	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
-	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
-	'-DGR_GL_IGNORE_ES3_MSAA=0' \
-	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
-	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
-	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
-	'-DSK_BUILD_FOR_ANDROID' \
-	'-DSK_USE_POSIX_THREADS' \
-	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
-	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -255,19 +217,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/WebKit/Source \
 	$(gyp_shared_intermediate_dir) \
 	$(LOCAL_PATH)/third_party/WebKit \
-	$(LOCAL_PATH)/third_party/skia/src/core \
-	$(LOCAL_PATH)/third_party/skia/include/core \
-	$(LOCAL_PATH)/third_party/skia/include/effects \
-	$(LOCAL_PATH)/third_party/skia/include/pdf \
-	$(LOCAL_PATH)/third_party/skia/include/gpu \
-	$(LOCAL_PATH)/third_party/skia/include/lazy \
-	$(LOCAL_PATH)/third_party/skia/include/pathops \
-	$(LOCAL_PATH)/third_party/skia/include/pipe \
-	$(LOCAL_PATH)/third_party/skia/include/ports \
-	$(LOCAL_PATH)/third_party/skia/include/utils \
-	$(LOCAL_PATH)/skia/ext \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -326,9 +275,7 @@ LOCAL_LDFLAGS_Release := \
 LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 
 LOCAL_STATIC_LIBRARIES := \
-	ui_accessibility_ax_gen_gyp \
-	ui_base_ui_base_gyp \
-	skia_skia_library_gyp
+	ui_accessibility_ax_gen_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

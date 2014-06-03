@@ -60,6 +60,8 @@ struct CK_GCM_PARAMS {
 };
 #endif  // !defined(CKM_AES_GCM)
 
+namespace {
+
 // Signature for PK11_Encrypt and PK11_Decrypt.
 typedef SECStatus (*PK11_EncryptDecryptFunction)(PK11SymKey*,
                                                  CK_MECHANISM_TYPE,
@@ -70,10 +72,38 @@ typedef SECStatus (*PK11_EncryptDecryptFunction)(PK11SymKey*,
                                                  const unsigned char*,
                                                  unsigned int);
 
+// Signature for PK11_PubEncrypt
+typedef SECStatus (*PK11_PubEncryptFunction)(SECKEYPublicKey*,
+                                             CK_MECHANISM_TYPE,
+                                             SECItem*,
+                                             unsigned char*,
+                                             unsigned int*,
+                                             unsigned int,
+                                             const unsigned char*,
+                                             unsigned int,
+                                             void*);
+
+// Signature for PK11_PrivDecrypt
+typedef SECStatus (*PK11_PrivDecryptFunction)(SECKEYPrivateKey*,
+                                              CK_MECHANISM_TYPE,
+                                              SECItem*,
+                                              unsigned char*,
+                                              unsigned int*,
+                                              unsigned int,
+                                              const unsigned char*,
+                                              unsigned int);
+
 // Singleton to abstract away dynamically loading libnss3.so
-class AesGcmSupport {
+class NssRuntimeSupport {
  public:
-  bool IsSupported() const { return pk11_encrypt_func_ && pk11_decrypt_func_; }
+  bool IsAesGcmSupported() const {
+    return pk11_encrypt_func_ && pk11_decrypt_func_;
+  }
+
+  bool IsRsaOaepSupported() const {
+    return pk11_pub_encrypt_func_ && pk11_priv_decrypt_func_ &&
+           internal_slot_does_oaep_;
+  }
 
   // Returns NULL if unsupported.
   PK11_EncryptDecryptFunction pk11_encrypt_func() const {
@@ -85,14 +115,27 @@ class AesGcmSupport {
     return pk11_decrypt_func_;
   }
 
- private:
-  friend struct base::DefaultLazyInstanceTraits<AesGcmSupport>;
+  // Returns NULL if unsupported.
+  PK11_PubEncryptFunction pk11_pub_encrypt_func() const {
+    return pk11_pub_encrypt_func_;
+  }
 
-  AesGcmSupport() {
+  // Returns NULL if unsupported.
+  PK11_PrivDecryptFunction pk11_priv_decrypt_func() const {
+    return pk11_priv_decrypt_func_;
+  }
+
+ private:
+  friend struct base::DefaultLazyInstanceTraits<NssRuntimeSupport>;
+
+  NssRuntimeSupport() : internal_slot_does_oaep_(false) {
 #if !defined(USE_NSS)
     // Using a bundled version of NSS that is guaranteed to have this symbol.
     pk11_encrypt_func_ = PK11_Encrypt;
     pk11_decrypt_func_ = PK11_Decrypt;
+    pk11_pub_encrypt_func_ = PK11_PubEncrypt;
+    pk11_priv_decrypt_func_ = PK11_PrivDecrypt;
+    internal_slot_does_oaep_ = true;
 #else
     // Using system NSS libraries and PCKS #11 modules, which may not have the
     // necessary function (PK11_Encrypt) or mechanism support (CKM_AES_GCM).
@@ -103,15 +146,33 @@ class AesGcmSupport {
         dlsym(RTLD_DEFAULT, "PK11_Encrypt"));
     pk11_decrypt_func_ = reinterpret_cast<PK11_EncryptDecryptFunction>(
         dlsym(RTLD_DEFAULT, "PK11_Decrypt"));
+
+    // Even though NSS's pk11wrap layer may support
+    // PK11_PubEncrypt/PK11_PubDecrypt (introduced in NSS 3.16.2), it may have
+    // loaded a softoken that does not include OAEP support.
+    pk11_pub_encrypt_func_ = reinterpret_cast<PK11_PubEncryptFunction>(
+        dlsym(RTLD_DEFAULT, "PK11_PubEncrypt"));
+    pk11_priv_decrypt_func_ = reinterpret_cast<PK11_PrivDecryptFunction>(
+        dlsym(RTLD_DEFAULT, "PK11_PrivDecrypt"));
+    if (pk11_priv_decrypt_func_ && pk11_pub_encrypt_func_) {
+      crypto::ScopedPK11Slot slot(PK11_GetInternalKeySlot());
+      internal_slot_does_oaep_ =
+          !!PK11_DoesMechanism(slot.get(), CKM_RSA_PKCS_OAEP);
+    }
 #endif
   }
 
   PK11_EncryptDecryptFunction pk11_encrypt_func_;
   PK11_EncryptDecryptFunction pk11_decrypt_func_;
+  PK11_PubEncryptFunction pk11_pub_encrypt_func_;
+  PK11_PrivDecryptFunction pk11_priv_decrypt_func_;
+  bool internal_slot_does_oaep_;
 };
 
-base::LazyInstance<AesGcmSupport>::Leaky g_aes_gcm_support =
+base::LazyInstance<NssRuntimeSupport>::Leaky g_nss_runtime_support =
     LAZY_INSTANCE_INITIALIZER;
+
+}  // namespace
 
 namespace content {
 
@@ -260,6 +321,56 @@ CK_MECHANISM_TYPE WebCryptoHashToHMACMechanism(
   }
 }
 
+CK_MECHANISM_TYPE WebCryptoHashToDigestMechanism(
+    const blink::WebCryptoAlgorithm& algorithm) {
+  switch (algorithm.id()) {
+    case blink::WebCryptoAlgorithmIdSha1:
+      return CKM_SHA_1;
+    case blink::WebCryptoAlgorithmIdSha256:
+      return CKM_SHA256;
+    case blink::WebCryptoAlgorithmIdSha384:
+      return CKM_SHA384;
+    case blink::WebCryptoAlgorithmIdSha512:
+      return CKM_SHA512;
+    default:
+      // Not a supported algorithm.
+      return CKM_INVALID_MECHANISM;
+  }
+}
+
+CK_MECHANISM_TYPE WebCryptoHashToMGFMechanism(
+    const blink::WebCryptoAlgorithm& algorithm) {
+  switch (algorithm.id()) {
+    case blink::WebCryptoAlgorithmIdSha1:
+      return CKG_MGF1_SHA1;
+    case blink::WebCryptoAlgorithmIdSha256:
+      return CKG_MGF1_SHA256;
+    case blink::WebCryptoAlgorithmIdSha384:
+      return CKG_MGF1_SHA384;
+    case blink::WebCryptoAlgorithmIdSha512:
+      return CKG_MGF1_SHA512;
+    default:
+      return CKM_INVALID_MECHANISM;
+  }
+}
+
+bool InitializeRsaOaepParams(const blink::WebCryptoAlgorithm& hash,
+                             const CryptoData& label,
+                             CK_RSA_PKCS_OAEP_PARAMS* oaep_params) {
+  oaep_params->source = CKZ_DATA_SPECIFIED;
+  oaep_params->pSourceData = const_cast<unsigned char*>(label.bytes());
+  oaep_params->ulSourceDataLen = label.byte_length();
+  oaep_params->mgf = WebCryptoHashToMGFMechanism(hash);
+  oaep_params->hashAlg = WebCryptoHashToDigestMechanism(hash);
+
+  if (oaep_params->mgf == CKM_INVALID_MECHANISM ||
+      oaep_params->hashAlg == CKM_INVALID_MECHANISM) {
+    return false;
+  }
+
+  return true;
+}
+
 Status AesCbcEncryptDecrypt(EncryptOrDecrypt mode,
                             SymKey* key,
                             const CryptoData& iv,
@@ -337,7 +448,7 @@ Status AesGcmEncryptDecrypt(EncryptOrDecrypt mode,
                             const CryptoData& additional_data,
                             unsigned int tag_length_bits,
                             std::vector<uint8>* buffer) {
-  if (!g_aes_gcm_support.Get().IsSupported())
+  if (!g_nss_runtime_support.Get().IsAesGcmSupported())
     return Status::ErrorUnsupported();
 
   unsigned int tag_length_bytes = tag_length_bits / 8;
@@ -383,8 +494,8 @@ Status AesGcmEncryptDecrypt(EncryptOrDecrypt mode,
   unsigned char* buffer_data = Uint8VectorStart(buffer);
 
   PK11_EncryptDecryptFunction func =
-      (mode == ENCRYPT) ? g_aes_gcm_support.Get().pk11_encrypt_func()
-                        : g_aes_gcm_support.Get().pk11_decrypt_func();
+      (mode == ENCRYPT) ? g_nss_runtime_support.Get().pk11_encrypt_func()
+                        : g_nss_runtime_support.Get().pk11_decrypt_func();
 
   unsigned int output_len = 0;
   SECStatus result = func(key->key(),
@@ -442,12 +553,6 @@ bool BigIntegerToLong(const uint8* data,
   return true;
 }
 
-bool IsAlgorithmRsa(const blink::WebCryptoAlgorithm& algorithm) {
-  return algorithm.id() == blink::WebCryptoAlgorithmIdRsaEsPkcs1v1_5 ||
-         algorithm.id() == blink::WebCryptoAlgorithmIdRsaOaep ||
-         algorithm.id() == blink::WebCryptoAlgorithmIdRsaSsaPkcs1v1_5;
-}
-
 bool CreatePublicKeyAlgorithm(const blink::WebCryptoAlgorithm& algorithm,
                               SECKEYPublicKey* key,
                               blink::WebCryptoKeyAlgorithm* key_algorithm) {
@@ -468,14 +573,6 @@ bool CreatePublicKeyAlgorithm(const blink::WebCryptoAlgorithm& algorithm,
           public_exponent.bytes(),
           public_exponent.byte_length(),
           GetInnerHashAlgorithm(algorithm).id());
-      return true;
-    case blink::WebCryptoAlgorithmParamsTypeRsaKeyGenParams:
-    case blink::WebCryptoAlgorithmParamsTypeNone:
-      *key_algorithm = blink::WebCryptoKeyAlgorithm::createRsa(
-          algorithm.id(),
-          modulus_length_bits,
-          public_exponent.bytes(),
-          public_exponent.byte_length());
       return true;
     default:
       return false;
@@ -522,7 +619,7 @@ Status WebCryptoAlgorithmToNssMechFlags(
       break;
     }
     case blink::WebCryptoAlgorithmIdAesGcm: {
-      if (!g_aes_gcm_support.Get().IsSupported())
+      if (!g_nss_runtime_support.Get().IsAesGcmSupported())
         return Status::ErrorUnsupported();
       *mechanism = CKM_AES_GCM;
       *flags = CKF_ENCRYPT | CKF_DECRYPT;
@@ -596,10 +693,6 @@ void CopySECItemToVector(const SECItem& item, std::vector<uint8>* out) {
   out->assign(item.data, item.data + item.len);
 }
 
-// The system NSS library doesn't have the new PK11_ExportDERPrivateKeyInfo
-// function yet (https://bugzilla.mozilla.org/show_bug.cgi?id=519255). So we
-// provide a fallback implementation.
-#if defined(USE_NSS)
 // From PKCS#1 [http://tools.ietf.org/html/rfc3447]:
 //
 //    RSAPrivateKey ::= SEQUENCE {
@@ -629,6 +722,10 @@ struct RSAPrivateKey {
   SECItem coefficient;
 };
 
+// The system NSS library doesn't have the new PK11_ExportDERPrivateKeyInfo
+// function yet (https://bugzilla.mozilla.org/show_bug.cgi?id=519255). So we
+// provide a fallback implementation.
+#if defined(USE_NSS)
 const SEC_ASN1Template RSAPrivateKeyTemplate[] = {
     {SEC_ASN1_SEQUENCE, 0, NULL, sizeof(RSAPrivateKey)},
     {SEC_ASN1_INTEGER, offsetof(RSAPrivateKey, version)},
@@ -641,6 +738,7 @@ const SEC_ASN1Template RSAPrivateKeyTemplate[] = {
     {SEC_ASN1_INTEGER, offsetof(RSAPrivateKey, exponent2)},
     {SEC_ASN1_INTEGER, offsetof(RSAPrivateKey, coefficient)},
     {0}};
+#endif  // defined(USE_NSS)
 
 // On success |value| will be filled with data which must be freed by
 // SECITEM_FreeItem(value, PR_FALSE);
@@ -709,7 +807,6 @@ struct FreeRsaPrivateKey {
     SECITEM_FreeItem(&out->coefficient, PR_FALSE);
   }
 };
-#endif  // defined(USE_NSS)
 
 }  // namespace
 
@@ -876,7 +973,7 @@ bool ValidateNssKeyTypeAgainstInputAlgorithm(
     const blink::WebCryptoAlgorithm& algorithm) {
   switch (key_type) {
     case rsaKey:
-      return IsAlgorithmRsa(algorithm);
+      return IsAlgorithmRsa(algorithm.id());
     case dsaKey:
     case ecKey:
     case rsaPssKey:
@@ -968,13 +1065,46 @@ Status ExportRsaPublicKey(PublicKey* key,
   return Status::Success();
 }
 
+void AssignVectorFromSecItem(const SECItem& item, std::vector<uint8>* output) {
+  output->assign(item.data, item.data + item.len);
+}
+
+Status ExportRsaPrivateKey(PrivateKey* key,
+                           std::vector<uint8>* modulus,
+                           std::vector<uint8>* public_exponent,
+                           std::vector<uint8>* private_exponent,
+                           std::vector<uint8>* prime1,
+                           std::vector<uint8>* prime2,
+                           std::vector<uint8>* exponent1,
+                           std::vector<uint8>* exponent2,
+                           std::vector<uint8>* coefficient) {
+  RSAPrivateKey key_props = {};
+  scoped_ptr<RSAPrivateKey, FreeRsaPrivateKey> free_private_key(&key_props);
+
+  if (!InitRSAPrivateKey(key->key(), &key_props))
+    return Status::OperationError();
+
+  AssignVectorFromSecItem(key_props.modulus, modulus);
+  AssignVectorFromSecItem(key_props.public_exponent, public_exponent);
+  AssignVectorFromSecItem(key_props.private_exponent, private_exponent);
+  AssignVectorFromSecItem(key_props.prime1, prime1);
+  AssignVectorFromSecItem(key_props.prime2, prime2);
+  AssignVectorFromSecItem(key_props.exponent1, exponent1);
+  AssignVectorFromSecItem(key_props.exponent2, exponent2);
+  AssignVectorFromSecItem(key_props.coefficient, coefficient);
+
+  return Status::Success();
+}
+
 Status ExportKeyPkcs8(PrivateKey* key,
                       const blink::WebCryptoKeyAlgorithm& key_algorithm,
                       std::vector<uint8>* buffer) {
   // TODO(eroman): Support other RSA key types as they are added to Blink.
-  if (key_algorithm.id() != blink::WebCryptoAlgorithmIdRsaEsPkcs1v1_5 &&
-      key_algorithm.id() != blink::WebCryptoAlgorithmIdRsaSsaPkcs1v1_5)
+  if (key_algorithm.id() != blink::WebCryptoAlgorithmIdRsaSsaPkcs1v1_5 &&
+      key_algorithm.id() != blink::WebCryptoAlgorithmIdRsaOaep)
     return Status::ErrorUnsupported();
+
+// TODO(rsleevi): Implement OAEP support according to the spec.
 
 #if defined(USE_NSS)
   // PK11_ExportDERPrivateKeyInfo isn't available. Use our fallback code.
@@ -1122,56 +1252,85 @@ Status SignHmac(SymKey* key,
 }
 
 // -----------------------------------
-// RsaEsPkcs1v1_5
+// RsaOaep
 // -----------------------------------
 
-Status EncryptRsaEsPkcs1v1_5(PublicKey* key,
-                             const CryptoData& data,
-                             std::vector<uint8>* buffer) {
-  const unsigned int encrypted_length_bytes =
-      SECKEY_PublicKeyStrength(key->key());
+Status EncryptRsaOaep(PublicKey* key,
+                      const blink::WebCryptoAlgorithm& hash,
+                      const CryptoData& label,
+                      const CryptoData& data,
+                      std::vector<uint8>* buffer) {
+  if (!g_nss_runtime_support.Get().IsRsaOaepSupported())
+    return Status::ErrorUnsupported();
 
-  // RSAES can operate on messages up to a length of k - 11, where k is the
-  // octet length of the RSA modulus.
-  if (encrypted_length_bytes < 11 ||
-      encrypted_length_bytes - 11 < data.byte_length())
-    return Status::ErrorDataTooLarge();
+  CK_RSA_PKCS_OAEP_PARAMS oaep_params = {0};
+  if (!InitializeRsaOaepParams(hash, label, &oaep_params))
+    return Status::ErrorUnsupported();
 
-  buffer->resize(encrypted_length_bytes);
-  unsigned char* const buffer_data = Uint8VectorStart(buffer);
+  SECItem param;
+  param.type = siBuffer;
+  param.data = reinterpret_cast<unsigned char*>(&oaep_params);
+  param.len = sizeof(oaep_params);
 
-  if (PK11_PubEncryptPKCS1(key->key(),
-                           buffer_data,
-                           const_cast<unsigned char*>(data.bytes()),
-                           data.byte_length(),
-                           NULL) != SECSuccess) {
+  buffer->resize(SECKEY_PublicKeyStrength(key->key()));
+  unsigned char* buffer_data = Uint8VectorStart(buffer);
+  unsigned int output_len;
+  if (g_nss_runtime_support.Get().pk11_pub_encrypt_func()(key->key(),
+                                                          CKM_RSA_PKCS_OAEP,
+                                                          &param,
+                                                          buffer_data,
+                                                          &output_len,
+                                                          buffer->size(),
+                                                          data.bytes(),
+                                                          data.byte_length(),
+                                                          NULL) != SECSuccess) {
     return Status::OperationError();
   }
+
+  DCHECK_LE(output_len, buffer->size());
+  buffer->resize(output_len);
   return Status::Success();
 }
 
-Status DecryptRsaEsPkcs1v1_5(PrivateKey* key,
-                             const CryptoData& data,
-                             std::vector<uint8>* buffer) {
+Status DecryptRsaOaep(PrivateKey* key,
+                      const blink::WebCryptoAlgorithm& hash,
+                      const CryptoData& label,
+                      const CryptoData& data,
+                      std::vector<uint8>* buffer) {
+  if (!g_nss_runtime_support.Get().IsRsaOaepSupported())
+    return Status::ErrorUnsupported();
+
+  CK_RSA_PKCS_OAEP_PARAMS oaep_params = {0};
+  if (!InitializeRsaOaepParams(hash, label, &oaep_params))
+    return Status::ErrorUnsupported();
+
+  SECItem param;
+  param.type = siBuffer;
+  param.data = reinterpret_cast<unsigned char*>(&oaep_params);
+  param.len = sizeof(oaep_params);
+
   const int modulus_length_bytes = PK11_GetPrivateModulusLen(key->key());
   if (modulus_length_bytes <= 0)
     return Status::ErrorUnexpected();
-  const unsigned int max_output_length_bytes = modulus_length_bytes;
 
-  buffer->resize(max_output_length_bytes);
-  unsigned char* const buffer_data = Uint8VectorStart(buffer);
+  buffer->resize(modulus_length_bytes);
 
-  unsigned int output_length_bytes = 0;
-  if (PK11_PrivDecryptPKCS1(key->key(),
-                            buffer_data,
-                            &output_length_bytes,
-                            max_output_length_bytes,
-                            const_cast<unsigned char*>(data.bytes()),
-                            data.byte_length()) != SECSuccess) {
+  unsigned char* buffer_data = Uint8VectorStart(buffer);
+  unsigned int output_len;
+  if (g_nss_runtime_support.Get().pk11_priv_decrypt_func()(
+          key->key(),
+          CKM_RSA_PKCS_OAEP,
+          &param,
+          buffer_data,
+          &output_len,
+          buffer->size(),
+          data.bytes(),
+          data.byte_length()) != SECSuccess) {
     return Status::OperationError();
   }
-  DCHECK_LE(output_length_bytes, max_output_length_bytes);
-  buffer->resize(output_length_bytes);
+
+  DCHECK_LE(output_len, buffer->size());
+  buffer->resize(output_len);
   return Status::Success();
 }
 
@@ -1281,12 +1440,17 @@ Status EncryptDecryptAesGcm(EncryptOrDecrypt mode,
 
 Status GenerateRsaKeyPair(const blink::WebCryptoAlgorithm& algorithm,
                           bool extractable,
-                          blink::WebCryptoKeyUsageMask usage_mask,
+                          blink::WebCryptoKeyUsageMask public_key_usage_mask,
+                          blink::WebCryptoKeyUsageMask private_key_usage_mask,
                           unsigned int modulus_length_bits,
                           const CryptoData& public_exponent,
-                          const blink::WebCryptoAlgorithm& hash_or_null,
                           blink::WebCryptoKey* public_key,
                           blink::WebCryptoKey* private_key) {
+  if (algorithm.id() == blink::WebCryptoAlgorithmIdRsaOaep &&
+      !g_nss_runtime_support.Get().IsRsaOaepSupported()) {
+    return Status::ErrorUnsupported();
+  }
+
   crypto::ScopedPK11Slot slot(PK11_GetInternalKeySlot());
   if (!slot)
     return Status::OperationError();
@@ -1307,7 +1471,6 @@ Status GenerateRsaKeyPair(const blink::WebCryptoAlgorithm& algorithm,
   // possible operations for the given key type.
   CK_FLAGS operation_flags;
   switch (algorithm.id()) {
-    case blink::WebCryptoAlgorithmIdRsaEsPkcs1v1_5:
     case blink::WebCryptoAlgorithmIdRsaOaep:
       operation_flags = CKF_ENCRYPT | CKF_DECRYPT | CKF_WRAP | CKF_UNWRAP;
       break;
@@ -1361,12 +1524,12 @@ Status GenerateRsaKeyPair(const blink::WebCryptoAlgorithm& algorithm,
                                             blink::WebCryptoKeyTypePublic,
                                             true,
                                             key_algorithm,
-                                            usage_mask);
+                                            public_key_usage_mask);
   *private_key = blink::WebCryptoKey::create(private_key_handle.release(),
                                              blink::WebCryptoKeyTypePrivate,
                                              extractable,
                                              key_algorithm,
-                                             usage_mask);
+                                             private_key_usage_mask);
 
   return Status::Success();
 }
@@ -1494,8 +1657,116 @@ Status ImportRsaPublicKey(const blink::WebCryptoAlgorithm& algorithm,
   return Status::Success();
 }
 
-Status WrapSymKeyAesKw(SymKey* wrapping_key,
-                       SymKey* key,
+struct DestroyGenericObject {
+  void operator()(PK11GenericObject* o) const {
+    if (o)
+      PK11_DestroyGenericObject(o);
+  }
+};
+
+typedef scoped_ptr<PK11GenericObject, DestroyGenericObject>
+    ScopedPK11GenericObject;
+
+// Helper to add an attribute to a template.
+void AddAttribute(CK_ATTRIBUTE_TYPE type,
+                  void* value,
+                  unsigned long length,
+                  std::vector<CK_ATTRIBUTE>* templ) {
+  CK_ATTRIBUTE attribute = {type, value, length};
+  templ->push_back(attribute);
+}
+
+// Helper to optionally add an attribute to a template, if the provided data is
+// non-empty.
+void AddOptionalAttribute(CK_ATTRIBUTE_TYPE type,
+                          const CryptoData& data,
+                          std::vector<CK_ATTRIBUTE>* templ) {
+  if (!data.byte_length())
+    return;
+  CK_ATTRIBUTE attribute = {type, const_cast<unsigned char*>(data.bytes()),
+                            data.byte_length()};
+  templ->push_back(attribute);
+}
+
+Status ImportRsaPrivateKey(const blink::WebCryptoAlgorithm& algorithm,
+                           bool extractable,
+                           blink::WebCryptoKeyUsageMask usage_mask,
+                           const CryptoData& modulus,
+                           const CryptoData& public_exponent,
+                           const CryptoData& private_exponent,
+                           const CryptoData& prime1,
+                           const CryptoData& prime2,
+                           const CryptoData& exponent1,
+                           const CryptoData& exponent2,
+                           const CryptoData& coefficient,
+                           blink::WebCryptoKey* key) {
+  CK_OBJECT_CLASS obj_class = CKO_PRIVATE_KEY;
+  CK_KEY_TYPE key_type = CKK_RSA;
+  CK_BBOOL ck_false = CK_FALSE;
+
+  std::vector<CK_ATTRIBUTE> key_template;
+
+  AddAttribute(CKA_CLASS, &obj_class, sizeof(obj_class), &key_template);
+  AddAttribute(CKA_KEY_TYPE, &key_type, sizeof(key_type), &key_template);
+  AddAttribute(CKA_TOKEN, &ck_false, sizeof(ck_false), &key_template);
+  AddAttribute(CKA_SENSITIVE, &ck_false, sizeof(ck_false), &key_template);
+  AddAttribute(CKA_PRIVATE, &ck_false, sizeof(ck_false), &key_template);
+
+  // Required properties.
+  AddOptionalAttribute(CKA_MODULUS, modulus, &key_template);
+  AddOptionalAttribute(CKA_PUBLIC_EXPONENT, public_exponent, &key_template);
+  AddOptionalAttribute(CKA_PRIVATE_EXPONENT, private_exponent, &key_template);
+
+  // Optional properties (all of these will have been specified or none).
+  AddOptionalAttribute(CKA_PRIME_1, prime1, &key_template);
+  AddOptionalAttribute(CKA_PRIME_2, prime2, &key_template);
+  AddOptionalAttribute(CKA_EXPONENT_1, exponent1, &key_template);
+  AddOptionalAttribute(CKA_EXPONENT_2, exponent2, &key_template);
+  AddOptionalAttribute(CKA_COEFFICIENT, coefficient, &key_template);
+
+  crypto::ScopedPK11Slot slot(PK11_GetInternalSlot());
+
+  ScopedPK11GenericObject key_object(PK11_CreateGenericObject(
+      slot.get(), &key_template[0], key_template.size(), PR_FALSE));
+
+  if (!key_object)
+    return Status::OperationError();
+
+  // The ID isn't guaranteed to be set by PKCS#11. However it is by softtoken so
+  // this should work.
+  SECItem object_id = {};
+  if (PK11_ReadRawAttribute(
+          PK11_TypeGeneric, key_object.get(), CKA_ID, &object_id) != SECSuccess)
+    return Status::OperationError();
+
+  crypto::ScopedSECKEYPrivateKey private_key(
+      PK11_FindKeyByKeyID(slot.get(), &object_id, NULL));
+
+  SECITEM_FreeItem(&object_id, PR_FALSE);
+
+  if (!private_key)
+    return Status::OperationError();
+
+  blink::WebCryptoKeyAlgorithm key_algorithm;
+  if (!CreatePrivateKeyAlgorithm(algorithm, private_key.get(), &key_algorithm))
+    return Status::ErrorUnexpected();
+
+  scoped_ptr<PrivateKey> key_handle;
+  Status status =
+      PrivateKey::Create(private_key.Pass(), key_algorithm, &key_handle);
+  if (status.IsError())
+    return status;
+
+  *key = blink::WebCryptoKey::create(key_handle.release(),
+                                     blink::WebCryptoKeyTypePrivate,
+                                     extractable,
+                                     key_algorithm,
+                                     usage_mask);
+  return Status::Success();
+}
+
+Status WrapSymKeyAesKw(SymKey* key,
+                       SymKey* wrapping_key,
                        std::vector<uint8>* buffer) {
   // The data size must be at least 16 bytes and a multiple of 8 bytes.
   // RFC 3394 does not specify a maximum allowed data length, but since only
@@ -1591,89 +1862,6 @@ Status DecryptAesKw(SymKey* wrapping_key,
     return Status::OperationError();
   buffer->assign(key_data->data, key_data->data + key_data->len);
 
-  return Status::Success();
-}
-
-Status WrapSymKeyRsaEs(PublicKey* wrapping_key,
-                       SymKey* key,
-                       std::vector<uint8>* buffer) {
-  // Check the raw length of the key to be wrapped against the max size allowed
-  // by the RSA wrapping key. With PKCS#1 v1.5 padding used in this function,
-  // the maximum data length that can be encrypted is the wrapping_key's modulus
-  // byte length minus eleven bytes.
-  const unsigned int input_length_bytes = PK11_GetKeyLength(key->key());
-  const unsigned int modulus_length_bytes =
-      SECKEY_PublicKeyStrength(wrapping_key->key());
-  if (modulus_length_bytes < 11 ||
-      modulus_length_bytes - 11 < input_length_bytes)
-    return Status::ErrorDataTooLarge();
-
-  buffer->resize(modulus_length_bytes);
-  SECItem wrapped_key_item = MakeSECItemForBuffer(CryptoData(*buffer));
-
-  if (SECSuccess !=
-      PK11_PubWrapSymKey(
-          CKM_RSA_PKCS, wrapping_key->key(), key->key(), &wrapped_key_item)) {
-    return Status::OperationError();
-  }
-  if (wrapped_key_item.len != modulus_length_bytes)
-    return Status::ErrorUnexpected();
-
-  return Status::Success();
-}
-
-Status UnwrapSymKeyRsaEs(const CryptoData& wrapped_key_data,
-                         PrivateKey* wrapping_key,
-                         const blink::WebCryptoAlgorithm& algorithm,
-                         bool extractable,
-                         blink::WebCryptoKeyUsageMask usage_mask,
-                         blink::WebCryptoKey* key) {
-  // Verify wrapped_key_data size does not exceed the modulus of the RSA key.
-  const int modulus_length_bytes =
-      PK11_GetPrivateModulusLen(wrapping_key->key());
-  if (modulus_length_bytes <= 0)
-    return Status::ErrorUnexpected();
-  if (wrapped_key_data.byte_length() >
-      static_cast<unsigned int>(modulus_length_bytes))
-    return Status::ErrorDataTooLarge();
-
-  // Determine the proper NSS key properties from the input algorithm.
-  CK_MECHANISM_TYPE mechanism;
-  CK_FLAGS flags;
-  Status status =
-      WebCryptoAlgorithmToNssMechFlags(algorithm, &mechanism, &flags);
-  if (status.IsError())
-    return status;
-
-  SECItem wrapped_key_item = MakeSECItemForBuffer(wrapped_key_data);
-
-  crypto::ScopedPK11SymKey unwrapped_key(
-      PK11_PubUnwrapSymKeyWithFlagsPerm(wrapping_key->key(),
-                                        &wrapped_key_item,
-                                        mechanism,
-                                        CKA_DECRYPT,
-                                        0,
-                                        flags,
-                                        false));
-  if (!unwrapped_key)
-    return Status::OperationError();
-
-  const unsigned int key_length = PK11_GetKeyLength(unwrapped_key.get());
-
-  blink::WebCryptoKeyAlgorithm key_algorithm;
-  if (!CreateSecretKeyAlgorithm(algorithm, key_length, &key_algorithm))
-    return Status::ErrorUnexpected();
-
-  scoped_ptr<SymKey> key_handle;
-  status = SymKey::Create(unwrapped_key.Pass(), &key_handle);
-  if (status.IsError())
-    return status;
-
-  *key = blink::WebCryptoKey::create(key_handle.release(),
-                                     blink::WebCryptoKeyTypeSecret,
-                                     extractable,
-                                     key_algorithm,
-                                     usage_mask);
   return Status::Success();
 }
 

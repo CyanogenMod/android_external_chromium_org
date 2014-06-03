@@ -15,7 +15,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
 #include "mojo/embedder/platform_handle.h"
-#include "mojo/public/c/system/core.h"
+#include "mojo/embedder/platform_handle_vector.h"
+#include "mojo/public/c/system/buffer.h"
+#include "mojo/public/c/system/data_pipe.h"
+#include "mojo/public/c/system/message_pipe.h"
+#include "mojo/public/c/system/types.h"
 #include "mojo/system/system_impl_export.h"
 
 namespace mojo {
@@ -55,7 +59,10 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher :
     kTypeMessagePipe,
     kTypeDataPipeProducer,
     kTypeDataPipeConsumer,
-    kTypeSharedBuffer
+    kTypeSharedBuffer,
+
+    // "Private" types (not exposed via the public interface):
+    kTypePlatformHandle = -1
   };
   virtual Type GetType() const = 0;
 
@@ -174,13 +181,17 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher :
         Channel* channel,
         void* destination,
         size_t* actual_size,
-        std::vector<embedder::PlatformHandle>* platform_handles);
+        embedder::PlatformHandleVector* platform_handles);
 
     // Deserialization API.
-    static scoped_refptr<Dispatcher> Deserialize(Channel* channel,
-                                                 int32_t type,
-                                                 const void* source,
-                                                 size_t size);
+    // Note: This "clears" (i.e., reset to the invalid handle) any platform
+    // handles that it takes ownership of.
+    static scoped_refptr<Dispatcher> Deserialize(
+        Channel* channel,
+        int32_t type,
+        const void* source,
+        size_t size,
+        embedder::PlatformHandleVector* platform_handles);
   };
 
  protected:
@@ -259,7 +270,7 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher :
       Channel* channel,
       void* destination,
       size_t* actual_size,
-      std::vector<embedder::PlatformHandle>* platform_handles);
+      embedder::PlatformHandleVector* platform_handles);
 
   // Available to subclasses. (Note: Returns a non-const reference, just like
   // |base::AutoLock|'s constructor takes a non-const reference.)
@@ -315,11 +326,10 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher :
   // in which case |*actual_size| is set to the amount it actually wrote to
   // |destination|. On failure, |*actual_size| should not be modified; however,
   // the dispatcher will still be closed.
-  bool EndSerializeAndClose(
-      Channel* channel,
-      void* destination,
-      size_t* actual_size,
-      std::vector<embedder::PlatformHandle>* platform_handles);
+  bool EndSerializeAndClose(Channel* channel,
+                            void* destination,
+                            size_t* actual_size,
+                            embedder::PlatformHandleVector* platform_handles);
 
   // This protects the following members as well as any state added by
   // subclasses.

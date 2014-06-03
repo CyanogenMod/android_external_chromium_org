@@ -8,6 +8,7 @@
 #include "apps/app_window_registry.h"
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "base/metrics/field_trial.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/scoped_user_pref_update.h"
 #include "base/sha1.h"
@@ -28,7 +29,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/desktop_media_id.h"
 #include "content/public/browser/media_capture_devices.h"
@@ -64,6 +65,16 @@ using content::MediaStreamDevices;
 
 namespace {
 
+// A finch experiment to enable the permission bubble for media requests only.
+bool MediaStreamPermissionBubbleExperimentEnabled() {
+  const std::string group =
+      base::FieldTrialList::FindFullName("MediaStreamPermissionBubble");
+  if (group == "enabled")
+    return true;
+
+  return false;
+}
+
 // Finds a device in |devices| that has |device_id|, or NULL if not found.
 const content::MediaStreamDevice* FindDeviceWithId(
     const content::MediaStreamDevices& devices,
@@ -75,7 +86,7 @@ const content::MediaStreamDevice* FindDeviceWithId(
     }
   }
   return NULL;
-};
+}
 
 // This is a short-term solution to grant camera and/or microphone access to
 // extensions:
@@ -623,7 +634,8 @@ void MediaCaptureDevicesDispatcher::ProcessQueuedAccessRequest(
 
   DCHECK(!it->second.empty());
 
-  if (PermissionBubbleManager::Enabled()) {
+  if (PermissionBubbleManager::Enabled() ||
+      MediaStreamPermissionBubbleExperimentEnabled()) {
     scoped_ptr<MediaStreamDevicesController> controller(
         new MediaStreamDevicesController(web_contents,
             it->second.front().request,
@@ -631,8 +643,10 @@ void MediaCaptureDevicesDispatcher::ProcessQueuedAccessRequest(
                        base::Unretained(this), web_contents)));
     if (controller->DismissInfoBarAndTakeActionOnSettings())
       return;
-    PermissionBubbleManager::FromWebContents(web_contents)->
-        AddRequest(controller.release());
+    PermissionBubbleManager* bubble_manager =
+        PermissionBubbleManager::FromWebContents(web_contents);
+    if (bubble_manager)
+      bubble_manager->AddRequest(controller.release());
     return;
   }
 

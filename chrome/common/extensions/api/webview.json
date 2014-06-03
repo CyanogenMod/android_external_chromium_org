@@ -151,7 +151,7 @@
                 "type": "array",
                 "items": {"type": "string"},
                 "optional": true,
-                "description": "Lets you restrict the item to apply only to documents whose URL matches one of the given patterns. (This applies to frames as well.) For details on the format of a pattern, see <a href='match_patterns.html'>Match Patterns</a>."
+                "description": "Lets you restrict the item to apply only to documents whose URL matches one of the given patterns. (This applies to frames as well.) For details on the format of a pattern, see <a href='match_patterns'>Match Patterns</a>."
               },
               "targetUrlPatterns": {
                 "type": "array",
@@ -607,6 +607,20 @@
           {
             "type": "integer",
             "name": "instanceId"
+          }
+        ]
+      },
+      {
+        "name": "setName",
+        "type": "function",
+        "parameters": [
+          {
+            "type": "integer",
+            "name": "instanceId"
+          },
+          {
+            "type": "string",
+            "name": "frameName"
           }
         ]
       },

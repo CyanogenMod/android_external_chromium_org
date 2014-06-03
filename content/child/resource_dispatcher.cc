@@ -32,7 +32,6 @@
 #include "webkit/common/resource_type.h"
 
 using webkit_glue::ResourceLoaderBridge;
-using webkit_glue::ResourceResponseInfo;
 
 namespace content {
 
@@ -84,8 +83,6 @@ class IPCResourceLoaderBridge : public ResourceLoaderBridge {
   virtual void SyncLoad(SyncLoadResponse* response) OVERRIDE;
 
  private:
-  RequestPeer* peer_;
-
   // The resource dispatcher for this loader.  The bridge doesn't own it, but
   // it's guaranteed to outlive the bridge.
   ResourceDispatcher* dispatcher_;
@@ -109,8 +106,7 @@ class IPCResourceLoaderBridge : public ResourceLoaderBridge {
 IPCResourceLoaderBridge::IPCResourceLoaderBridge(
     ResourceDispatcher* dispatcher,
     const RequestInfo& request_info)
-    : peer_(NULL),
-      dispatcher_(dispatcher),
+    : dispatcher_(dispatcher),
       request_id_(-1),
       routing_id_(request_info.routing_id),
       is_synchronous_request_(false) {
@@ -177,10 +173,8 @@ bool IPCResourceLoaderBridge::Start(RequestPeer* peer) {
     return false;
   }
 
-  peer_ = peer;
-
   // generate the request ID, and append it to the message
-  request_id_ = dispatcher_->AddPendingRequest(peer_,
+  request_id_ = dispatcher_->AddPendingRequest(peer,
                                                request_.resource_type,
                                                request_.origin_pid,
                                                frame_origin_,
@@ -215,14 +209,15 @@ void IPCResourceLoaderBridge::SetDefersLoading(bool value) {
 }
 
 void IPCResourceLoaderBridge::DidChangePriority(
-    net::RequestPriority new_priority, int intra_priority_value) {
+    net::RequestPriority new_priority,
+    int intra_priority_value) {
   if (request_id_ < 0) {
     NOTREACHED() << "Trying to change priority of an unstarted request";
     return;
   }
 
-  dispatcher_->DidChangePriority(routing_id_, request_id_, new_priority,
-                                 intra_priority_value);
+  dispatcher_->DidChangePriority(
+      request_id_, new_priority, intra_priority_value);
 }
 
 void IPCResourceLoaderBridge::SyncLoad(SyncLoadResponse* response) {
@@ -289,18 +284,6 @@ bool ResourceDispatcher::OnMessageReceived(const IPC::Message& message) {
   if (!request_info) {
     // Release resources in the message if it is a data message.
     ReleaseResourcesInDataMessage(message);
-    return true;
-  }
-
-  // If the request has been canceled, only dispatch
-  // ResourceMsg_RequestComplete (otherwise resource leaks) and drop other
-  // messages.
-  if (request_info->is_canceled) {
-    if (message.type() == ResourceMsg_RequestComplete::ID) {
-      DispatchMessage(message);
-    } else {
-      ReleaseResourcesInDataMessage(message);
-    }
     return true;
   }
 
@@ -486,6 +469,7 @@ void ResourceDispatcher::OnDownloadedData(int request_id,
 void ResourceDispatcher::OnReceivedRedirect(
     int request_id,
     const GURL& new_url,
+    const GURL& new_first_party_for_cookies,
     const ResourceResponseHead& response_head) {
   TRACE_EVENT0("loader", "ResourceDispatcher::OnReceivedRedirect");
   PendingRequestInfo* request_info = GetPendingRequestInfo(request_id);
@@ -493,13 +477,10 @@ void ResourceDispatcher::OnReceivedRedirect(
     return;
   request_info->response_start = ConsumeIOTimestamp();
 
-  bool has_new_first_party_for_cookies = false;
-  GURL new_first_party_for_cookies;
   ResourceResponseInfo renderer_response_info;
   ToResourceResponseInfo(*request_info, response_head, &renderer_response_info);
-  if (request_info->peer->OnReceivedRedirect(new_url, renderer_response_info,
-                                             &has_new_first_party_for_cookies,
-                                             &new_first_party_for_cookies)) {
+  if (request_info->peer->OnReceivedRedirect(
+          new_url, new_first_party_for_cookies, renderer_response_info)) {
     // Double-check if the request is still around. The call above could
     // potentially remove it.
     request_info = GetPendingRequestInfo(request_id);
@@ -509,9 +490,7 @@ void ResourceDispatcher::OnReceivedRedirect(
     // SiteIsolationPolicy later when OnReceivedResponse is called.
     request_info->response_url = new_url;
     request_info->pending_redirect_message.reset(
-        new ResourceHostMsg_FollowRedirect(request_id,
-                                           has_new_first_party_for_cookies,
-                                           new_first_party_for_cookies));
+        new ResourceHostMsg_FollowRedirect(request_id));
     if (!request_info->is_deferred) {
       FollowPendingRedirect(request_id, *request_info);
     }
@@ -609,47 +588,9 @@ void ResourceDispatcher::CancelPendingRequest(int request_id) {
   }
 
   PendingRequestInfo& request_info = it->second;
-  request_info.is_canceled = true;
+  ReleaseResourcesInMessageQueue(&request_info.deferred_message_queue);
+  pending_requests_.erase(it);
 
-  // Because message handlers could result in request_info being destroyed,
-  // we need to work with a stack reference to the deferred queue.
-  MessageQueue queue;
-  queue.swap(request_info.deferred_message_queue);
-  // Removes pending requests. If ResourceMsg_RequestComplete was queued,
-  // dispatch it.
-  bool first_message = true;
-  while (!queue.empty()) {
-    IPC::Message* message = queue.front();
-    if (message->type() == ResourceMsg_RequestComplete::ID) {
-      if (first_message) {
-        // Dispatch as-is.
-        DispatchMessage(*message);
-      } else {
-        // If we skip some ResourceMsg_DataReceived and then dispatched the
-        // original ResourceMsg_RequestComplete(status=success), chrome will
-        // crash because it entered an unexpected state. So replace
-        // ResourceMsg_RequestComplete with failure status.
-        ResourceMsg_RequestCompleteData request_complete_data;
-        request_complete_data.error_code = net::ERR_ABORTED;
-        request_complete_data.was_ignored_by_handler = false;
-        request_complete_data.exists_in_cache = false;
-        request_complete_data.completion_time = base::TimeTicks();
-        request_complete_data.encoded_data_length = 0;
-
-        ResourceMsg_RequestComplete error_message(request_id,
-            request_complete_data);
-        DispatchMessage(error_message);
-      }
-    } else {
-      ReleaseResourcesInDataMessage(*message);
-    }
-    first_message = false;
-    queue.pop_front();
-    delete message;
-  }
-
-  // |request_id| will be removed from |pending_requests_| when
-  // OnRequestComplete returns with ERR_ABORTED.
   message_sender()->Send(new ResourceHostMsg_CancelRequest(request_id));
 }
 
@@ -675,8 +616,7 @@ void ResourceDispatcher::SetDefersLoading(int request_id, bool value) {
   }
 }
 
-void ResourceDispatcher::DidChangePriority(int routing_id,
-                                           int request_id,
+void ResourceDispatcher::DidChangePriority(int request_id,
                                            net::RequestPriority new_priority,
                                            int intra_priority_value) {
   DCHECK(ContainsKey(pending_requests_, request_id));
@@ -688,7 +628,6 @@ ResourceDispatcher::PendingRequestInfo::PendingRequestInfo()
     : peer(NULL),
       resource_type(ResourceType::SUB_RESOURCE),
       is_deferred(false),
-      is_canceled(false),
       download_to_file(false),
       blocked_response(false),
       buffer_size(0) {
@@ -705,7 +644,6 @@ ResourceDispatcher::PendingRequestInfo::PendingRequestInfo(
       resource_type(resource_type),
       origin_pid(origin_pid),
       is_deferred(false),
-      is_canceled(false),
       url(request_url),
       frame_origin(frame_origin),
       response_url(request_url),

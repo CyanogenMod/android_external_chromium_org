@@ -36,7 +36,7 @@ class ToolbarButton : public views::LabelButton,
   bool IsMenuShowing() const;
 
   // views::LabelButton:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual bool OnMouseDragged(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
@@ -45,6 +45,8 @@ class ToolbarButton : public views::LabelButton,
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
   virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
+  virtual scoped_ptr<views::LabelButtonBorder> CreateDefaultBorder() const
+      OVERRIDE;
 
   // views::ContextMenuController:
   virtual void ShowContextMenuForView(View* source,

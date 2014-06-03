@@ -21,6 +21,7 @@
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/fill_layout.h"
+#include "ui/views/masked_view_targeter.h"
 #include "ui/views/shadow_border.h"
 
 namespace app_list {
@@ -52,7 +53,8 @@ class SoundLevelIndicator : public views::View {
 
  private:
   // Overridden from views::View:
-  virtual void Paint(gfx::Canvas* canvas) OVERRIDE;
+  virtual void Paint(gfx::Canvas* canvas,
+                     const views::CullSet& cull_set) OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(SoundLevelIndicator);
 };
@@ -61,7 +63,8 @@ SoundLevelIndicator::SoundLevelIndicator() {}
 
 SoundLevelIndicator::~SoundLevelIndicator() {}
 
-void SoundLevelIndicator::Paint(gfx::Canvas* canvas) {
+void SoundLevelIndicator::Paint(gfx::Canvas* canvas,
+                                const views::CullSet& cull_set) {
   SkPaint paint;
   paint.setStyle(SkPaint::kFill_Style);
   paint.setColor(kSoundLevelIndicatorColor);
@@ -93,17 +96,41 @@ bool MicButton::HasHitTestMask() const {
   return true;
 }
 
+// TODO(tdanderson): Move the implementation into views::View::HitTestRect()
+//                   and delete this function. See crbug.com/377527.
 void MicButton::GetHitTestMask(views::View::HitTestSource source,
                                gfx::Path* mask) const {
-  // The mic button icon is a circle. |source| doesn't matter.
-  gfx::Rect local_bounds = GetLocalBounds();
-  int radius = local_bounds.width() / 2 + kIndicatorRadiusMinOffset;
-  gfx::Point center = local_bounds.CenterPoint();
-  center.set_y(center.y() + kIndicatorCenterOffsetY);
-  mask->addCircle(SkIntToScalar(center.x()),
-                  SkIntToScalar(center.y()),
-                  SkIntToScalar(radius));
+  const ui::EventTargeter* targeter = GetEventTargeter();
+  CHECK(targeter);
+  static_cast<const views::MaskedViewTargeter*>(targeter)
+      ->GetHitTestMask(this, mask);
 }
+
+// Used to define the circular hit test region of a MicButton for the
+// purposes of event targeting.
+class MicButtonTargeter : public views::MaskedViewTargeter {
+ public:
+  explicit MicButtonTargeter(views::View* mic_button)
+      : views::MaskedViewTargeter(mic_button) {}
+  virtual ~MicButtonTargeter() {}
+
+ private:
+  // views::MaskedViewTargeter:
+  virtual bool GetHitTestMask(const views::View* view,
+                              gfx::Path* mask) const OVERRIDE {
+    // The mic button icon is a circle.
+    gfx::Rect local_bounds = view->GetLocalBounds();
+    int radius = local_bounds.width() / 2 + kIndicatorRadiusMinOffset;
+    gfx::Point center = local_bounds.CenterPoint();
+    center.set_y(center.y() + kIndicatorCenterOffsetY);
+    mask->addCircle(SkIntToScalar(center.x()),
+                    SkIntToScalar(center.y()),
+                    SkIntToScalar(radius));
+    return true;
+  }
+
+  DISALLOW_COPY_AND_ASSIGN(MicButtonTargeter);
+};
 
 }  // namespace
 
@@ -138,6 +165,8 @@ SpeechView::SpeechView(AppListViewDelegate* delegate)
 
   mic_button_ = new MicButton(this);
   container->AddChildView(mic_button_);
+  mic_button_->SetEventTargeter(
+      scoped_ptr<ui::EventTargeter>(new MicButtonTargeter(mic_button_)));
 
   // TODO(mukai): use BoundedLabel to cap 2 lines.
   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
@@ -201,7 +230,7 @@ void SpeechView::Layout() {
       speech_height);
 }
 
-gfx::Size SpeechView::GetPreferredSize() {
+gfx::Size SpeechView::GetPreferredSize() const {
   return gfx::Size(0, kSpeechViewMaxHeight);
 }
 

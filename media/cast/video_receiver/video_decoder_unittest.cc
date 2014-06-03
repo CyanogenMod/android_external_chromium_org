@@ -10,6 +10,7 @@
 #include "base/synchronization/lock.h"
 #include "base/time/time.h"
 #include "media/cast/cast_config.h"
+#include "media/cast/test/utility/default_config.h"
 #include "media/cast/test/utility/standalone_cast_environment.h"
 #include "media/cast/test/utility/video_utility.h"
 #include "media/cast/video_receiver/video_decoder.h"
@@ -47,9 +48,8 @@ class VideoDecoderTest
 
  protected:
   virtual void SetUp() OVERRIDE {
-    VideoReceiverConfig decoder_config;
-    decoder_config.use_external_decoder = false;
-    decoder_config.codec = GetParam();
+    FrameReceiverConfig decoder_config = GetDefaultVideoReceiverConfig();
+    decoder_config.codec.video = GetParam();
     video_decoder_.reset(new VideoDecoder(cast_environment_, decoder_config));
     CHECK_EQ(STATUS_VIDEO_INITIALIZED, video_decoder_->InitializationResult());
 
@@ -61,10 +61,10 @@ class VideoDecoderTest
     total_video_frames_decoded_ = 0;
   }
 
-  // Called from the unit test thread to create another EncodedVideoFrame and
-  // push it into the decoding pipeline.
+  // Called from the unit test thread to create another EncodedFrame and push it
+  // into the decoding pipeline.
   void FeedMoreVideo(int num_dropped_frames) {
-    // Prepare a simulated EncodedVideoFrame to feed into the VideoDecoder.
+    // Prepare a simulated EncodedFrame to feed into the VideoDecoder.
 
     const gfx::Size frame_size(kWidth, kHeight);
     const scoped_refptr<VideoFrame> video_frame =
@@ -77,11 +77,10 @@ class VideoDecoderTest
     PopulateVideoFrame(video_frame, 0);
 
     // Encode |frame| into |encoded_frame->data|.
-    scoped_ptr<transport::EncodedVideoFrame> encoded_frame(
-        new transport::EncodedVideoFrame());
+    scoped_ptr<transport::EncodedFrame> encoded_frame(
+        new transport::EncodedFrame());
     CHECK_EQ(transport::kVp8, GetParam());  // Only support VP8 test currently.
     vp8_encoder_.Encode(video_frame, encoded_frame.get());
-    encoded_frame->codec = GetParam();
     encoded_frame->frame_id = last_frame_id_ + 1 + num_dropped_frames;
     last_frame_id_ = encoded_frame->frame_id;
 

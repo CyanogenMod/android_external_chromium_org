@@ -242,7 +242,7 @@ void TrayBackgroundView::TrayContainer::SetAlignment(ShelfAlignment alignment) {
   UpdateLayout();
 }
 
-gfx::Size TrayBackgroundView::TrayContainer::GetPreferredSize() {
+gfx::Size TrayBackgroundView::TrayContainer::GetPreferredSize() const {
   if (size_.IsEmpty())
     return views::View::GetPreferredSize();
   return size_;
@@ -276,7 +276,7 @@ void TrayBackgroundView::TrayContainer::UpdateLayout() {
 
     views::BoxLayout* layout =
         new views::BoxLayout(views::BoxLayout::kHorizontal, 0, 0, 0);
-    layout->set_spread_blank_space(true);
+    layout->set_main_axis_alignment(views::BoxLayout::MAIN_AXIS_ALIGNMENT_FILL);
     views::View::SetLayoutManager(layout);
   } else {
     SetBorder(views::Border::CreateEmptyBorder(
@@ -287,7 +287,7 @@ void TrayBackgroundView::TrayContainer::UpdateLayout() {
 
     views::BoxLayout* layout =
         new views::BoxLayout(views::BoxLayout::kVertical, 0, 0, 0);
-    layout->set_spread_blank_space(true);
+    layout->set_main_axis_alignment(views::BoxLayout::MAIN_AXIS_ALIGNMENT_FILL);
     views::View::SetLayoutManager(layout);
   }
   PreferredSizeChanged();
@@ -336,7 +336,7 @@ void TrayBackgroundView::Initialize() {
 }
 
 void TrayBackgroundView::SetVisible(bool visible) {
-  if (visible == this->visible())
+  if (visible == layer()->GetTargetVisibility())
     return;
 
   if (visible) {
@@ -347,10 +347,15 @@ void TrayBackgroundView::SetVisible(bool visible) {
     // SetVisible(false) is defered until the animation for hiding is done.
     // Otherwise the view is immediately hidden and the animation does not
     // render.
-    views::View::SetVisible(visible);
+    views::View::SetVisible(true);
+    // If SetVisible(true) is called while animating to not visible, then
+    // views::View::SetVisible(true) is a no-op. When the previous animation
+    // ends layer->SetVisible(false) is called. To prevent this
+    // layer->SetVisible(true) immediately interrupts the animation of this
+    // property, and keeps the layer visible.
+    layer()->SetVisible(true);
   }
 
-  layer()->GetAnimator()->StopAnimating();
   ui::ScopedLayerAnimationSettings animation(layer()->GetAnimator());
   animation.SetTransitionDuration(base::TimeDelta::FromMilliseconds(
       kAnimationDurationForVisibilityMs));
@@ -365,8 +370,6 @@ void TrayBackgroundView::SetVisible(bool visible) {
         base::TimeDelta::FromMilliseconds(kShowAnimationDelayMs),
         ui::LayerAnimationElement::OPACITY |
         ui::LayerAnimationElement::TRANSFORM);
-    // layer()->SetVisible(true) is handled by views::View::SetVisible(true) so
-    // we do not need to apply that change while becoming visible.
     layer()->SetOpacity(1.0f);
     gfx::Transform transform;
     transform.Translate(0.0f, 0.0f);
@@ -484,6 +487,15 @@ void TrayBackgroundView::SetTrayBorder() {
 }
 
 void TrayBackgroundView::OnImplicitAnimationsCompleted() {
+  // If there is another animation in the queue, the reverse animation was
+  // triggered before the completion of animating to invisible. Do not turn off
+  // the visibility so that the next animation may render. The value of
+  // layer()->GetTargetVisibility() can be incorrect if the hide animation was
+  // aborted to schedule an animation to become visible. As the new animation
+  // is not yet added to the queue. crbug.com/374236
+  if(layer()->GetAnimator()->is_animating() ||
+     layer()->GetTargetVisibility())
+    return;
   views::View::SetVisible(false);
 }
 

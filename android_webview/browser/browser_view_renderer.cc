@@ -6,14 +6,17 @@
 
 #include "android_webview/browser/browser_view_renderer_client.h"
 #include "android_webview/browser/shared_renderer_state.h"
+#include "android_webview/common/aw_switches.h"
 #include "android_webview/public/browser/draw_gl.h"
 #include "base/android/jni_android.h"
 #include "base/auto_reset.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
+#include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
+#include "cc/output/compositor_frame.h"
 #include "content/public/browser/android/synchronous_compositor.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
@@ -73,6 +76,27 @@ class AutoResetWithLock {
   DISALLOW_COPY_AND_ASSIGN(AutoResetWithLock);
 };
 
+class TracedValue : public base::debug::ConvertableToTraceFormat {
+ public:
+  explicit TracedValue(base::Value* value) : value_(value) {}
+  static scoped_refptr<base::debug::ConvertableToTraceFormat> FromValue(
+      base::Value* value) {
+    return scoped_refptr<base::debug::ConvertableToTraceFormat>(
+        new TracedValue(value));
+  }
+  virtual void AppendAsTraceFormat(std::string* out) const OVERRIDE {
+    std::string tmp;
+    base::JSONWriter::Write(value_.get(), &tmp);
+    *out += tmp;
+  }
+
+ private:
+  virtual ~TracedValue() {}
+  scoped_ptr<base::Value> value_;
+
+  DISALLOW_COPY_AND_ASSIGN(TracedValue);
+};
+
 }  // namespace
 
 // static
@@ -107,6 +131,7 @@ BrowserViewRenderer::BrowserViewRenderer(
       view_visible_(false),
       window_visible_(false),
       attached_to_window_(false),
+      hardware_enabled_(false),
       dip_scale_(0.0),
       page_scale_factor_(1.0),
       on_new_picture_enable_(false),
@@ -166,8 +191,8 @@ void BrowserViewRenderer::TrimMemory(const int level, const bool visible) {
 SynchronousCompositorMemoryPolicy
 BrowserViewRenderer::CalculateDesiredMemoryPolicy() {
   SynchronousCompositorMemoryPolicy policy;
-  size_t width = draw_gl_input_.global_visible_rect.width();
-  size_t height = draw_gl_input_.global_visible_rect.height();
+  size_t width = last_on_draw_global_visible_rect_.width();
+  size_t height = last_on_draw_global_visible_rect_.height();
   policy.bytes_limit = kMemoryMultiplier * kBytesPerPixel * width * height;
   // Round up to a multiple of kMemoryAllocationStep.
   policy.bytes_limit =
@@ -225,39 +250,132 @@ bool BrowserViewRenderer::OnDraw(jobject java_canvas,
                                  const gfx::Vector2d& scroll,
                                  const gfx::Rect& global_visible_rect,
                                  const gfx::Rect& clip) {
-  draw_gl_input_.frame_id++;
-  draw_gl_input_.scroll_offset = scroll;
-  draw_gl_input_.global_visible_rect = global_visible_rect;
-  draw_gl_input_.width = width_;
-  draw_gl_input_.height = height_;
+  last_on_draw_scroll_offset_ = scroll;
+  last_on_draw_global_visible_rect_ = global_visible_rect;
+
   if (clear_view_)
     return false;
+
   if (is_hardware_canvas && attached_to_window_) {
-    shared_renderer_state_->SetDrawGLInput(draw_gl_input_);
-
-    SynchronousCompositorMemoryPolicy old_policy =
-        shared_renderer_state_->GetMemoryPolicy();
-    SynchronousCompositorMemoryPolicy new_policy =
-        CalculateDesiredMemoryPolicy();
-    RequestMemoryPolicy(new_policy);
-    // We should be performing a hardware draw here. If we don't have the
-    // compositor yet or if RequestDrawGL fails, it means we failed this draw
-    // and thus return false here to clear to background color for this draw.
-    bool did_draw_gl =
-        has_compositor_ && client_->RequestDrawGL(java_canvas, false);
-    if (did_draw_gl)
-      GlobalTileManager::GetInstance()->DidUse(tile_manager_key_);
-    else
-      RequestMemoryPolicy(old_policy);
-
-    return did_draw_gl;
+    if (switches::UbercompEnabled()) {
+      return OnDrawHardware(java_canvas);
+    } else {
+      return OnDrawHardwareLegacy(java_canvas);
+    }
   }
   // Perform a software draw
   return DrawSWInternal(java_canvas, clip);
 }
 
-void BrowserViewRenderer::DidDrawGL(const DrawGLResult& result) {
-  DidComposite(!result.clip_contains_visible_rect);
+bool BrowserViewRenderer::OnDrawHardwareLegacy(jobject java_canvas) {
+  scoped_ptr<DrawGLInput> draw_gl_input(new DrawGLInput);
+  draw_gl_input->scroll_offset = last_on_draw_scroll_offset_;
+  draw_gl_input->global_visible_rect = last_on_draw_global_visible_rect_;
+  draw_gl_input->width = width_;
+  draw_gl_input->height = height_;
+
+  SynchronousCompositorMemoryPolicy old_policy =
+      shared_renderer_state_->GetMemoryPolicy();
+  SynchronousCompositorMemoryPolicy new_policy = CalculateDesiredMemoryPolicy();
+  RequestMemoryPolicy(new_policy);
+  // We should be performing a hardware draw here. If we don't have the
+  // compositor yet or if RequestDrawGL fails, it means we failed this draw
+  // and thus return false here to clear to background color for this draw.
+  bool did_draw_gl =
+      has_compositor_ && client_->RequestDrawGL(java_canvas, false);
+  if (did_draw_gl) {
+    GlobalTileManager::GetInstance()->DidUse(tile_manager_key_);
+    shared_renderer_state_->SetDrawGLInput(draw_gl_input.Pass());
+  } else {
+    RequestMemoryPolicy(old_policy);
+  }
+
+  return did_draw_gl;
+}
+
+void BrowserViewRenderer::DidDrawGL(scoped_ptr<DrawGLResult> result) {
+  DidComposite(!result->clip_contains_visible_rect);
+}
+
+bool BrowserViewRenderer::OnDrawHardware(jobject java_canvas) {
+  if (!has_compositor_)
+    return false;
+
+  if (!hardware_enabled_) {
+    hardware_enabled_ =
+        shared_renderer_state_->GetCompositor()->InitializeHwDraw(NULL);
+    if (hardware_enabled_) {
+      gpu::GLInProcessContext* share_context =
+          shared_renderer_state_->GetCompositor()->GetShareContext();
+      DCHECK(share_context);
+      shared_renderer_state_->SetSharedContext(share_context);
+    }
+  }
+  if (!hardware_enabled_)
+    return false;
+
+  ReturnResources();
+  SynchronousCompositorMemoryPolicy new_policy = CalculateDesiredMemoryPolicy();
+  RequestMemoryPolicy(new_policy);
+  shared_renderer_state_->GetCompositor()->SetMemoryPolicy(
+      shared_renderer_state_->GetMemoryPolicy());
+
+  scoped_ptr<DrawGLInput> draw_gl_input(new DrawGLInput);
+  draw_gl_input->scroll_offset = last_on_draw_scroll_offset_;
+  draw_gl_input->global_visible_rect = last_on_draw_global_visible_rect_;
+  draw_gl_input->width = width_;
+  draw_gl_input->height = height_;
+
+  gfx::Transform transform;
+  gfx::Size surface_size(width_, height_);
+  gfx::Rect viewport(surface_size);
+  // TODO(boliu): Should really be |last_on_draw_global_visible_rect_|.
+  // See crbug.com/372073.
+  gfx::Rect clip = viewport;
+  bool stencil_enabled = false;
+  scoped_ptr<cc::CompositorFrame> frame =
+      shared_renderer_state_->GetCompositor()->DemandDrawHw(
+          surface_size, transform, viewport, clip, stencil_enabled);
+  if (!frame.get())
+    return false;
+
+  GlobalTileManager::GetInstance()->DidUse(tile_manager_key_);
+
+  frame->AssignTo(&draw_gl_input->frame);
+  scoped_ptr<DrawGLInput> old_input = shared_renderer_state_->PassDrawGLInput();
+  if (old_input.get()) {
+    shared_renderer_state_->ReturnResources(
+        old_input->frame.delegated_frame_data->resource_list);
+  }
+  shared_renderer_state_->SetDrawGLInput(draw_gl_input.Pass());
+
+  DidComposite(false);
+  bool did_request = client_->RequestDrawGL(java_canvas, false);
+  if (did_request)
+    return true;
+
+  ReturnResources();
+  return false;
+}
+
+void BrowserViewRenderer::DidDrawDelegated(scoped_ptr<DrawGLResult> result) {
+  if (!ui_task_runner_->BelongsToCurrentThread()) {
+    // TODO(boliu): This should be a cancelable callback.
+    ui_task_runner_->PostTask(FROM_HERE,
+                              base::Bind(&BrowserViewRenderer::DidDrawDelegated,
+                                         ui_thread_weak_ptr_,
+                                         base::Passed(&result)));
+    return;
+  }
+  ReturnResources();
+}
+
+void BrowserViewRenderer::ReturnResources() {
+  cc::CompositorFrameAck frame_ack;
+  shared_renderer_state_->SwapReturnedResources(&frame_ack.resources);
+  if (!frame_ack.resources.empty()) {
+    shared_renderer_state_->GetCompositor()->ReturnResources(frame_ack);
+  }
 }
 
 bool BrowserViewRenderer::DrawSWInternal(jobject java_canvas,
@@ -277,7 +395,7 @@ bool BrowserViewRenderer::DrawSWInternal(jobject java_canvas,
   return BrowserViewRendererJavaHelper::GetInstance()
       ->RenderViaAuxilaryBitmapIfNeeded(
             java_canvas,
-            draw_gl_input_.scroll_offset,
+            last_on_draw_scroll_offset_,
             clip,
             base::Bind(&BrowserViewRenderer::CompositeSW,
                        base::Unretained(this)));
@@ -377,6 +495,20 @@ void BrowserViewRenderer::OnAttachedToWindow(int width, int height) {
 void BrowserViewRenderer::OnDetachedFromWindow() {
   TRACE_EVENT0("android_webview", "BrowserViewRenderer::OnDetachedFromWindow");
   attached_to_window_ = false;
+  if (hardware_enabled_) {
+    scoped_ptr<DrawGLInput> input = shared_renderer_state_->PassDrawGLInput();
+    if (input.get()) {
+      shared_renderer_state_->ReturnResources(
+          input->frame.delegated_frame_data->resource_list);
+    }
+    ReturnResources();
+    DCHECK(shared_renderer_state_->ReturnedResourcesEmpty());
+
+    if (switches::UbercompEnabled())
+      shared_renderer_state_->GetCompositor()->ReleaseHwDraw();
+    shared_renderer_state_->SetSharedContext(NULL);
+    hardware_enabled_ = false;
+  }
   SynchronousCompositorMemoryPolicy zero_policy;
   RequestMemoryPolicy(zero_policy);
   GlobalTileManager::GetInstance()->Remove(tile_manager_key_);
@@ -485,6 +617,14 @@ void BrowserViewRenderer::ScrollTo(gfx::Vector2d scroll_offset) {
     scroll_offset_dip_ = scroll_offset_dip;
   }
 
+  TRACE_EVENT_INSTANT2("android_webview",
+               "BrowserViewRenderer::ScrollTo",
+               TRACE_EVENT_SCOPE_THREAD,
+               "x",
+               scroll_offset_dip.x(),
+               "y",
+               scroll_offset_dip.y());
+
   if (has_compositor_)
     shared_renderer_state_->GetCompositor()->
         DidChangeRootLayerScrollOffset();
@@ -505,35 +645,8 @@ void BrowserViewRenderer::DidUpdateContent() {
     client_->OnNewPicture();
 }
 
-void BrowserViewRenderer::SetMaxRootLayerScrollOffset(
-    gfx::Vector2dF new_value_dip) {
-  if (!ui_task_runner_->BelongsToCurrentThread()) {
-    ui_task_runner_->PostTask(
-        FROM_HERE,
-        base::Bind(&BrowserViewRenderer::SetMaxRootLayerScrollOffset,
-                   ui_thread_weak_ptr_,
-                   new_value_dip));
-    return;
-  }
-  DCHECK_GT(dip_scale_, 0);
-
-  max_scroll_offset_dip_ = new_value_dip;
-  DCHECK_LE(0, max_scroll_offset_dip_.x());
-  DCHECK_LE(0, max_scroll_offset_dip_.y());
-
-  client_->SetMaxContainerViewScrollOffset(max_scroll_offset());
-}
-
 void BrowserViewRenderer::SetTotalRootLayerScrollOffset(
     gfx::Vector2dF scroll_offset_dip) {
-  if (!ui_task_runner_->BelongsToCurrentThread()) {
-    ui_task_runner_->PostTask(
-        FROM_HERE,
-        base::Bind(&BrowserViewRenderer::SetTotalRootLayerScrollOffset,
-                   ui_thread_weak_ptr_,
-                   scroll_offset_dip));
-    return;
-  }
 
   {
     base::AutoLock lock(render_thread_lock_);
@@ -561,10 +674,8 @@ void BrowserViewRenderer::SetTotalRootLayerScrollOffset(
 
   DCHECK(0 <= scroll_offset.x());
   DCHECK(0 <= scroll_offset.y());
-  // Disabled because the conditions are being violated while running
-  // AwZoomTest.testMagnification, see http://crbug.com/340648
-  // DCHECK(scroll_offset.x() <= max_offset.x());
-  // DCHECK(scroll_offset.y() <= max_offset.y());
+  DCHECK(scroll_offset.x() <= max_offset.x());
+  DCHECK(scroll_offset.y() <= max_offset.y());
 
   client_->ScrollContainerViewTo(scroll_offset);
 }
@@ -583,38 +694,68 @@ bool BrowserViewRenderer::IsExternalFlingActive() const {
   return client_->IsFlingActive();
 }
 
-void BrowserViewRenderer::SetRootLayerPageScaleFactorAndLimits(
+void BrowserViewRenderer::UpdateRootLayerState(
+    const gfx::Vector2dF& total_scroll_offset_dip,
+    const gfx::Vector2dF& max_scroll_offset_dip,
+    const gfx::SizeF& scrollable_size_dip,
     float page_scale_factor,
     float min_page_scale_factor,
     float max_page_scale_factor) {
   if (!ui_task_runner_->BelongsToCurrentThread()) {
     ui_task_runner_->PostTask(
         FROM_HERE,
-        base::Bind(&BrowserViewRenderer::SetRootLayerPageScaleFactorAndLimits,
+        base::Bind(&BrowserViewRenderer::UpdateRootLayerState,
                    ui_thread_weak_ptr_,
+                   total_scroll_offset_dip,
+                   max_scroll_offset_dip,
+                   scrollable_size_dip,
                    page_scale_factor,
                    min_page_scale_factor,
                    max_page_scale_factor));
     return;
   }
+  TRACE_EVENT_INSTANT1(
+      "android_webview",
+      "BrowserViewRenderer::UpdateRootLayerState",
+      TRACE_EVENT_SCOPE_THREAD,
+      "state",
+      TracedValue::FromValue(
+          RootLayerStateAsValue(total_scroll_offset_dip, scrollable_size_dip)
+              .release()));
+
+  DCHECK_GT(dip_scale_, 0);
+
+  max_scroll_offset_dip_ = max_scroll_offset_dip;
+  DCHECK_LE(0, max_scroll_offset_dip_.x());
+  DCHECK_LE(0, max_scroll_offset_dip_.y());
+
   page_scale_factor_ = page_scale_factor;
   DCHECK_GT(page_scale_factor_, 0);
-  client_->SetPageScaleFactorAndLimits(
-      page_scale_factor, min_page_scale_factor, max_page_scale_factor);
-  client_->SetMaxContainerViewScrollOffset(max_scroll_offset());
+
+  client_->UpdateScrollState(max_scroll_offset(),
+                             scrollable_size_dip,
+                             page_scale_factor,
+                             min_page_scale_factor,
+                             max_page_scale_factor);
+  SetTotalRootLayerScrollOffset(total_scroll_offset_dip);
 }
 
-void BrowserViewRenderer::SetRootLayerScrollableSize(
-    gfx::SizeF scrollable_size) {
-  if (!ui_task_runner_->BelongsToCurrentThread()) {
-    ui_task_runner_->PostTask(
-        FROM_HERE,
-        base::Bind(&BrowserViewRenderer::SetRootLayerScrollableSize,
-                   ui_thread_weak_ptr_,
-                   scrollable_size));
-    return;
-  }
-  client_->SetContentsSize(scrollable_size);
+scoped_ptr<base::Value> BrowserViewRenderer::RootLayerStateAsValue(
+    const gfx::Vector2dF& total_scroll_offset_dip,
+    const gfx::SizeF& scrollable_size_dip) {
+  scoped_ptr<base::DictionaryValue> state(new base::DictionaryValue);
+
+  state->SetDouble("total_scroll_offset_dip.x", total_scroll_offset_dip.x());
+  state->SetDouble("total_scroll_offset_dip.y", total_scroll_offset_dip.y());
+
+  state->SetDouble("max_scroll_offset_dip.x", max_scroll_offset_dip_.x());
+  state->SetDouble("max_scroll_offset_dip.y", max_scroll_offset_dip_.y());
+
+  state->SetDouble("scrollable_size_dip.width", scrollable_size_dip.width());
+  state->SetDouble("scrollable_size_dip.height", scrollable_size_dip.height());
+
+  state->SetDouble("page_scale_factor", page_scale_factor_);
+  return state.PassAs<base::Value>();
 }
 
 void BrowserViewRenderer::DidOverscroll(gfx::Vector2dF accumulated_overscroll,
@@ -664,7 +805,10 @@ void BrowserViewRenderer::EnsureContinuousInvalidation(bool force_invalidate) {
   if (throttle_fallback_tick)
     return;
 
-  block_invalidates_ = compositor_needs_continuous_invalidate_;
+  {
+    base::AutoLock lock(render_thread_lock_);
+    block_invalidates_ = compositor_needs_continuous_invalidate_;
+  }
 
   // Unretained here is safe because the callback is cancelled when
   // |fallback_tick_| is destroyed.
@@ -713,8 +857,21 @@ bool BrowserViewRenderer::CompositeSW(SkCanvas* canvas) {
 }
 
 void BrowserViewRenderer::DidComposite(bool force_invalidate) {
+  {
+    base::AutoLock lock(render_thread_lock_);
+    block_invalidates_ = false;
+  }
+
+  if (!ui_task_runner_->BelongsToCurrentThread()) {
+    ui_task_runner_->PostTask(
+        FROM_HERE,
+        base::Bind(&BrowserViewRenderer::EnsureContinuousInvalidation,
+                   ui_thread_weak_ptr_,
+                   force_invalidate));
+    return;
+  }
+
   fallback_tick_.Cancel();
-  block_invalidates_ = false;
   EnsureContinuousInvalidation(force_invalidate);
 }
 
@@ -733,7 +890,7 @@ std::string BrowserViewRenderer::ToString(AwDrawGLInfo* draw_info) const {
   base::StringAppendF(&str, "attached_to_window: %d ", attached_to_window_);
   base::StringAppendF(&str,
                       "global visible rect: %s ",
-                      draw_gl_input_.global_visible_rect.ToString().c_str());
+                      last_on_draw_global_visible_rect_.ToString().c_str());
   base::StringAppendF(
       &str, "scroll_offset_dip: %s ", scroll_offset_dip_.ToString().c_str());
   base::StringAppendF(&str,

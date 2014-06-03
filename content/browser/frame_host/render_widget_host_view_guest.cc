@@ -352,20 +352,6 @@ void RenderWidgetHostViewGuest::SelectionBoundsChanged(
   rwhv->SelectionBoundsChanged(guest_params);
 }
 
-#if defined(OS_ANDROID)
-void RenderWidgetHostViewGuest::SelectionRootBoundsChanged(
-    const gfx::Rect& bounds) {
-  if (!guest_)
-    return;
-
-  RenderWidgetHostViewBase* rwhv = GetGuestRenderWidgetHostView();
-  if (!rwhv)
-    return;
-
-  rwhv->SelectionRootBoundsChanged(guest_->ToGuestRect(bounds));
-}
-#endif
-
 void RenderWidgetHostViewGuest::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& dst_size,
@@ -375,8 +361,8 @@ void RenderWidgetHostViewGuest::CopyFromCompositingSurface(
   guest_->CopyFromCompositingSurface(src_subrect, dst_size, callback);
 }
 
-void RenderWidgetHostViewGuest::SetBackground(const SkBitmap& background) {
-  platform_view_->SetBackground(background);
+void RenderWidgetHostViewGuest::SetBackgroundOpaque(bool opaque) {
+  platform_view_->SetBackgroundOpaque(opaque);
 }
 
 void RenderWidgetHostViewGuest::SetScrollOffsetPinning(

@@ -83,6 +83,16 @@ bool QuicClient::Initialize() {
   epoll_server_.set_timeout_in_us(50 * 1000);
   crypto_config_.SetDefaults();
 
+  if (!CreateUDPSocket()) {
+    return false;
+  }
+
+  epoll_server_.RegisterFD(fd_, this, kEpollFlags);
+  initialized_ = true;
+  return true;
+}
+
+bool QuicClient::CreateUDPSocket() {
   int address_family = server_address_.GetSockAddrFamily();
   fd_ = socket(address_family, SOCK_DGRAM | SOCK_NONBLOCK, IPPROTO_UDP);
   if (fd_ < 0) {
@@ -153,8 +163,6 @@ bool QuicClient::Initialize() {
     LOG(ERROR) << "Unable to get self address.  Error: " << strerror(errno);
   }
 
-  epoll_server_.RegisterFD(fd_, this, kEpollFlags);
-  initialized_ = true;
   return true;
 }
 
@@ -181,8 +189,8 @@ bool QuicClient::StartConnect() {
       server_id_,
       config_,
       new QuicConnection(GenerateConnectionId(), server_address_, helper_.get(),
-                         writer_.get(), false, supported_versions_,
-                         initial_flow_control_window_),
+                         writer_.get(), false, supported_versions_),
+      initial_flow_control_window_,
       &crypto_config_));
   return session_->CryptoConnect();
 }
@@ -210,6 +218,7 @@ void QuicClient::SendRequestsAndWaitForResponse(
     BalsaHeaders headers;
     headers.SetRequestFirstlineFromStringPieces("GET", args[i], "HTTP/1.1");
     QuicSpdyClientStream* stream = CreateReliableClientStream();
+    DCHECK(stream != NULL);
     stream->SendRequest(headers, "", true);
     stream->set_visitor(this);
   }
@@ -228,7 +237,7 @@ QuicSpdyClientStream* QuicClient::CreateReliableClientStream() {
 void QuicClient::WaitForStreamToClose(QuicStreamId id) {
   DCHECK(connected());
 
-  while (!session_->IsClosedStream(id)) {
+  while (connected() && !session_->IsClosedStream(id)) {
     epoll_server_.WaitForEventsAndExecuteCallbacks();
   }
 }
@@ -236,7 +245,7 @@ void QuicClient::WaitForStreamToClose(QuicStreamId id) {
 void QuicClient::WaitForCryptoHandshakeConfirmed() {
   DCHECK(connected());
 
-  while (!session_->IsCryptoHandshakeConfirmed()) {
+  while (connected() && !session_->IsCryptoHandshakeConfirmed()) {
     epoll_server_.WaitForEventsAndExecuteCallbacks();
   }
 }

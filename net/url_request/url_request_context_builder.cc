@@ -174,10 +174,11 @@ URLRequestContextBuilder::HttpCacheParams::~HttpCacheParams() {}
 URLRequestContextBuilder::HttpNetworkSessionParams::HttpNetworkSessionParams()
     : ignore_certificate_errors(false),
       host_mapping_rules(NULL),
-      http_pipelining_enabled(false),
       testing_fixed_http_port(0),
       testing_fixed_https_port(0),
-      trusted_spdy_proxy() {}
+      next_protos(NextProtosDefaults()),
+      use_alternate_protocols(true) {
+}
 
 URLRequestContextBuilder::HttpNetworkSessionParams::~HttpNetworkSessionParams()
 {}
@@ -278,18 +279,20 @@ URLRequestContext* URLRequestContextBuilder::Build() {
   network_session_params.http_server_properties =
       context->http_server_properties();
   network_session_params.net_log = context->net_log();
+
   network_session_params.ignore_certificate_errors =
       http_network_session_params_.ignore_certificate_errors;
   network_session_params.host_mapping_rules =
       http_network_session_params_.host_mapping_rules;
-  network_session_params.http_pipelining_enabled =
-      http_network_session_params_.http_pipelining_enabled;
   network_session_params.testing_fixed_http_port =
       http_network_session_params_.testing_fixed_http_port;
   network_session_params.testing_fixed_https_port =
       http_network_session_params_.testing_fixed_https_port;
+  network_session_params.use_alternate_protocols =
+    http_network_session_params_.use_alternate_protocols;
   network_session_params.trusted_spdy_proxy =
       http_network_session_params_.trusted_spdy_proxy;
+  network_session_params.next_protos = http_network_session_params_.next_protos;
 
   HttpTransactionFactory* http_transaction_factory = NULL;
   if (http_cache_enabled_) {

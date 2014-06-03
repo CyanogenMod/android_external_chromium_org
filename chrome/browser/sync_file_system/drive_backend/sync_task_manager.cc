@@ -124,6 +124,14 @@ void SyncTaskManager::NotifyTaskDone(scoped_ptr<SyncTaskToken> token,
   DCHECK(token);
 
   SyncTaskManager* manager = token->manager();
+  if (token->token_id() == SyncTaskToken::kTestingTaskTokenID) {
+    DCHECK(!manager);
+    SyncStatusCallback callback = token->callback();
+    token->clear_callback();
+    callback.Run(status);
+    return;
+  }
+
   if (manager)
     manager->NotifyTaskDoneBody(token.Pass(), status);
 }
@@ -136,11 +144,18 @@ void SyncTaskManager::UpdateBlockingFactor(
   DCHECK(current_task_token);
 
   SyncTaskManager* manager = current_task_token->manager();
+  if (current_task_token->token_id() == SyncTaskToken::kTestingTaskTokenID) {
+    DCHECK(!manager);
+    continuation.Run(current_task_token.Pass());
+    return;
+  }
+
   if (!manager)
     return;
 
   scoped_ptr<SyncTaskToken> foreground_task_token;
   scoped_ptr<SyncTaskToken> background_task_token;
+  scoped_ptr<TaskLogger::TaskLog> task_log = current_task_token->PassTaskLog();
   if (current_task_token->token_id() == SyncTaskToken::kForegroundTaskTokenID)
     foreground_task_token = current_task_token.Pass();
   else
@@ -148,6 +163,7 @@ void SyncTaskManager::UpdateBlockingFactor(
 
   manager->UpdateBlockingFactorBody(foreground_task_token.Pass(),
                                     background_task_token.Pass(),
+                                    task_log.Pass(),
                                     blocking_factor.Pass(),
                                     continuation);
 }
@@ -176,6 +192,9 @@ void SyncTaskManager::NotifyTaskDoneBody(scoped_ptr<SyncTaskToken> token,
     token->clear_blocking_factor();
   }
 
+  if (client_)
+    client_->RecordTaskLog(token->PassTaskLog());
+
   scoped_ptr<SyncTask> task;
   SyncStatusCallback callback = token->callback();
   token->clear_callback();
@@ -202,6 +221,7 @@ void SyncTaskManager::NotifyTaskDoneBody(scoped_ptr<SyncTaskToken> token,
 void SyncTaskManager::UpdateBlockingFactorBody(
     scoped_ptr<SyncTaskToken> foreground_task_token,
     scoped_ptr<SyncTaskToken> background_task_token,
+    scoped_ptr<TaskLogger::TaskLog> task_log,
     scoped_ptr<BlockingFactor> blocking_factor,
     const Continuation& continuation) {
   // Run the task directly if the parallelization is disabled.
@@ -231,6 +251,7 @@ void SyncTaskManager::UpdateBlockingFactorBody(
                      AsWeakPtr(),
                      base::Passed(&foreground_task_token),
                      base::Passed(&background_task_token),
+                     base::Passed(&task_log),
                      base::Passed(&blocking_factor),
                      continuation),
           PRIORITY_HIGH);
@@ -256,6 +277,7 @@ void SyncTaskManager::UpdateBlockingFactorBody(
                    AsWeakPtr(),
                    base::Passed(&foreground_task_token),
                    base::Passed(&background_task_token),
+                   base::Passed(&task_log),
                    base::Passed(&blocking_factor),
                    continuation);
     return;
@@ -280,6 +302,7 @@ void SyncTaskManager::UpdateBlockingFactorBody(
 
   token_ = foreground_task_token.Pass();
   StartNextTask();
+  background_task_token->SetTaskLog(task_log.Pass());
   continuation.Run(background_task_token.Pass());
 }
 
@@ -300,6 +323,9 @@ void SyncTaskManager::PushPendingTask(
 void SyncTaskManager::RunTask(scoped_ptr<SyncTaskToken> token,
                               scoped_ptr<SyncTask> task) {
   DCHECK(!running_foreground_task_);
+
+  token->SetTaskLog(make_scoped_ptr(new TaskLogger::TaskLog));
+
   running_foreground_task_ = task.Pass();
   running_foreground_task_->RunPreflight(token.Pass());
 }

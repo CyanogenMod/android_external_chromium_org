@@ -21,8 +21,11 @@ import time
 from pylib import android_commands
 from pylib import constants
 from pylib import device_settings
-from pylib.cmd_helper import GetCmdOutput
 from pylib.device import device_utils
+
+sys.path.append(os.path.join(constants.DIR_SOURCE_ROOT,
+                             'third_party', 'android_testrunner'))
+import errors
 
 def KillHostHeartbeat():
   ps = subprocess.Popen(['ps', 'aux'], stdout = subprocess.PIPE)
@@ -64,10 +67,8 @@ def PushAndLaunchAdbReboot(devices, target):
     device.old_interface.PushIfNeeded(adb_reboot, '/data/local/tmp/')
     # Launch adb_reboot
     print '  Launching adb_reboot ...'
-    # TODO(jbudorick) Try to convert this to RunShellCommand.
-    p = subprocess.Popen(['adb', '-s', device_serial, 'shell'],
-                         stdin=subprocess.PIPE)
-    p.communicate('/data/local/tmp/adb_reboot; exit\n')
+    device.old_interface.GetAndroidToolStatusAndOutput(
+        '/data/local/tmp/adb_reboot')
   LaunchHostHeartbeat()
 
 
@@ -126,14 +127,16 @@ def ProvisionDevices(options):
   for device_serial in devices:
     device = device_utils.DeviceUtils(device_serial)
     device.old_interface.EnableAdbRoot()
-    install_output = GetCmdOutput(
-      ['%s/build/android/adb_install_apk.py' % constants.DIR_SOURCE_ROOT,
-       '--apk',
-       '%s/build/android/CheckInstallApk-debug.apk' % constants.DIR_SOURCE_ROOT
-       ])
-    failure_string = 'Failure [INSTALL_FAILED_INSUFFICIENT_STORAGE]'
-    if failure_string in install_output:
-      WipeDeviceData(device)
+    WipeDeviceData(device)
+  try:
+    (device_utils.DeviceUtils.parallel(devices)
+     .old_interface.Reboot(True))
+  except errors.DeviceUnresponsiveError:
+    pass
+  for device_serial in devices:
+    device = device_utils.DeviceUtils(device_serial)
+    device.WaitUntilFullyBooted(timeout=90)
+    device.old_interface.EnableAdbRoot()
     _ConfigureLocalProperties(device)
     device_settings.ConfigureContentSettingsDict(
         device, device_settings.DETERMINISTIC_DEVICE_SETTINGS)
@@ -174,7 +177,11 @@ def main(argv):
     for device_serial in devices:
       device = device_utils.DeviceUtils(device_serial)
       WipeDeviceData(device)
-    device_utils.RebootDevices()
+    try:
+      (device_utils.DeviceUtils.parallel(devices)
+          .old_interface.Reboot(True).pFinish(None))
+    except errors.DeviceUnresponsiveError:
+      pass
   else:
     ProvisionDevices(options)
 

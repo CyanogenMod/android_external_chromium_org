@@ -16,9 +16,8 @@
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
 #include "content/shell/renderer/test_runner/TestCommon.h"
-#include "content/shell/renderer/test_runner/WebFrameTestProxy.h"
-#include "content/shell/renderer/test_runner/WebTestProxy.h"
-#include "content/test/test_media_stream_client.h"
+#include "content/shell/renderer/test_runner/web_frame_test_proxy.h"
+#include "content/shell/renderer/test_runner/web_test_proxy.h"
 #include "third_party/WebKit/public/platform/WebDeviceMotionData.h"
 #include "third_party/WebKit/public/platform/WebDeviceOrientationData.h"
 #include "third_party/WebKit/public/platform/WebGamepads.h"
@@ -64,9 +63,7 @@ RenderFrameImpl* CreateWebFrameTestProxy(
   typedef WebFrameTestProxy<RenderFrameImpl, RenderViewImpl*, int32> FrameProxy;
 
   FrameProxy* render_frame_proxy = new FrameProxy(render_view, routing_id);
-  render_frame_proxy->setBaseProxy(GetWebTestProxyBase(render_view));
-
-  UseMockMediaStreams(render_frame_proxy);
+  render_frame_proxy->set_base_proxy(GetWebTestProxyBase(render_view));
 
   return render_frame_proxy;
 }
@@ -103,9 +100,18 @@ void SetMockDeviceOrientationData(const WebDeviceOrientationData& data) {
 }
 
 void SetMockScreenOrientation(
+    RenderView* render_view,
     const blink::WebScreenOrientationType& orientation) {
+  static_cast<RenderViewImpl*>(render_view)
+      ->SetScreenOrientationForTesting(orientation);
+  // FIXME(ostap): Remove this when blink side gets updated.
   RendererWebKitPlatformSupportImpl::
       SetMockScreenOrientationForTesting(orientation);
+}
+
+void ResetMockScreenOrientation()
+{
+  RendererWebKitPlatformSupportImpl::ResetMockScreenOrientationForTesting();
 }
 
 void EnableRendererLayoutTestMode() {
@@ -138,7 +144,6 @@ void ForceResizeRenderView(RenderView* render_view,
                            const WebSize& new_size) {
   RenderViewImpl* render_view_impl = static_cast<RenderViewImpl*>(render_view);
   render_view_impl->ForceResizeForTesting(new_size);
-  GetWebTestProxyBase(render_view_impl)->didForceResize();
 }
 
 void SetDeviceScaleFactor(RenderView* render_view, float factor) {
@@ -230,13 +235,6 @@ void EnableAutoResizeMode(RenderView* render_view,
 void DisableAutoResizeMode(RenderView* render_view, const WebSize& new_size) {
   static_cast<RenderViewImpl*>(render_view)->
       DisableAutoResizeForTesting(new_size);
-}
-
-void UseMockMediaStreams(RenderFrame* render_frame) {
-  RenderFrameImpl* render_frame_impl = static_cast<RenderFrameImpl*>(
-      render_frame);
-  render_frame_impl->SetMediaStreamClientForTesting(
-      new TestMediaStreamClient(render_frame_impl));
 }
 
 struct ToLower {

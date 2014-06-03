@@ -17,8 +17,8 @@
 
 using net::test::DefaultQuicConfig;
 using net::test::SupportedVersions;
-using testing::TestWithParam;
 using testing::StrictMock;
+using testing::TestWithParam;
 
 namespace net {
 namespace tools {
@@ -33,6 +33,7 @@ class QuicSpdyClientStreamTest : public TestWithParam<QuicVersion> {
         session_(QuicServerId("example.com", 80, false, PRIVACY_MODE_DISABLED),
                  DefaultQuicConfig(),
                  connection_,
+                 kInitialFlowControlWindowForTest,
                  &crypto_config_),
         body_("hello world") {
     crypto_config_.SetDefaults();

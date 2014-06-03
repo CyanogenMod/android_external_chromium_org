@@ -68,6 +68,7 @@
 #endif  // defined(OS_WIN) || defined(OS_MACOSX)
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
+#include "chrome/common/media_galleries/metadata_types.h"
 #include "chrome/utility/media_galleries/image_metadata_extractor.h"
 #include "chrome/utility/media_galleries/ipc_data_source.h"
 #include "chrome/utility/media_galleries/media_metadata_parser.h"
@@ -170,7 +171,7 @@ class PdfFunctionsBase {
       const base::FilePath& pdf_module_path,
       const base::ScopedNativeLibrary& pdf_lib) {
     return true;
-  };
+  }
 
  private:
   // Exported by PDF plugin.
@@ -303,9 +304,10 @@ typedef PdfFunctionsBase PdfFunctions;
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
 void FinishParseMediaMetadata(
     metadata::MediaMetadataParser* parser,
-    scoped_ptr<extensions::api::media_galleries::MediaMetadata> metadata) {
+    const extensions::api::media_galleries::MediaMetadata& metadata,
+    const std::vector<metadata::AttachedImage>& attached_images) {
   Send(new ChromeUtilityHostMsg_ParseMediaMetadata_Finished(
-      true, *(metadata->ToValue().get())));
+      true, *metadata.ToValue(), attached_images));
   ReleaseProcessIfNeeded();
 }
 #endif  // !defined(OS_ANDROID) && !defined(OS_IOS)
@@ -363,7 +365,7 @@ bool ChromeContentUtilityClient::OnMessageReceived(
                         OnParseUpdateManifest)
     IPC_MESSAGE_HANDLER(ChromeUtilityMsg_DecodeImage, OnDecodeImage)
     IPC_MESSAGE_HANDLER(ChromeUtilityMsg_DecodeImageBase64, OnDecodeImageBase64)
-    IPC_MESSAGE_HANDLER(ChromeUtilityMsg_RenderPDFPagesToMetafile,
+    IPC_MESSAGE_HANDLER(ChromeUtilityMsg_RenderPDFPagesToMetafiles,
                         OnRenderPDFPagesToMetafile)
     IPC_MESSAGE_HANDLER(ChromeUtilityMsg_RenderPDFPagesToPWGRaster,
                         OnRenderPDFPagesToPWGRaster)
@@ -565,23 +567,29 @@ void ChromeContentUtilityClient::OnCreateZipFile(
 #endif  // defined(OS_CHROMEOS)
 
 void ChromeContentUtilityClient::OnRenderPDFPagesToMetafile(
-    base::PlatformFile pdf_file,
+    IPC::PlatformFileForTransit pdf_transit,
     const base::FilePath& metafile_path,
     const printing::PdfRenderSettings& settings,
-    const std::vector<printing::PageRange>& page_ranges) {
+    const std::vector<printing::PageRange>& page_ranges_const) {
   bool succeeded = false;
 #if defined(OS_WIN)
+  base::PlatformFile pdf_file =
+      IPC::PlatformFileForTransitToPlatformFile(pdf_transit);
   int highest_rendered_page_number = 0;
   double scale_factor = 1.0;
+  std::vector<printing::PageRange> page_ranges = page_ranges_const;
   succeeded = RenderPDFToWinMetafile(pdf_file,
                                      metafile_path,
                                      settings,
-                                     page_ranges,
+                                     &page_ranges,
                                      &highest_rendered_page_number,
                                      &scale_factor);
   if (succeeded) {
-    Send(new ChromeUtilityHostMsg_RenderPDFPagesToMetafile_Succeeded(
-        highest_rendered_page_number, scale_factor));
+    // TODO(vitalybuka|scottmg): http://crbug.com/170859. These could
+    // potentially be sent as each page is converted so that the spool could
+    // start sooner.
+    Send(new ChromeUtilityHostMsg_RenderPDFPagesToMetafiles_Succeeded(
+        page_ranges, scale_factor));
   }
 #endif  // defined(OS_WIN)
   if (!succeeded) {
@@ -612,9 +620,10 @@ bool ChromeContentUtilityClient::RenderPDFToWinMetafile(
     base::PlatformFile pdf_file,
     const base::FilePath& metafile_path,
     const printing::PdfRenderSettings& settings,
-    const std::vector<printing::PageRange>& page_ranges,
+    std::vector<printing::PageRange>* page_ranges,
     int* highest_rendered_page_number,
     double* scale_factor) {
+  DCHECK(page_ranges);
   *highest_rendered_page_number = -1;
   *scale_factor = 1.0;
   base::win::ScopedHandle file(pdf_file);
@@ -643,26 +652,37 @@ bool ChromeContentUtilityClient::RenderPDFToWinMetafile(
     return false;
   }
 
-  printing::Emf metafile;
-  metafile.InitToFile(metafile_path);
-  // We need to scale down DC to fit an entire page into DC available area.
-  // Current metafile is based on screen DC and have current screen size.
-  // Writing outside of those boundaries will result in the cut-off output.
-  // On metafiles (this is the case here), scaling down will still record
-  // original coordinates and we'll be able to print in full resolution.
-  // Before playback we'll need to counter the scaling up that will happen
-  // in the service (print_system_win.cc).
-  *scale_factor = gfx::CalculatePageScale(metafile.context(),
-                                          settings.area().right(),
-                                          settings.area().bottom());
-  gfx::ScaleDC(metafile.context(), *scale_factor);
+  // If no range supplied, do all pages.
+  if (page_ranges->empty()) {
+    printing::PageRange page_range_all;
+    page_range_all.from = 0;
+    page_range_all.to = total_page_count - 1;
+    page_ranges->push_back(page_range_all);
+  }
 
   bool ret = false;
   std::vector<printing::PageRange>::const_iterator iter;
-  for (iter = page_ranges.begin(); iter != page_ranges.end(); ++iter) {
+  for (iter = page_ranges->begin(); iter != page_ranges->end(); ++iter) {
     for (int page_number = iter->from; page_number <= iter->to; ++page_number) {
       if (page_number >= total_page_count)
         break;
+
+      printing::Emf metafile;
+      metafile.InitToFile(metafile_path.InsertBeforeExtensionASCII(
+          base::StringPrintf(".%d", page_number)));
+
+      // We need to scale down DC to fit an entire page into DC available area.
+      // Current metafile is based on screen DC and have current screen size.
+      // Writing outside of those boundaries will result in the cut-off output.
+      // On metafiles (this is the case here), scaling down will still record
+      // original coordinates and we'll be able to print in full resolution.
+      // Before playback we'll need to counter the scaling up that will happen
+      // in the service (print_system_win.cc).
+      *scale_factor = gfx::CalculatePageScale(metafile.context(),
+                                              settings.area().right(),
+                                              settings.area().bottom());
+      gfx::ScaleDC(metafile.context(), *scale_factor);
+
       // The underlying metafile is of type Emf and ignores the arguments passed
       // to StartPage.
       metafile.StartPage(gfx::Size(), gfx::Rect(), 1);
@@ -677,9 +697,9 @@ bool ChromeContentUtilityClient::RenderPDFToWinMetafile(
         ret = true;
       }
       metafile.FinishPage();
+      metafile.FinishDocument();
     }
   }
-  metafile.FinishDocument();
   return ret;
 }
 #endif  // defined(OS_WIN)
@@ -919,14 +939,13 @@ void ChromeContentUtilityClient::OnCheckMediaFile(
 }
 
 void ChromeContentUtilityClient::OnParseMediaMetadata(
-    const std::string& mime_type,
-    int64 total_size) {
+    const std::string& mime_type, int64 total_size, bool get_attached_images) {
   // Only one IPCDataSource may be created and added to the list of handlers.
   metadata::IPCDataSource* source = new metadata::IPCDataSource(total_size);
   handlers_.push_back(source);
 
-  metadata::MediaMetadataParser* parser =
-      new metadata::MediaMetadataParser(source, mime_type);
+  metadata::MediaMetadataParser* parser = new metadata::MediaMetadataParser(
+      source, mime_type, get_attached_images);
   parser->Start(base::Bind(&FinishParseMediaMetadata, base::Owned(parser)));
 }
 #endif  // !defined(OS_ANDROID) && !defined(OS_IOS)

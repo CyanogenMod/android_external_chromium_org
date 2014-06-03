@@ -16,7 +16,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -33,6 +32,7 @@
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/personal_data_manager_observer.h"
 #include "components/autofill/core/browser/validation.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
 #include "components/infobars/core/infobar.h"
 #include "components/infobars/core/infobar_manager.h"
 #include "content/public/browser/navigation_controller.h"
@@ -162,7 +162,10 @@ class AutofillTest : public InProcessBrowserTest {
   // The function returns after the PersonalDataManager is updated.
   void FillFormAndSubmit(const std::string& filename, const FormMap& data) {
     GURL url = test_server()->GetURL("files/autofill/" + filename);
-    ui_test_utils::NavigateToURL(browser(), url);
+    chrome::NavigateParams params(browser(), url,
+                                  content::PAGE_TRANSITION_LINK);
+    params.disposition = NEW_FOREGROUND_TAB;
+    ui_test_utils::NavigateToURL(&params);
 
     std::string js;
     for (FormMap::const_iterator i = data.begin(); i != data.end(); ++i) {

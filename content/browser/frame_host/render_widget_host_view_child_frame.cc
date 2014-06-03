@@ -86,8 +86,7 @@ RenderWidgetHostViewChildFrame::GetNativeViewAccessible() {
   return NULL;
 }
 
-void RenderWidgetHostViewChildFrame::SetBackground(
-    const SkBitmap& background) {
+void RenderWidgetHostViewChildFrame::SetBackgroundOpaque(bool opaque) {
 }
 
 gfx::Size RenderWidgetHostViewChildFrame::GetPhysicalBackingSize() const {
@@ -192,10 +191,6 @@ void RenderWidgetHostViewChildFrame::ShowDisambiguationPopup(
     const SkBitmap& zoomed_bitmap) {
 }
 
-void RenderWidgetHostViewChildFrame::SelectionRootBoundsChanged(
-    const gfx::Rect& bounds) {
-}
-
 void RenderWidgetHostViewChildFrame::LockCompositingSurface() {
 }
 
@@ -204,9 +199,6 @@ void RenderWidgetHostViewChildFrame::UnlockCompositingSurface() {
 #endif
 
 void RenderWidgetHostViewChildFrame::ScrollOffsetChanged() {
-}
-
-void RenderWidgetHostViewChildFrame::OnAcceleratedCompositingStateChange() {
 }
 
 void RenderWidgetHostViewChildFrame::AcceleratedSurfaceInitialized(int host_id,

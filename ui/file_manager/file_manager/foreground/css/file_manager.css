@@ -165,13 +165,13 @@ a:focus {
 }
 
 .dialog-navigation-list-header #app-name {
-  -webkit-margin-start: 15px;
   color: #303030;
   font-size: 130%;
+  margin: 0 15px;
 }
 
 .dialog-navigation-list-header #profile-badge:not([hidden]) + #app-name {
-  -webkit-margin-start: 0;
+  margin: 0;
 }
 
 .dialog-navigation-list-contents {
@@ -242,7 +242,6 @@ div.splitter {
 }
 
 #navigation-list .volume-icon {
-  background-position: center 2px;
   background-repeat: no-repeat;
   height: 24px;
   width: 24px;
@@ -620,6 +619,10 @@ body[drive] .dialog-container[connection='metered'] .offline-icon-space {
   height: 10px;
   overflow: hidden;
   width: 25px;
+}
+
+html[dir='rtl'] .breadcrumbs .separator {
+  -webkit-transform: scaleX(-1);
 }
 
 #filename-input-box input {
@@ -1292,24 +1295,6 @@ body[drive] .dialog-container[connection='offline'] .dim-offline {
   opacity: 0.4;
 }
 
-/* Overlay pane covering the entire file manager window (e.g. image editor)*/
-.overlay-pane {
-  -webkit-app-region: no-drag;
-  border: none;
-  height: 100%;
-  left: 0;
-  position: absolute;
-  top: 0;
-  width: 100%;
-  z-index: 1000;  /* Must be above all elements in file manager container. */
-}
-
-/* When the overlay pane is visible hide everything else so that the tab order
-  is not confused. */
-body[overlay-visible] > :not(.overlay-pane) {
-  display: none !important;
-}
-
 /* Invisible container for elements representing files while dragging. */
 #drag-container {
   left: 0;
@@ -1681,17 +1666,6 @@ menuitem#thumbnail-view[lead]:not([disabled]) {
   background-image: -webkit-image-set(
     url('../images/files/ui/button_mosaic_view_white.png') 1x,
     url('../images/files/ui/2x/button_mosaic_view_white.png') 2x);
-}
-
-#iframe-drag-area {
-  -webkit-app-region: drag;
-  height: 48px;
-  left: 64px;
-  position: absolute;
-  right: 134px;
-  top: 0;
-  width: auto;
-  z-index: 101;
 }
 
 #suggest-app-dialog {

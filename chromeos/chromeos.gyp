@@ -321,6 +321,8 @@
         'network/network_state_handler.h',
         'network/network_state_handler_observer.cc',
         'network/network_state_handler_observer.h',
+        'network/network_type_pattern.cc',
+        'network/network_type_pattern.h',
         'network/network_ui_data.cc',
         'network/network_ui_data.h',
         'network/network_util.cc',
@@ -378,7 +380,7 @@
         ['use_x11 == 1', {
           'dependencies': [
             '../build/linux/system.gyp:x11',
-            '../ui/gfx/gfx.gyp:gfx_x11',
+            '../ui/gfx/x/gfx_x11.gyp:gfx_x11',
           ],
         }, {
           # use_x11 == 0
@@ -529,6 +531,7 @@
         'network/network_sms_handler_unittest.cc',
         'network/network_state_handler_unittest.cc',
         'network/network_state_unittest.cc',
+        'network/network_type_pattern_unittest.cc',
         'network/network_ui_data_unittest.cc',
         'network/network_util_unittest.cc',
         'network/onc/onc_certificate_importer_impl_unittest.cc',
@@ -538,7 +541,6 @@
         'network/onc/onc_utils_unittest.cc',
         'network/onc/onc_validator_unittest.cc',
         'network/shill_property_handler_unittest.cc',
-        'network/shill_property_util_unittest.cc',
         'process_proxy/process_output_watcher_unittest.cc',
         'process_proxy/process_proxy_unittest.cc',
         'system/name_value_pairs_parser_unittest.cc',
@@ -555,7 +557,7 @@
         ],
         ['use_x11 == 1', {
           'dependencies': [
-            '../ui/gfx/gfx.gyp:gfx_x11',
+            '../ui/gfx/x/gfx_x11.gyp:gfx_x11',
           ],
         }]
       ],

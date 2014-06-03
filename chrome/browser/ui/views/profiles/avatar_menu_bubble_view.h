@@ -50,6 +50,7 @@ class AvatarMenuBubbleView : public views::BubbleDelegateView,
   // and (2) will correctly hide the old bubble instance.
   static void ShowBubble(views::View* anchor_view,
                          views::BubbleBorder::Arrow arrow,
+                         views::BubbleBorder::ArrowPaintType arrow_paint_type,
                          views::BubbleBorder::BubbleAlignment border_alignment,
                          const gfx::Rect& anchor_rect,
                          Browser* browser);
@@ -59,7 +60,7 @@ class AvatarMenuBubbleView : public views::BubbleDelegateView,
   virtual ~AvatarMenuBubbleView();
 
   // views::View implementation.
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
 
@@ -71,7 +72,7 @@ class AvatarMenuBubbleView : public views::BubbleDelegateView,
   virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
 
   // BubbleDelegate implementation.
-  virtual gfx::Rect GetAnchorRect() OVERRIDE;
+  virtual gfx::Rect GetAnchorRect() const OVERRIDE;
   virtual void Init() OVERRIDE;
   virtual void WindowClosing() OVERRIDE;
 

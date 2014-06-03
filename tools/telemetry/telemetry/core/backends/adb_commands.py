@@ -10,8 +10,8 @@ import os
 import shutil
 import stat
 
+from telemetry.core import platform
 from telemetry.core import util
-from telemetry.core.platform import factory
 from telemetry.util import support_binaries
 
 # This is currently a thin wrapper around Chrome Android's
@@ -25,7 +25,7 @@ try:
   from pylib import ports  # pylint: disable=F0401
 except Exception:
   ports = None
-from pylib.device import device_utils
+from pylib.device import device_utils  # pylint: disable=F0401
 from pylib.utils import apk_helper  # pylint: disable=F0401
 
 
@@ -113,13 +113,16 @@ def SetupPrebuiltTools(adb):
     'forwarder_dist/device_forwarder',
     'md5sum_dist/md5sum_bin',
     'purge_ashmem',
+    'run_pie',
   ]
 
   host_tools = [
     'bitmaptools',
-    'host_forwarder',
     'md5sum_bin_host',
   ]
+
+  if platform.GetHostPlatform().GetOSName() == 'linux':
+    host_tools.append('host_forwarder')
 
   has_device_prebuilt = adb.system_properties['ro.product.cpu.abi'].startswith(
       'armeabi')
@@ -139,9 +142,9 @@ def SetupPrebuiltTools(adb):
       if not os.path.exists(os.path.dirname(dest)):
         os.makedirs(os.path.dirname(dest))
       platform_name = ('android' if t in device_tools else
-                       factory.GetPlatformBackendForCurrentOS().GetOSName())
+                       platform.GetHostPlatform().GetOSName())
       prebuilt_path = support_binaries.FindPath(executable, platform_name)
-      if not os.path.exists(prebuilt_path):
+      if not prebuilt_path or not os.path.exists(prebuilt_path):
         raise NotImplementedError("""
 %s must be checked into cloud storage.
 Instructions:

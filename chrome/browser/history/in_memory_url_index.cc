@@ -16,7 +16,7 @@
 #include "chrome/browser/history/url_index_private_data.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/url_constants.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
@@ -40,11 +40,11 @@ void InitializeSchemeWhitelist(std::set<std::string>* whitelist) {
     return;  // Nothing to do, already initialized.
   whitelist->insert(std::string(content::kAboutScheme));
   whitelist->insert(std::string(content::kChromeUIScheme));
-  whitelist->insert(std::string(content::kFileScheme));
-  whitelist->insert(std::string(content::kFtpScheme));
+  whitelist->insert(std::string(url::kFileScheme));
+  whitelist->insert(std::string(url::kFtpScheme));
   whitelist->insert(std::string(url::kHttpScheme));
   whitelist->insert(std::string(url::kHttpsScheme));
-  whitelist->insert(std::string(content::kMailToScheme));
+  whitelist->insert(std::string(url::kMailToScheme));
 }
 
 // Restore/SaveCacheObserver ---------------------------------------------------
@@ -160,10 +160,12 @@ bool InMemoryURLIndex::GetCacheFilePath(base::FilePath* file_path) {
 
 ScoredHistoryMatches InMemoryURLIndex::HistoryItemsForTerms(
     const base::string16& term_string,
-    size_t cursor_position) {
+    size_t cursor_position,
+    size_t max_matches) {
   return private_data_->HistoryItemsForTerms(
       term_string,
       cursor_position,
+      max_matches,
       languages_,
       BookmarkModelFactory::GetForProfile(profile_));
 }

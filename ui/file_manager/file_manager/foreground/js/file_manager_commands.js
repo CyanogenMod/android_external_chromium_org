@@ -368,11 +368,19 @@ CommandHandler.COMMANDS_['unmount'] = {
         locationInfo && locationInfo.isRootEntry && locationInfo.rootType;
 
     event.canExecute = (rootType == VolumeManagerCommon.RootType.ARCHIVE ||
-                        rootType == VolumeManagerCommon.RootType.REMOVABLE);
+                        rootType == VolumeManagerCommon.RootType.REMOVABLE ||
+                        rootType == VolumeManagerCommon.RootType.PROVIDED);
     event.command.setHidden(!event.canExecute);
-    event.command.label = rootType == VolumeManagerCommon.RootType.ARCHIVE ?
-        str('CLOSE_ARCHIVE_BUTTON_LABEL') :
-        str('UNMOUNT_DEVICE_BUTTON_LABEL');
+
+    switch (rootType) {
+      case VolumeManagerCommon.RootType.ARCHIVE:
+      case VolumeManagerCommon.RootType.PROVIDED:
+        event.command.label = str('CLOSE_VOLUME_BUTTON_LABEL');
+        break;
+      case VolumeManagerCommon.RootType.REMOVABLE:
+        event.command.label = str('UNMOUNT_DEVICE_BUTTON_LABEL');
+        break;
+    }
   }
 };
 
@@ -897,3 +905,48 @@ CommandHandler.COMMANDS_['zoom-reset'] = {
   },
   canExecute: CommandUtil.canExecuteAlways
 };
+
+/**
+ * Open inspector for foreground page.
+ * @type {Command}
+ */
+CommandHandler.COMMANDS_['inspect-normal'] = {
+  execute: function(event, fileManager) {
+    chrome.fileBrowserPrivate.openInspector('normal');
+  },
+  canExecute: CommandUtil.canExecuteAlways
+};
+
+/**
+ * Open inspector for foreground page and bring focus to the console.
+ * @type {Command}
+ */
+CommandHandler.COMMANDS_['inspect-console'] = {
+  execute: function(event, fileManager) {
+    chrome.fileBrowserPrivate.openInspector('console');
+  },
+  canExecute: CommandUtil.canExecuteAlways
+};
+
+/**
+ * Open inspector for foreground page in inspect element mode.
+ * @type {Command}
+ */
+CommandHandler.COMMANDS_['inspect-element'] = {
+  execute: function(event, fileManager) {
+    chrome.fileBrowserPrivate.openInspector('element');
+  },
+  canExecute: CommandUtil.canExecuteAlways
+};
+
+/**
+ * Open inspector for background page.
+ * @type {Command}
+ */
+CommandHandler.COMMANDS_['inspect-background'] = {
+  execute: function(event, fileManager) {
+    chrome.fileBrowserPrivate.openInspector('background');
+  },
+  canExecute: CommandUtil.canExecuteAlways
+};
+

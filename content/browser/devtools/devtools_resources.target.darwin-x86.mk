@@ -35,9 +35,9 @@ $(gyp_shared_intermediate_dir)/content/browser/devtools/devtools_protocol_consta
 $(gyp_shared_intermediate_dir)/content/browser/devtools/devtools_protocol_constants.cc: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/browser/devtools/devtools_protocol_constants.cc: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/browser/devtools/devtools_protocol_constants.cc: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
-$(gyp_shared_intermediate_dir)/content/browser/devtools/devtools_protocol_constants.cc: $(LOCAL_PATH)/third_party/WebKit/Source/devtools/protocol.json $(LOCAL_PATH)/content/browser/devtools/browser_protocol.json $(LOCAL_PATH)/content/browser/devtools/devtools_protocol_constants_generator.py $(GYP_TARGET_DEPENDENCIES)
+$(gyp_shared_intermediate_dir)/content/browser/devtools/devtools_protocol_constants.cc: $(LOCAL_PATH)/third_party/WebKit/Source/devtools/protocol.json $(LOCAL_PATH)/content/browser/devtools/browser_protocol.json $(LOCAL_PATH)/content/public/browser/devtools_protocol_constants_generator.py $(GYP_TARGET_DEPENDENCIES)
 	@echo "Gyp action: Generating DevTools protocol constants from ../../../third_party/WebKit/Source/devtools/protocol.json ($@)"
-	$(hide)cd $(gyp_local_path)/content/browser/devtools; mkdir -p $(gyp_shared_intermediate_dir)/content/browser/devtools; python devtools_protocol_constants_generator.py ../../../third_party/WebKit/Source/devtools/protocol.json browser_protocol.json "$(gyp_shared_intermediate_dir)/content/browser/devtools/devtools_protocol_constants.cc" "$(gyp_shared_intermediate_dir)/content/browser/devtools/devtools_protocol_constants.h"
+	$(hide)cd $(gyp_local_path)/content/browser/devtools; mkdir -p $(gyp_shared_intermediate_dir)/content/browser/devtools; python ../../public/browser/devtools_protocol_constants_generator.py content "$(gyp_shared_intermediate_dir)/content/browser/devtools/devtools_protocol_constants.cc" "$(gyp_shared_intermediate_dir)/content/browser/devtools/devtools_protocol_constants.h" ../../../third_party/WebKit/Source/devtools/protocol.json browser_protocol.json
 
 $(gyp_shared_intermediate_dir)/content/browser/devtools/devtools_protocol_constants.h: $(gyp_shared_intermediate_dir)/content/browser/devtools/devtools_protocol_constants.cc ;
 

@@ -6,8 +6,10 @@
 #define MOJO_SERVICES_VIEW_MANAGER_ROOT_NODE_MANAGER_H_
 
 #include <map>
+#include <set>
 
 #include "base/basictypes.h"
+#include "mojo/public/cpp/bindings/array.h"
 #include "mojo/services/view_manager/ids.h"
 #include "mojo/services/view_manager/node.h"
 #include "mojo/services/view_manager/node_delegate.h"
@@ -16,11 +18,12 @@
 
 namespace mojo {
 
-class Shell;
+class ServiceProvider;
 
-namespace services {
 namespace view_manager {
+namespace service {
 
+class RootViewManagerDelegate;
 class View;
 class ViewManagerConnection;
 
@@ -28,29 +31,51 @@ class ViewManagerConnection;
 // as well as providing the root of the node hierarchy.
 class MOJO_VIEW_MANAGER_EXPORT RootNodeManager : public NodeDelegate {
  public:
+  // Used to indicate if the server id should be incremented after notifiying
+  // clients of the change.
+  enum ChangeType {
+    CHANGE_TYPE_ADVANCE_SERVER_CHANGE_ID,
+    CHANGE_TYPE_DONT_ADVANCE_SERVER_CHANGE_ID,
+  };
+
   // Create when a ViewManagerConnection is about to make a change. Ensures
   // clients are notified of the correct change id.
   class ScopedChange {
    public:
     ScopedChange(ViewManagerConnection* connection,
                  RootNodeManager* root,
-                 TransportChangeId change_id);
+                 RootNodeManager::ChangeType change_type,
+                 bool is_delete_node);
     ~ScopedChange();
 
    private:
     RootNodeManager* root_;
+    const ChangeType change_type_;
 
     DISALLOW_COPY_AND_ASSIGN(ScopedChange);
   };
 
-  explicit RootNodeManager(Shell* shell);
+  RootNodeManager(ServiceProvider* service_provider,
+                  RootViewManagerDelegate* view_manager_delegate);
   virtual ~RootNodeManager();
 
   // Returns the id for the next ViewManagerConnection.
   TransportConnectionId GetAndAdvanceNextConnectionId();
 
+  TransportChangeId next_server_change_id() const {
+    return next_server_change_id_;
+  }
+
   void AddConnection(ViewManagerConnection* connection);
   void RemoveConnection(ViewManagerConnection* connection);
+
+  // Establishes the initial client. Similar to Connect(), but the resulting
+  // client is allowed to do anything.
+  void InitialConnect(const std::string& url);
+
+  // See description of IViewManager::Connect() for details. This assumes
+  // |node_ids| has been validated.
+  void Connect(const String& url, const Array<TransportNodeId>& node_ids);
 
   // Returns the connection by id.
   ViewManagerConnection* GetConnection(TransportConnectionId connection_id);
@@ -63,15 +88,23 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager : public NodeDelegate {
 
   Node* root() { return &root_; }
 
+  bool IsProcessingChange() const { return change_source_ != 0; }
+
+  bool is_processing_delete_node() const { return is_processing_delete_node_; }
+
   // These functions trivially delegate to all ViewManagerConnections, which in
   // term notify their clients.
-  void NotifyNodeHierarchyChanged(const NodeId& node,
-                                  const NodeId& new_parent,
-                                  const NodeId& old_parent);
-  void NotifyNodeViewReplaced(const NodeId& node,
-                              const ViewId& new_view_id,
-                              const ViewId& old_view_id);
-  void NotifyNodeDeleted(const NodeId& node);
+  void ProcessNodeBoundsChanged(const Node* node,
+                                const gfx::Rect& old_bounds,
+                                const gfx::Rect& new_bounds);
+  void ProcessNodeHierarchyChanged(const Node* node,
+                                   const Node* new_parent,
+                                   const Node* old_parent);
+  void ProcessNodeViewReplaced(const Node* node,
+                               const View* new_view_id,
+                               const View* old_view_id);
+  void ProcessNodeDeleted(const NodeId& node);
+  void ProcessViewDeleted(const ViewId& view);
 
  private:
   // Used to setup any static state needed by RootNodeManager.
@@ -80,60 +113,68 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager : public NodeDelegate {
     ~Context();
   };
 
-  // Tracks a change.
-  struct Change {
-    Change(TransportConnectionId connection_id, TransportChangeId change_id)
-        : connection_id(connection_id),
-          change_id(change_id) {
-    }
-
-    TransportConnectionId connection_id;
-    TransportChangeId change_id;
-  };
-
   typedef std::map<TransportConnectionId, ViewManagerConnection*> ConnectionMap;
 
-  // Invoked when a particular connection is about to make a change. Records
-  // the |change_id| so that it can be supplied to the clients by way of
-  // OnNodeHierarchyChanged().
+  // Invoked when a particular connection is about to make a change.
+  // Subsequently followed by FinishChange() once the change is done.
+  //
   // Changes should never nest, meaning each PrepareForChange() must be
   // balanced with a call to FinishChange() with no PrepareForChange()
   // in between.
-  void PrepareForChange(ViewManagerConnection* connection,
-                        TransportChangeId change_id);
+  void PrepareForChange(ViewManagerConnection* connection, bool is_delete_node);
 
   // Balances a call to PrepareForChange().
-  void FinishChange();
+  void FinishChange(ChangeType change_type);
 
-  // Overriden from NodeDelegate:
-  virtual void OnNodeHierarchyChanged(const NodeId& node,
-                                      const NodeId& new_parent,
-                                      const NodeId& old_parent) OVERRIDE;
-  virtual void OnNodeViewReplaced(const NodeId& node,
-                                  const ViewId& new_view_id,
-                                  const ViewId& old_view_id) OVERRIDE;
+  // Returns true if the specified connection originated the current change.
+  bool IsChangeSource(TransportConnectionId connection_id) const {
+    return connection_id == change_source_;
+  }
+
+  // Implementation of the two connect variants.
+  ViewManagerConnection* ConnectImpl(const String& url,
+                                     const Array<TransportNodeId>& node_ids);
+
+  // Overridden from NodeDelegate:
+  virtual void OnNodeHierarchyChanged(const Node* node,
+                                      const Node* new_parent,
+                                      const Node* old_parent) OVERRIDE;
+  virtual void OnNodeViewReplaced(const Node* node,
+                                  const View* new_view,
+                                  const View* old_view) OVERRIDE;
 
   Context context_;
+
+  ServiceProvider* service_provider_;
 
   // ID to use for next ViewManagerConnection.
   TransportConnectionId next_connection_id_;
 
+  TransportChangeId next_server_change_id_;
+
   // Set of ViewManagerConnections.
   ConnectionMap connection_map_;
 
-  // If non-null we're processing a change.
-  scoped_ptr<Change> change_;
+  // If non-zero we're processing a change from this client.
+  TransportConnectionId change_source_;
+
+  // True if we're processing a DeleteNode request.
+  bool is_processing_delete_node_;
 
   RootViewManager root_view_manager_;
 
   // Root node.
   Node root_;
 
+  // Set of ViewManagerConnections created by way of Connect(). These have to be
+  // explicitly destroyed.
+  std::set<ViewManagerConnection*> connections_created_by_connect_;
+
   DISALLOW_COPY_AND_ASSIGN(RootNodeManager);
 };
 
+}  // namespace service
 }  // namespace view_manager
-}  // namespace services
 }  // namespace mojo
 
 #endif  // MOJO_SERVICES_VIEW_MANAGER_ROOT_NODE_MANAGER_H_

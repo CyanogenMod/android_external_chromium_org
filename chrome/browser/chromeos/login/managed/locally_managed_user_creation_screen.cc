@@ -9,6 +9,8 @@
 #include "base/rand_util.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/camera_detector.h"
+#include "chrome/browser/chromeos/login/auth/key.h"
+#include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
 #include "chrome/browser/chromeos/login/managed/managed_user_creation_controller.h"
 #include "chrome/browser/chromeos/login/managed/managed_user_creation_controller_new.h"
@@ -16,9 +18,9 @@
 #include "chrome/browser/chromeos/login/managed/supervised_user_authentication.h"
 #include "chrome/browser/chromeos/login/screens/error_screen.h"
 #include "chrome/browser/chromeos/login/screens/screen_observer.h"
-#include "chrome/browser/chromeos/login/supervised_user_manager.h"
-#include "chrome/browser/chromeos/login/user_image.h"
-#include "chrome/browser/chromeos/login/user_image_manager.h"
+#include "chrome/browser/chromeos/login/users/avatar/user_image.h"
+#include "chrome/browser/chromeos/login/users/avatar/user_image_manager.h"
+#include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/managed_mode/managed_user_constants.h"
 #include "chrome/browser/managed_mode/managed_user_shared_settings_service.h"
@@ -202,10 +204,9 @@ void LocallyManagedUserCreationScreen::AuthenticateManager(
     controller_.reset(new ManagedUserCreationControllerNew(this, manager_id));
   }
 
-  ExistingUserController::current_controller()->
-      Login(UserContext(manager_id,
-                        manager_password,
-                        std::string()  /* auth_code */));
+  UserContext user_context(manager_id);
+  user_context.SetKey(Key(manager_password));
+  ExistingUserController::current_controller()->Login(user_context);
 }
 
 void LocallyManagedUserCreationScreen::CreateManagedUser(
@@ -335,7 +336,6 @@ void LocallyManagedUserCreationScreen::OnManagerLoginFailure() {
 
 void LocallyManagedUserCreationScreen::OnManagerFullyAuthenticated(
     Profile* manager_profile) {
-  LOG(ERROR) << "-----------------------------OnManagerFullyAuthenticated";
   DCHECK(controller_.get());
   // For manager user, move desktop to locked container so that windows created
   // during the user image picker step are below it.

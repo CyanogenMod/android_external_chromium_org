@@ -98,7 +98,6 @@
             'installer/util/advanced_firewall_manager_win_unittest.cc',
             'installer/util/callback_work_item_unittest.cc',
             'installer/util/channel_info_unittest.cc',
-            'installer/util/copy_reg_key_work_item_unittest.cc',
             'installer/util/copy_tree_work_item_unittest.cc',
             'installer/util/create_dir_work_item_unittest.cc',
             'installer/util/create_reg_key_work_item_unittest.cc',
@@ -295,9 +294,6 @@
             'installer/setup/uninstall.h',
           ],
           'msvs_settings': {
-            'VCCLCompilerTool': {
-              'EnableEnhancedInstructionSet': '4',  # NoExtensions
-            },
             'VCLinkerTool': {
               'SubSystem': '2',     # Set /SUBSYSTEM:WINDOWS
             },
@@ -355,6 +351,13 @@
               'variables': {
                  'branding_dir': 'app/theme/chromium',
                  'branding_dir_100': 'app/theme/default_100_percent/chromium',
+              },
+            }],
+            ['target_arch=="ia32"', {
+              'msvs_settings': {
+                'VCCLCompilerTool': {
+                  'EnableEnhancedInstructionSet': '4',  # NoExtensions
+                },
               },
             }],
           ],
@@ -491,6 +494,7 @@
           '<(PRODUCT_DIR)/chrome',
           '<(PRODUCT_DIR)/chrome_sandbox',
           '<(PRODUCT_DIR)/libffmpegsumo.so',
+          '<(PRODUCT_DIR)/libpdf.so',
           '<(PRODUCT_DIR)/libppGoogleNaClPluginChrome.so',
           '<(PRODUCT_DIR)/xdg-mime',
           '<(PRODUCT_DIR)/xdg-settings',
@@ -536,11 +540,6 @@
           ['target_arch=="arm"', {
             'deb_arch': 'arm',
             'rpm_arch': 'arm',
-          }],
-          ['internal_pdf', {
-            'packaging_files_binaries': [
-              '<(PRODUCT_DIR)/libpdf.so',
-            ],
           }],
           ['libpeer_target_type!="static_library"', {
             'packaging_files_binaries': [

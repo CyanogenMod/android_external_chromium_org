@@ -16,6 +16,10 @@ namespace base {
 class ListValue;
 }
 
+namespace gfx {
+class Rect;
+}
+
 namespace chromeos {
 
 class HelpAppLauncher;
@@ -69,7 +73,6 @@ class CoreOobeHandler : public BaseScreenHandler,
   virtual void ResetSignInUI(bool force_online) OVERRIDE;
   virtual void ClearUserPodPassword() OVERRIDE;
   virtual void RefocusCurrentPod() OVERRIDE;
-  virtual void OnLoginSuccess(const std::string& username) OVERRIDE;
   virtual void ShowPasswordChangedScreen(bool show_password_error) OVERRIDE;
   virtual void SetUsageStats(bool checked) OVERRIDE;
   virtual void SetOemEulaUrl(const std::string& oem_eula_url) OVERRIDE;
@@ -77,6 +80,8 @@ class CoreOobeHandler : public BaseScreenHandler,
   virtual void ClearErrors() OVERRIDE;
   virtual void ReloadContent(const base::DictionaryValue& dictionary) OVERRIDE;
   virtual void ShowControlBar(bool show) OVERRIDE;
+  virtual void SetKeyboardState(bool shown, const gfx::Rect& bounds) OVERRIDE;
+  virtual void SetClientAreaSize(int width, int height) OVERRIDE;
   virtual void ShowDeviceResetScreen() OVERRIDE;
 
   // Handlers for JS WebUI messages.
@@ -106,6 +111,12 @@ class CoreOobeHandler : public BaseScreenHandler,
 
   // Updates the device requisition string on the UI side.
   void UpdateDeviceRequisition();
+
+  // Updates virtual keyboard state.
+  void UpdateKeyboardState();
+
+  // Updates client area size based on the primary screen size.
+  void UpdateClientAreaSize();
 
   // Notification of a change in the accessibility settings.
   void OnAccessibilityStatusChanged(

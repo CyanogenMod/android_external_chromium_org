@@ -238,6 +238,7 @@ AppWindow::AppWindow(BrowserContext* context,
       fullscreen_types_(FULLSCREEN_TYPE_NONE),
       show_on_first_paint_(false),
       first_paint_complete_(false),
+      is_hidden_(false),
       cached_always_on_top_(false) {
   extensions::ExtensionsBrowserClient* client =
       extensions::ExtensionsBrowserClient::Get();
@@ -279,6 +280,11 @@ void AppWindow::Init(const GURL& url,
 
   native_app_window_.reset(delegate_->CreateNativeAppWindow(this, new_params));
 
+  // Prevent the browser process from shutting down while this window exists.
+  AppsClient::Get()->IncrementKeepAliveCount();
+  UpdateExtensionAppIcon();
+  AppWindowRegistry::Get(browser_context_)->AddAppWindow(this);
+
   if (new_params.hidden) {
     // Although the window starts hidden by default, calling Hide() here
     // notifies observers of the window being hidden.
@@ -314,7 +320,7 @@ void AppWindow::Init(const GURL& url,
                  content::NotificationService::AllSources());
   // Update the app menu if an ephemeral app becomes installed.
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_INSTALLED,
+                 chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
                  content::Source<content::BrowserContext>(
                      client->GetOriginalContext(browser_context_)));
 
@@ -330,13 +336,6 @@ void AppWindow::Init(const GURL& url,
     initial_bounds.Inset(frame_insets);
     apps::ResizeWebContents(web_contents, initial_bounds.size());
   }
-
-  // Prevent the browser process from shutting down while this window is open.
-  AppsClient::Get()->IncrementKeepAliveCount();
-
-  UpdateExtensionAppIcon();
-
-  AppWindowRegistry::Get(browser_context_)->AddAppWindow(this);
 }
 
 AppWindow::~AppWindow() {
@@ -539,22 +538,21 @@ gfx::Rect AppWindow::GetClientBounds() const {
 }
 
 base::string16 AppWindow::GetTitle() const {
-  base::string16 title;
   const extensions::Extension* extension = GetExtension();
   if (!extension)
-    return title;
+    return base::string16();
 
   // WebContents::GetTitle() will return the page's URL if there's no <title>
   // specified. However, we'd prefer to show the name of the extension in that
   // case, so we directly inspect the NavigationEntry's title.
+  base::string16 title;
   if (!web_contents() || !web_contents()->GetController().GetActiveEntry() ||
       web_contents()->GetController().GetActiveEntry()->GetTitle().empty()) {
     title = base::UTF8ToUTF16(extension->name());
   } else {
     title = web_contents()->GetTitle();
   }
-  const base::char16 kBadChars[] = {'\n', 0};
-  base::RemoveChars(title, kBadChars, &title);
+  base::RemoveChars(title, base::ASCIIToUTF16("\n"), &title);
   return title;
 }
 
@@ -678,6 +676,8 @@ void AppWindow::SetContentSizeConstraints(const gfx::Size& min_size,
 }
 
 void AppWindow::Show(ShowType show_type) {
+  is_hidden_ = false;
+
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableAppsShowOnFirstPaint)) {
     show_on_first_paint_ = true;
@@ -704,6 +704,7 @@ void AppWindow::Hide() {
   // there was a non-empty paint. It should have no effect in a non-racy
   // scenario where the application is hiding then showing a window: the second
   // show will not be delayed.
+  is_hidden_ = true;
   show_on_first_paint_ = false;
   GetBaseWindow()->Hide();
   AppWindowRegistry::Get(browser_context_)->AppWindowHidden(this);
@@ -969,7 +970,7 @@ void AppWindow::Observe(int type,
         native_app_window_->Close();
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_INSTALLED: {
+    case chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED: {
       const extensions::Extension* installed_extension =
           content::Details<const extensions::InstalledExtensionInfo>(details)
               ->extension;

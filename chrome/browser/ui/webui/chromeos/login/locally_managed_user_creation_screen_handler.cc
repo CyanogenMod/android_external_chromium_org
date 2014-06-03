@@ -8,9 +8,9 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_creation_flow.h"
-#include "chrome/browser/chromeos/login/supervised_user_manager.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/chromeos/login/wallpaper_manager.h"
+#include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
@@ -220,11 +220,12 @@ void LocallyManagedUserCreationScreenHandler::Show() {
       continue;
     bool is_owner = ((*it)->email() == owner);
     base::DictionaryValue* user_dict = new base::DictionaryValue();
-    SigninScreenHandler::FillUserDictionary(*it,
-                                            is_owner,
-                                            false /* is_signin_to_add */,
-                                            LoginDisplay::OFFLINE_PASSWORD,
-                                            user_dict);
+    SigninScreenHandler::FillUserDictionary(
+        *it,
+        is_owner,
+        false /* is_signin_to_add */,
+        ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
+        user_dict);
     users_list->Append(user_dict);
   }
   data->Set("managers", users_list.release());

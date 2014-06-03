@@ -25,6 +25,7 @@
 #include "chrome/browser/extensions/convert_user_script.h"
 #include "chrome/browser/extensions/convert_web_app.h"
 #include "chrome/browser/extensions/crx_installer_error.h"
+#include "chrome/browser/extensions/extension_assets_manager.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
 #include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -41,6 +42,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/user_metrics.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension_icon_set.h"
 #include "extensions/common/feature_switch.h"
@@ -61,7 +63,7 @@
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #endif
 
 using base::UserMetricsAction;
@@ -105,10 +107,9 @@ scoped_refptr<CrxInstaller> CrxInstaller::Create(
   return new CrxInstaller(service->AsWeakPtr(), client.Pass(), approval);
 }
 
-CrxInstaller::CrxInstaller(
-    base::WeakPtr<ExtensionService> service_weak,
-    scoped_ptr<ExtensionInstallPrompt> client,
-    const WebstoreInstaller::Approval* approval)
+CrxInstaller::CrxInstaller(base::WeakPtr<ExtensionService> service_weak,
+                           scoped_ptr<ExtensionInstallPrompt> client,
+                           const WebstoreInstaller::Approval* approval)
     : install_directory_(service_weak->install_directory()),
       install_source_(Manifest::INTERNAL),
       approved_(false),
@@ -123,6 +124,7 @@ CrxInstaller::CrxInstaller(
       client_(client.release()),
       apps_require_extension_mime_type_(false),
       allow_silent_install_(false),
+      grant_permissions_(true),
       install_cause_(extension_misc::INSTALL_CAUSE_UNSET),
       creation_flags_(Extension::NO_FLAGS),
       off_store_install_allow_reason_(OffStoreInstallDisallowed),
@@ -132,6 +134,7 @@ CrxInstaller::CrxInstaller(
       blacklist_state_(extensions::NOT_BLACKLISTED),
       install_wait_for_idle_(true),
       update_from_settings_page_(false),
+      is_ephemeral_(false),
       installer_(service_weak->profile()) {
   installer_task_runner_ = service_weak->GetFileTaskRunner();
   if (!approval)
@@ -161,9 +164,7 @@ CrxInstaller::CrxInstaller(
   }
 
   show_dialog_callback_ = approval->show_dialog_callback;
-
-  if (approval->is_ephemeral)
-    creation_flags_ |= Extension::IS_EPHEMERAL;
+  is_ephemeral_ = approval->is_ephemeral;
 }
 
 CrxInstaller::~CrxInstaller() {
@@ -695,11 +696,20 @@ void CrxInstaller::CompleteInstall() {
     "Extensions.CrxInstallDirPathLength",
         install_directory_.value().length(), 0, 500, 100);
 
-  base::FilePath version_dir =
-      file_util::InstallExtension(unpacked_extension_root_,
-                                  extension()->id(),
-                                  extension()->VersionString(),
-                                  install_directory_);
+  ExtensionAssetsManager* assets_manager =
+      ExtensionAssetsManager::GetInstance();
+  assets_manager->InstallExtension(
+      extension(),
+      unpacked_extension_root_,
+      install_directory_,
+      profile(),
+      base::Bind(&CrxInstaller::ReloadExtensionAfterInstall, this));
+}
+
+void CrxInstaller::ReloadExtensionAfterInstall(
+    const base::FilePath& version_dir) {
+  DCHECK(installer_task_runner_->RunsTasksOnCurrentThread());
+
   if (version_dir.empty()) {
     ReportFailureFromFileThread(
         CrxInstallerError(
@@ -730,7 +740,6 @@ void CrxInstaller::CompleteInstall() {
     LOG(ERROR) << error << " " << extension_id << " " << download_url_;
     ReportFailureFromFileThread(CrxInstallerError(base::UTF8ToUTF16(error)));
   }
-
 }
 
 void CrxInstaller::ReportFailureFromFileThread(const CrxInstallerError& error) {
@@ -802,7 +811,7 @@ void CrxInstaller::ReportSuccessFromUIThread() {
     // We update the extension's granted permissions if the user already
     // approved the install (client_ is non NULL), or we are allowed to install
     // this silently.
-    if (client_ || allow_silent_install_) {
+    if ((client_ || allow_silent_install_) && grant_permissions_) {
       PermissionsUpdater perms_updater(profile());
       perms_updater.GrantActivePermissions(extension());
     }
@@ -812,6 +821,7 @@ void CrxInstaller::ReportSuccessFromUIThread() {
                                       page_ordinal_,
                                       has_requirement_errors_,
                                       blacklist_state_,
+                                      is_ephemeral_,
                                       install_wait_for_idle_);
   NotifyCrxInstallComplete(true);
 }

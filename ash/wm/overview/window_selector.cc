@@ -6,12 +6,17 @@
 
 #include <algorithm>
 
+#include "ash/accessibility_delegate.h"
 #include "ash/ash_switches.h"
+#include "ash/metrics/user_metrics_recorder.h"
 #include "ash/root_window_controller.h"
+#include "ash/screen_util.h"
 #include "ash/shell.h"
+#include "ash/shell_window_ids.h"
 #include "ash/switchable_windows.h"
-#include "ash/wm/overview/window_overview.h"
+#include "ash/wm/overview/scoped_transform_overview_window.h"
 #include "ash/wm/overview/window_selector_delegate.h"
+#include "ash/wm/overview/window_selector_item.h"
 #include "ash/wm/overview/window_selector_panels.h"
 #include "ash/wm/overview/window_selector_window.h"
 #include "ash/wm/window_state.h"
@@ -19,12 +24,17 @@
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
+#include "third_party/skia/include/core/SkColor.h"
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_observer.h"
+#include "ui/compositor/layer_animation_observer.h"
+#include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/events/event.h"
-#include "ui/events/event_handler.h"
+#include "ui/gfx/screen.h"
+#include "ui/views/background.h"
+#include "ui/views/widget/widget.h"
 #include "ui/wm/core/window_util.h"
 #include "ui/wm/public/activation_client.h"
 
@@ -32,19 +42,75 @@ namespace ash {
 
 namespace {
 
-// A comparator for locating a given selectable window.
+// Conceptually the window overview is a table or grid of cells having this
+// fixed aspect ratio. The number of columns is determined by maximizing the
+// area of them based on the number of windows.
+const float kCardAspectRatio = 4.0f / 3.0f;
+
+// The minimum number of cards along the major axis (i.e. horizontally on a
+// landscape orientation).
+const int kMinCardsMajor = 3;
+
+// A comparator for locating a given target window.
 struct WindowSelectorItemComparator
     : public std::unary_function<WindowSelectorItem*, bool> {
-  explicit WindowSelectorItemComparator(const aura::Window* window)
-      : window_(window) {
+  explicit WindowSelectorItemComparator(const aura::Window* target_window)
+      : target(target_window) {
   }
 
   bool operator()(WindowSelectorItem* window) const {
-    return window->HasSelectableWindow(window_);
+    return window->HasSelectableWindow(target);
   }
 
-  const aura::Window* window_;
+  const aura::Window* target;
 };
+
+// An observer which holds onto the passed widget until the animation is
+// complete.
+class CleanupWidgetAfterAnimationObserver : public ui::LayerAnimationObserver {
+ public:
+  explicit CleanupWidgetAfterAnimationObserver(
+      scoped_ptr<views::Widget> widget);
+
+  // ui::LayerAnimationObserver:
+  virtual void OnLayerAnimationEnded(
+      ui::LayerAnimationSequence* sequence) OVERRIDE;
+  virtual void OnLayerAnimationAborted(
+      ui::LayerAnimationSequence* sequence) OVERRIDE;
+  virtual void OnLayerAnimationScheduled(
+      ui::LayerAnimationSequence* sequence) OVERRIDE;
+
+ private:
+  virtual ~CleanupWidgetAfterAnimationObserver();
+
+  scoped_ptr<views::Widget> widget_;
+
+  DISALLOW_COPY_AND_ASSIGN(CleanupWidgetAfterAnimationObserver);
+};
+
+CleanupWidgetAfterAnimationObserver::CleanupWidgetAfterAnimationObserver(
+    scoped_ptr<views::Widget> widget)
+    : widget_(widget.Pass()) {
+  widget_->GetNativeWindow()->layer()->GetAnimator()->AddObserver(this);
+}
+
+CleanupWidgetAfterAnimationObserver::~CleanupWidgetAfterAnimationObserver() {
+  widget_->GetNativeWindow()->layer()->GetAnimator()->RemoveObserver(this);
+}
+
+void CleanupWidgetAfterAnimationObserver::OnLayerAnimationEnded(
+    ui::LayerAnimationSequence* sequence) {
+  delete this;
+}
+
+void CleanupWidgetAfterAnimationObserver::OnLayerAnimationAborted(
+    ui::LayerAnimationSequence* sequence) {
+  delete this;
+}
+
+void CleanupWidgetAfterAnimationObserver::OnLayerAnimationScheduled(
+    ui::LayerAnimationSequence* sequence) {
+}
 
 // A comparator for locating a selectable window given a targeted window.
 struct WindowSelectorItemTargetComparator
@@ -54,7 +120,7 @@ struct WindowSelectorItemTargetComparator
   }
 
   bool operator()(WindowSelectorItem* window) const {
-    return window->TargetedWindow(target) != NULL;
+    return window->Contains(target);
   }
 
   const aura::Window* target;
@@ -74,42 +140,6 @@ struct WindowSelectorItemForRoot
   const aura::Window* root_window;
 };
 
-// Filter to watch for the termination of a keyboard gesture to cycle through
-// multiple windows.
-class WindowSelectorEventFilter : public ui::EventHandler {
- public:
-  WindowSelectorEventFilter(WindowSelector* selector);
-  virtual ~WindowSelectorEventFilter();
-
-  // Overridden from ui::EventHandler:
-  virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
-
- private:
-  // A weak pointer to the WindowSelector which owns this instance.
-  WindowSelector* selector_;
-
-  DISALLOW_COPY_AND_ASSIGN(WindowSelectorEventFilter);
-};
-
-// Watch for all keyboard events by filtering the root window.
-WindowSelectorEventFilter::WindowSelectorEventFilter(WindowSelector* selector)
-    : selector_(selector) {
-  Shell::GetInstance()->AddPreTargetHandler(this);
-}
-
-WindowSelectorEventFilter::~WindowSelectorEventFilter() {
-  Shell::GetInstance()->RemovePreTargetHandler(this);
-}
-
-void WindowSelectorEventFilter::OnKeyEvent(ui::KeyEvent* event) {
-  // Views uses VKEY_MENU for both left and right Alt keys.
-  if (event->key_code() == ui::VKEY_MENU &&
-      event->type() == ui::ET_KEY_RELEASED) {
-    selector_->SelectWindow();
-    // Warning: |this| will be deleted from here on.
-  }
-}
-
 // Triggers a shelf visibility update on all root window controllers.
 void UpdateShelfVisibility() {
   Shell::RootWindowControllerList root_window_controllers =
@@ -121,110 +151,11 @@ void UpdateShelfVisibility() {
   }
 }
 
-// Returns the window immediately below |window| in the current container.
-aura::Window* GetWindowBelow(aura::Window* window) {
-  aura::Window* parent = window->parent();
-  if (!parent)
-    return NULL;
-  aura::Window* below = NULL;
-  for (aura::Window::Windows::const_iterator iter = parent->children().begin();
-       iter != parent->children().end(); ++iter) {
-    if (*iter == window)
-      return below;
-    below = *iter;
-  }
-  NOTREACHED();
-  return NULL;
-}
-
 }  // namespace
 
-// This class restores and moves a window to the front of the stacking order for
-// the duration of the class's scope.
-class ScopedShowWindow : public aura::WindowObserver {
- public:
-  ScopedShowWindow();
-  virtual ~ScopedShowWindow();
-
-  // Show |window| at the top of the stacking order.
-  void Show(aura::Window* window);
-
-  // Cancel restoring the window on going out of scope.
-  void CancelRestore();
-
-  aura::Window* window() { return window_; }
-
-  // aura::WindowObserver:
-  virtual void OnWillRemoveWindow(aura::Window* window) OVERRIDE;
-
- private:
-  // The window being shown.
-  aura::Window* window_;
-
-  // The window immediately below where window_ belongs.
-  aura::Window* stack_window_above_;
-
-  // If true, minimize window_ on going out of scope.
-  bool minimized_;
-
-  DISALLOW_COPY_AND_ASSIGN(ScopedShowWindow);
-};
-
-ScopedShowWindow::ScopedShowWindow()
-    : window_(NULL),
-      stack_window_above_(NULL),
-      minimized_(false) {
-}
-
-void ScopedShowWindow::Show(aura::Window* window) {
-  DCHECK(!window_);
-  window_ = window;
-  stack_window_above_ = GetWindowBelow(window);
-  minimized_ = wm::GetWindowState(window)->IsMinimized();
-  window_->parent()->AddObserver(this);
-  window_->Show();
-  wm::GetWindowState(window_)->Activate();
-}
-
-ScopedShowWindow::~ScopedShowWindow() {
-  if (window_) {
-    window_->parent()->RemoveObserver(this);
-
-    // Restore window's stacking position.
-    if (stack_window_above_)
-      window_->parent()->StackChildAbove(window_, stack_window_above_);
-    else
-      window_->parent()->StackChildAtBottom(window_);
-
-    // Restore minimized state.
-    if (minimized_)
-      wm::GetWindowState(window_)->Minimize();
-  }
-}
-
-void ScopedShowWindow::CancelRestore() {
-  if (!window_)
-    return;
-  window_->parent()->RemoveObserver(this);
-  window_ = stack_window_above_ = NULL;
-}
-
-void ScopedShowWindow::OnWillRemoveWindow(aura::Window* window) {
-  if (window == window_) {
-    CancelRestore();
-  } else if (window == stack_window_above_) {
-    // If the window this window was above is removed, use the next window down
-    // as the restore marker.
-    stack_window_above_ = GetWindowBelow(stack_window_above_);
-  }
-}
-
 WindowSelector::WindowSelector(const WindowList& windows,
-                               WindowSelector::Mode mode,
                                WindowSelectorDelegate* delegate)
-    : mode_(mode),
-      delegate_(delegate),
-      selected_window_(0),
+    : delegate_(delegate),
       restore_focus_window_(aura::client::GetFocusClient(
           Shell::GetPrimaryRootWindow())->GetFocusedWindow()),
       ignore_activations_(false) {
@@ -262,7 +193,7 @@ WindowSelector::WindowSelector(const WindowList& windows,
       windows_.push_back(item);
     }
     // Verify that the window has been added to an item in overview.
-    CHECK(item->TargetedWindow(windows[i]));
+    CHECK(item->Contains(windows[i]));
   }
   UMA_HISTOGRAM_COUNTS_100("Ash.WindowSelector.Items", windows_.size());
 
@@ -280,77 +211,71 @@ WindowSelector::WindowSelector(const WindowList& windows,
     }
   }
 
-  if (mode == WindowSelector::CYCLE) {
-    cycle_start_time_ = base::Time::Now();
-    event_handler_.reset(new WindowSelectorEventFilter(this));
-  } else {
-    StartOverview();
-  }
+  StartOverview();
 }
 
 WindowSelector::~WindowSelector() {
+  ash::Shell* shell = ash::Shell::GetInstance();
+
   ResetFocusRestoreWindow(true);
   for (std::set<aura::Window*>::iterator iter = observed_windows_.begin();
        iter != observed_windows_.end(); ++iter) {
     (*iter)->RemoveObserver(this);
   }
-  Shell::GetInstance()->activation_client()->RemoveObserver(this);
+  shell->activation_client()->RemoveObserver(this);
   aura::Window::Windows root_windows = Shell::GetAllRootWindows();
-  window_overview_.reset();
+
+  const aura::WindowTracker::Windows hidden_windows(hidden_windows_.windows());
+  for (aura::WindowTracker::Windows::const_iterator iter =
+       hidden_windows.begin(); iter != hidden_windows.end(); ++iter) {
+    ui::ScopedLayerAnimationSettings settings(
+        (*iter)->layer()->GetAnimator());
+    settings.SetTransitionDuration(base::TimeDelta::FromMilliseconds(
+        ScopedTransformOverviewWindow::kTransitionMilliseconds));
+    settings.SetPreemptionStrategy(
+        ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
+    (*iter)->layer()->SetOpacity(1);
+    (*iter)->Show();
+  }
+
+  shell->RemovePreTargetHandler(this);
+  shell->GetScreen()->RemoveObserver(this);
+  UMA_HISTOGRAM_MEDIUM_TIMES(
+      "Ash.WindowSelector.TimeInOverview",
+      base::Time::Now() - overview_start_time_);
+
+  // TODO(nsatragno): Change this to OnOverviewModeEnded and move it to when
+  // everything is done.
+  shell->OnOverviewModeEnding();
+
   // Clearing the window list resets the ignored_by_shelf flag on the windows.
   windows_.clear();
   UpdateShelfVisibility();
-
-  if (!cycle_start_time_.is_null()) {
-    UMA_HISTOGRAM_MEDIUM_TIMES("Ash.WindowSelector.CycleTime",
-        base::Time::Now() - cycle_start_time_);
-  }
-}
-
-void WindowSelector::Step(WindowSelector::Direction direction) {
-  DCHECK(!windows_.empty());
-  // Upgrade to CYCLE mode if currently in OVERVIEW mode.
-  if (mode_ != CYCLE) {
-    event_handler_.reset(new WindowSelectorEventFilter(this));
-    DCHECK(window_overview_);
-    // Set the initial selection window to animate to the new selection.
-    window_overview_->SetSelection(selected_window_);
-    window_overview_->MoveToSingleRootWindow(
-        windows_[selected_window_]->GetRootWindow());
-    mode_ = CYCLE;
-  }
-
-  selected_window_ = (selected_window_ + windows_.size() +
-      (direction == WindowSelector::FORWARD ? 1 : -1)) % windows_.size();
-  if (window_overview_) {
-    window_overview_->SetSelection(selected_window_);
-  } else {
-    base::AutoReset<bool> restoring_focus(&ignore_activations_, true);
-    showing_window_.reset(new ScopedShowWindow);
-    showing_window_->Show(windows_[selected_window_]->SelectionWindow());
-  }
-}
-
-void WindowSelector::SelectWindow() {
-  SelectWindow(windows_[selected_window_]->SelectionWindow());
-}
-
-void WindowSelector::SelectWindow(aura::Window* window) {
-  ResetFocusRestoreWindow(false);
-  if (showing_window_ && showing_window_->window() == window)
-    showing_window_->CancelRestore();
-  ScopedVector<WindowSelectorItem>::iterator iter =
-      std::find_if(windows_.begin(), windows_.end(),
-                   WindowSelectorItemTargetComparator(window));
-  DCHECK(iter != windows_.end());
-  // The selected window should not be minimized when window selection is
-  // ended.
-  (*iter)->RestoreWindowOnExit(window);
-  delegate_->OnWindowSelected(window);
 }
 
 void WindowSelector::CancelSelection() {
-  delegate_->OnSelectionCanceled();
+  delegate_->OnSelectionEnded();
+}
+
+void WindowSelector::OnKeyEvent(ui::KeyEvent* event) {
+  if (event->type() != ui::ET_KEY_PRESSED)
+    return;
+
+  if (event->key_code() == ui::VKEY_ESCAPE) {
+    CancelSelection();
+    event->SetHandled();
+  }
+}
+
+void WindowSelector::OnDisplayAdded(const gfx::Display& display) {
+}
+
+void WindowSelector::OnDisplayRemoved(const gfx::Display& display) {
+}
+
+void WindowSelector::OnDisplayMetricsChanged(const gfx::Display& display,
+                                             uint32_t metrics) {
+  PositionWindows(/* animate */ false);
 }
 
 void WindowSelector::OnWindowAdded(aura::Window* new_window) {
@@ -388,29 +313,17 @@ void WindowSelector::OnWindowDestroying(aura::Window* window) {
   if (!(*iter)->empty())
     return;
 
-  size_t deleted_index = iter - windows_.begin();
   windows_.erase(iter);
   if (windows_.empty()) {
     CancelSelection();
     return;
   }
-  if (window_overview_)
-    window_overview_->OnWindowsChanged();
-  if (mode_ == CYCLE && selected_window_ >= deleted_index) {
-    if (selected_window_ > deleted_index)
-      selected_window_--;
-    selected_window_ = selected_window_ % windows_.size();
-    if (window_overview_)
-      window_overview_->SetSelection(selected_window_);
-  }
+  PositionWindows(true);
 }
 
 void WindowSelector::OnWindowBoundsChanged(aura::Window* window,
                                            const gfx::Rect& old_bounds,
                                            const gfx::Rect& new_bounds) {
-  if (!window_overview_)
-    return;
-
   ScopedVector<WindowSelectorItem>::iterator iter =
       std::find_if(windows_.begin(), windows_.end(),
                    WindowSelectorItemTargetComparator(window));
@@ -429,6 +342,14 @@ void WindowSelector::OnWindowActivated(aura::Window* gained_active,
                                        aura::Window* lost_active) {
   if (ignore_activations_ || !gained_active)
     return;
+
+  ScopedVector<WindowSelectorItem>::iterator iter = std::find_if(
+      windows_.begin(), windows_.end(),
+      WindowSelectorItemComparator(gained_active));
+
+  if (iter != windows_.end())
+    (*iter)->RestoreWindowOnExit(gained_active);
+
   // Don't restore focus on exit if a window was just activated.
   ResetFocusRestoreWindow(false);
   CancelSelection();
@@ -436,26 +357,134 @@ void WindowSelector::OnWindowActivated(aura::Window* gained_active,
 
 void WindowSelector::OnAttemptToReactivateWindow(aura::Window* request_active,
                                                  aura::Window* actual_active) {
-  if (ignore_activations_)
-    return;
-  // Don't restore focus on exit if a window was just activated.
-  ResetFocusRestoreWindow(false);
-  CancelSelection();
+  OnWindowActivated(request_active, actual_active);
 }
 
 void WindowSelector::StartOverview() {
-  DCHECK(!window_overview_);
   // Remove focus from active window before entering overview.
   aura::client::GetFocusClient(
       Shell::GetPrimaryRootWindow())->FocusWindow(NULL);
 
-  aura::Window* overview_root = NULL;
-  if (mode_ == CYCLE)
-    overview_root = windows_[selected_window_]->GetRootWindow();
-  window_overview_.reset(new WindowOverview(this, &windows_, overview_root));
-  if (mode_ == CYCLE)
-    window_overview_->SetSelection(selected_window_);
+  Shell* shell = Shell::GetInstance();
+  shell->OnOverviewModeStarting();
+
+  for (WindowSelectorItemList::iterator iter = windows_.begin();
+       iter != windows_.end(); ++iter) {
+    (*iter)->PrepareForOverview();
+  }
+  PositionWindows(/* animate */ true);
+  DCHECK(!windows_.empty());
+  shell->PrependPreTargetHandler(this);
+  shell->GetScreen()->AddObserver(this);
+  shell->metrics()->RecordUserMetricsAction(UMA_WINDOW_OVERVIEW);
+  HideAndTrackNonOverviewWindows();
+  // Send an a11y alert.
+  shell->accessibility_delegate()->TriggerAccessibilityAlert(
+      A11Y_ALERT_WINDOW_OVERVIEW_MODE_ENTERED);
+
   UpdateShelfVisibility();
+}
+
+bool WindowSelector::Contains(const aura::Window* window) {
+  for (WindowSelectorItemList::iterator iter = windows_.begin();
+      iter != windows_.end(); ++iter) {
+    if ((*iter)->Contains(window))
+      return true;
+  }
+  return false;
+}
+
+void WindowSelector::PositionWindows(bool animate) {
+  aura::Window::Windows root_window_list = Shell::GetAllRootWindows();
+  for (size_t i = 0; i < root_window_list.size(); ++i)
+    PositionWindowsFromRoot(root_window_list[i], animate);
+}
+
+void WindowSelector::PositionWindowsFromRoot(aura::Window* root_window,
+                                             bool animate) {
+  std::vector<WindowSelectorItem*> windows;
+  for (WindowSelectorItemList::iterator iter = windows_.begin();
+       iter != windows_.end(); ++iter) {
+    if ((*iter)->GetRootWindow() == root_window)
+      windows.push_back(*iter);
+  }
+
+  if (windows.empty())
+    return;
+
+  gfx::Size window_size;
+  gfx::Rect total_bounds = ScreenUtil::ConvertRectToScreen(
+      root_window,
+      ScreenUtil::GetDisplayWorkAreaBoundsInParent(
+          Shell::GetContainer(root_window, kShellWindowId_DefaultContainer)));
+
+  // Find the minimum number of windows per row that will fit all of the
+  // windows on screen.
+  size_t columns = std::max(
+      total_bounds.width() > total_bounds.height() ? kMinCardsMajor : 1,
+      static_cast<int>(ceil(sqrt(total_bounds.width() * windows.size() /
+                                 (kCardAspectRatio * total_bounds.height())))));
+  size_t rows = ((windows.size() + columns - 1) / columns);
+  window_size.set_width(std::min(
+      static_cast<int>(total_bounds.width() / columns),
+      static_cast<int>(total_bounds.height() * kCardAspectRatio / rows)));
+  window_size.set_height(window_size.width() / kCardAspectRatio);
+
+  // Calculate the X and Y offsets necessary to center the grid.
+  int x_offset = total_bounds.x() + ((windows.size() >= columns ? 0 :
+      (columns - windows.size()) * window_size.width()) +
+      (total_bounds.width() - columns * window_size.width())) / 2;
+  int y_offset = total_bounds.y() + (total_bounds.height() -
+      rows * window_size.height()) / 2;
+  for (size_t i = 0; i < windows.size(); ++i) {
+    gfx::Transform transform;
+    int column = i % columns;
+    int row = i / columns;
+    gfx::Rect target_bounds(window_size.width() * column + x_offset,
+                            window_size.height() * row + y_offset,
+                            window_size.width(),
+                            window_size.height());
+    windows[i]->SetBounds(root_window, target_bounds, animate);
+  }
+}
+
+void WindowSelector::HideAndTrackNonOverviewWindows() {
+  // Add the windows to hidden_windows first so that if any are destroyed
+  // while hiding them they are tracked.
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
+  for (aura::Window::Windows::const_iterator root_iter = root_windows.begin();
+       root_iter != root_windows.end(); ++root_iter) {
+    for (size_t i = 0; i < kSwitchableWindowContainerIdsLength; ++i) {
+      aura::Window* container = Shell::GetContainer(*root_iter,
+          kSwitchableWindowContainerIds[i]);
+      for (aura::Window::Windows::const_iterator iter =
+           container->children().begin(); iter != container->children().end();
+           ++iter) {
+        if (Contains(*iter) || !(*iter)->IsVisible())
+          continue;
+        hidden_windows_.Add(*iter);
+      }
+    }
+  }
+
+  // Copy the window list as it can change during iteration.
+  const aura::WindowTracker::Windows hidden_windows(hidden_windows_.windows());
+  for (aura::WindowTracker::Windows::const_iterator iter =
+       hidden_windows.begin(); iter != hidden_windows.end(); ++iter) {
+    if (!hidden_windows_.Contains(*iter))
+      continue;
+    ui::ScopedLayerAnimationSettings settings(
+        (*iter)->layer()->GetAnimator());
+    settings.SetTransitionDuration(base::TimeDelta::FromMilliseconds(
+        ScopedTransformOverviewWindow::kTransitionMilliseconds));
+    settings.SetPreemptionStrategy(
+        ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
+    (*iter)->Hide();
+    // Hiding the window can result in it being destroyed.
+    if (!hidden_windows_.Contains(*iter))
+      continue;
+    (*iter)->layer()->SetOpacity(0);
+  }
 }
 
 void WindowSelector::ResetFocusRestoreWindow(bool focus) {

@@ -62,9 +62,15 @@ class ExitWarningLabel : public views::Label {
 class ExitWarningWidgetDelegateView : public views::WidgetDelegateView {
  public:
   ExitWarningWidgetDelegateView() : text_width_(0), width_(0), height_(0) {
+#ifdef OS_CHROMEOS
+    text_ = l10n_util::GetStringUTF16(IDS_ASH_SIGN_OUT_WARNING_POPUP_TEXT);
+    accessible_name_ = l10n_util::GetStringUTF16(
+        IDS_ASH_SIGN_OUT_WARNING_POPUP_TEXT_ACCESSIBLE);
+#else
     text_ = l10n_util::GetStringUTF16(IDS_ASH_EXIT_WARNING_POPUP_TEXT);
     accessible_name_ =
         l10n_util::GetStringUTF16(IDS_ASH_EXIT_WARNING_POPUP_TEXT_ACCESSIBLE);
+#endif
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     const gfx::FontList& font_list =
         rb.GetFontList(ui::ResourceBundle::LargeFont);
@@ -82,7 +88,7 @@ class ExitWarningWidgetDelegateView : public views::WidgetDelegateView {
     SetLayoutManager(new views::FillLayout);
   }
 
-  virtual gfx::Size GetPreferredSize() OVERRIDE {
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
     return gfx::Size(width_, height_);
   }
 
@@ -181,7 +187,6 @@ void ExitWarningHandler::Show() {
   params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.accept_events = false;
-  params.can_activate = false;
   params.keep_on_top = true;
   params.remove_standard_frame = true;
   params.delegate = delegate;

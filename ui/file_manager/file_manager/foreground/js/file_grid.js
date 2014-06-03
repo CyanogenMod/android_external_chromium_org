@@ -75,7 +75,7 @@ FileGrid.prototype.updateListItemsMetadata = function(type, props) {
                                   this.metadataCache_,
                                   this.volumeManager_,
                                   ThumbnailLoader.FillMode.FIT,
-                                  FileGrid.ThumbnailQuality.HIGH);
+                                  FileGrid.ThumbnailQuality.LOW);
   }
 };
 
@@ -121,7 +121,7 @@ FileGrid.decorateThumbnail = function(li, entry, metadataCache, volumeManager) {
                                   metadataCache,
                                   volumeManager,
                                   ThumbnailLoader.FillMode.AUTO,
-                                  FileGrid.ThumbnailQuality.HIGH);
+                                  FileGrid.ThumbnailQuality.LOW);
   }
   frame.appendChild(box);
 
@@ -146,9 +146,17 @@ FileGrid.decorateThumbnail = function(li, entry, metadataCache, volumeManager) {
 FileGrid.decorateThumbnailBox = function(
     box, entry, metadataCache, volumeManager, fillMode, quality,
     opt_imageLoadCallback) {
+  var locationInfo = volumeManager.getLocationInfo(entry);
   box.className = 'img-container';
+
   if (entry.isDirectory) {
     box.setAttribute('generic-thumbnail', 'folder');
+    if (locationInfo && locationInfo.isDriveBased) {
+      metadataCache.get(entry, 'drive', function(metadata) {
+        if (metadata.shared)
+          box.classList.add('shared');
+      });
+    }
     if (opt_imageLoadCallback)
       setTimeout(opt_imageLoadCallback, 0, null /* callback parameter */);
     return;
@@ -156,7 +164,6 @@ FileGrid.decorateThumbnailBox = function(
 
   var metadataTypes = 'thumbnail|filesystem';
 
-  var locationInfo = volumeManager.getLocationInfo(entry);
   if (locationInfo && locationInfo.isDriveBased) {
     metadataTypes += '|drive';
   } else {

@@ -51,17 +51,21 @@ bool JavaBridgeDispatcher::OnMessageReceived(const IPC::Message& msg) {
   return handled;
 }
 
-void JavaBridgeDispatcher::DidClearWindowObject(int world_id) {
+void JavaBridgeDispatcher::DidClearWindowObject() {
   // Note that we have to (re)bind all objects, as they will have been unbound
   // when the window object was cleared.
   for (ObjectMap::const_iterator iter = objects_.begin();
        iter != objects_.end();
        ++iter) {
+    NPObject* object = NPVARIANT_TO_OBJECT(iter->second);
+    // De-associate from the existing V8 wrapper, so we don't pull any
+    // of the wrapper's custom properties into the context of the page we
+    // have navigated to.
+    blink::WebBindings::dropV8WrapperForObject(object);
     // This refs the NPObject. This reference is dropped when either the window
     // object is later cleared, or the object is GC'ed. So the object may be
     // deleted at any time after OnRemoveNamedObject() is called.
-    render_frame()->GetWebFrame()->bindToWindowObject(
-        iter->first, NPVARIANT_TO_OBJECT(iter->second));
+    render_frame()->GetWebFrame()->bindToWindowObject(iter->first, object);
   }
 }
 

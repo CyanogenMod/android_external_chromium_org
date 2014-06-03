@@ -79,7 +79,7 @@ class Parser(object):
       # Generator expects a module. If one wasn't specified insert one with an
       # empty name.
       if p[1][0] != 'MODULE':
-        p[0] = [('MODULE', '', [], p[1])]
+        p[0] = [('MODULE', '', None, p[1])]
       else:
         p[0] = [p[1]]
 
@@ -101,7 +101,8 @@ class Parser(object):
   def p_definition(self, p):
     """definition : struct
                   | interface
-                  | enum"""
+                  | enum
+                  | const"""
     p[0] = p[1]
 
   def p_attribute_section(self, p):
@@ -131,17 +132,17 @@ class Parser(object):
   def p_struct_body(self, p):
     """struct_body : field struct_body
                    | enum struct_body
+                   | const struct_body
                    | """
     if len(p) > 1:
       p[0] = _ListFromConcat(p[1], p[2])
 
   def p_field(self, p):
-    """field : typename NAME default ordinal SEMI"""
-    p[0] = ('FIELD', p[1], p[2], p[4], p[3])
+    """field : typename NAME ordinal default SEMI"""
+    p[0] = ('FIELD', p[1], p[2], p[3], p[4])
 
   def p_default(self, p):
     """default : EQUALS expression
-               | EQUALS expression_object
                | """
     if len(p) > 2:
       p[0] = p[2]
@@ -154,6 +155,7 @@ class Parser(object):
   def p_interface_body(self, p):
     """interface_body : method interface_body
                       | enum interface_body
+                      | const interface_body
                       | """
     if len(p) > 1:
       p[0] = _ListFromConcat(p[1], p[2])
@@ -185,29 +187,39 @@ class Parser(object):
 
   def p_typename(self, p):
     """typename : basictypename
-                | array"""
+                | array
+                | interfacerequest"""
     p[0] = p[1]
 
   def p_basictypename(self, p):
     """basictypename : identifier
-                     | HANDLE
-                     | specializedhandle"""
+                     | handletype"""
     p[0] = p[1]
 
-  def p_specializedhandle(self, p):
-    """specializedhandle : HANDLE LANGLE specializedhandlename RANGLE"""
-    p[0] = "handle<" + p[3] + ">"
-
-  def p_specializedhandlename(self, p):
-    """specializedhandlename : DATA_PIPE_CONSUMER
-                             | DATA_PIPE_PRODUCER
-                             | MESSAGE_PIPE
-                             | SHARED_BUFFER"""
-    p[0] = p[1]
+  def p_handletype(self, p):
+    """handletype : HANDLE
+                  | HANDLE LANGLE NAME RANGLE"""
+    if len(p) == 2:
+      p[0] = p[1]
+    else:
+      if p[3] not in ('data_pipe_consumer',
+                      'data_pipe_producer',
+                      'message_pipe',
+                      'shared_buffer'):
+        # Note: We don't enable tracking of line numbers for everything, so we
+        # can't use |p.lineno(3)|.
+        raise ParseError(self.filename, "Invalid handle type %r:" % p[3],
+                         lineno=p.lineno(1),
+                         snippet=self._GetSnippet(p.lineno(1)))
+      p[0] = "handle<" + p[3] + ">"
 
   def p_array(self, p):
     """array : typename LBRACKET RBRACKET"""
     p[0] = p[1] + "[]"
+
+  def p_interfacerequest(self, p):
+    """interfacerequest : identifier AMP"""
+    p[0] = p[1] + "&"
 
   def p_ordinal(self, p):
     """ordinal : ORDINAL
@@ -243,41 +255,11 @@ class Parser(object):
     else:
       p[0] = ('ENUM_FIELD', p[1], p[3])
 
+  def p_const(self, p):
+    """const : CONST typename NAME EQUALS expression SEMI"""
+    p[0] = ('CONST', p[2], p[3], p[5])
+
   ### Expressions ###
-
-  def p_expression_object(self, p):
-    """expression_object : expression_array
-                         | LBRACE expression_object_elements RBRACE """
-    if len(p) < 3:
-      p[0] = p[1]
-    else:
-      p[0] = ('OBJECT', p[2])
-
-  def p_expression_object_elements(self, p):
-    """expression_object_elements : expression_object
-                                  | expression_object COMMA expression_object_elements
-                                  | """
-    if len(p) == 2:
-      p[0] = _ListFromConcat(p[1])
-    elif len(p) > 3:
-      p[0] = _ListFromConcat(p[1], p[3])
-
-  def p_expression_array(self, p):
-    """expression_array : expression
-                        | LBRACKET expression_array_elements RBRACKET """
-    if len(p) < 3:
-      p[0] = p[1]
-    else:
-      p[0] = ('ARRAY', p[2])
-
-  def p_expression_array_elements(self, p):
-    """expression_array_elements : expression_object
-                                 | expression_object COMMA expression_array_elements
-                                 | """
-    if len(p) == 2:
-      p[0] = _ListFromConcat(p[1])
-    elif len(p) > 3:
-      p[0] = _ListFromConcat(p[1], p[3])
 
   # TODO(vtl): This is now largely redundant.
   def p_expression(self, p):
@@ -330,7 +312,6 @@ class Parser(object):
 
   def p_constant(self, p):
     """constant : INT_CONST_DEC
-                | INT_CONST_OCT
                 | INT_CONST_HEX
                 | FLOAT_CONST
                 | CHAR_CONST

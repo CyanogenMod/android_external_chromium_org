@@ -59,22 +59,9 @@ TEST_F(CopyOperationTest, TransferFileFromLocalToRemote_RegularFile) {
   // TransferFileFromLocalToRemote stores a copy of the local file in the cache,
   // marks it dirty and requests the observer to upload the file.
   EXPECT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(remote_dest_path, &entry));
-  EXPECT_EQ(1U, observer()->updated_local_ids().count(
-      GetLocalId(remote_dest_path)));
-  FileCacheEntry cache_entry;
-  bool found = false;
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner(),
-      FROM_HERE,
-      base::Bind(&internal::FileCache::GetCacheEntry,
-                 base::Unretained(cache()),
-                 GetLocalId(remote_dest_path),
-                 &cache_entry),
-      google_apis::test_util::CreateCopyResultCallback(&found));
-  test_util::RunBlockingPoolTask();
-  EXPECT_TRUE(found);
-  EXPECT_TRUE(cache_entry.is_present());
-  EXPECT_TRUE(cache_entry.is_dirty());
+  EXPECT_EQ(1U, observer()->updated_local_ids().count(entry.local_id()));
+  EXPECT_TRUE(entry.file_specific_info().cache_state().is_present());
+  EXPECT_TRUE(entry.file_specific_info().cache_state().is_dirty());
 
   EXPECT_EQ(1U, observer()->get_changed_paths().size());
   EXPECT_TRUE(observer()->get_changed_paths().count(
@@ -106,18 +93,8 @@ TEST_F(CopyOperationTest, TransferFileFromLocalToRemote_Overwrite) {
   // marks it dirty and requests the observer to upload the file.
   EXPECT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(remote_dest_path, &entry));
   EXPECT_EQ(1U, observer()->updated_local_ids().count(entry.local_id()));
-  FileCacheEntry cache_entry;
-  bool found = false;
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner(),
-      FROM_HERE,
-      base::Bind(&internal::FileCache::GetCacheEntry,
-                 base::Unretained(cache()), entry.local_id(), &cache_entry),
-      google_apis::test_util::CreateCopyResultCallback(&found));
-  test_util::RunBlockingPoolTask();
-  EXPECT_TRUE(found);
-  EXPECT_TRUE(cache_entry.is_present());
-  EXPECT_TRUE(cache_entry.is_dirty());
+  EXPECT_TRUE(entry.file_specific_info().cache_state().is_present());
+  EXPECT_TRUE(entry.file_specific_info().cache_state().is_dirty());
 
   EXPECT_EQ(1U, observer()->get_changed_paths().size());
   EXPECT_TRUE(observer()->get_changed_paths().count(
@@ -351,19 +328,7 @@ TEST_F(CopyOperationTest, CopyDirtyFile) {
   EXPECT_TRUE(observer()->get_changed_paths().count(dest_path.DirName()));
 
   // Copied cache file should be dirty.
-  bool success = false;
-  FileCacheEntry cache_entry;
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner(),
-      FROM_HERE,
-      base::Bind(&internal::FileCache::GetCacheEntry,
-                 base::Unretained(cache()),
-                 dest_entry.local_id(),
-                 &cache_entry),
-      google_apis::test_util::CreateCopyResultCallback(&success));
-  test_util::RunBlockingPoolTask();
-  EXPECT_TRUE(success);
-  EXPECT_TRUE(cache_entry.is_dirty());
+  EXPECT_TRUE(dest_entry.file_specific_info().cache_state().is_dirty());
 
   // File contents should match.
   base::FilePath cache_file_path;

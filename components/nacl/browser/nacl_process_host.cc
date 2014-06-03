@@ -27,6 +27,7 @@
 #include "base/win/windows_version.h"
 #include "build/build_config.h"
 #include "components/nacl/browser/nacl_browser.h"
+#include "components/nacl/browser/nacl_browser_delegate.h"
 #include "components/nacl/browser/nacl_host_message_filter.h"
 #include "components/nacl/common/nacl_cmd_line.h"
 #include "components/nacl/common/nacl_host_messages.h"
@@ -311,6 +312,7 @@ NaClProcessHost::~NaClProcessHost() {
     } else {
       LOG(ERROR) << message;
     }
+    NaClBrowser::GetInstance()->OnProcessEnd(process_->GetData().id);
   }
 
   if (internal_->socket_for_renderer != NACL_INVALID_HANDLE) {
@@ -350,6 +352,7 @@ void NaClProcessHost::OnProcessCrashed(int exit_status) {
 // static
 void NaClProcessHost::EarlyStartup() {
   NaClBrowser::GetInstance()->EarlyStartup();
+  // Inform NaClBrowser that we exist and will have a debug port at some point.
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
   // Open the IRT file early to make sure that it isn't replaced out from
   // under us by autoupdate.
@@ -430,15 +433,23 @@ void NaClProcessHost::Launch(
   }
 
   if (uses_nonsfi_mode_) {
+    bool nonsfi_mode_forced_by_command_line = false;
+    bool nonsfi_mode_allowed = false;
 #if defined(OS_LINUX)
-    const bool kNonSFIModeSupported = true;
-#else
-    const bool kNonSFIModeSupported = false;
+    nonsfi_mode_forced_by_command_line =
+        cmd->HasSwitch(switches::kEnableNaClNonSfiMode);
+#if defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL)
+    nonsfi_mode_allowed = NaClBrowser::GetDelegate()->IsNonSfiModeAllowed(
+        nacl_host_message_filter->profile_directory(), manifest_url_);
 #endif
-    if (!kNonSFIModeSupported ||
-        !cmd->HasSwitch(switches::kEnableNaClNonSfiMode)) {
-      SendErrorToRenderer("NaCl non-SFI mode works only on Linux with"
-                          " --enable-nacl-nonsfi-mode specified");
+#endif
+    bool nonsfi_mode_enabled =
+        nonsfi_mode_forced_by_command_line || nonsfi_mode_allowed;
+
+    if (!nonsfi_mode_enabled) {
+      SendErrorToRenderer(
+          "NaCl non-SFI mode is not available for this platform"
+          " and NaCl module.");
       delete this;
       return;
     }
@@ -482,6 +493,7 @@ void NaClProcessHost::OnChannelConnected(int32 peer_pid) {
 void NaClProcessHost::OnProcessLaunchedByBroker(base::ProcessHandle handle) {
   process_launched_by_broker_ = true;
   process_->SetHandle(handle);
+  SetDebugStubPort(nacl::kGdbDebugStubPortUnknown);
   if (!StartWithLaunchedProcess())
     delete this;
 }
@@ -654,6 +666,8 @@ bool NaClProcessHost::OnMessageReceived(const IPC::Message& msg) {
       IPC_MESSAGE_HANDLER_DELAY_REPLY(
           NaClProcessMsg_AttachDebugExceptionHandler,
           OnAttachDebugExceptionHandler)
+      IPC_MESSAGE_HANDLER(NaClProcessHostMsg_DebugStubPortSelected,
+                          OnDebugStubPortSelected)
 #endif
       IPC_MESSAGE_HANDLER(NaClProcessHostMsg_PpapiChannelsCreated,
                           OnPpapiChannelsCreated)
@@ -755,12 +769,16 @@ void NaClProcessHost::SendMessageToRenderer(
   }
 }
 
+void NaClProcessHost::SetDebugStubPort(int port) {
+  NaClBrowser* nacl_browser = NaClBrowser::GetInstance();
+  nacl_browser->SetProcessGdbDebugStubPort(process_->GetData().id, port);
+}
+
+#if defined(OS_POSIX)
 // TCP port we chose for NaCl debug stub. It can be any other number.
 static const int kInitialDebugStubPort = 4014;
 
-#if defined(OS_POSIX)
 net::SocketDescriptor NaClProcessHost::GetDebugStubSocketHandle() {
-  NaClBrowser* nacl_browser = NaClBrowser::GetInstance();
   net::SocketDescriptor s = net::kInvalidSocket;
   // We always try to allocate the default port first. If this fails, we then
   // allocate any available port.
@@ -772,12 +790,8 @@ net::SocketDescriptor NaClProcessHost::GetDebugStubSocketHandle() {
     s = net::TCPListenSocket::CreateAndBindAnyPort("127.0.0.1", &port);
   }
   if (s != net::kInvalidSocket) {
-    if (nacl_browser->HasGdbDebugStubPortListener()) {
-      nacl_browser->FireGdbDebugStubPortOpened(port);
-    }
+    SetDebugStubPort(port);
   }
-  // Set debug stub port on the process object.
-  process_->SetNaClDebugStubPort(port);
   if (s == net::kInvalidSocket) {
     LOG(ERROR) << "failed to open socket for debug stub";
     return net::kInvalidSocket;
@@ -791,6 +805,13 @@ net::SocketDescriptor NaClProcessHost::GetDebugStubSocketHandle() {
     return net::kInvalidSocket;
   }
   return s;
+}
+#endif
+
+#if defined(OS_WIN)
+void NaClProcessHost::OnDebugStubPortSelected(uint16_t debug_stub_port) {
+  CHECK(!uses_nonsfi_mode_);
+  SetDebugStubPort(debug_stub_port);
 }
 #endif
 

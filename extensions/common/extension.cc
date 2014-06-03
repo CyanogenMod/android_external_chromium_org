@@ -67,6 +67,8 @@ bool ContainsReservedCharacters(const base::FilePath& path) {
 
 }  // namespace
 
+const int Extension::kInitFromValueFlagBits = 11;
+
 const char Extension::kMimeType[] = "application/x-chrome-extension";
 
 const int Extension::kValidWebExtentSchemes =
@@ -331,12 +333,12 @@ bool Extension::RequiresSortOrdinal() const {
 
 bool Extension::ShouldDisplayInAppLauncher() const {
   // Only apps should be displayed in the launcher.
-  return is_app() && display_in_launcher_ && !is_ephemeral();
+  return is_app() && display_in_launcher_;
 }
 
 bool Extension::ShouldDisplayInNewTabPage() const {
   // Only apps should be displayed on the NTP.
-  return is_app() && display_in_new_tab_page_ && !is_ephemeral();
+  return is_app() && display_in_new_tab_page_;
 }
 
 bool Extension::ShouldDisplayInExtensionSettings() const {
@@ -768,9 +770,11 @@ ExtensionInfo::~ExtensionInfo() {}
 InstalledExtensionInfo::InstalledExtensionInfo(
     const Extension* extension,
     bool is_update,
+    bool from_ephemeral,
     const std::string& old_name)
     : extension(extension),
       is_update(is_update),
+      from_ephemeral(from_ephemeral),
       old_name(old_name) {}
 
 UnloadedExtensionInfo::UnloadedExtensionInfo(

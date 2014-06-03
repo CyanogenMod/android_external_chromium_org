@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,43 +7,46 @@
 
 #include "content/public/browser/browser_plugin_guest_delegate.h"
 
+#include "base/callback.h"
+#include "content/public/browser/web_contents_observer.h"
+#include "content/public/common/page_transition_types.h"
+#include "url/gurl.h"
+
 namespace content {
 
-class TestBrowserPluginGuestDelegate : public BrowserPluginGuestDelegate {
+class BrowserPluginGuest;
+struct Referrer;
+
+class TestBrowserPluginGuestDelegate : public BrowserPluginGuestDelegate,
+                                       public WebContentsObserver {
  public:
-  TestBrowserPluginGuestDelegate();
+  explicit TestBrowserPluginGuestDelegate(BrowserPluginGuest* guest);
   virtual ~TestBrowserPluginGuestDelegate();
 
-  void ResetStates();
-
-  bool load_aborted() const { return load_aborted_; }
-  const GURL& load_aborted_url() const { return load_aborted_url_; }
+  WebContents* GetEmbedderWebContents() const;
 
  private:
-  // Overridden from BrowserPluginGuestDelegate:
-  virtual void AddMessageToConsole(int32 level,
-                                   const base::string16& message,
-                                   int32 line_no,
-                                   const base::string16& source_id) OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual void GuestProcessGone(base::TerminationStatus status) OVERRIDE;
-  virtual bool HandleKeyboardEvent(
-      const NativeWebKeyboardEvent& event) OVERRIDE;
-  virtual void LoadAbort(bool is_top_level,
-                         const GURL& url,
-                         const std::string& error_type) OVERRIDE;
-  virtual void RendererResponsive() OVERRIDE;
-  virtual void RendererUnresponsive() OVERRIDE;
-  virtual void RequestPermission(
-      BrowserPluginPermissionType permission_type,
-      const base::DictionaryValue& request_info,
-      const PermissionResponseCallback& callback,
-      bool allowed_by_default) OVERRIDE;
-  virtual void SizeChanged(const gfx::Size& old_size,
-                           const gfx::Size& new_size) OVERRIDE;
+  class EmbedderWebContentsObserver;
 
-  bool load_aborted_;
-  GURL load_aborted_url_;
+  void LoadURLWithParams(const GURL& url,
+                         const Referrer& referrer,
+                         PageTransition transition_type,
+                         WebContents* web_contents);
+
+  // WebContentsObserver implementation.
+  virtual void WebContentsDestroyed() OVERRIDE;
+
+  // Overridden from BrowserPluginGuestDelegate:
+  virtual void DidAttach() OVERRIDE;
+  virtual void Destroy() OVERRIDE;
+  virtual void NavigateGuest(const std::string& src) OVERRIDE;
+  virtual void RegisterDestructionCallback(
+      const DestructionCallback& callback) OVERRIDE;
+
+  BrowserPluginGuest* guest_;
+  scoped_ptr<EmbedderWebContentsObserver> embedder_web_contents_observer_;
+
+  DestructionCallback destruction_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(TestBrowserPluginGuestDelegate);
 };

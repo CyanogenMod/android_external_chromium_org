@@ -136,7 +136,6 @@ class GeolocationDispatcher;
 class HistoryController;
 class HistoryEntry;
 class ImageResourceFetcher;
-class LoadProgressTracker;
 class MidiDispatcher;
 class MediaStreamDispatcher;
 class MouseLockDispatcher;
@@ -156,7 +155,6 @@ struct FileChooserParams;
 struct RenderViewImplParams;
 
 #if defined(OS_ANDROID)
-class RendererMediaPlayerManager;
 class WebMediaPlayerProxyAndroid;
 #endif
 
@@ -174,7 +172,9 @@ class CONTENT_EXPORT RenderViewImpl
   // Creates a new RenderView. |opener_id| is the routing ID of the RenderView
   // responsible for creating this RenderView. Note that if the original opener
   // has been closed, |window_was_created_with_opener| will be true and
-  // |opener_id| will be MSG_ROUTING_NONE.
+  // |opener_id| will be MSG_ROUTING_NONE. When |swapped_out| is true, the
+  // |proxy_routing_id| is specified, so a RenderFrameProxy can be created for
+  // this RenderView's main RenderFrame.
   static RenderViewImpl* Create(int32 opener_id,
                                 bool window_was_created_with_opener,
                                 const RendererPreferences& renderer_prefs,
@@ -186,6 +186,7 @@ class CONTENT_EXPORT RenderViewImpl
                                 const base::string16& frame_name,
                                 bool is_renderer_created,
                                 bool swapped_out,
+                                int32 proxy_routing_id,
                                 bool hidden,
                                 bool never_visible,
                                 int32 next_page_id,
@@ -277,8 +278,6 @@ class CONTENT_EXPORT RenderViewImpl
   void FrameDidStartLoading(blink::WebFrame* frame);
   void FrameDidStopLoading(blink::WebFrame* frame);
 
-  void FrameDidChangeLoadProgress(blink::WebFrame* frame,
-                                  double load_progress);
   void FrameDidCommitProvisionalLoad(blink::WebLocalFrame* frame,
                                      bool is_new_navigation);
 
@@ -360,6 +359,10 @@ class CONTENT_EXPORT RenderViewImpl
   // Change the device scale factor and force the compositor to resize.
   void SetDeviceScaleFactorForTesting(float factor);
 
+  // Change screen orientation and force the compositor to resize.
+  void SetScreenOrientationForTesting(
+      const blink::WebScreenOrientationType& orientation);
+
   // Change the device ICC color profile while running a layout test.
   void SetDeviceColorProfileForTesting(const std::vector<char>& color_profile);
 
@@ -389,7 +392,6 @@ class CONTENT_EXPORT RenderViewImpl
   virtual bool requestPointerLock();
   virtual void requestPointerUnlock();
   virtual bool isPointerLocked();
-  virtual void didActivateCompositor() OVERRIDE;
   virtual void didHandleGestureEvent(const blink::WebGestureEvent& event,
                                      bool event_cancelled) OVERRIDE;
   virtual void initializeLayerTreeView() OVERRIDE;
@@ -412,7 +414,6 @@ class CONTENT_EXPORT RenderViewImpl
       const blink::WebString& path,
       blink::WebFileChooserCompletion* chooser_completion);
   virtual void didCancelCompositionOnSelectionChange();
-  virtual void didExecuteCommand(const blink::WebString& command_name);
   virtual bool handleCurrentKeyboardEvent();
   virtual bool runFileChooser(
       const blink::WebFileChooserParams& params,
@@ -569,9 +570,6 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void InstrumentDidBeginFrame() OVERRIDE;
   virtual void InstrumentDidCancelFrame() OVERRIDE;
   virtual void InstrumentWillComposite() OVERRIDE;
-#if defined(OS_ANDROID)
-  virtual void UpdateSelectionRootBounds() OVERRIDE;
-#endif
 
  protected:
   explicit RenderViewImpl(RenderViewImplParams* params);
@@ -657,10 +655,7 @@ class CONTENT_EXPORT RenderViewImpl
 
   void didCreateDataSource(blink::WebLocalFrame* frame,
                            blink::WebDataSource* datasource);
-  void didClearWindowObject(blink::WebLocalFrame* frame, int world_id);
-  void didReceiveTitle(blink::WebLocalFrame* frame,
-                       const blink::WebString& title,
-                       blink::WebTextDirection direction);
+  void didClearWindowObject(blink::WebLocalFrame* frame);
   void didChangeIcon(blink::WebLocalFrame*, blink::WebIconURL::Type);
   void didUpdateCurrentHistoryItem(blink::WebLocalFrame* frame);
   void didChangeScrollOffset(blink::WebLocalFrame* frame);
@@ -674,26 +669,8 @@ class CONTENT_EXPORT RenderViewImpl
   static WindowOpenDisposition NavigationPolicyToDisposition(
       blink::WebNavigationPolicy policy);
 
-  void UpdateTitle(blink::WebFrame* frame, const base::string16& title,
-                   blink::WebTextDirection title_direction);
   void UpdateSessionHistory(blink::WebFrame* frame);
   void SendUpdateState(HistoryEntry* entry);
-
-  // Update current main frame's encoding and send it to browser window.
-  // Since we want to let users see the right encoding info from menu
-  // before finishing loading, we call the UpdateEncoding in
-  // a) function:DidCommitLoadForFrame. When this function is called,
-  // that means we have got first data. In here we try to get encoding
-  // of page if it has been specified in http header.
-  // b) function:DidReceiveTitle. When this function is called,
-  // that means we have got specified title. Because in most of webpages,
-  // title tags will follow meta tags. In here we try to get encoding of
-  // page if it has been specified in meta tag.
-  // c) function:DidFinishDocumentLoadForFrame. When this function is
-  // called, that means we have got whole html page. In here we should
-  // finally get right encoding of page.
-  void UpdateEncoding(blink::WebFrame* frame,
-                      const std::string& encoding_name);
 
   // Sends a message and runs a nested message loop.
   bool SendAndRunNestedMessageLoop(IPC::SyncMessage* message);
@@ -717,7 +694,6 @@ class CONTENT_EXPORT RenderViewImpl
   void OnShowContextMenu(const gfx::Point& location);
   void OnCopyImageAt(int x, int y);
   void OnSaveImageAt(int x, int y);
-  void OnSetName(const std::string& name);
   void OnDeterminePageLanguage();
   void OnDisableScrollbarsForSmallWindows(
       const gfx::Size& disable_scrollbars_size_limit);
@@ -763,14 +739,13 @@ class CONTENT_EXPORT RenderViewImpl
   void OnResetPageEncodingToDefault();
   void OnSetAccessibilityMode(AccessibilityMode new_mode);
   void OnSetActive(bool active);
-  void OnSetBackground(const SkBitmap& background);
+  void OnSetBackgroundOpaque(bool opaque);
   void OnExitFullscreen();
   void OnSetHistoryLengthAndPrune(int history_length, int32 minimum_page_id);
   void OnSetInitialFocus(bool reverse);
   void OnSetPageEncoding(const std::string& encoding_name);
   void OnSetRendererPrefs(const RendererPreferences& renderer_prefs);
   void OnSetWebUIProperty(const std::string& name, const std::string& value);
-  void OnSetZoomLevel(double zoom_level);
   void OnSetZoomLevelForLoadingURL(const GURL& url, double zoom_level);
   void OnStop();
   void OnStopFinding(StopFindAction action);
@@ -783,6 +758,7 @@ class CONTENT_EXPORT RenderViewImpl
   void OnDisownOpener();
   void OnWindowSnapshotCompleted(const int snapshot_id,
       const gfx::Size& size, const std::vector<unsigned char>& png);
+  void OnSelectWordAroundCaret();
 #if defined(OS_ANDROID)
   void OnActivateNearestFindResult(int request_id, float x, float y);
   void OnFindMatchRects(int current_version);
@@ -792,9 +768,7 @@ class CONTENT_EXPORT RenderViewImpl
   void OnUpdateTopControlsState(bool enable_hiding,
                                 bool enable_showing,
                                 bool animate);
-  void OnPauseVideo();
   void OnExtractSmartClipData(const gfx::Rect& rect);
-  void GetSelectionRootBounds(gfx::Rect* bounds) const;
 #elif defined(OS_MACOSX)
   void OnPluginImeCompositionCompleted(const base::string16& text,
                                        int plugin_id);
@@ -1006,10 +980,9 @@ class CONTENT_EXPORT RenderViewImpl
   // process.
   int history_list_length_;
 
-  // Counter to track how many frames have sent start notifications but not
-  // stop notifications.
-  // TODO(japhet): This state will need to move to the browser process
-  // (probably WebContents) for site isolation.
+  // Counter to track how many frames have sent start notifications but not stop
+  // notifications. TODO(avi): Remove this once DidStartLoading/DidStopLoading
+  // are gone.
   int frames_in_progress_;
 
   // The list of page IDs for each history item this RenderView knows about.
@@ -1017,11 +990,6 @@ class CONTENT_EXPORT RenderViewImpl
   // restored from a previous session.  This lets us detect attempts to
   // navigate to stale entries that have been cropped from our history.
   std::vector<int32> history_page_ids_;
-
-  // Page info -----------------------------------------------------------------
-
-  // The last gotten main frame's encoding.
-  std::string last_encoding_name_;
 
   // UI state ------------------------------------------------------------------
 
@@ -1135,10 +1103,6 @@ class CONTENT_EXPORT RenderViewImpl
   typedef std::vector< linked_ptr<ContentDetector> > ContentDetectorList;
   ContentDetectorList content_detectors_;
 
-  // The media player manager for managing all the media players on this view
-  // for communicating with the real media player objects in browser process.
-  RendererMediaPlayerManager* media_player_manager_;
-
   // A date/time picker object for date and time related input elements.
   scoped_ptr<RendererDateTimePicker> date_time_picker_client_;
 #endif
@@ -1188,9 +1152,6 @@ class CONTENT_EXPORT RenderViewImpl
   // The current directory enumeration callback
   std::map<int, blink::WebFileChooserCompletion*> enumeration_completions_;
   int enumeration_completion_id_;
-
-  // Reports load progress to the browser.
-  scoped_ptr<LoadProgressTracker> load_progress_tracker_;
 
   // The SessionStorage namespace that we're assigned to has an ID, and that ID
   // is passed to us upon creation.  WebKit asks for this ID upon first use and

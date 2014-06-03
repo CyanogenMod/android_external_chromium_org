@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
+#include "net/base/load_flags.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_status_code.h"
 #include "net/url_request/url_request.h"
@@ -66,18 +67,37 @@ class StreamRequestImpl : public WebSocketStreamRequest {
   StreamRequestImpl(
       const GURL& url,
       const URLRequestContext* context,
+      const url::Origin& origin,
       scoped_ptr<WebSocketStream::ConnectDelegate> connect_delegate,
-      WebSocketHandshakeStreamCreateHelper* create_helper)
+      scoped_ptr<WebSocketHandshakeStreamCreateHelper> create_helper)
       : delegate_(new Delegate(this)),
         url_request_(url, DEFAULT_PRIORITY, delegate_.get(), context),
         connect_delegate_(connect_delegate.Pass()),
-        create_helper_(create_helper) {}
+        create_helper_(create_helper.release()) {
+    HttpRequestHeaders headers;
+    headers.SetHeader(websockets::kUpgrade, websockets::kWebSocketLowercase);
+    headers.SetHeader(HttpRequestHeaders::kConnection, websockets::kUpgrade);
+    headers.SetHeader(HttpRequestHeaders::kOrigin, origin.string());
+    headers.SetHeader(websockets::kSecWebSocketVersion,
+                      websockets::kSupportedVersion);
+    url_request_.SetExtraRequestHeaders(headers);
+
+    // This passes the ownership of |create_helper_| to |url_request_|.
+    url_request_.SetUserData(
+        WebSocketHandshakeStreamBase::CreateHelper::DataKey(),
+        create_helper_);
+    url_request_.SetLoadFlags(LOAD_DISABLE_CACHE |
+                              LOAD_BYPASS_CACHE |
+                              LOAD_DO_NOT_PROMPT_FOR_LOGIN);
+  }
 
   // Destroying this object destroys the URLRequest, which cancels the request
   // and so terminates the handshake if it is incomplete.
   virtual ~StreamRequestImpl() {}
 
-  URLRequest* url_request() { return &url_request_; }
+  void Start() {
+    url_request_.Start();
+  }
 
   void PerformUpgrade() {
     connect_delegate_->OnSuccess(create_helper_->stream()->Upgrade());
@@ -157,37 +177,6 @@ void Delegate::OnReadCompleted(URLRequest* request, int bytes_read) {
   NOTREACHED();
 }
 
-// Internal implementation of CreateAndConnectStream and
-// CreateAndConnectStreamForTesting.
-scoped_ptr<WebSocketStreamRequest> CreateAndConnectStreamWithCreateHelper(
-    const GURL& socket_url,
-    scoped_ptr<WebSocketHandshakeStreamCreateHelper> create_helper,
-    const url::Origin& origin,
-    URLRequestContext* url_request_context,
-    const BoundNetLog& net_log,
-    scoped_ptr<WebSocketStream::ConnectDelegate> connect_delegate) {
-  scoped_ptr<StreamRequestImpl> request(
-      new StreamRequestImpl(socket_url,
-                            url_request_context,
-                            connect_delegate.Pass(),
-                            create_helper.get()));
-  HttpRequestHeaders headers;
-  headers.SetHeader(websockets::kUpgrade, websockets::kWebSocketLowercase);
-  headers.SetHeader(HttpRequestHeaders::kConnection, websockets::kUpgrade);
-  headers.SetHeader(HttpRequestHeaders::kOrigin, origin.string());
-  headers.SetHeader(websockets::kSecWebSocketVersion,
-                    websockets::kSupportedVersion);
-  request->url_request()->SetExtraRequestHeaders(headers);
-  request->url_request()->SetUserData(
-      WebSocketHandshakeStreamBase::CreateHelper::DataKey(),
-      create_helper.release());
-  request->url_request()->SetLoadFlags(LOAD_DISABLE_CACHE |
-                                       LOAD_BYPASS_CACHE |
-                                       LOAD_DO_NOT_PROMPT_FOR_LOGIN);
-  request->url_request()->Start();
-  return request.PassAs<WebSocketStreamRequest>();
-}
-
 }  // namespace
 
 WebSocketStreamRequest::~WebSocketStreamRequest() {}
@@ -207,12 +196,14 @@ scoped_ptr<WebSocketStreamRequest> WebSocketStream::CreateAndConnectStream(
   scoped_ptr<WebSocketHandshakeStreamCreateHelper> create_helper(
       new WebSocketHandshakeStreamCreateHelper(connect_delegate.get(),
                                                requested_subprotocols));
-  return CreateAndConnectStreamWithCreateHelper(socket_url,
-                                                create_helper.Pass(),
-                                                origin,
-                                                url_request_context,
-                                                net_log,
-                                                connect_delegate.Pass());
+  scoped_ptr<StreamRequestImpl> request(
+      new StreamRequestImpl(socket_url,
+                            url_request_context,
+                            origin,
+                            connect_delegate.Pass(),
+                            create_helper.Pass()));
+  request->Start();
+  return request.PassAs<WebSocketStreamRequest>();
 }
 
 // This is declared in websocket_test_util.h.
@@ -223,12 +214,14 @@ scoped_ptr<WebSocketStreamRequest> CreateAndConnectStreamForTesting(
     URLRequestContext* url_request_context,
     const BoundNetLog& net_log,
     scoped_ptr<WebSocketStream::ConnectDelegate> connect_delegate) {
-  return CreateAndConnectStreamWithCreateHelper(socket_url,
-                                                create_helper.Pass(),
-                                                origin,
-                                                url_request_context,
-                                                net_log,
-                                                connect_delegate.Pass());
+  scoped_ptr<StreamRequestImpl> request(
+      new StreamRequestImpl(socket_url,
+                            url_request_context,
+                            origin,
+                            connect_delegate.Pass(),
+                            create_helper.Pass()));
+  request->Start();
+  return request.PassAs<WebSocketStreamRequest>();
 }
 
 }  // namespace net

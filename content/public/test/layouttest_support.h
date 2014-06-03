@@ -61,7 +61,11 @@ void SetMockDeviceOrientationData(const blink::WebDeviceOrientationData& data);
 
 // Sets WebScreenOrientationType that should be used as a mock orientation.
 void SetMockScreenOrientation(
+    RenderView* render_view,
     const blink::WebScreenOrientationType& orientation);
+
+// Resets the mock screen orientation data.
+void ResetMockScreenOrientation();
 
 // Returns the length of the local session history of a render view.
 int GetLocalSessionHistoryLength(RenderView* render_view);
@@ -97,9 +101,6 @@ void EnableAutoResizeMode(RenderView* render_view,
                           const blink::WebSize& max_size);
 void DisableAutoResizeMode(RenderView* render_view,
                            const blink::WebSize& new_size);
-
-// Forces the |render_frame| to use mock media streams.
-void UseMockMediaStreams(RenderFrame* render_frame);
 
 // Provides a text dump of the contents of the given page state.
 std::string DumpBackForwardList(std::vector<PageState>& page_state,

@@ -35,7 +35,7 @@
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/gpu/gpu_process_host_ui_shim.h"
 #include "content/browser/gpu/gpu_surface_tracker.h"
-#include "content/browser/media/android/browser_media_player_manager.h"
+#include "content/browser/media/android/media_web_contents_observer.h"
 #include "content/browser/renderer_host/compositor_impl_android.h"
 #include "content/browser/renderer_host/dip_util.h"
 #include "content/browser/renderer_host/image_transport_factory_android.h"
@@ -49,6 +49,7 @@
 #include "content/common/input/did_overscroll_params.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/common/content_switches.h"
@@ -215,7 +216,6 @@ bool RenderWidgetHostViewAndroid::OnMessageReceived(
     IPC_MESSAGE_HANDLER(ViewHostMsg_StartContentIntent, OnStartContentIntent)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidChangeBodyBackgroundColor,
                         OnDidChangeBodyBackgroundColor)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_DidOverscroll, OnDidOverscroll)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SetNeedsBeginFrame,
                         OnSetNeedsBeginFrame)
     IPC_MESSAGE_HANDLER(ViewHostMsg_TextInputStateChanged,
@@ -254,6 +254,7 @@ void RenderWidgetHostViewAndroid::WasShown() {
 
   if (content_view_core_ && !using_synchronous_compositor_) {
     content_view_core_->GetWindowAndroid()->AddObserver(this);
+    content_view_core_->GetWindowAndroid()->RequestVSyncUpdate();
     observing_root_window_ = true;
   }
 }
@@ -516,25 +517,6 @@ void RenderWidgetHostViewAndroid::OnDidChangeBodyBackgroundColor(
     content_view_core_->OnBackgroundColorChanged(color);
 }
 
-void RenderWidgetHostViewAndroid::OnDidOverscroll(
-    const DidOverscrollParams& params) {
-  if (!content_view_core_ || !layer_ || !is_showing_)
-    return;
-
-  const float device_scale_factor = content_view_core_->GetDpiScale();
-  if (overscroll_effect_->OnOverscrolled(
-          content_view_core_->GetLayer(),
-          base::TimeTicks::Now(),
-          gfx::ScaleVector2d(params.accumulated_overscroll,
-                             device_scale_factor),
-          gfx::ScaleVector2d(params.latest_overscroll_delta,
-                             device_scale_factor),
-          gfx::ScaleVector2d(params.current_fling_velocity,
-                             device_scale_factor))) {
-    SetNeedsAnimate();
-  }
-}
-
 void RenderWidgetHostViewAndroid::OnSetNeedsBeginFrame(bool enabled) {
   if (enabled == needs_begin_frame_)
     return;
@@ -658,19 +640,12 @@ void RenderWidgetHostViewAndroid::SelectionBoundsChanged(
   }
 }
 
-void RenderWidgetHostViewAndroid::SelectionRootBoundsChanged(
-    const gfx::Rect& bounds) {
-  if (content_view_core_) {
-    content_view_core_->OnSelectionRootBoundsChanged(bounds);
-  }
-}
-
 void RenderWidgetHostViewAndroid::ScrollOffsetChanged() {
 }
 
-void RenderWidgetHostViewAndroid::SetBackground(const SkBitmap& background) {
-  RenderWidgetHostViewBase::SetBackground(background);
-  host_->Send(new ViewMsg_SetBackground(host_->GetRoutingID(), background));
+void RenderWidgetHostViewAndroid::SetBackgroundOpaque(bool opaque) {
+  RenderWidgetHostViewBase::SetBackgroundOpaque(opaque);
+  host_->SetBackgroundOpaque(opaque);
 }
 
 void RenderWidgetHostViewAndroid::CopyFromCompositingSurface(
@@ -759,9 +734,6 @@ RenderWidgetHostViewAndroid::CreateSyntheticGestureTarget() {
       host_, content_view_core_->CreateTouchEventSynthesizer()));
 }
 
-void RenderWidgetHostViewAndroid::OnAcceleratedCompositingStateChange() {
-}
-
 void RenderWidgetHostViewAndroid::SendDelegatedFrameAck(
     uint32 output_surface_id) {
   DCHECK(host_);
@@ -810,10 +782,9 @@ void RenderWidgetHostViewAndroid::SwapDelegatedFrame(
     // Drop the cc::DelegatedFrameResourceCollection so that we will not return
     // any resources from the old output surface with the new output surface id.
     if (resource_collection_.get()) {
+      resource_collection_->SetClient(NULL);
       if (resource_collection_->LoseAllResources())
         SendReturnedDelegatedResources(last_output_surface_id_);
-
-      resource_collection_->SetClient(NULL);
       resource_collection_ = NULL;
     }
     DestroyDelegatedContent();
@@ -1018,7 +989,7 @@ void RenderWidgetHostViewAndroid::OnFrameMetadataUpdated(
   if (host_ && host_->IsRenderView()) {
     RenderViewHostImpl* rvhi = static_cast<RenderViewHostImpl*>(
         RenderViewHost::From(host_));
-    rvhi->media_player_manager()->OnFrameInfoUpdated();
+    rvhi->media_web_contents_observer()->OnFrameInfoUpdated();
   }
 #endif  // defined(VIDEO_HOLE)
 }
@@ -1057,7 +1028,7 @@ void RenderWidgetHostViewAndroid::RemoveLayers() {
 }
 
 void RenderWidgetHostViewAndroid::SetNeedsAnimate() {
-  content_view_core_->GetWindowAndroid()->RequestVSyncUpdate();
+  content_view_core_->GetWindowAndroid()->SetNeedsAnimate();
 }
 
 bool RenderWidgetHostViewAndroid::Animate(base::TimeTicks frame_time) {
@@ -1166,6 +1137,7 @@ void RenderWidgetHostViewAndroid::OnSetNeedsFlushInput() {
     return;
   TRACE_EVENT0("input", "RenderWidgetHostViewAndroid::OnSetNeedsFlushInput");
   flush_input_requested_ = true;
+  content_view_core_->GetWindowAndroid()->RequestVSyncUpdate();
 }
 
 void RenderWidgetHostViewAndroid::CreateBrowserAccessibilityManagerIfNeeded() {
@@ -1244,6 +1216,25 @@ void RenderWidgetHostViewAndroid::MoveCaret(const gfx::Point& point) {
 
 SkColor RenderWidgetHostViewAndroid::GetCachedBackgroundColor() const {
   return cached_background_color_;
+}
+
+void RenderWidgetHostViewAndroid::DidOverscroll(
+    const DidOverscrollParams& params) {
+  if (!content_view_core_ || !layer_ || !is_showing_)
+    return;
+
+  const float device_scale_factor = content_view_core_->GetDpiScale();
+  if (overscroll_effect_->OnOverscrolled(
+          content_view_core_->GetLayer(),
+          base::TimeTicks::Now(),
+          gfx::ScaleVector2d(params.accumulated_overscroll,
+                             device_scale_factor),
+          gfx::ScaleVector2d(params.latest_overscroll_delta,
+                             device_scale_factor),
+          gfx::ScaleVector2d(params.current_fling_velocity,
+                             device_scale_factor))) {
+    SetNeedsAnimate();
+  }
 }
 
 void RenderWidgetHostViewAndroid::DidStopFlinging() {
@@ -1341,10 +1332,13 @@ void RenderWidgetHostViewAndroid::OnVSync(base::TimeTicks frame_time,
       host_->GetRoutingID(),
       cc::BeginFrameArgs::Create(frame_time, deadline, vsync_period)));
 
-  // TODO(sievers): This should use the LayerTreeHostClient callback
-  bool needs_animate = Animate(frame_time);
-  if (needs_begin_frame_ || needs_animate)
+  if (needs_begin_frame_)
     content_view_core_->GetWindowAndroid()->RequestVSyncUpdate();
+}
+
+void RenderWidgetHostViewAndroid::OnAnimate(base::TimeTicks begin_frame_time) {
+  if (Animate(begin_frame_time))
+    SetNeedsAnimate();
 }
 
 void RenderWidgetHostViewAndroid::OnLostResources() {
@@ -1422,7 +1416,8 @@ void RenderWidgetHostViewAndroid::PrepareTextureCopyOutputResult(
                  base::Passed(&release_callback),
                  base::Passed(&bitmap),
                  start_time,
-                 base::Passed(&bitmap_pixels_lock)));
+                 base::Passed(&bitmap_pixels_lock)),
+      GLHelper::SCALER_QUALITY_GOOD);
 }
 
 bool RenderWidgetHostViewAndroid::IsReadbackConfigSupported(

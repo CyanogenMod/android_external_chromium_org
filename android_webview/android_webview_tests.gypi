@@ -96,7 +96,7 @@
         '<(SHARED_INTERMEDIATE_DIR)/android_webview_unittests',
       ],
       'sources': [
-        'browser/aw_cookie_access_policy_unittest.cc',
+        'browser/aw_static_cookie_policy_unittest.cc',
         'browser/aw_form_database_service_unittest.cc',
         'browser/global_tile_manager_unittest.cc',
         'browser/net/android_stream_reader_url_request_job_unittest.cc',
@@ -131,7 +131,6 @@
       ],
       'variables': {
         'jni_gen_package': 'android_webview_unittests',
-        'jni_generator_ptr_type': 'long',
       },
       'includes': [ '../build/jni_generator.gypi' ],
     },

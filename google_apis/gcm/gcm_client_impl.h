@@ -73,21 +73,23 @@ class GCM_EXPORT GCMInternalsBuilder {
 // with MCS) and other pieces of GCM infrastructure like Registration and
 // Checkins. It also allows for registering user delegates that host
 // applications that send and receive messages.
-class GCM_EXPORT GCMClientImpl : public GCMClient {
+class GCM_EXPORT GCMClientImpl
+    : public GCMClient, public GCMStatsRecorder::Delegate {
  public:
   explicit GCMClientImpl(scoped_ptr<GCMInternalsBuilder> internals_builder);
   virtual ~GCMClientImpl();
 
   // Overridden from GCMClient:
   virtual void Initialize(
-      const checkin_proto::ChromeBuildProto& chrome_build_proto,
+      const ChromeBuildInfo& chrome_build_info,
       const base::FilePath& store_path,
       const std::vector<std::string>& account_ids,
       const scoped_refptr<base::SequencedTaskRunner>& blocking_task_runner,
       const scoped_refptr<net::URLRequestContextGetter>&
           url_request_context_getter,
-      Delegate* delegate) OVERRIDE;
-  virtual void Load() OVERRIDE;
+      scoped_ptr<Encryptor> encryptor,
+      GCMClient::Delegate* delegate) OVERRIDE;
+  virtual void Start() OVERRIDE;
   virtual void Stop() OVERRIDE;
   virtual void CheckOut() OVERRIDE;
   virtual void Register(const std::string& app_id,
@@ -99,6 +101,7 @@ class GCM_EXPORT GCMClientImpl : public GCMClient {
   virtual void SetRecording(bool recording) OVERRIDE;
   virtual void ClearActivityLogs() OVERRIDE;
   virtual GCMStatistics GetStatistics() const OVERRIDE;
+  virtual void OnActivityRecorded() OVERRIDE;
 
  private:
   // State representation of the GCMClient.
@@ -235,7 +238,7 @@ class GCM_EXPORT GCMClientImpl : public GCMClient {
   // State of the GCM Client Implementation.
   State state_;
 
-  Delegate* delegate_;
+  GCMClient::Delegate* delegate_;
 
   // Device checkin info (android ID and security token used by device).
   CheckinInfo device_checkin_info_;
@@ -246,7 +249,7 @@ class GCM_EXPORT GCMClientImpl : public GCMClient {
 
   // Information about the chrome build.
   // TODO(fgorski): Check if it can be passed in constructor and made const.
-  checkin_proto::ChromeBuildProto chrome_build_proto_;
+  ChromeBuildInfo chrome_build_info_;
 
   // Persistent data store for keeping device credentials, messages and user to
   // serial number mappings.

@@ -4,6 +4,8 @@
 
 #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
 
+#include <vector>
+
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/location.h"
@@ -13,6 +15,7 @@
 #include "chrome/browser/bookmarks/enhanced_bookmarks_features.h"
 #include "chrome/browser/dom_distiller/dom_distiller_service_factory.h"
 #include "chrome/browser/extensions/extension_web_ui.h"
+#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -44,7 +47,6 @@
 #include "chrome/browser/ui/webui/plugins_ui.h"
 #include "chrome/browser/ui/webui/predictors/predictors_ui.h"
 #include "chrome/browser/ui/webui/profiler_ui.h"
-#include "chrome/browser/ui/webui/quota_internals/quota_internals_ui.h"
 #include "chrome/browser/ui/webui/signin/inline_login_ui.h"
 #include "chrome/browser/ui/webui/signin/profile_signin_confirmation_ui.h"
 #include "chrome/browser/ui/webui/signin/user_manager_ui.h"
@@ -96,6 +98,7 @@
 #include "chrome/browser/ui/webui/welcome_ui_android.h"
 #else
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
+#include "chrome/browser/ui/webui/quota_internals/quota_internals_ui.h"
 #include "chrome/browser/ui/webui/suggestions_internals/suggestions_internals_ui.h"
 #include "chrome/browser/ui/webui/sync_file_system_internals/sync_file_system_internals_ui.h"
 #include "chrome/browser/ui/webui/system_info_ui.h"
@@ -121,6 +124,7 @@
 #include "chrome/browser/ui/webui/chromeos/network_ui.h"
 #include "chrome/browser/ui/webui/chromeos/nfc_debug_ui.h"
 #include "chrome/browser/ui/webui/chromeos/power_ui.h"
+#include "chrome/browser/ui/webui/chromeos/provided_file_systems_ui.h"
 #include "chrome/browser/ui/webui/chromeos/proxy_settings_ui.h"
 #include "chrome/browser/ui/webui/chromeos/salsa_ui.h"
 #include "chrome/browser/ui/webui/chromeos/set_time_ui.h"
@@ -297,17 +301,12 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
 #endif
   if (url.host() == chrome::kChromeUIOmniboxHost)
     return &NewWebUI<OmniboxUI>;
-  if (url.host() == chrome::kChromeUIPasswordManagerInternalsHost &&
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          password_manager::switches::kEnablePasswordManagerInternalsUI)) {
+  if (url.host() == chrome::kChromeUIPasswordManagerInternalsHost)
     return &NewWebUI<PasswordManagerInternalsUI>;
-  }
   if (url.host() == chrome::kChromeUIPredictorsHost)
     return &NewWebUI<PredictorsUI>;
   if (url.host() == chrome::kChromeUIProfilerHost)
     return &NewWebUI<ProfilerUI>;
-  if (url.host() == chrome::kChromeUIQuotaInternalsHost)
-    return &NewWebUI<QuotaInternalsUI>;
   if (url.host() == chrome::kChromeUISignInInternalsHost)
     return &NewWebUI<SignInInternalsUI>;
   if (url.host() == chrome::kChromeUISyncInternalsHost)
@@ -372,6 +371,8 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
   // Android does not support plugins for now.
   if (url.host() == chrome::kChromeUIPluginsHost)
     return &NewWebUI<PluginsUI>;
+  if (url.host() == chrome::kChromeUIQuotaInternalsHost)
+    return &NewWebUI<QuotaInternalsUI>;
   // Settings are implemented with native UI elements on Android.
   if (url.host() == chrome::kChromeUISettingsFrameHost)
     return &NewWebUI<options::OptionsUI>;
@@ -427,6 +428,8 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return &NewWebUI<chromeos::NfcDebugUI>;
   if (url.host() == chrome::kChromeUIOobeHost)
     return &NewWebUI<chromeos::OobeUI>;
+  if (url.host() == chrome::kChromeUIProvidedFileSystemsHost)
+    return &NewWebUI<chromeos::ProvidedFileSystemsUI>;
   if (url.host() == chrome::kChromeUIProxySettingsHost)
     return &NewWebUI<chromeos::ProxySettingsUI>;
   if (url.host() == chrome::kChromeUISalsaHost)
@@ -522,7 +525,7 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
 }
 
 void RunFaviconCallbackAsync(
-    const FaviconService::FaviconResultsCallback& callback,
+    const favicon_base::FaviconResultsCallback& callback,
     const std::vector<favicon_base::FaviconBitmapResult>* results) {
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE,
@@ -568,7 +571,7 @@ void ChromeWebUIControllerFactory::GetFaviconForURL(
     Profile* profile,
     const GURL& page_url,
     const std::vector<ui::ScaleFactor>& scale_factors,
-    const FaviconService::FaviconResultsCallback& callback) const {
+    const favicon_base::FaviconResultsCallback& callback) const {
   // Before determining whether page_url is an extension url, we must handle
   // overrides. This changes urls in |kChromeUIScheme| to extension urls, and
   // allows to use ExtensionWebUI::GetFaviconForURL.

@@ -17,6 +17,7 @@
 #include "chrome/browser/extensions/extension_installer.h"
 #include "chrome/browser/extensions/sandboxed_unpacker.h"
 #include "chrome/browser/extensions/webstore_installer.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest.h"
 #include "sync/api/string_ordinal.h"
@@ -133,6 +134,9 @@ class CrxInstaller
   bool allow_silent_install() const { return allow_silent_install_; }
   void set_allow_silent_install(bool val) { allow_silent_install_ = val; }
 
+  bool grant_permissions() const { return grant_permissions_; }
+  void set_grant_permissions(bool val) { grant_permissions_ = val; }
+
   bool is_gallery_install() const {
     return (creation_flags_ & Extension::FROM_WEBSTORE) > 0;
   }
@@ -178,6 +182,10 @@ class CrxInstaller
 
   void set_install_wait_for_idle(bool val) {
     install_wait_for_idle_ = val;
+  }
+
+  void set_is_ephemeral(bool val) {
+    is_ephemeral_ = val;
   }
 
   bool did_handle_successfully() const { return did_handle_successfully_; }
@@ -231,6 +239,10 @@ class CrxInstaller
   // Runs on File thread. Install the unpacked extension into the profile and
   // notify the frontend.
   void CompleteInstall();
+
+  // Reloads extension on File thread and reports installation result back
+  // to UI thread.
+  void ReloadExtensionAfterInstall(const base::FilePath& version_dir);
 
   // Result reporting.
   void ReportFailureFromFileThread(const CrxInstallerError& error);
@@ -344,9 +356,13 @@ class CrxInstaller
   bool apps_require_extension_mime_type_;
 
   // Allows for the possibility of a normal install (one in which a |client|
-  // is provided in the ctor) to procede without showing the permissions prompt
+  // is provided in the ctor) to proceed without showing the permissions prompt
   // dialog.
   bool allow_silent_install_;
+
+  // Allows for the possibility of an installation without granting any
+  // permissions to the extension.
+  bool grant_permissions_;
 
   // The value of the content type header sent with the CRX.
   // Ignorred unless |require_extension_mime_type_| is true.
@@ -390,6 +406,9 @@ class CrxInstaller
   // Whether the update is initiated by the user from the extension settings
   // page.
   bool update_from_settings_page_;
+
+  // True if an ephemeral app is being installed.
+  bool is_ephemeral_;
 
   // Gives access to common methods and data of an extension installer.
   ExtensionInstaller installer_;

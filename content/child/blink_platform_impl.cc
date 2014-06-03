@@ -32,7 +32,6 @@
 #include "content/child/web_discardable_memory_impl.h"
 #include "content/child/web_socket_stream_handle_impl.h"
 #include "content/child/web_url_loader_impl.h"
-#include "content/child/webcrypto/webcrypto_impl.h"
 #include "content/child/websocket_bridge.h"
 #include "content/child/webthread_impl.h"
 #include "content/child/worker_task_runner.h"
@@ -316,6 +315,8 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_RECENT_SEARCHES_NONE;
     case WebLocalizedString::SearchMenuRecentSearchesText:
       return IDS_RECENT_SEARCHES;
+    case WebLocalizedString::SelectMenuListText:
+      return IDS_FORM_SELECT_MENU_LIST_TEXT;
     case WebLocalizedString::SubmitButtonDefaultLabel:
       return IDS_FORM_SUBMIT_LABEL;
     case WebLocalizedString::ThisMonthButtonLabel:
@@ -907,9 +908,8 @@ void BlinkPlatformImpl::didStopWorkerRunLoop(
 }
 
 blink::WebCrypto* BlinkPlatformImpl::crypto() {
-  if (!web_crypto_)
-    web_crypto_.reset(new WebCryptoImpl());
-  return web_crypto_.get();
+  WebCryptoImpl::EnsureInit();
+  return &web_crypto_;
 }
 
 

@@ -87,7 +87,6 @@ class RenderMessageFilter : public BrowserMessageFilter {
  public:
   // Create the filter.
   RenderMessageFilter(int render_process_id,
-                      bool is_guest,
                       PluginServiceImpl * plugin_service,
                       BrowserContext* browser_context,
                       net::URLRequestContextGetter* request_context,
@@ -101,8 +100,7 @@ class RenderMessageFilter : public BrowserMessageFilter {
   virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
 
   // BrowserMessageFilter methods:
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void OnDestruct() const OVERRIDE;
   virtual base::TaskRunner* OverrideTaskRunnerForMessage(
       const IPC::Message& message) OVERRIDE;
@@ -150,7 +148,8 @@ class RenderMessageFilter : public BrowserMessageFilter {
                        IPC::Message* reply_msg);
   void OnDeleteCookie(const GURL& url,
                       const std::string& cookieName);
-  void OnCookiesEnabled(const GURL& url,
+  void OnCookiesEnabled(int render_frame_id,
+                        const GURL& url,
                         const GURL& first_party_for_cookies,
                         bool* cookies_enabled);
 
@@ -193,7 +192,7 @@ class RenderMessageFilter : public BrowserMessageFilter {
   void OnOpenChannelToPpapiBroker(int routing_id,
                                   const base::FilePath& path);
   void OnGenerateRoutingID(int* route_id);
-  void OnDownloadUrl(const IPC::Message& message,
+  void OnDownloadUrl(int render_view_id,
                      const GURL& url,
                      const Referrer& referrer,
                      const base::string16& suggested_name,
@@ -260,7 +259,6 @@ class RenderMessageFilter : public BrowserMessageFilter {
   void OnCompletedOpenChannelToNpapiPlugin(
       OpenChannelToNpapiPluginCallback* client);
 
-  void OnUpdateIsDelayed(const IPC::Message& msg);
   void OnAre3DAPIsBlocked(int render_view_id,
                           const GURL& top_origin_url,
                           ThreeDAPIType requester,
@@ -279,7 +277,9 @@ class RenderMessageFilter : public BrowserMessageFilter {
                                  uint32 height,
                                  uint32 internalformat,
                                  uint32 usage,
-                                 gfx::GpuMemoryBufferHandle* handle);
+                                 IPC::Message* reply);
+  void GpuMemoryBufferAllocated(IPC::Message* reply,
+                                const gfx::GpuMemoryBufferHandle& handle);
 
   // Cached resource request dispatcher host and plugin service, guaranteed to
   // be non-null if Init succeeds. We do not own the objects, they are managed
@@ -306,8 +306,6 @@ class RenderMessageFilter : public BrowserMessageFilter {
   scoped_refptr<DOMStorageContextWrapper> dom_storage_context_;
 
   int render_process_id_;
-
-  bool is_guest_;
 
   std::set<OpenChannelToNpapiPluginCallback*> plugin_host_clients_;
 

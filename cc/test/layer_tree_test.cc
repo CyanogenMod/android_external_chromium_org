@@ -25,6 +25,7 @@
 #include "cc/trees/layer_tree_host_single_thread_client.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/single_thread_proxy.h"
+#include "cc/trees/thread_proxy.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "ui/gfx/frame_time.h"
 #include "ui/gfx/size_conversions.h"
@@ -35,16 +36,68 @@ TestHooks::TestHooks() {}
 
 TestHooks::~TestHooks() {}
 
-DrawSwapReadbackResult::DrawResult TestHooks::PrepareToDrawOnThread(
+DrawResult TestHooks::PrepareToDrawOnThread(
     LayerTreeHostImpl* host_impl,
     LayerTreeHostImpl::FrameData* frame_data,
-    DrawSwapReadbackResult::DrawResult draw_result) {
+    DrawResult draw_result) {
   return draw_result;
 }
 
 base::TimeDelta TestHooks::LowFrequencyAnimationInterval() const {
   return base::TimeDelta::FromMilliseconds(16);
 }
+
+// Adapts ThreadProxy for test. Injects test hooks for testing.
+class ThreadProxyForTest : public ThreadProxy {
+ public:
+  static scoped_ptr<Proxy> Create(
+      TestHooks* test_hooks,
+      LayerTreeHost* host,
+      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
+    return make_scoped_ptr(
+        new ThreadProxyForTest(test_hooks,
+                               host,
+                               impl_task_runner)).PassAs<Proxy>();
+  }
+
+  virtual ~ThreadProxyForTest() {}
+
+  void test() {
+    test_hooks_->Layout();
+  }
+
+ private:
+  TestHooks* test_hooks_;
+
+  virtual void ScheduledActionBeginOutputSurfaceCreation() OVERRIDE {
+    ThreadProxy::ScheduledActionBeginOutputSurfaceCreation();
+    test_hooks_->ScheduledActionBeginOutputSurfaceCreation();
+  }
+
+  virtual void ScheduledActionSendBeginMainFrame() OVERRIDE {
+    ThreadProxy::ScheduledActionSendBeginMainFrame();
+    test_hooks_->ScheduledActionSendBeginMainFrame();
+  }
+
+  virtual void ScheduledActionCommit() OVERRIDE {
+    ThreadProxy::ScheduledActionCommit();
+    test_hooks_->ScheduledActionCommit();
+  }
+
+  virtual DrawResult ScheduledActionDrawAndSwapIfPossible() OVERRIDE {
+    DrawResult result = ThreadProxy::ScheduledActionDrawAndSwapIfPossible();
+    test_hooks_->ScheduledActionDrawAndSwapIfPossible();
+    return result;
+  }
+
+  ThreadProxyForTest(
+      TestHooks* test_hooks,
+      LayerTreeHost* host,
+      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner)
+      : ThreadProxy(host, impl_task_runner),
+        test_hooks_(test_hooks) {
+  }
+};
 
 // Adapts LayerTreeHostImpl for test. Runs real code, then invokes test hooks.
 class LayerTreeHostImplForTesting : public LayerTreeHostImpl {
@@ -108,11 +161,8 @@ class LayerTreeHostImplForTesting : public LayerTreeHostImpl {
     }
   }
 
-  virtual DrawSwapReadbackResult::DrawResult PrepareToDraw(
-      FrameData* frame,
-      const gfx::Rect& damage_rect) OVERRIDE {
-    DrawSwapReadbackResult::DrawResult draw_result =
-        LayerTreeHostImpl::PrepareToDraw(frame, damage_rect);
+  virtual DrawResult PrepareToDraw(FrameData* frame) OVERRIDE {
+    DrawResult draw_result = LayerTreeHostImpl::PrepareToDraw(frame);
     return test_hooks_->PrepareToDrawOnThread(this, frame, draw_result);
   }
 
@@ -288,10 +338,15 @@ class LayerTreeHostForTesting : public LayerTreeHost {
       scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
     scoped_ptr<LayerTreeHostForTesting> layer_tree_host(
         new LayerTreeHostForTesting(test_hooks, client, settings));
-    if (impl_task_runner.get())
-      layer_tree_host->InitializeThreaded(impl_task_runner);
-    else
-      layer_tree_host->InitializeSingleThreaded(client);
+    if (impl_task_runner.get()) {
+      layer_tree_host->InitializeForTesting(
+          ThreadProxyForTest::Create(test_hooks,
+                                     layer_tree_host.get(),
+                                     impl_task_runner));
+    } else {
+      layer_tree_host->InitializeForTesting(
+          SingleThreadProxy::Create(layer_tree_host.get(), client));
+    }
     return layer_tree_host.Pass();
   }
 
@@ -418,12 +473,6 @@ void LayerTreeTest::PostSetNeedsUpdateLayersToMainThread() {
                  main_thread_weak_ptr_));
 }
 
-void LayerTreeTest::PostReadbackToMainThread() {
-  main_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&LayerTreeTest::DispatchReadback, main_thread_weak_ptr_));
-}
-
 void LayerTreeTest::PostSetNeedsRedrawToMainThread() {
   main_task_runner_->PostTask(FROM_HERE,
                               base::Bind(&LayerTreeTest::DispatchSetNeedsRedraw,
@@ -547,15 +596,6 @@ void LayerTreeTest::DispatchSetNeedsUpdateLayers() {
 
   if (layer_tree_host_)
     layer_tree_host_->SetNeedsUpdateLayers();
-}
-
-void LayerTreeTest::DispatchReadback() {
-  DCHECK(!proxy() || proxy()->IsMainThread());
-
-  if (layer_tree_host_) {
-    char pixels[4];
-    layer_tree_host()->CompositeAndReadback(&pixels, gfx::Rect(0, 0, 1, 1));
-  }
 }
 
 void LayerTreeTest::DispatchSetNeedsRedraw() {

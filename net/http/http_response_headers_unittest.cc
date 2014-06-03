@@ -2107,6 +2107,7 @@ TEST(HttpResponseHeadersTest, GetProxyBypassInfo) {
               data_reduction_proxy_info.bypass_all);
   }
 }
+#endif  // defined(SPDY_PROXY_AUTH_ORIGIN)
 
 TEST(HttpResponseHeadersTest, IsDataReductionProxyResponse) {
   const struct {
@@ -2182,6 +2183,7 @@ TEST(HttpResponseHeadersTest, IsDataReductionProxyResponse) {
   }
 }
 
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
 TEST(HttpResponseHeadersTest, GetDataReductionProxyBypassEventType) {
   const struct {
      const char* headers;
@@ -2243,6 +2245,17 @@ TEST(HttpResponseHeadersTest, GetDataReductionProxyBypassEventType) {
       "Chrome-Proxy: bypass=1799\n",
       net::ProxyService::SHORT_BYPASS,
     },
+    { "HTTP/1.1 502 Bad Gateway\n"
+      "Chrome-Proxy: bypass=1799\n",
+      net::ProxyService::SHORT_BYPASS,
+    },
+    { "HTTP/1.1 414 Request-URI Too Long\n",
+      net::ProxyService::PROXY_4XX_BYPASS,
+    },
+    { "HTTP/1.1 414 Request-URI Too Long\n"
+      "Via: 1.1 Chrome-Compression-Proxy\n",
+      net::ProxyService::BYPASS_EVENT_TYPE_MAX,
+    }
   };
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
     std::string headers(tests[i].headers);

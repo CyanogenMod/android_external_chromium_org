@@ -5,12 +5,16 @@
 #include "chrome/browser/managed_mode/chromeos/manager_password_service.h"
 
 #include "base/bind.h"
+#include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/values.h"
+#include "chrome/browser/chromeos/login/auth/key.h"
+#include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_constants.h"
 #include "chrome/browser/chromeos/login/managed/supervised_user_authentication.h"
-#include "chrome/browser/chromeos/login/supervised_user_manager.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/managed_mode/managed_user_constants.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service.h"
 
@@ -127,8 +131,9 @@ void ManagerPasswordService::GetManagedUsersCallback(
     return;
   }
 
-  UserContext manager_key(user_id, master_key, std::string());
-  manager_key.using_oauth = false;
+  UserContext manager_key(user_id);
+  manager_key.SetKey(Key(master_key));
+  manager_key.SetIsUsingOAuth(false);
 
   // As master key can have old label, leave label field empty - it will work
   // as wildcard.
@@ -202,23 +207,23 @@ void ManagerPasswordService::OnAddKeySuccess(
     // 1) Add new manager key (using old key).
     // 2) Remove old supervised user key.
     // 3) Remove old manager key.
-    authenticator_->TransformContext(
+    authenticator_->TransformKeyIfNeeded(
         master_key_context,
-        base::Bind(&ManagerPasswordService::OnContextTransformed,
+        base::Bind(&ManagerPasswordService::OnKeyTransformedIfNeeded,
                    weak_ptr_factory_.GetWeakPtr()));
   }
 }
 
-void ManagerPasswordService::OnContextTransformed(
+void ManagerPasswordService::OnKeyTransformedIfNeeded(
     const UserContext& master_key_context) {
-  DCHECK(!master_key_context.need_password_hashing);
-  cryptohome::KeyDefinition new_master_key(master_key_context.password,
+  const Key* const key = master_key_context.GetKey();
+  DCHECK_NE(Key::KEY_TYPE_PASSWORD_PLAIN, key->GetKeyType());
+  cryptohome::KeyDefinition new_master_key(key->GetSecret(),
                                            kCryptohomeMasterKeyLabel,
                                            cryptohome::PRIV_DEFAULT);
   // Use new master key for further actions.
-  UserContext new_master_key_context;
-  new_master_key_context.CopyFrom(master_key_context);
-  new_master_key_context.key_label = kCryptohomeMasterKeyLabel;
+  UserContext new_master_key_context = master_key_context;
+  new_master_key_context.GetKey()->SetLabel(kCryptohomeMasterKeyLabel);
   authenticator_->AddKey(
       master_key_context,
       new_master_key,
@@ -230,7 +235,7 @@ void ManagerPasswordService::OnContextTransformed(
 
 void ManagerPasswordService::OnNewManagerKeySuccess(
     const UserContext& master_key_context) {
-  VLOG(1) << "Added new master key for " << master_key_context.username;
+  VLOG(1) << "Added new master key for " << master_key_context.GetUserID();
   authenticator_->RemoveKey(
       master_key_context,
       kLegacyCryptohomeManagedUserKeyLabel,
@@ -241,7 +246,8 @@ void ManagerPasswordService::OnNewManagerKeySuccess(
 
 void ManagerPasswordService::OnOldManagedUserKeyDeleted(
     const UserContext& master_key_context) {
-  VLOG(1) << "Removed old managed user key for " << master_key_context.username;
+  VLOG(1) << "Removed old managed user key for "
+          << master_key_context.GetUserID();
   authenticator_->RemoveKey(
       master_key_context,
       kLegacyCryptohomeMasterKeyLabel,
@@ -252,7 +258,7 @@ void ManagerPasswordService::OnOldManagedUserKeyDeleted(
 
 void ManagerPasswordService::OnOldManagerKeyDeleted(
     const UserContext& master_key_context) {
-  VLOG(1) << "Removed old master key for " << master_key_context.username;
+  VLOG(1) << "Removed old master key for " << master_key_context.GetUserID();
 }
 
 void ManagerPasswordService::Shutdown() {

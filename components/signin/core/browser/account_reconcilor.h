@@ -140,10 +140,13 @@ class AccountReconcilor : public KeyedService,
   virtual void PerformAddToChromeAction(const std::string& account_id,
                                         int session_index);
   virtual void PerformLogoutAllAccountsAction();
+  virtual void PerformAddAccountToTokenService(
+      const std::string& account_id,
+      const std::string& refresh_token);
 
   // Used to remove an account from chrome and the cookie jar.
-  virtual void StartRemoveAction(const std::string& account_id);
-  virtual void FinishRemoveAction(
+  virtual void PerformStartRemoveAction(const std::string& account_id);
+  virtual void PerformFinishRemoveAction(
       const std::string& account_id,
       const GoogleServiceAuthError& error,
       const std::vector<std::pair<std::string, bool> >& accounts);
@@ -212,6 +215,9 @@ class AccountReconcilor : public KeyedService,
   // True while the reconcilor is busy checking or managing the accounts in
   // this profile.
   bool is_reconcile_started_;
+
+  // True iff this is the first time the reconcilor is executing.
+  bool first_execution_;
 
   // Used during reconcile action.
   // These members are used used to validate the gaia cookie.  |gaia_accounts_|

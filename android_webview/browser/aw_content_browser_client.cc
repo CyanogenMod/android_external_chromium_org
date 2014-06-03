@@ -52,8 +52,7 @@ public:
       const IPC::Message& message,
       BrowserThread::ID* thread) OVERRIDE;
   virtual bool OnMessageReceived(
-      const IPC::Message& message,
-      bool* message_was_ok) OVERRIDE;
+      const IPC::Message& message) OVERRIDE;
 
   void OnShouldOverrideUrlLoading(int routing_id,
                                   const base::string16& url,
@@ -83,14 +82,13 @@ void AwContentsMessageFilter::OverrideThreadForMessage(
   }
 }
 
-bool AwContentsMessageFilter::OnMessageReceived(const IPC::Message& message,
-                                                bool* message_was_ok) {
+bool AwContentsMessageFilter::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(AwContentsMessageFilter, message, *message_was_ok)
-      IPC_MESSAGE_HANDLER(AwViewHostMsg_ShouldOverrideUrlLoading,
-                          OnShouldOverrideUrlLoading)
-      IPC_MESSAGE_HANDLER(AwViewHostMsg_SubFrameCreated, OnSubFrameCreated)
-      IPC_MESSAGE_UNHANDLED(handled = false)
+  IPC_BEGIN_MESSAGE_MAP(AwContentsMessageFilter, message)
+    IPC_MESSAGE_HANDLER(AwViewHostMsg_ShouldOverrideUrlLoading,
+                        OnShouldOverrideUrlLoading)
+    IPC_MESSAGE_HANDLER(AwViewHostMsg_SubFrameCreated, OnSubFrameCreated)
+    IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
 }
@@ -205,7 +203,7 @@ void AwContentBrowserClient::RenderProcessWillLaunch(
   content::ChildProcessSecurityPolicy::GetInstance()->GrantScheme(
       host->GetID(), android_webview::kContentScheme);
   content::ChildProcessSecurityPolicy::GetInstance()->GrantScheme(
-      host->GetID(), content::kFileScheme);
+      host->GetID(), url::kFileScheme);
 
   host->AddFilter(new AwContentsMessageFilter(host->GetID()));
   host->AddFilter(new cdm::CdmMessageFilterAndroid());
@@ -214,9 +212,9 @@ void AwContentBrowserClient::RenderProcessWillLaunch(
 net::URLRequestContextGetter* AwContentBrowserClient::CreateRequestContext(
     content::BrowserContext* browser_context,
     content::ProtocolHandlerMap* protocol_handlers,
-    content::ProtocolHandlerScopedVector protocol_interceptors) {
+    content::URLRequestInterceptorScopedVector request_interceptors) {
   DCHECK(browser_context_.get() == browser_context);
-  // TODO(mkosiba,kinuko): protocol_interceptors should be hooked up in the
+  // TODO(mkosiba,kinuko): request_interceptors should be hooked up in the
   // downstream. (crbug.com/350286)
   return browser_context_->CreateRequestContext(protocol_handlers);
 }
@@ -227,8 +225,10 @@ AwContentBrowserClient::CreateRequestContextForStoragePartition(
     const base::FilePath& partition_path,
     bool in_memory,
     content::ProtocolHandlerMap* protocol_handlers,
-    content::ProtocolHandlerScopedVector protocol_interceptors) {
+    content::URLRequestInterceptorScopedVector request_interceptors) {
   DCHECK(browser_context_.get() == browser_context);
+  // TODO(mkosiba,kinuko): request_interceptors should be hooked up in the
+  // downstream. (crbug.com/350286)
   return browser_context_->CreateRequestContextForStoragePartition(
       partition_path, in_memory, protocol_handlers);
 }
@@ -400,7 +400,6 @@ bool AwContentBrowserClient::CanCreateWindow(
     bool opener_suppressed,
     content::ResourceContext* context,
     int render_process_id,
-    bool is_guest,
     int opener_id,
     bool* no_javascript_access) {
   // We unconditionally allow popup windows at this stage and will give

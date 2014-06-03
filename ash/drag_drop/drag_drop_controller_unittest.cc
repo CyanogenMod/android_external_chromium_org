@@ -27,7 +27,6 @@
 #include "ui/events/test/events_test_utils.h"
 #include "ui/gfx/animation/linear_animation.h"
 #include "ui/gfx/image/image_skia_rep.h"
-#include "ui/views/test/test_views_delegate.h"
 #include "ui/views/view.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/native_widget_aura.h"
@@ -304,7 +303,6 @@ class DragDropControllerTest : public AshTestBase {
     drag_drop_controller_->set_should_block_during_drag_drop(false);
     aura::client::SetDragDropClient(Shell::GetPrimaryRootWindow(),
                                     drag_drop_controller_.get());
-    views_delegate_.reset(new views::TestViewsDelegate);
   }
 
   virtual void TearDown() OVERRIDE {
@@ -349,7 +347,6 @@ class DragDropControllerTest : public AshTestBase {
 
  protected:
   scoped_ptr<TestDragDropController> drag_drop_controller_;
-  scoped_ptr<views::TestViewsDelegate> views_delegate_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DragDropControllerTest);

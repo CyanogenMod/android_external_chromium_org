@@ -26,11 +26,11 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
-#include "chrome/browser/chromeos/login/login_display_host.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
-#include "chrome/browser/chromeos/login/screen_locker.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/chromeos/login/webui_login_view.h"
+#include "chrome/browser/chromeos/login/lock/screen_locker.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/ui/webui_login_view.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -38,6 +38,7 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/api/accessibility_private.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_handlers/content_scripts_handler.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/audio/chromeos_sounds.h"
@@ -137,6 +138,7 @@ class ContentScriptLoader {
       params.code = data;
       params.run_at = extensions::UserScript::DOCUMENT_IDLE;
       params.all_frames = true;
+      params.match_about_blank = false;
       params.in_main_world = false;
 
       RenderViewHost* render_view_host =
@@ -176,6 +178,7 @@ void LoadChromeVoxExtension(Profile* profile,
     params.code = "window.INJECTED_AFTER_LOAD = true;";
     params.run_at = extensions::UserScript::DOCUMENT_IDLE;
     params.all_frames = true;
+    params.match_about_blank = false;
     params.in_main_world = false;
     render_view_host->Send(new ExtensionMsg_ExecuteCode(
         render_view_host->GetRoutingID(), params));

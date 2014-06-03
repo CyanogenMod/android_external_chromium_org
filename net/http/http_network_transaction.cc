@@ -76,8 +76,7 @@ namespace net {
 namespace {
 
 void ProcessAlternateProtocol(
-    HttpStreamFactory* factory,
-    const base::WeakPtr<HttpServerProperties>& http_server_properties,
+    HttpNetworkSession* session,
     const HttpResponseHeaders& headers,
     const HostPortPair& http_host_port_pair) {
   std::string alternate_protocol_str;
@@ -88,9 +87,11 @@ void ProcessAlternateProtocol(
     return;
   }
 
-  factory->ProcessAlternateProtocol(http_server_properties,
-                                    alternate_protocol_str,
-                                    http_host_port_pair);
+  session->http_stream_factory()->ProcessAlternateProtocol(
+      session->http_server_properties(),
+      alternate_protocol_str,
+      http_host_port_pair,
+      *session);
 }
 
 // Returns true if |error| is a client certificate authentication error.
@@ -142,10 +143,7 @@ HttpNetworkTransaction::HttpNetworkTransaction(RequestPriority priority,
       establishing_tunnel_(false),
       websocket_handshake_stream_base_create_helper_(NULL) {
   session->ssl_config_service()->GetSSLConfig(&server_ssl_config_);
-  if (session->http_stream_factory()->has_next_protos()) {
-    server_ssl_config_.next_protos =
-        session->http_stream_factory()->next_protos();
-  }
+  session->GetNextProtos(&server_ssl_config_.next_protos);
   proxy_ssl_config_ = server_ssl_config_;
 }
 
@@ -195,9 +193,8 @@ int HttpNetworkTransaction::Start(const HttpRequestInfo* request_info,
   }
 
   // Channel ID is disabled if privacy mode is enabled for this request.
-  bool channel_id_enabled = server_ssl_config_.channel_id_enabled &&
-      (request_->privacy_mode == PRIVACY_MODE_DISABLED);
-  server_ssl_config_.channel_id_enabled = channel_id_enabled;
+  if (request_->privacy_mode == PRIVACY_MODE_ENABLED)
+    server_ssl_config_.channel_id_enabled = false;
 
   next_state_ = STATE_NOTIFY_BEFORE_CREATE_STREAM;
   int rv = DoLoop(OK);
@@ -1087,8 +1084,7 @@ int HttpNetworkTransaction::DoReadHeadersComplete(int result) {
 
   HostPortPair endpoint = HostPortPair(request_->url.HostNoBrackets(),
                                        request_->url.EffectiveIntPort());
-  ProcessAlternateProtocol(session_->http_stream_factory(),
-                           session_->http_server_properties(),
+  ProcessAlternateProtocol(session_,
                            *response_.headers.get(),
                            endpoint);
 
@@ -1438,14 +1434,6 @@ int HttpNetworkTransaction::HandleIOError(int error) {
     // preconnected but failed to be used before the server timed it out.
     case ERR_EMPTY_RESPONSE:
       if (ShouldResendRequest()) {
-        net_log_.AddEventWithNetErrorCode(
-            NetLog::TYPE_HTTP_TRANSACTION_RESTART_AFTER_ERROR, error);
-        ResetConnectionAndRequestForResend();
-        error = OK;
-      }
-      break;
-    case ERR_PIPELINE_EVICTION:
-      if (!session_->force_http_pipelining()) {
         net_log_.AddEventWithNetErrorCode(
             NetLog::TYPE_HTTP_TRANSACTION_RESTART_AFTER_ERROR, error);
         ResetConnectionAndRequestForResend();

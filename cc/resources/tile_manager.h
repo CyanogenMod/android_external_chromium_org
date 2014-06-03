@@ -15,6 +15,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
 #include "cc/base/ref_counted_managed.h"
+#include "cc/base/unique_notifier.h"
 #include "cc/debug/rendering_stats_instrumentation.h"
 #include "cc/layers/picture_layer_impl.h"
 #include "cc/resources/managed_tile_state.h"
@@ -26,13 +27,19 @@
 #include "cc/resources/tile.h"
 
 namespace cc {
-class RasterizerDelegate;
 class ResourceProvider;
 
 class CC_EXPORT TileManagerClient {
  public:
+  // Called when all tiles marked as required for activation are ready to draw.
   virtual void NotifyReadyToActivate() = 0;
-  virtual void NotifyTileInitialized(const Tile* tile) = 0;
+
+  // Called when the visible representation of a tile might have changed. Some
+  // examples are:
+  // - Tile version initialized.
+  // - Tile resources freed.
+  // - Tile marked for on-demand raster.
+  virtual void NotifyTileStateChanged(const Tile* tile) = 0;
 
  protected:
   virtual ~TileManagerClient() {}
@@ -155,11 +162,9 @@ class CC_EXPORT TileManager : public RasterizerClient,
 
   static scoped_ptr<TileManager> Create(
       TileManagerClient* client,
+      base::SequencedTaskRunner* task_runner,
       ResourcePool* resource_pool,
       Rasterizer* rasterizer,
-      Rasterizer* gpu_rasterizer,
-      size_t max_raster_usage_bytes,
-      bool use_rasterize_on_demand,
       RenderingStatsInstrumentation* rendering_stats_instrumentation);
   virtual ~TileManager();
 
@@ -225,13 +230,15 @@ class CC_EXPORT TileManager : public RasterizerClient,
     }
   }
 
+  void SetRasterizerForTesting(Rasterizer* rasterizer);
+
+  void CleanUpReleasedTilesForTesting() { CleanUpReleasedTiles(); }
+
  protected:
   TileManager(TileManagerClient* client,
+              base::SequencedTaskRunner* task_runner,
               ResourcePool* resource_pool,
               Rasterizer* rasterizer,
-              Rasterizer* gpu_rasterizer,
-              size_t max_raster_usage_bytes,
-              bool use_rasterize_on_demand,
               RenderingStatsInstrumentation* rendering_stats_instrumentation);
 
   // Methods called by Tile
@@ -260,12 +267,6 @@ class CC_EXPORT TileManager : public RasterizerClient,
   void GetTilesWithAssignedBins(PrioritizedTileSet* tiles);
 
  private:
-  enum RasterizerType {
-    RASTERIZER_TYPE_DEFAULT,
-    RASTERIZER_TYPE_GPU,
-    NUM_RASTERIZER_TYPES
-  };
-
   void OnImageDecodeTaskCompleted(int layer_id,
                                   SkPixelRef* pixel_ref,
                                   bool was_canceled);
@@ -283,15 +284,21 @@ class CC_EXPORT TileManager : public RasterizerClient,
   void FreeResourceForTile(Tile* tile, RasterMode mode);
   void FreeResourcesForTile(Tile* tile);
   void FreeUnusedResourcesForTile(Tile* tile);
+  void FreeResourcesForTileAndNotifyClientIfTileWasReadyToDraw(Tile* tile);
   scoped_refptr<ImageDecodeTask> CreateImageDecodeTask(Tile* tile,
                                                        SkPixelRef* pixel_ref);
   scoped_refptr<RasterTask> CreateRasterTask(Tile* tile);
   scoped_ptr<base::Value> GetMemoryRequirementsAsValue() const;
   void UpdatePrioritizedTileSetIfNeeded();
+  void CleanUpLayers();
+
+  bool IsReadyToActivate() const;
+  void CheckIfReadyToActivate();
 
   TileManagerClient* client_;
+  scoped_refptr<base::SequencedTaskRunner> task_runner_;
   ResourcePool* resource_pool_;
-  scoped_ptr<RasterizerDelegate> rasterizer_delegate_;
+  Rasterizer* rasterizer_;
   GlobalStateThatImpactsTilePriority global_state_;
 
   typedef base::hash_map<Tile::Id, Tile*> TileMap;
@@ -308,7 +315,6 @@ class CC_EXPORT TileManager : public RasterizerClient,
 
   size_t bytes_releasable_;
   size_t resources_releasable_;
-  size_t max_raster_usage_bytes_;
 
   bool ever_exceeded_memory_budget_;
   MemoryHistory::Entry memory_stats_from_last_assign_;
@@ -330,16 +336,16 @@ class CC_EXPORT TileManager : public RasterizerClient,
 
   std::vector<Tile*> released_tiles_;
 
-  bool use_rasterize_on_demand_;
-
   ResourceFormat resource_format_;
 
-  // Queues used when scheduling raster tasks.
-  RasterTaskQueue raster_queue_[NUM_RASTERIZER_TYPES];
+  // Queue used when scheduling raster tasks.
+  RasterTaskQueue raster_queue_;
 
   std::vector<scoped_refptr<RasterTask> > orphan_raster_tasks_;
 
   std::vector<PictureLayerImpl*> layers_;
+
+  UniqueNotifier ready_to_activate_check_notifier_;
 
   DISALLOW_COPY_AND_ASSIGN(TileManager);
 };

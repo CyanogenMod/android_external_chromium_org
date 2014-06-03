@@ -56,7 +56,7 @@ class ChromeContentUtilityClient : public content::ContentUtilityClient {
   void OnDecodeImage(const std::vector<unsigned char>& encoded_data);
   void OnDecodeImageBase64(const std::string& encoded_data);
   void OnRenderPDFPagesToMetafile(
-      base::PlatformFile pdf_file,
+      IPC::PlatformFileForTransit pdf_transit,
       const base::FilePath& metafile_path,
       const printing::PdfRenderSettings& settings,
       const std::vector<printing::PageRange>& page_ranges);
@@ -78,11 +78,14 @@ class ChromeContentUtilityClient : public content::ContentUtilityClient {
 #if defined(OS_WIN)
   // Helper method for Windows.
   // |highest_rendered_page_number| is set to -1 on failure to render any page.
+  // |page_ranges| is both input and output. If supplied as input, only the
+  // specified pages will be rendered. If an empty vector is supplied it will
+  // be filled with a range of all pages that were rendered.
   bool RenderPDFToWinMetafile(
       base::PlatformFile pdf_file,
       const base::FilePath& metafile_path,
       const printing::PdfRenderSettings& settings,
-      const std::vector<printing::PageRange>& page_ranges,
+      std::vector<printing::PageRange>* page_ranges,
       int* highest_rendered_page_number,
       double* scale_factor);
 #endif   // defined(OS_WIN)
@@ -107,7 +110,8 @@ class ChromeContentUtilityClient : public content::ContentUtilityClient {
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
   void OnCheckMediaFile(int64 milliseconds_of_decoding,
                         const IPC::PlatformFileForTransit& media_file);
-  void OnParseMediaMetadata(const std::string& mime_type, int64 total_size);
+  void OnParseMediaMetadata(const std::string& mime_type, int64 total_size,
+                            bool get_attached_images);
 #endif  // !defined(OS_ANDROID) && !defined(OS_IOS)
 
 #if defined(OS_WIN)

@@ -13,9 +13,9 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/chromeos/login/enrollment/enrollment_screen_actor.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
-#include "chrome/browser/chromeos/login/screen_locker.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/lock/screen_locker.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
 #include "chrome/browser/profiles/profile.h"
@@ -56,20 +56,12 @@ namespace chromeos {
 
 namespace {
 
-// List of known types of OobeUI. Type added as path in chrome://oobe url, for
-// example chrome://oobe/user-adding.
-const char kOobeDisplay[] = "oobe";
-const char kLoginDisplay[] = "login";
-const char kLockDisplay[] = "lock";
-const char kUserAddingDisplay[] = "user-adding";
-const char kAppLaunchSplashDisplay[] = "app-launch-splash";
-
 const char* kKnownDisplayTypes[] = {
-  kOobeDisplay,
-  kLoginDisplay,
-  kLockDisplay,
-  kUserAddingDisplay,
-  kAppLaunchSplashDisplay
+  OobeUI::kOobeDisplay,
+  OobeUI::kLoginDisplay,
+  OobeUI::kLockDisplay,
+  OobeUI::kUserAddingDisplay,
+  OobeUI::kAppLaunchSplashDisplay
 };
 
 const char kStringsJSPath[] = "strings.js";
@@ -98,7 +90,7 @@ content::WebUIDataSource* CreateOobeUIDataSource(
     source->AddResourcePath(kDemoUserLoginJSPath, IDR_DEMO_USER_LOGIN_JS);
     return source;
   }
-  if (display_type == kOobeDisplay) {
+  if (display_type == OobeUI::kOobeDisplay) {
     source->SetDefaultResource(IDR_OOBE_HTML);
     source->AddResourcePath(kOobeJSPath, IDR_OOBE_JS);
   } else {
@@ -124,12 +116,19 @@ std::string GetDisplayType(const GURL& url) {
                 kKnownDisplayTypes + arraysize(kKnownDisplayTypes),
                 path) == kKnownDisplayTypes + arraysize(kKnownDisplayTypes)) {
     LOG(ERROR) << "Unknown display type '" << path << "'. Setting default.";
-    return kLoginDisplay;
+    return OobeUI::kLoginDisplay;
   }
   return path;
 }
 
 }  // namespace
+
+// static
+const char OobeUI::kOobeDisplay[] = "oobe";
+const char OobeUI::kLoginDisplay[] = "login";
+const char OobeUI::kLockDisplay[] = "lock";
+const char OobeUI::kUserAddingDisplay[] = "user-adding";
+const char OobeUI::kAppLaunchSplashDisplay[] = "app-launch-splash";
 
 // static
 const char OobeUI::kScreenOobeHIDDetection[] = "hid-detection";
@@ -307,6 +306,10 @@ void OobeUI::ShowScreen(WizardScreen* screen) {
 
 void OobeUI::HideScreen(WizardScreen* screen) {
   screen->Hide();
+}
+
+CoreOobeActor* OobeUI::GetCoreOobeActor() {
+  return core_handler_;
 }
 
 UpdateScreenActor* OobeUI::GetUpdateScreenActor() {

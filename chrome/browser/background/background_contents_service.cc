@@ -40,6 +40,7 @@
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_icon_set.h"
 #include "extensions/common/extension_set.h"
@@ -177,11 +178,11 @@ void NotificationImageReady(
   // TODO(mukai, dewittj): remove this and switch to message center
   // notifications.
   DesktopNotificationService::AddIconNotification(
-      GURL() /* empty origin */,
-      base::string16(),
+      GURL("chrome://extension-crash"),  // Origin URL.
+      base::string16(),                  // Title of notification.
       message,
       notification_icon,
-      base::string16(),
+      base::UTF8ToUTF16(delegate->id()),  // Replace ID.
       delegate.get(),
       profile);
 }
@@ -353,7 +354,8 @@ void BackgroundContentsService::StartObserving(Profile* profile) {
   // uninstalled/reloaded. We cannot do this from UNLOADED since a crashed
   // extension is unloaded immediately after the crash, not when user reloads or
   // uninstalls the extension.
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
                  content::Source<Profile>(profile));
 }
 
@@ -468,7 +470,8 @@ void BackgroundContentsService::Observe(
         case UnloadedExtensionInfo::REASON_DISABLE:    // Fall through.
         case UnloadedExtensionInfo::REASON_TERMINATE:  // Fall through.
         case UnloadedExtensionInfo::REASON_UNINSTALL:  // Fall through.
-        case UnloadedExtensionInfo::REASON_BLACKLIST:
+        case UnloadedExtensionInfo::REASON_BLACKLIST:  // Fall through.
+        case UnloadedExtensionInfo::REASON_PROFILE_SHUTDOWN:
           ShutdownAssociatedBackgroundContents(base::ASCIIToUTF16(
               content::Details<UnloadedExtensionInfo>(details)->
                   extension->id()));
@@ -498,7 +501,7 @@ void BackgroundContentsService::Observe(
       }
       break;
 
-    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED: {
+    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED: {
       // Close the crash notification balloon for the app/extension, if any.
       ScheduleCloseBalloon(
           content::Details<const Extension>(details).ptr()->id());

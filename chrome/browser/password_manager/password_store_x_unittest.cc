@@ -7,7 +7,6 @@
 #include "base/bind_helpers.h"
 #include "base/file_util.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/platform_file.h"
 #include "base/prefs/pref_service.h"
 #include "base/run_loop.h"
 #include "base/stl_util.h"
@@ -30,6 +29,7 @@ using autofill::PasswordForm;
 using content::BrowserThread;
 using password_manager::ContainsAllPasswordForms;
 using password_manager::PasswordStoreChange;
+using password_manager::PasswordStoreChangeList;
 using testing::_;
 using testing::DoAll;
 using testing::ElementsAreArray;
@@ -59,8 +59,13 @@ class FailingBackend : public PasswordStoreX::NativeBackend {
  public:
   virtual bool Init() OVERRIDE { return true; }
 
-  virtual bool AddLogin(const PasswordForm& form) OVERRIDE { return false; }
-  virtual bool UpdateLogin(const PasswordForm& form) OVERRIDE { return false; }
+  virtual PasswordStoreChangeList AddLogin(const PasswordForm& form) OVERRIDE {
+    return PasswordStoreChangeList();
+  }
+  virtual bool UpdateLogin(const PasswordForm& form,
+                           PasswordStoreChangeList* changes) OVERRIDE {
+    return false;
+  }
   virtual bool RemoveLogin(const PasswordForm& form) OVERRIDE { return false; }
 
   virtual bool RemoveLoginsCreatedBetween(
@@ -92,15 +97,20 @@ class MockBackend : public PasswordStoreX::NativeBackend {
  public:
   virtual bool Init() OVERRIDE { return true; }
 
-  virtual bool AddLogin(const PasswordForm& form) OVERRIDE {
+  virtual PasswordStoreChangeList AddLogin(const PasswordForm& form) OVERRIDE {
     all_forms_.push_back(form);
-    return true;
+    PasswordStoreChange change(PasswordStoreChange::ADD, form);
+    return PasswordStoreChangeList(1, change);
   }
 
-  virtual bool UpdateLogin(const PasswordForm& form) OVERRIDE {
+  virtual bool UpdateLogin(const PasswordForm& form,
+                           PasswordStoreChangeList* changes) OVERRIDE {
     for (size_t i = 0; i < all_forms_.size(); ++i)
-      if (CompareForms(all_forms_[i], form, true))
+      if (CompareForms(all_forms_[i], form, true)) {
         all_forms_[i] = form;
+        changes->push_back(PasswordStoreChange(PasswordStoreChange::UPDATE,
+                                               form));
+      }
     return true;
   }
 

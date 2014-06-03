@@ -20,6 +20,8 @@
 #include "content/common/content_export.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/public/renderer/render_thread.h"
+#include "net/base/network_change_notifier.h"
+#include "third_party/WebKit/public/platform/WebConnectionType.h"
 #include "ui/gfx/native_widget_types.h"
 
 #if defined(OS_MACOSX)
@@ -86,8 +88,9 @@ class IndexedDBDispatcher;
 class InputEventFilter;
 class InputHandlerManager;
 class MediaStreamCenter;
-class MediaStreamDependencyFactory;
+class PeerConnectionDependencyFactory;
 class MidiMessageFilter;
+class NetInfoDispatcher;
 class P2PSocketDispatcher;
 class PeerConnectionTracker;
 class RendererDemuxerAndroid;
@@ -261,7 +264,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
       blink::WebMediaStreamCenterClient* client);
 
   // Returns a factory used for creating RTC PeerConnection objects.
-  MediaStreamDependencyFactory* GetMediaStreamDependencyFactory();
+  PeerConnectionDependencyFactory* GetPeerConnectionDependencyFactory();
 
   PeerConnectionTracker* peer_connection_tracker() {
     return peer_connection_tracker_.get();
@@ -416,8 +419,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
       unsigned internalformat,
       unsigned usage) OVERRIDE;
 
-  // mojo::ShellClient implementation:
-  virtual void AcceptConnection(
+  // mojo::ServiceProvider implementation:
+  virtual void ConnectToService(
       const mojo::String& service_name,
       mojo::ScopedMessagePipeHandle message_pipe) OVERRIDE;
 
@@ -429,7 +432,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   void OnCreateNewView(const ViewMsg_New_Params& params);
   void OnTransferBitmap(const SkBitmap& bitmap, int resource_id);
   void OnPurgePluginListCache(bool reload_pages);
-  void OnNetworkStateChanged(bool online);
+  void OnNetworkStateChanged(bool online,
+                             net::NetworkChangeNotifier::ConnectionType type);
   void OnGetAccessibilityTree();
   void OnTempCrashWithData(const GURL& data);
   void OnUpdateTimezone();
@@ -472,7 +476,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 #endif
   scoped_refptr<DevToolsAgentFilter> devtools_agent_message_filter_;
 
-  scoped_ptr<MediaStreamDependencyFactory> media_stream_factory_;
+  scoped_ptr<PeerConnectionDependencyFactory> peer_connection_factory_;
 
   // This is used to communicate to the browser process the status
   // of all the peer connections created in the renderer.

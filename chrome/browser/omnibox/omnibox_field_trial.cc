@@ -15,9 +15,10 @@
 #include "base/time/time.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/common/metrics/variations/variation_ids.h"
-#include "chrome/common/metrics/variations/variations_util.h"
+#include "chrome/common/variations/variation_ids.h"
+#include "components/variations/active_field_trials.h"
 #include "components/variations/metrics_util.h"
+#include "components/variations/variations_associated_data.h"
 
 namespace {
 
@@ -397,7 +398,7 @@ int OmniboxFieldTrial::HQPBookmarkValue() {
       GetVariationParamValue(kBundledExperimentFieldTrialName,
                              kHQPBookmarkValueRule);
   if (bookmark_value_str.empty())
-    return 1;
+    return 10;
   // This is a best-effort conversion; we trust the hand-crafted parameters
   // downloaded from the server to be perfect.  There's no need for handle
   // errors smartly.

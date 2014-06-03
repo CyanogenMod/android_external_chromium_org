@@ -5,6 +5,7 @@
 #include "chrome/browser/renderer_host/chrome_resource_dispatcher_host_delegate.h"
 
 #include <string>
+#include <vector>
 
 #include "base/base64.h"
 #include "base/logging.h"
@@ -82,7 +83,7 @@
 #endif
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/merge_session_throttle.h"
+#include "chrome/browser/chromeos/login/signin/merge_session_throttle.h"
 // TODO(oshima): Enable this for other platforms.
 #include "chrome/browser/renderer_host/offline_resource_throttle.h"
 #endif
@@ -247,7 +248,8 @@ void AppendComponentUpdaterThrottles(
   if (crx_id) {
     // We got a component we need to install, so throttle the resource
     // until the component is installed.
-    throttles->push_back(cus->GetOnDemandResourceThrottle(request, crx_id));
+    throttles->push_back(
+        cus->GetOnDemandUpdater().GetOnDemandResourceThrottle(request, crx_id));
   }
 }
 
@@ -312,11 +314,15 @@ void ChromeResourceDispatcherHostDelegate::RequestBeginning(
   ProfileIOData* io_data = ProfileIOData::FromResourceContext(
       resource_context);
 
-  if (!is_prerendering && resource_type == ResourceType::MAIN_FRAME) {
 #if defined(OS_ANDROID)
+  // TODO(davidben): This is insufficient to integrate with prerender properly.
+  // https://crbug.com/370595
+  if (resource_type == ResourceType::MAIN_FRAME && !is_prerendering) {
     throttles->push_back(
         InterceptNavigationDelegate::CreateThrottleFor(request));
+  }
 #else
+  if (resource_type == ResourceType::MAIN_FRAME) {
     // Redirect some navigations to apps that have registered matching URL
     // handlers ('url_handlers' in the manifest).
     content::ResourceThrottle* url_to_app_throttle =
@@ -324,14 +330,16 @@ void ChromeResourceDispatcherHostDelegate::RequestBeginning(
     if (url_to_app_throttle)
       throttles->push_back(url_to_app_throttle);
 
-    // Experimental: Launch ephemeral apps from search results.
-    content::ResourceThrottle* ephemeral_app_throttle =
-        EphemeralAppThrottle::MaybeCreateThrottleForLaunch(
-            request, io_data);
-    if (ephemeral_app_throttle)
-      throttles->push_back(ephemeral_app_throttle);
-#endif
+    if (!is_prerendering) {
+      // Experimental: Launch ephemeral apps from search results.
+      content::ResourceThrottle* ephemeral_app_throttle =
+          EphemeralAppThrottle::MaybeCreateThrottleForLaunch(
+              request, io_data);
+      if (ephemeral_app_throttle)
+        throttles->push_back(ephemeral_app_throttle);
+    }
   }
+#endif
 
 #if defined(OS_CHROMEOS)
   // Check if we need to add offline throttle. This should be done only
@@ -417,7 +425,7 @@ void ChromeResourceDispatcherHostDelegate::DownloadStarting(
         new DownloadResourceThrottle(download_request_limiter_.get(),
                                      child_id,
                                      route_id,
-                                     request_id,
+                                     request->url(),
                                      request->method()));
 #if defined(OS_ANDROID)
     throttles->push_back(
@@ -679,6 +687,11 @@ void ChromeResourceDispatcherHostDelegate::OnRequestRedirected(
   // management UI is built on top of it.
   signin::AppendMirrorRequestHeaderIfPossible(request, redirect_url, io_data,
       info->GetChildID(), info->GetRouteID());
+
+#if defined(ENABLE_CONFIGURATION_POLICY)
+  if (io_data->policy_header_helper())
+    io_data->policy_header_helper()->AddPolicyHeaders(request);
+#endif
 }
 
 // Notification that a request has completed.

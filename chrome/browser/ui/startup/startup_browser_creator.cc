@@ -75,7 +75,7 @@
 #include "chrome/browser/chromeos/app_mode/app_launch_utils.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/chromeos/login/demo_mode/demo_app_launcher.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chromeos/chromeos_switches.h"
@@ -299,7 +299,7 @@ bool StartupBrowserCreator::LaunchBrowser(
     chrome::HostDesktopType host_desktop_type =
         chrome::HOST_DESKTOP_TYPE_NATIVE;
 
-#if defined(OS_WIN) && defined(USE_ASH)
+#if defined(USE_ASH) && !defined(OS_CHROMEOS)
     // We want to maintain only one type of instance for now, either ASH
     // or desktop.
     // TODO(shrikant): Remove this code once we decide on running both desktop
@@ -438,7 +438,7 @@ std::vector<GURL> StartupBrowserCreator::GetURLsFromCommandLine(
       ChildProcessSecurityPolicy* policy =
           ChildProcessSecurityPolicy::GetInstance();
       if (policy->IsWebSafeScheme(url.scheme()) ||
-          url.SchemeIs(content::kFileScheme) ||
+          url.SchemeIs(url::kFileScheme) ||
 #if defined(OS_CHROMEOS)
           // In ChromeOS, allow a settings page to be specified on the
           // command line. See ExistingUserController::OnLoginSuccess.

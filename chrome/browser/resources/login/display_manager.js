@@ -173,10 +173,33 @@ cr.define('cr.ui.login', function() {
     forceKeyboardFlow_: false,
 
     /**
+     * Whether virtual keyboard is shown.
+     * @type {boolean}
+     */
+    virtualKeyboardShown_: false,
+
+    /**
+     * Virtual keyboard width.
+     * @type {number}
+     */
+    virtualKeyboardWidth_: 0,
+
+    /**
+     * Virtual keyboard height.
+     * @type {number}
+     */
+    virtualKeyboardHeight_: 0,
+
+    /**
      * Type of UI.
      * @type {string}
      */
     displayType_: DISPLAY_TYPE.UNKNOWN,
+
+    /**
+     * Error message (bubble) was shown. This is checked in tests.
+     */
+    errorMessageWasShownForTesting_: false,
 
     get displayType() {
       return this.displayType_;
@@ -221,6 +244,47 @@ cr.define('cr.ui.login', function() {
     },
 
     /**
+     * Virtual keyboard state (hidden/shown).
+     * @param {boolean} hidden Whether keyboard is shown.
+     */
+    get virtualKeyboardShown() {
+      return this.virtualKeyboardShown_;
+    },
+
+    set virtualKeyboardShown(shown) {
+      this.virtualKeyboardShown_ = shown;
+    },
+
+    /**
+     * Sets the current size of the virtual keyboard.
+     * @param {number} width keyboard width
+     * @param {number} height keyboard height
+     */
+    setVirtualKeyboardSize: function(width, height) {
+      this.virtualKeyboardWidth_ = width;
+      this.virtualKeyboardHeight_ = height;
+
+      // Special case for screen lock. http://crbug.com/377904
+      // In case of virtual keyboard adjuct work area.
+      if (this.displayType == DISPLAY_TYPE.LOCK) {
+        var bottom = (height) ? height : $('login-header-bar').offsetHeight;
+        var clientArea = $('outer-container');
+        clientArea.style.bottom = cr.ui.toCssPx(bottom);
+      }
+    },
+
+    /**
+     * Sets the current size of the client area (display size).
+     * @param {number} width client area width
+     * @param {number} height client area height
+     */
+    setClientAreaSize: function(width, height) {
+      var clientArea = $('outer-container');
+      var bottom = parseInt(window.getComputedStyle(clientArea).bottom);
+      clientArea.style.minHeight = cr.ui.toCssPx(height - bottom);
+    },
+
+    /**
      * Toggles background of main body between transparency and solid.
      * @param {boolean} solid Whether to show a solid background.
      */
@@ -240,6 +304,11 @@ cr.define('cr.ui.login', function() {
       if (value) {
         keyboard.initializeKeyboardFlow();
         cr.ui.DropDown.enableKeyboardFlow();
+        for (var i = 0; i < this.screens_.length; ++i) {
+          var screen = $(this.screens_[i]);
+          if (screen.enableKeyboardFlow)
+            screen.enableKeyboardFlow();
+        }
       }
     },
 
@@ -267,11 +336,6 @@ cr.define('cr.ui.login', function() {
         if (currentStepId == SCREEN_GAIA_SIGNIN ||
             currentStepId == SCREEN_ACCOUNT_PICKER) {
           chrome.send('toggleEnrollmentScreen');
-        } else if (currentStepId == SCREEN_OOBE_NETWORK ||
-                   currentStepId == SCREEN_OOBE_EULA) {
-          // In this case update check will be skipped and OOBE will
-          // proceed straight to enrollment screen when EULA is accepted.
-          chrome.send('skipUpdateEnrollAfterEula');
         } else if (currentStepId == SCREEN_OOBE_ENROLLMENT) {
           // This accelerator is also used to manually cancel auto-enrollment.
           if (this.currentScreen.cancelAutoEnrollment)
@@ -876,8 +940,10 @@ cr.define('cr.ui.login', function() {
     }
 
     var currentScreen = Oobe.getInstance().currentScreen;
-    if (currentScreen && typeof currentScreen.showErrorBubble === 'function')
+    if (currentScreen && typeof currentScreen.showErrorBubble === 'function') {
       currentScreen.showErrorBubble(loginAttempts, error);
+      this.errorMessageWasShownForTesting_ = true;
+    }
   };
 
   /**
@@ -907,6 +973,7 @@ cr.define('cr.ui.login', function() {
    */
   DisplayManager.clearErrors = function() {
     $('bubble').hide();
+    this.errorMessageWasShownForTesting_ = false;
   };
 
   /**

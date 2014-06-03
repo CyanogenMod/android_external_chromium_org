@@ -126,15 +126,16 @@ class SyncClientTest : public testing::Test {
         temp_dir_.path(), base::MessageLoopProxy::current().get()));
     ASSERT_TRUE(metadata_storage_->Initialize());
 
-    metadata_.reset(new internal::ResourceMetadata(
-        metadata_storage_.get(), base::MessageLoopProxy::current()));
-    ASSERT_EQ(FILE_ERROR_OK, metadata_->Initialize());
-
     cache_.reset(new FileCache(metadata_storage_.get(),
                                temp_dir_.path(),
                                base::MessageLoopProxy::current().get(),
                                NULL /* free_disk_space_getter */));
     ASSERT_TRUE(cache_->Initialize());
+
+    metadata_.reset(new internal::ResourceMetadata(
+        metadata_storage_.get(), cache_.get(),
+        base::MessageLoopProxy::current()));
+    ASSERT_EQ(FILE_ERROR_OK, metadata_->Initialize());
 
     about_resource_loader_.reset(new AboutResourceLoader(scheduler_.get()));
     loader_controller_.reset(new LoaderController);
@@ -223,7 +224,7 @@ class SyncClientTest : public testing::Test {
         base::MessageLoopProxy::current().get(), &observer_, metadata_.get(),
         cache_.get());
     remove_operation.Remove(
-        metadata_->GetFilePath(GetLocalId("removed")),
+        util::GetDriveMyDriveRootPath().AppendASCII("removed"),
         false,  // is_recursive
         google_apis::test_util::CreateCopyResultCallback(&error));
     base::RunLoop().RunUntilIdle();
@@ -233,7 +234,7 @@ class SyncClientTest : public testing::Test {
     file_system::MoveOperation move_operation(
         base::MessageLoopProxy::current().get(), &observer_, metadata_.get());
     move_operation.Move(
-        metadata_->GetFilePath(GetLocalId("moved")),
+        util::GetDriveMyDriveRootPath().AppendASCII("moved"),
         util::GetDriveMyDriveRootPath().AppendASCII("moved_new_title"),
         google_apis::test_util::CreateCopyResultCallback(&error));
     base::RunLoop().RunUntilIdle();
@@ -260,8 +261,8 @@ class SyncClientTest : public testing::Test {
   scoped_ptr<JobScheduler> scheduler_;
   scoped_ptr<ResourceMetadataStorage,
              test_util::DestroyHelperForTests> metadata_storage_;
-  scoped_ptr<ResourceMetadata, test_util::DestroyHelperForTests> metadata_;
   scoped_ptr<FileCache, test_util::DestroyHelperForTests> cache_;
+  scoped_ptr<ResourceMetadata, test_util::DestroyHelperForTests> metadata_;
   scoped_ptr<AboutResourceLoader> about_resource_loader_;
   scoped_ptr<LoaderController> loader_controller_;
   scoped_ptr<ChangeListLoader> change_list_loader_;
@@ -274,20 +275,24 @@ TEST_F(SyncClientTest, StartProcessingBacklog) {
   sync_client_->StartProcessingBacklog();
   base::RunLoop().RunUntilIdle();
 
-  FileCacheEntry cache_entry;
+  ResourceEntry entry;
   // Pinned files get downloaded.
-  EXPECT_TRUE(cache_->GetCacheEntry(GetLocalId("foo"), &cache_entry));
-  EXPECT_TRUE(cache_entry.is_present());
+  EXPECT_EQ(FILE_ERROR_OK,
+            metadata_->GetResourceEntryById(GetLocalId("foo"), &entry));
+  EXPECT_TRUE(entry.file_specific_info().cache_state().is_present());
 
-  EXPECT_TRUE(cache_->GetCacheEntry(GetLocalId("bar"), &cache_entry));
-  EXPECT_TRUE(cache_entry.is_present());
+  EXPECT_EQ(FILE_ERROR_OK,
+            metadata_->GetResourceEntryById(GetLocalId("bar"), &entry));
+  EXPECT_TRUE(entry.file_specific_info().cache_state().is_present());
 
-  EXPECT_TRUE(cache_->GetCacheEntry(GetLocalId("baz"), &cache_entry));
-  EXPECT_TRUE(cache_entry.is_present());
+  EXPECT_EQ(FILE_ERROR_OK,
+            metadata_->GetResourceEntryById(GetLocalId("baz"), &entry));
+  EXPECT_TRUE(entry.file_specific_info().cache_state().is_present());
 
   // Dirty file gets uploaded.
-  EXPECT_TRUE(cache_->GetCacheEntry(GetLocalId("dirty"), &cache_entry));
-  EXPECT_FALSE(cache_entry.is_dirty());
+  EXPECT_EQ(FILE_ERROR_OK,
+            metadata_->GetResourceEntryById(GetLocalId("dirty"), &entry));
+  EXPECT_FALSE(entry.file_specific_info().cache_state().is_dirty());
 
   // Removed entry is not found.
   google_apis::GDataErrorCode status = google_apis::GDATA_OTHER_ERROR;
@@ -317,9 +322,10 @@ TEST_F(SyncClientTest, AddFetchTask) {
   sync_client_->AddFetchTask(GetLocalId("foo"));
   base::RunLoop().RunUntilIdle();
 
-  FileCacheEntry cache_entry;
-  EXPECT_TRUE(cache_->GetCacheEntry(GetLocalId("foo"), &cache_entry));
-  EXPECT_TRUE(cache_entry.is_present());
+  ResourceEntry entry;
+  EXPECT_EQ(FILE_ERROR_OK,
+            metadata_->GetResourceEntryById(GetLocalId("foo"), &entry));
+  EXPECT_TRUE(entry.file_specific_info().cache_state().is_present());
 }
 
 TEST_F(SyncClientTest, AddFetchTaskAndCancelled) {
@@ -329,8 +335,10 @@ TEST_F(SyncClientTest, AddFetchTaskAndCancelled) {
   base::RunLoop().RunUntilIdle();
 
   // The file should be unpinned if the user wants the download to be cancelled.
-  FileCacheEntry cache_entry;
-  EXPECT_FALSE(cache_->GetCacheEntry(GetLocalId("foo"), &cache_entry));
+  ResourceEntry entry;
+  EXPECT_EQ(FILE_ERROR_OK,
+            metadata_->GetResourceEntryById(GetLocalId("foo"), &entry));
+  EXPECT_FALSE(entry.file_specific_info().cache_state().is_pinned());
 }
 
 TEST_F(SyncClientTest, RemoveFetchTask) {
@@ -343,15 +351,18 @@ TEST_F(SyncClientTest, RemoveFetchTask) {
   base::RunLoop().RunUntilIdle();
 
   // Only "bar" should be fetched.
-  FileCacheEntry cache_entry;
-  EXPECT_TRUE(cache_->GetCacheEntry(GetLocalId("foo"), &cache_entry));
-  EXPECT_FALSE(cache_entry.is_present());
+  ResourceEntry entry;
+  EXPECT_EQ(FILE_ERROR_OK,
+            metadata_->GetResourceEntryById(GetLocalId("foo"), &entry));
+  EXPECT_FALSE(entry.file_specific_info().cache_state().is_present());
 
-  EXPECT_TRUE(cache_->GetCacheEntry(GetLocalId("bar"), &cache_entry));
-  EXPECT_TRUE(cache_entry.is_present());
+  EXPECT_EQ(FILE_ERROR_OK,
+            metadata_->GetResourceEntryById(GetLocalId("bar"), &entry));
+  EXPECT_TRUE(entry.file_specific_info().cache_state().is_present());
 
-  EXPECT_TRUE(cache_->GetCacheEntry(GetLocalId("baz"), &cache_entry));
-  EXPECT_FALSE(cache_entry.is_present());
+  EXPECT_EQ(FILE_ERROR_OK,
+            metadata_->GetResourceEntryById(GetLocalId("baz"), &entry));
+  EXPECT_FALSE(entry.file_specific_info().cache_state().is_present());
 
 }
 
@@ -396,11 +407,13 @@ TEST_F(SyncClientTest, RetryOnDisconnection) {
   base::RunLoop().RunUntilIdle();
 
   // Not yet fetched nor uploaded.
-  FileCacheEntry cache_entry;
-  EXPECT_TRUE(cache_->GetCacheEntry(GetLocalId("foo"), &cache_entry));
-  EXPECT_FALSE(cache_entry.is_present());
-  EXPECT_TRUE(cache_->GetCacheEntry(GetLocalId("dirty"), &cache_entry));
-  EXPECT_TRUE(cache_entry.is_dirty());
+  ResourceEntry entry;
+  EXPECT_EQ(FILE_ERROR_OK,
+            metadata_->GetResourceEntryById(GetLocalId("foo"), &entry));
+  EXPECT_FALSE(entry.file_specific_info().cache_state().is_present());
+  EXPECT_EQ(FILE_ERROR_OK,
+            metadata_->GetResourceEntryById(GetLocalId("dirty"), &entry));
+  EXPECT_TRUE(entry.file_specific_info().cache_state().is_dirty());
 
   // Switch to online.
   fake_network_change_notifier_->SetConnectionType(
@@ -409,10 +422,12 @@ TEST_F(SyncClientTest, RetryOnDisconnection) {
   base::RunLoop().RunUntilIdle();
 
   // Fetched and uploaded.
-  EXPECT_TRUE(cache_->GetCacheEntry(GetLocalId("foo"), &cache_entry));
-  EXPECT_TRUE(cache_entry.is_present());
-  EXPECT_TRUE(cache_->GetCacheEntry(GetLocalId("dirty"), &cache_entry));
-  EXPECT_FALSE(cache_entry.is_dirty());
+  EXPECT_EQ(FILE_ERROR_OK,
+            metadata_->GetResourceEntryById(GetLocalId("foo"), &entry));
+  EXPECT_TRUE(entry.file_specific_info().cache_state().is_present());
+  EXPECT_EQ(FILE_ERROR_OK,
+            metadata_->GetResourceEntryById(GetLocalId("dirty"), &entry));
+  EXPECT_FALSE(entry.file_specific_info().cache_state().is_dirty());
 }
 
 TEST_F(SyncClientTest, ScheduleRerun) {

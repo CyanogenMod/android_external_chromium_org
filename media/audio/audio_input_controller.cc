@@ -5,10 +5,14 @@
 #include "media/audio/audio_input_controller.h"
 
 #include "base/bind.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
+#include "base/time/time.h"
 #include "media/base/limits.h"
 #include "media/base/scoped_histogram_timer.h"
 #include "media/base/user_input_monitor.h"
+
+using base::TimeDelta;
 
 namespace {
 const int kMaxInputChannels = 3;
@@ -25,6 +29,22 @@ const int kTimerResetIntervalSeconds = 1;
 // Mac devices and the initial timer interval has therefore been increased
 // from 1 second to 5 seconds.
 const int kTimerInitialIntervalSeconds = 5;
+
+#if defined(AUDIO_POWER_MONITORING)
+// Time constant for AudioPowerMonitor.
+// The utilized smoothing factor (alpha) in the exponential filter is given
+// by 1-exp(-1/(fs*ts)), where fs is the sample rate in Hz and ts is the time
+// constant given by |kPowerMeasurementTimeConstantMilliseconds|.
+// Example: fs=44100, ts=10e-3 => alpha~0.022420
+//          fs=44100, ts=20e-3 => alpha~0.165903
+// A large smoothing factor corresponds to a faster filter response to input
+// changes since y(n)=alpha*x(n)+(1-alpha)*y(n-1), where x(n) is the input
+// and y(n) is the output.
+const int kPowerMeasurementTimeConstantMilliseconds = 10;
+
+// Time in seconds between two successive measurements of audio power levels.
+const int kPowerMonitorLogIntervalSeconds = 5;
+#endif
 }
 
 namespace media {
@@ -173,6 +193,19 @@ void AudioInputController::DoCreate(AudioManager* audio_manager,
                                     const std::string& device_id) {
   DCHECK(task_runner_->BelongsToCurrentThread());
   SCOPED_UMA_HISTOGRAM_TIMER("Media.AudioInputController.CreateTime");
+
+#if defined(AUDIO_POWER_MONITORING)
+  // Create the audio (power) level meter given the provided audio parameters.
+  // An AudioBus is also needed to wrap the raw data buffer from the native
+  // layer to match AudioPowerMonitor::Scan().
+  // TODO(henrika): Remove use of extra AudioBus. See http://crbug.com/375155.
+  audio_level_.reset(new media::AudioPowerMonitor(
+      params.sample_rate(),
+      TimeDelta::FromMilliseconds(kPowerMeasurementTimeConstantMilliseconds)));
+  audio_bus_ = AudioBus::Create(params);
+  audio_params_ = params;
+#endif
+
   // TODO(miu): See TODO at top of file.  Until that's resolved, assume all
   // platform audio input requires the |no_data_timer_| be used to auto-detect
   // errors.  In reality, probably only Windows needs to be treated as
@@ -212,12 +245,12 @@ void AudioInputController::DoCreateForStream(
   enable_nodata_timer = true;
 
   if (enable_nodata_timer) {
-    // Create the data timer which will call DoCheckForNoData(). The timer
+    // Create the data timer which will call FirstCheckForNoData(). The timer
     // is started in DoRecord() and restarted in each DoCheckForNoData()
     // callback.
     no_data_timer_.reset(new base::Timer(
         FROM_HERE, base::TimeDelta::FromSeconds(kTimerInitialIntervalSeconds),
-        base::Bind(&AudioInputController::DoCheckForNoData,
+        base::Bind(&AudioInputController::FirstCheckForNoData,
                    base::Unretained(this)), false));
   } else {
     DVLOG(1) << "Disabled: timer check for no data.";
@@ -247,7 +280,7 @@ void AudioInputController::DoRecord() {
 
   if (no_data_timer_) {
     // Start the data timer. Once |kTimerResetIntervalSeconds| have passed,
-    // a callback to DoCheckForNoData() is made.
+    // a callback to FirstCheckForNoData() is made.
     no_data_timer_->Reset();
   }
 
@@ -318,6 +351,13 @@ void AudioInputController::DoSetAutomaticGainControl(bool enabled) {
   stream_->SetAutomaticGainControl(enabled);
 }
 
+void AudioInputController::FirstCheckForNoData() {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  UMA_HISTOGRAM_BOOLEAN("Media.AudioInputControllerCaptureStartupSuccess",
+                        GetDataIsActive());
+  DoCheckForNoData();
+}
+
 void AudioInputController::DoCheckForNoData() {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
@@ -347,6 +387,10 @@ void AudioInputController::OnData(AudioInputStream* stream,
                                   uint32 size,
                                   uint32 hardware_delay_bytes,
                                   double volume) {
+  // Mark data as active to ensure that the periodic calls to
+  // DoCheckForNoData() does not report an error to the event handler.
+  SetDataIsActive(true);
+
   {
     base::AutoLock auto_lock(lock_);
     if (state_ != RECORDING)
@@ -361,15 +405,47 @@ void AudioInputController::OnData(AudioInputStream* stream,
     DVLOG_IF(6, key_pressed) << "Detected keypress.";
   }
 
-  // Mark data as active to ensure that the periodic calls to
-  // DoCheckForNoData() does not report an error to the event handler.
-  SetDataIsActive(true);
-
   // Use SharedMemory and SyncSocket if the client has created a SyncWriter.
   // Used by all low-latency clients except WebSpeech.
   if (SharedMemoryAndSyncSocketMode()) {
     sync_writer_->Write(data, size, volume, key_pressed);
     sync_writer_->UpdateRecordedBytes(hardware_delay_bytes);
+
+#if defined(AUDIO_POWER_MONITORING)
+    // Only do power-level measurements if an AudioPowerMonitor object has
+    // been created. Done in DoCreate() but not DoCreateForStream(), hence
+    // logging will mainly be done for WebRTC and WebSpeech clients.
+    if (!audio_level_)
+      return;
+
+    // Perform periodic audio (power) level measurements.
+    if ((base::TimeTicks::Now() - last_audio_level_log_time_).InSeconds() >
+        kPowerMonitorLogIntervalSeconds) {
+      // Wrap data into an AudioBus to match AudioPowerMonitor::Scan.
+      // TODO(henrika): remove this section when capture side uses AudioBus.
+      // See http://crbug.com/375155 for details.
+      audio_bus_->FromInterleaved(
+          data, audio_bus_->frames(), audio_params_.bits_per_sample() / 8);
+      audio_level_->Scan(*audio_bus_, audio_bus_->frames());
+
+      // Get current average power level and add it to the log.
+      // Possible range is given by [-inf, 0] dBFS.
+      std::pair<float, bool> result = audio_level_->ReadCurrentPowerAndClip();
+
+      // Use event handler on the audio thread to relay a message to the ARIH
+      // in content which does the actual logging on the IO thread.
+      task_runner_->PostTask(
+          FROM_HERE,
+          base::Bind(
+              &AudioInputController::DoLogAudioLevel, this, result.first));
+
+      last_audio_level_log_time_ = base::TimeTicks::Now();
+
+      // Reset the average power level (since we don't log continuously).
+      audio_level_->Reset();
+    }
+#endif
+
     return;
   }
 
@@ -389,6 +465,22 @@ void AudioInputController::DoOnData(scoped_ptr<uint8[]> data, uint32 size) {
   DCHECK(task_runner_->BelongsToCurrentThread());
   if (handler_)
     handler_->OnData(this, data.get(), size);
+}
+
+void AudioInputController::DoLogAudioLevel(float level_dbfs) {
+#if defined(AUDIO_POWER_MONITORING)
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  if (!handler_)
+    return;
+
+  std::string log_string = base::StringPrintf(
+      "AIC::OnData: average audio level=%.2f dBFS", level_dbfs);
+  static const float kSilenceThresholdDBFS = -72.24719896f;
+  if (level_dbfs < kSilenceThresholdDBFS)
+    log_string += " <=> no audio input!";
+
+  handler_->OnLog(this, log_string);
+#endif
 }
 
 void AudioInputController::OnError(AudioInputStream* stream) {

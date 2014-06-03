@@ -21,10 +21,11 @@
         '../../third_party/icu/icu.gyp:icuuc',
         '../../url/url.gyp:url_lib',
         '../events/events.gyp:events_base',
+        '../events/platform/events_platform.gyp:events_platform',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
         '../resources/ui_resources.gyp:ui_resources',
-        'strings/ui_strings.gyp:ui_strings',
+        '../strings/ui_strings.gyp:ui_strings',
       ],
       'defines': [
         'UI_BASE_IMPLEMENTATION',
@@ -125,7 +126,6 @@
         'cursor/cursor_loader_x11.cc',
         'cursor/cursor_loader_x11.h',
         'cursor/cursor_ozone.cc',
-        'cursor/cursor_mac.mm',
         'cursor/cursor_util.cc',
         'cursor/cursor_util.h',
         'cursor/cursor_win.cc',
@@ -355,7 +355,6 @@
             'cursor/cursor.h',
             'cursor/cursor_loader_x11.cc',
             'cursor/cursor_loader_x11.h',
-            'cursor/cursor_mac.mm',
             'cursor/cursor_win.cc',
             'cursor/cursor_x11.cc',
             'x/selection_owner.cc',
@@ -501,6 +500,7 @@
             '../../build/linux/system.gyp:xext',
             '../../build/linux/system.gyp:xfixes',
             '../../build/linux/system.gyp:xrender',  # For XRender* function calls in x11_util.cc.
+            '../events/platform/x11/x11_events_platform.gyp:x11_events_platform',
           ],
         }],
         ['toolkit_views==0', {
@@ -629,7 +629,6 @@
            ],
            'variables': {
              'jni_gen_package': 'ui',
-             'jni_generator_ptr_type': 'long',
            },
            'includes': [ '../../build/jni_generator.gypi' ],
          },

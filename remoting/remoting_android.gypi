@@ -14,7 +14,6 @@
           ],
           'variables': {
             'jni_gen_package': 'remoting',
-            'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../build/jni_generator.gypi' ],
         },  # end of target 'remoting_jni_headers'
@@ -135,7 +134,7 @@
       ],  # end of 'targets'
     }],  # 'OS=="android"'
 
-    ['OS=="android" and gtest_target_type=="shared_library"', {
+    ['OS=="android"', {
       'targets': [
         {
           'target_name': 'remoting_unittests_apk',
@@ -149,6 +148,6 @@
           'includes': [ '../build/apk_test.gypi' ],
         },
       ],
-    }],  # 'OS=="android" and gtest_target_type=="shared_library"'
+    }],  # 'OS=="android"
   ],  # end of 'conditions'
 }

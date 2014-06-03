@@ -35,13 +35,15 @@ class NET_EXPORT NetworkChangeNotifier {
   // Using the terminology of the Network Information API:
   // http://www.w3.org/TR/netinfo-api.
   enum ConnectionType {
-    CONNECTION_UNKNOWN = 0, // A connection exists, but its type is unknown.
+    CONNECTION_UNKNOWN = 0,  // A connection exists, but its type is unknown.
+                             // Also used as a default value.
     CONNECTION_ETHERNET = 1,
     CONNECTION_WIFI = 2,
     CONNECTION_2G = 3,
     CONNECTION_3G = 4,
     CONNECTION_4G = 5,
-    CONNECTION_NONE = 6     // No connection.
+    CONNECTION_NONE = 6,     // No connection.
+    CONNECTION_LAST = CONNECTION_NONE
   };
 
   class NET_EXPORT IPAddressObserver {
@@ -231,6 +233,9 @@ class NET_EXPORT NetworkChangeNotifier {
   // Unregister the Observer callbacks for producing histogram data.  This
   // should be called from the network thread to avoid race conditions.
   static void ShutdownHistogramWatcher();
+
+  // Log the |NCN.NetworkOperatorMCCMNC| histogram.
+  static void LogOperatorCodeHistogram(ConnectionType type);
 
   // Allows a second NetworkChangeNotifier to be created for unit testing, so
   // the test suite can create a MockNetworkChangeNotifier, but platform

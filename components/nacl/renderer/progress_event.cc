@@ -45,10 +45,12 @@ blink::WebString EventTypeToString(PP_NaClEventType event_type) {
 
 void DispatchProgressEventOnMainThread(PP_Instance instance,
                                        const ProgressEvent &event) {
-  content::PepperPluginInstance* plugin_instance_ =
+  content::PepperPluginInstance* plugin_instance =
       content::PepperPluginInstance::Get(instance);
+  if (!plugin_instance)
+    return;
 
-  blink::WebPluginContainer* container = plugin_instance_->GetContainer();
+  blink::WebPluginContainer* container = plugin_instance->GetContainer();
   // It's possible that container() is NULL if the plugin has been removed from
   // the DOM (but the PluginInstance is not destroyed yet).
   if (!container)
@@ -56,12 +58,12 @@ void DispatchProgressEventOnMainThread(PP_Instance instance,
   blink::WebLocalFrame* frame = container->element().document().frame();
   if (!frame)
     return;
-  v8::HandleScope handle_scope(plugin_instance_->GetIsolate());
+  v8::HandleScope handle_scope(plugin_instance->GetIsolate());
   v8::Local<v8::Context> context(
-      plugin_instance_->GetIsolate()->GetCurrentContext());
+      plugin_instance->GetIsolate()->GetCurrentContext());
   if (context.IsEmpty()) {
     // If there's no JavaScript on the stack, we have to make a new Context.
-    context = v8::Context::New(plugin_instance_->GetIsolate());
+    context = v8::Context::New(plugin_instance->GetIsolate());
   }
   v8::Context::Scope context_scope(context);
 

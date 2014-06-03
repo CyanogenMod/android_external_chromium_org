@@ -165,7 +165,7 @@ FileTransferController.prototype = {
    * @this {FileTransferController}
    * @param {DataTransfer} dataTransfer DataTransfer from the event.
    * @param {string} effectAllowed Value must be valid for the
-   *     |dataTransfer.effectAllowed| property ('move', 'copy', 'copyMove').
+   *     |dataTransfer.effectAllowed| property.
    */
   cutOrCopy_: function(dataTransfer, effectAllowed) {
     // Existence of the volumeInfo is checked in canXXX methods.
@@ -329,8 +329,9 @@ FileTransferController.prototype = {
     // work fine.
     var effectAllowed = dataTransfer.effectAllowed !== 'uninitialized' ?
         dataTransfer.effectAllowed : dataTransfer.getData('fs/effectallowed');
-    var toMove = effectAllowed === 'move' ||
-        (effectAllowed === 'copyMove' && opt_effect === 'move');
+    var toMove = util.isDropEffectAllowed(effectAllowed, 'move') &&
+        (!util.isDropEffectAllowed(effectAllowed, 'copy') ||
+         opt_effect === 'move');
     var destinationEntry =
         opt_destinationEntry || this.currentDirectoryContentEntry;
     var entries;
@@ -469,15 +470,12 @@ FileTransferController.prototype = {
    * @param {Event} event A dragstart event of DOM.
    */
   onDragStart_: function(list, event) {
-    // If a user is touching, Files.app does not receive drag operations.
-    if (this.touching_) {
-      event.preventDefault();
-      return;
-    }
-
     // Check if a drag selection should be initiated or not.
     if (list.shouldStartDragSelection(event)) {
-      this.dragSelector_.startDragSelection(list, event);
+      event.preventDefault();
+      // If this drag operation is initiated by mouse, start selecting area.
+      if (!this.touching_)
+        this.dragSelector_.startDragSelection(list, event);
       return;
     }
 
@@ -492,9 +490,9 @@ FileTransferController.prototype = {
     var canCut = this.canCutOrDrag_(dt);
     if (canCopy || canCut) {
       if (canCopy && canCut) {
-        this.cutOrCopy_(dt, 'copyMove');
+        this.cutOrCopy_(dt, 'all');
       } else if (canCopy) {
-        this.cutOrCopy_(dt, 'copy');
+        this.cutOrCopy_(dt, 'copyLink');
       } else {
         this.cutOrCopy_(dt, 'move');
       }
@@ -518,6 +516,10 @@ FileTransferController.prototype = {
    * @param {Event} event A dragend event of DOM.
    */
   onDragEnd_: function(list, event) {
+    // TODO(fukino): This is workaround for crbug.com/373125.
+    // This should be removed after the bug is fixed.
+    this.touching_ = false;
+
     var container = this.document_.querySelector('#drag-container');
     container.textContent = '';
     this.clearDropTarget_();
@@ -696,8 +698,11 @@ FileTransferController.prototype = {
    * Handles touch end.
    */
   onTouchEnd_: function(event) {
-    if (event.touches.length === 0)
-      this.touching_ = false;
+    // TODO(fukino): We have to check if event.touches.length be 0 to support
+    // multi-touch operations, but event.touches has incorrect value by a bug
+    // (crbug.com/373125).
+    // After the bug is fixed, we should check event.touches.
+    this.touching_ = false;
   },
 
   /**
@@ -1043,19 +1048,19 @@ FileTransferController.prototype = {
       return 'none';
     if (destinationLocationInfo.isReadOnly)
       return 'none';
-    if (event.dataTransfer.effectAllowed === 'move')
-      return 'move';
-    // TODO(mtomasz): Use volumeId instead of comparing roots, as soon as
-    // volumeId gets unique.
-    if (event.dataTransfer.effectAllowed === 'copyMove' &&
-        this.getSourceRootURL_(event.dataTransfer) ===
-            destinationLocationInfo.volumeInfo.fileSystem.root.toURL() &&
-        !event.ctrlKey) {
-      return 'move';
-    }
-    if (event.dataTransfer.effectAllowed === 'copyMove' &&
-        event.shiftKey) {
-      return 'move';
+    if (util.isDropEffectAllowed(event.dataTransfer.effectAllowed, 'move')) {
+      if (!util.isDropEffectAllowed(event.dataTransfer.effectAllowed, 'copy'))
+        return 'move';
+      // TODO(mtomasz): Use volumeId instead of comparing roots, as soon as
+      // volumeId gets unique.
+      if (this.getSourceRootURL_(event.dataTransfer) ===
+              destinationLocationInfo.volumeInfo.fileSystem.root.toURL() &&
+          !event.ctrlKey) {
+        return 'move';
+      }
+      if (event.shiftKey) {
+        return 'move';
+      }
     }
     return 'copy';
   },

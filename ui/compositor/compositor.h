@@ -96,6 +96,10 @@ class COMPOSITOR_EXPORT ContextFactory {
 
   // Gets the shared bitmap manager for software mode.
   virtual cc::SharedBitmapManager* GetSharedBitmapManager() = 0;
+
+  // Gets the compositor message loop, or NULL if not using threaded
+  // compositing.
+  virtual base::MessageLoopProxy* GetCompositorMessageLoop() = 0;
 };
 
 // This class represents a lock on the compositor, that can be used to prevent
@@ -132,13 +136,14 @@ class COMPOSITOR_EXPORT Compositor
     : NON_EXPORTED_BASE(public cc::LayerTreeHostClient),
       NON_EXPORTED_BASE(public cc::LayerTreeHostSingleThreadClient) {
  public:
+  // This is deprecated, and will be removed shortly.
+  // TODO(sky): remove this.
   explicit Compositor(gfx::AcceleratedWidget widget);
+  Compositor(gfx::AcceleratedWidget widget,
+             ui::ContextFactory* context_factory);
   virtual ~Compositor();
 
-  static void Initialize();
-  static bool WasInitializedWithThread();
-  static scoped_refptr<base::MessageLoopProxy> GetCompositorMessageLoop();
-  static void Terminate();
+  ui::ContextFactory* context_factory() { return context_factory_; }
 
   // Schedules a redraw of the layer tree associated with this compositor.
   void ScheduleDraw();
@@ -172,6 +177,9 @@ class COMPOSITOR_EXPORT Compositor
   // Schedule redraw and append damage_rect to the damage region calculated
   // from changes to layer properties.
   void ScheduleRedrawRect(const gfx::Rect& damage_rect);
+
+  // Finishes all outstanding rendering on the GPU.
+  void FinishAllRendering();
 
   void SetLatencyInfo(const LatencyInfo& latency_info);
 
@@ -246,6 +254,11 @@ class COMPOSITOR_EXPORT Compositor
   friend class base::RefCounted<Compositor>;
   friend class CompositorLock;
 
+  // Called from both constructors. It's temporary while we have both
+  // constructors.
+  // TODO(sky): nuke this.
+  void Init();
+
   // Called by CompositorLock.
   void UnlockCompositor();
 
@@ -257,6 +270,8 @@ class COMPOSITOR_EXPORT Compositor
 
   gfx::Size size_;
 
+  ui::ContextFactory* context_factory_;
+
   // The root of the Layer tree drawn by this compositor.
   Layer* root_layer_;
 
@@ -265,6 +280,7 @@ class COMPOSITOR_EXPORT Compositor
   gfx::AcceleratedWidget widget_;
   scoped_refptr<cc::Layer> root_web_layer_;
   scoped_ptr<cc::LayerTreeHost> host_;
+  scoped_refptr<base::MessageLoopProxy> compositor_thread_loop_;
 
   // The manager of vsync parameters for this compositor.
   scoped_refptr<CompositorVSyncManager> vsync_manager_;
@@ -275,8 +291,6 @@ class COMPOSITOR_EXPORT Compositor
 
   int last_started_frame_;
   int last_ended_frame_;
-
-  bool next_draw_is_resize_;
 
   bool disable_schedule_composite_;
 

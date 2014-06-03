@@ -71,6 +71,7 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_util.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_resource.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
@@ -89,7 +90,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/ui/ash/chrome_shell_delegate.h"
 #include "chrome/browser/ui/ash/launcher/multi_profile_app_window_launcher_controller.h"
 #include "chrome/browser/ui/ash/launcher/multi_profile_browser_status_monitor.h"
@@ -579,6 +580,34 @@ bool ChromeLauncherController::IsPinnable(ash::ShelfID id) const {
           CanPin());
 }
 
+void ChromeLauncherController::Install(ash::ShelfID id) {
+  if (!HasItemController(id))
+    return;
+
+  std::string app_id = GetAppIDForShelfID(id);
+  if (extensions::util::IsExtensionInstalledPermanently(app_id, profile_))
+    return;
+
+  LauncherItemController* controller = id_to_item_controller_map_[id];
+  if (controller->type() == LauncherItemController::TYPE_APP) {
+    AppWindowLauncherItemController* app_window_controller =
+        static_cast<AppWindowLauncherItemController*>(controller);
+    app_window_controller->InstallApp();
+  }
+}
+
+bool ChromeLauncherController::CanInstall(ash::ShelfID id) {
+  int index = model_->ItemIndexByID(id);
+  if (index == -1)
+    return false;
+
+  ash::ShelfItemType type = model_->items()[index].type;
+  if (type != ash::TYPE_PLATFORM_APP)
+    return false;
+
+  return extensions::util::IsEphemeralApp(GetAppIDForShelfID(id), profile_);
+}
+
 void ChromeLauncherController::LockV1AppWithID(
     const std::string& app_id) {
   ash::ShelfID id = GetShelfIDForAppID(app_id);
@@ -650,8 +679,10 @@ void ChromeLauncherController::LaunchApp(const std::string& app_id,
     return;
   }
 
+#if defined(OS_WIN)
   if (LaunchedInNativeDesktop(app_id))
     return;
+#endif
 
   // The app will be created for the currently active profile.
   AppLaunchParams params(profile_,

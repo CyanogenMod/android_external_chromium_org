@@ -9,6 +9,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_ui_util.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/search/app_result.h"
@@ -51,7 +52,8 @@ AppSearchProvider::AppSearchProvider(
   registrar_.Add(this,
                  chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                  content::Source<Profile>(profile_->GetOriginalProfile()));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
                  content::Source<Profile>(profile_->GetOriginalProfile()));
   RefreshApps();
 }
@@ -84,7 +86,7 @@ void AppSearchProvider::AddApps(const extensions::ExtensionSet& extensions) {
        iter != extensions.end(); ++iter) {
     const extensions::Extension* app = iter->get();
 
-    if (!app->ShouldDisplayInAppLauncher())
+    if (!extensions::ui_util::ShouldDisplayInAppLauncher(app, profile_))
       continue;
 
     if (profile_->IsOffTheRecord() &&
@@ -105,7 +107,14 @@ void AppSearchProvider::RefreshApps() {
 void AppSearchProvider::Observe(int type,
                                 const content::NotificationSource& source,
                                 const content::NotificationDetails& detaila) {
-  RefreshApps();
+  switch (type) {
+    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED:
+    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED:
+      RefreshApps();
+      break;
+    default:
+      NOTREACHED();
+  }
 }
 
 }  // namespace app_list

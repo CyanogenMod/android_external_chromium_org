@@ -57,8 +57,8 @@
 #include "chrome/test/base/history_index_restore_observer.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/common/bookmark_constants.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/common/bookmark_constants.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/policy/core/common/policy_service.h"
 #include "components/user_prefs/user_prefs.h"
@@ -260,7 +260,6 @@ TestingProfile::TestingProfile(
       resource_context_(NULL),
       delegate_(delegate),
       policy_service_(policy_service.release()) {
-
   // If no profile path was supplied, create one.
   if (profile_path_.empty()) {
     CreateTempProfileDir();
@@ -427,7 +426,7 @@ void TestingProfile::CreateFaviconService() {
 }
 
 static KeyedService* BuildHistoryService(content::BrowserContext* profile) {
-  return new HistoryService(static_cast<Profile*>(profile));
+  return new HistoryService(NULL, static_cast<Profile*>(profile));
 }
 
 bool TestingProfile::CreateHistoryService(bool delete_file, bool no_db) {
@@ -720,7 +719,7 @@ net::URLRequestContextGetter* TestingProfile::GetRequestContext() {
 
 net::URLRequestContextGetter* TestingProfile::CreateRequestContext(
     content::ProtocolHandlerMap* protocol_handlers,
-    content::ProtocolHandlerScopedVector protocol_interceptors) {
+    content::URLRequestInterceptorScopedVector request_interceptors) {
   return new net::TestURLRequestContextGetter(
             BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
 }
@@ -770,16 +769,16 @@ void TestingProfile::CancelMidiSysExPermissionRequest(
 void TestingProfile::RequestProtectedMediaIdentifierPermission(
     int render_process_id,
     int render_view_id,
-    int bridge_id,
-    int group_id,
-    const GURL& requesting_frame,
+    const GURL& origin,
     const ProtectedMediaIdentifierPermissionCallback& callback) {
   // Always reject requests for testing.
   callback.Run(false);
 }
 
 void TestingProfile::CancelProtectedMediaIdentifierPermissionRequests(
-    int group_id) {
+    int render_process_id,
+    int render_view_id,
+    const GURL& origin) {
 }
 
 net::URLRequestContextGetter* TestingProfile::GetRequestContextForExtensions() {
@@ -799,7 +798,7 @@ TestingProfile::CreateRequestContextForStoragePartition(
     const base::FilePath& partition_path,
     bool in_memory,
     content::ProtocolHandlerMap* protocol_handlers,
-    content::ProtocolHandlerScopedVector protocol_interceptors) {
+    content::URLRequestInterceptorScopedVector request_interceptors) {
   // We don't test storage partitions here yet, so returning the same dummy
   // context is sufficient for now.
   return GetRequestContext();
@@ -828,21 +827,8 @@ TestingProfile::GetGeolocationPermissionContext() {
   return ChromeGeolocationPermissionContextFactory::GetForProfile(this);
 }
 
-content::BrowserPluginGuestManagerDelegate*
-    TestingProfile::GetGuestManagerDelegate() {
+content::BrowserPluginGuestManager* TestingProfile::GetGuestManager() {
   return GuestViewManager::FromBrowserContext(this);
-}
-
-std::wstring TestingProfile::GetName() {
-  return std::wstring();
-}
-
-std::wstring TestingProfile::GetID() {
-  return id_;
-}
-
-void TestingProfile::SetID(const std::wstring& id) {
-  id_ = id;
 }
 
 bool TestingProfile::IsSameProfile(Profile *p) {
@@ -888,6 +874,14 @@ chrome_browser_net::Predictor* TestingProfile::GetNetworkPredictor() {
 
 void TestingProfile::ClearNetworkingHistorySince(
     base::Time time,
+    const base::Closure& completion) {
+  if (!completion.is_null()) {
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, completion);
+  }
+}
+
+void TestingProfile::ClearDomainReliabilityMonitor(
+    domain_reliability::DomainReliabilityClearMode mode,
     const base::Closure& completion) {
   if (!completion.is_null()) {
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, completion);

@@ -87,7 +87,7 @@ class WebMediaPlayerImpl
   virtual void setRate(double rate);
   virtual void setVolume(double volume);
   virtual void setPreload(blink::WebMediaPlayer::Preload preload);
-  virtual const blink::WebTimeRanges& buffered();
+  virtual blink::WebTimeRanges buffered() const;
   virtual double maxTimeSeekable() const;
 
   // Methods for painting.
@@ -115,9 +115,7 @@ class WebMediaPlayerImpl
   virtual blink::WebMediaPlayer::NetworkState networkState() const;
   virtual blink::WebMediaPlayer::ReadyState readyState() const;
 
-  // TODO(sandersd): Change this to non-const in blink::WebMediaPlayer.
-  // http://crbug.com/360251
-  virtual bool didLoadingProgress() const;
+  virtual bool didLoadingProgress();
 
   virtual bool hasSingleSecurityOrigin() const;
   virtual bool didPassCORSAccessCheck() const;
@@ -328,8 +326,6 @@ class WebMediaPlayerImpl
   media::ChunkDemuxer* chunk_demuxer_;
 
   BufferedDataSourceHostImpl buffered_data_source_host_;
-  // TODO(sandersd): Remove this cache. http://crbug.com/360254
-  blink::WebTimeRanges buffered_web_time_ranges_;
 
   // Temporary for EME v0.1. In the future the init data type should be passed
   // through GenerateKeyRequest() directly from WebKit.

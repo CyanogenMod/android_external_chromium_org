@@ -43,25 +43,24 @@ void EncodeVideoFrameOnEncoderThread(
       dynamic_config.latest_frame_id_to_reference);
   encoder->UpdateRates(dynamic_config.bit_rate);
 
-  scoped_ptr<transport::EncodedVideoFrame> encoded_frame(
-      new transport::EncodedVideoFrame());
-  bool retval = encoder->Encode(video_frame, encoded_frame.get());
-
-  encoded_frame->rtp_timestamp = transport::GetVideoRtpTimestamp(capture_time);
-
-  if (!retval) {
+  scoped_ptr<transport::EncodedFrame> encoded_frame(
+      new transport::EncodedFrame());
+  if (!encoder->Encode(video_frame, encoded_frame.get())) {
     VLOG(1) << "Encoding failed";
     return;
   }
-  if (encoded_frame->data.size() <= 0) {
+  if (encoded_frame->data.empty()) {
     VLOG(1) << "Encoding resulted in an empty frame";
     return;
   }
+  encoded_frame->rtp_timestamp = transport::GetVideoRtpTimestamp(capture_time);
+  encoded_frame->reference_time = capture_time;
+
   environment->PostTask(
       CastEnvironment::MAIN,
       FROM_HERE,
       base::Bind(
-          frame_encoded_callback, base::Passed(&encoded_frame), capture_time));
+          frame_encoded_callback, base::Passed(&encoded_frame)));
 }
 }  // namespace
 
@@ -82,7 +81,7 @@ VideoEncoderImpl::VideoEncoderImpl(
                                            encoder_.get()));
 #ifndef OFFICIAL_BUILD
   } else if (video_config.codec == transport::kFakeSoftwareVideo) {
-    encoder_.reset(new FakeSoftwareVideoEncoder());
+    encoder_.reset(new FakeSoftwareVideoEncoder(video_config));
 #endif
   } else {
     DCHECK(false) << "Invalid config";  // Codec not supported.

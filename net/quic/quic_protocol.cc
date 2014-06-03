@@ -525,6 +525,10 @@ ostream& operator<<(ostream& os,
       os << " receive_window: " << tcp.receive_window;
       break;
     }
+    case kTCPBBR: {
+      LOG(DFATAL) << "TCPBBR is not yet supported.";
+      break;
+    }
   }
   return os;
 }
@@ -743,7 +747,7 @@ TransmissionInfo::TransmissionInfo()
       bytes_sent(0),
       nack_count(0),
       all_transmissions(NULL),
-      pending(false) { }
+      in_flight(false) { }
 
 TransmissionInfo::TransmissionInfo(
     RetransmittableFrames* retransmittable_frames,
@@ -755,7 +759,7 @@ TransmissionInfo::TransmissionInfo(
       bytes_sent(0),
       nack_count(0),
       all_transmissions(new SequenceNumberSet),
-      pending(false) {
+      in_flight(false) {
   all_transmissions->insert(sequence_number);
 }
 
@@ -770,7 +774,7 @@ TransmissionInfo::TransmissionInfo(
       bytes_sent(0),
       nack_count(0),
       all_transmissions(all_transmissions),
-      pending(false) {
+      in_flight(false) {
   all_transmissions->insert(sequence_number);
 }
 

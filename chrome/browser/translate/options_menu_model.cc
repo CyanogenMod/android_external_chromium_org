@@ -6,27 +6,29 @@
 
 #include "base/metrics/histogram.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/translate/translate_infobar_delegate.h"
-#include "chrome/common/url_constants.h"
-#include "content/public/browser/navigation_controller.h"
-#include "content/public/browser/navigation_entry.h"
-#include "content/public/browser/web_contents.h"
-#include "grit/generated_resources.h"
+#include "components/translate/core/browser/translate_driver.h"
+#include "grit/components_strings.h"
 #include "grit/locale_settings.h"
 #include "ui/base/l10n/l10n_util.h"
 
-using content::NavigationEntry;
-using content::OpenURLParams;
-using content::Referrer;
-using content::WebContents;
+namespace {
+
+const char kAboutGoogleTranslateURL[] =
+#if defined(OS_CHROMEOS)
+    "https://support.google.com/chromeos/?p=ib_translation_bar";
+#else
+    "https://support.google.com/chrome/?p=ib_translation_bar";
+#endif
+
+}  // namespace
 
 OptionsMenuModel::OptionsMenuModel(
     TranslateInfoBarDelegate* translate_delegate)
     : ui::SimpleMenuModel(this),
       translate_infobar_delegate_(translate_delegate) {
   // |translate_delegate| must already be owned.
-  DCHECK(translate_infobar_delegate_->GetWebContents());
+  DCHECK(translate_infobar_delegate_->GetTranslateDriver());
 
   base::string16 original_language = translate_delegate->language_name_at(
       translate_delegate->original_language_index());
@@ -39,8 +41,7 @@ OptionsMenuModel::OptionsMenuModel(
 
   // Populate the menu.
   // Incognito mode does not get any preferences related items.
-  if (!translate_delegate->GetWebContents()->GetBrowserContext()->
-      IsOffTheRecord()) {
+  if (!translate_delegate->is_off_the_record()) {
     if (!autodetermined_source_language) {
       AddCheckItem(IDC_TRANSLATE_OPTIONS_ALWAYS,
           l10n_util::GetStringFUTF16(IDS_TRANSLATE_INFOBAR_OPTIONS_ALWAYS,
@@ -125,13 +126,10 @@ void OptionsMenuModel::ExecuteCommand(int command_id, int event_flags) {
       break;
 
     case IDC_TRANSLATE_OPTIONS_ABOUT: {
-      WebContents* web_contents = translate_infobar_delegate_->GetWebContents();
-      if (web_contents) {
-        OpenURLParams params(
-            GURL(chrome::kAboutGoogleTranslateURL), Referrer(),
-            NEW_FOREGROUND_TAB, content::PAGE_TRANSITION_LINK, false);
-        web_contents->OpenURL(params);
-      }
+      TranslateDriver* translate_driver =
+          translate_infobar_delegate_->GetTranslateDriver();
+      if (translate_driver)
+        translate_driver->OpenUrlInNewTab(GURL(kAboutGoogleTranslateURL));
       break;
     }
 

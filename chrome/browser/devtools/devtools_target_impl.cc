@@ -21,6 +21,7 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/common/constants.h"
 
 using content::BrowserThread;
 using content::DevToolsAgentHost;
@@ -201,7 +202,8 @@ void WorkerTarget::Inspect(Profile* profile) const {
 DevToolsTargetImpl::~DevToolsTargetImpl() {
 }
 
-DevToolsTargetImpl::DevToolsTargetImpl(DevToolsAgentHost* agent_host)
+DevToolsTargetImpl::DevToolsTargetImpl(
+    scoped_refptr<DevToolsAgentHost> agent_host)
     : agent_host_(agent_host) {
 }
 

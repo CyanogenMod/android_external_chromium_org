@@ -82,7 +82,7 @@ class CommandBufferClientImpl : public CommandBufferClient,
  private:
   // CommandBufferClient implementation:
   virtual void DidInitialize(bool success) OVERRIDE;
-  virtual void DidMakeProgress(const CommandBufferState& state) OVERRIDE;
+  virtual void DidMakeProgress(CommandBufferStatePtr state) OVERRIDE;
   virtual void DidDestroy() OVERRIDE;
   virtual void LostContext(int32_t lost_reason) OVERRIDE;
 
@@ -107,6 +107,7 @@ class CommandBufferClientImpl : public CommandBufferClient,
   int32 next_transfer_buffer_id_;
 
   bool initialize_result_;
+  MojoAsyncWaiter* async_waiter_;
 };
 
 }  // gles2

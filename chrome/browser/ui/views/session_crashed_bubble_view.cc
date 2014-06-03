@@ -6,20 +6,28 @@
 
 #include <vector>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/command_line.h"
+#include "base/metrics/field_trial.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/sessions/session_restore.h"
+#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_list_observer.h"
 #include "chrome/browser/ui/options/options_util.h"
 #include "chrome/browser/ui/startup/session_crashed_bubble.h"
 #include "chrome/browser/ui/startup/startup_browser_creator_impl.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/chromium_strings.h"
@@ -56,6 +64,10 @@ const int kMarginHeight = kMarginWidth;
 const SkColor kLightGrayBackgroundColor = 0xFFF0F0F0;
 const SkColor kWhiteBackgroundColor = 0xFFFFFFFF;
 
+// The Finch study name and group name that enables session crashed bubble UI.
+const char kEnableBubbleUIFinchName[] = "EnableSessionCrashedBubbleUI";
+const char kEnableBubbleUIGroupEnabled[] = "Enabled";
+
 bool ShouldOfferMetricsReporting() {
 // Stats collection only applies to Google Chrome builds.
 #if defined(GOOGLE_CHROME_BUILD)
@@ -69,11 +81,87 @@ bool ShouldOfferMetricsReporting() {
 #endif  // defined(GOOGLE_CHROME_BUILD)
 }
 
+// Whether or not the bubble UI should be used.
+bool IsBubbleUIEnabled() {
+  const std::string group_name = base::FieldTrialList::FindFullName(
+      kEnableBubbleUIFinchName);
+  const base::CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  if (command_line.HasSwitch(switches::kDisableSessionCrashedBubble))
+    return false;
+  if (command_line.HasSwitch(switches::kEnableSessionCrashedBubble))
+    return true;
+  return group_name == kEnableBubbleUIGroupEnabled;
+}
+
 }  // namespace
+
+// A helper class that listens to browser removal event.
+class SessionCrashedBubbleView::BrowserRemovalObserver
+    : public chrome::BrowserListObserver {
+ public:
+  explicit BrowserRemovalObserver(Browser* browser);
+  virtual ~BrowserRemovalObserver();
+
+  // Overridden from chrome::BrowserListObserver.
+  virtual void OnBrowserRemoved(Browser* browser) OVERRIDE;
+
+  Browser* browser() const;
+
+ private:
+  Browser* browser_;
+
+  DISALLOW_COPY_AND_ASSIGN(BrowserRemovalObserver);
+};
+
+SessionCrashedBubbleView::BrowserRemovalObserver::BrowserRemovalObserver(
+    Browser* browser)
+    : browser_(browser) {
+  DCHECK(browser_);
+  BrowserList::AddObserver(this);
+}
+
+SessionCrashedBubbleView::BrowserRemovalObserver::~BrowserRemovalObserver() {
+  BrowserList::RemoveObserver(this);
+}
+
+void SessionCrashedBubbleView::BrowserRemovalObserver::OnBrowserRemoved(
+    Browser* browser) {
+  if (browser == browser_)
+    browser_ = NULL;
+}
+
+Browser* SessionCrashedBubbleView::BrowserRemovalObserver::browser() const {
+  return browser_;
+}
 
 // static
 void SessionCrashedBubbleView::Show(Browser* browser) {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   if (browser->profile()->IsOffTheRecord())
+    return;
+
+  // Observes browser removal event and will be deallocated in ShowForReal.
+  scoped_ptr<BrowserRemovalObserver> browser_observer(
+      new BrowserRemovalObserver(browser));
+
+  // Schedule a task to run ShouldOfferMetricsReporting() on FILE thread, since
+  // GoogleUpdateSettings::GetCollectStatsConsent() does IO. Then, call
+  // SessionCrashedBubbleView::ShowForReal with the result.
+  content::BrowserThread::PostTaskAndReplyWithResult(
+      content::BrowserThread::FILE,
+      FROM_HERE,
+      base::Bind(&ShouldOfferMetricsReporting),
+      base::Bind(&SessionCrashedBubbleView::ShowForReal,
+                 base::Passed(&browser_observer)));
+}
+
+// static
+void SessionCrashedBubbleView::ShowForReal(
+    scoped_ptr<BrowserRemovalObserver> browser_observer,
+    bool offer_uma_optin) {
+  Browser* browser = browser_observer->browser();
+
+  if (!browser)
     return;
 
   views::View* anchor_view =
@@ -81,14 +169,16 @@ void SessionCrashedBubbleView::Show(Browser* browser) {
   content::WebContents* web_contents =
       browser->tab_strip_model()->GetActiveWebContents();
   SessionCrashedBubbleView* crash_bubble =
-      new SessionCrashedBubbleView(anchor_view, browser, web_contents);
+      new SessionCrashedBubbleView(anchor_view, browser, web_contents,
+                                   offer_uma_optin);
   views::BubbleDelegateView::CreateBubble(crash_bubble)->Show();
 }
 
 SessionCrashedBubbleView::SessionCrashedBubbleView(
     views::View* anchor_view,
     Browser* browser,
-    content::WebContents* web_contents)
+    content::WebContents* web_contents,
+    bool offer_uma_optin)
     : BubbleDelegateView(anchor_view, views::BubbleBorder::TOP_RIGHT),
       content::WebContentsObserver(web_contents),
       browser_(browser),
@@ -96,6 +186,7 @@ SessionCrashedBubbleView::SessionCrashedBubbleView(
       restore_button_(NULL),
       close_(NULL),
       uma_option_(NULL),
+      offer_uma_optin_(offer_uma_optin),
       started_navigation_(false) {
   set_close_on_deactivate(false);
   registrar_.Add(
@@ -141,6 +232,7 @@ void SessionCrashedBubbleView::Init() {
   text_label->SetLineHeight(20);
   text_label->SetEnabledColor(SK_ColorDKGRAY);
   text_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+  text_label->SizeToFit(kWidthOfDescriptionText);
 
   // Restore button.
   restore_button_ = new views::LabelButton(
@@ -193,7 +285,7 @@ void SessionCrashedBubbleView::Init() {
   layout->AddPaddingRow(0, kMarginHeight);
 
   // Metrics reporting option.
-  if (ShouldOfferMetricsReporting())
+  if (offer_uma_optin_)
     CreateUmaOptinView(layout);
 
   set_color(kWhiteBackgroundColor);
@@ -330,8 +422,13 @@ void SessionCrashedBubbleView::RestorePreviousSession(views::Button* sender) {
 
   // Record user's choice for opting in to UMA.
   // There's no opting-out choice in the crash restore bubble.
-  if (uma_option_ && uma_option_->checked())
+  if (uma_option_ && uma_option_->checked()) {
+    // TODO: Clean up function ResolveMetricsReportingEnabled so that user pref
+    // is stored automatically.
     OptionsUtil::ResolveMetricsReportingEnabled(true);
+    g_browser_process->local_state()->SetBoolean(
+        prefs::kMetricsReportingEnabled, true);
+  }
   CloseBubble();
 }
 
@@ -340,6 +437,9 @@ void SessionCrashedBubbleView::CloseBubble() {
 }
 
 bool ShowSessionCrashedBubble(Browser* browser) {
-  SessionCrashedBubbleView::Show(browser);
-  return true;
+  if (IsBubbleUIEnabled()) {
+    SessionCrashedBubbleView::Show(browser);
+    return true;
+  }
+  return false;
 }

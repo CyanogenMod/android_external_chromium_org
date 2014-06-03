@@ -47,7 +47,7 @@ MessageCenterWidgetDelegate::MessageCenterWidgetDelegate(
 
   views::BoxLayout* layout =
       new views::BoxLayout(views::BoxLayout::kVertical, 0, 0, 0);
-  layout->set_spread_blank_space(true);
+  layout->set_main_axis_alignment(views::BoxLayout::MAIN_AXIS_ALIGNMENT_FILL);
   SetLayoutManager(layout);
 
   AddAccelerator(ui::Accelerator(ui::VKEY_ESCAPE, ui::EF_NONE));
@@ -112,17 +112,17 @@ void MessageCenterWidgetDelegate::PreferredSizeChanged() {
   views::View::PreferredSizeChanged();
 }
 
-gfx::Size MessageCenterWidgetDelegate::GetPreferredSize() {
+gfx::Size MessageCenterWidgetDelegate::GetPreferredSize() const {
   int preferred_width = kNotificationWidth + 2 * kMarginBetweenItems;
   return gfx::Size(preferred_width, GetHeightForWidth(preferred_width));
 }
 
-gfx::Size MessageCenterWidgetDelegate::GetMaximumSize() {
+gfx::Size MessageCenterWidgetDelegate::GetMaximumSize() const {
   gfx::Size size = GetPreferredSize();
   return size;
 }
 
-int MessageCenterWidgetDelegate::GetHeightForWidth(int width) {
+int MessageCenterWidgetDelegate::GetHeightForWidth(int width) const {
   int height = MessageCenterView::GetHeightForWidth(width);
   return (pos_info_.max_height != 0) ?
     std::min(height, pos_info_.max_height - border_insets_.height()) : height;
@@ -142,7 +142,6 @@ void MessageCenterWidgetDelegate::InitWidget() {
   params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   params.delegate = this;
   params.keep_on_top = true;
-  params.top_level = true;
 #if defined(USE_ASH)
   // This class is not used in Ash; there is another container for the message
   // center that's used there.  So, we must be in a Views + Ash environment.  We

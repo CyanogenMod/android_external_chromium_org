@@ -1321,6 +1321,15 @@ void ResourceProvider::CleanUpGLIfNeeded() {
   }
 
   DCHECK(gl);
+#if DCHECK_IS_ON
+  // Check that all GL resources has been deleted.
+  for (ResourceMap::const_iterator itr = resources_.begin();
+       itr != resources_.end();
+       ++itr) {
+    DCHECK_NE(GLTexture, itr->second.type);
+  }
+#endif  // DCHECK_IS_ON
+
   texture_uploader_.reset();
   texture_id_allocator_.reset();
   buffer_id_allocator_.reset();
@@ -1606,7 +1615,6 @@ void ResourceProvider::TransferResource(GLES2Interface* gl,
   DCHECK(!source->lock_for_read_count);
   DCHECK(source->origin != Resource::External || source->mailbox.IsValid());
   DCHECK(source->allocated);
-  DCHECK_EQ(source->wrap_mode, GL_CLAMP_TO_EDGE);
   resource->id = id;
   resource->format = source->format;
   resource->mailbox_holder.texture_target = source->target;

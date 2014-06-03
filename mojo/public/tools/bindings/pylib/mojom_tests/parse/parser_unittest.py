@@ -41,13 +41,13 @@ module my_module {
 }
 """
     self.assertEquals(parser.Parse(source, "my_file.mojom"),
-                      [("MODULE", "my_module", None)])
+                      [("MODULE", "my_module", None, None)])
 
   def testSourceWithCrLfs(self):
     """Tests a .mojom source with CR-LFs instead of LFs."""
     source = "// This is a comment.\r\n\r\nmodule my_module {\r\n}\r\n"
     self.assertEquals(parser.Parse(source, "my_file.mojom"),
-                      [("MODULE", "my_module", None)])
+                      [("MODULE", "my_module", None, None)])
 
   def testUnexpectedEOF(self):
     """Tests a "truncated" .mojom source."""
@@ -60,6 +60,67 @@ module my_module {
         parser.ParseError,
         r"^my_file\.mojom: Error: Unexpected end of file$"):
       parser.Parse(source, "my_file.mojom")
+
+  def testCommentLineNumbers(self):
+    """Tests that line numbers are correctly tracked when comments are
+    present."""
+    source1 = """\
+// Isolated C++-style comments.
+
+// Foo.
+asdf1
+"""
+    with self.assertRaisesRegexp(
+        parser.ParseError,
+        r"^my_file\.mojom:4: Error: Unexpected 'asdf1':\nasdf1$"):
+      parser.Parse(source1, "my_file.mojom")
+
+    source2 = """\
+// Consecutive C++-style comments.
+// Foo.
+  // Bar.
+
+struct Yada {  // Baz.
+// Quux.
+  int32 x;
+};
+
+asdf2
+"""
+    with self.assertRaisesRegexp(
+        parser.ParseError,
+        r"^my_file\.mojom:10: Error: Unexpected 'asdf2':\nasdf2$"):
+      parser.Parse(source2, "my_file.mojom")
+
+    source3 = """\
+/* Single-line C-style comments. */
+/* Foobar. */
+
+/* Baz. */
+asdf3
+"""
+    with self.assertRaisesRegexp(
+        parser.ParseError,
+        r"^my_file\.mojom:5: Error: Unexpected 'asdf3':\nasdf3$"):
+      parser.Parse(source3, "my_file.mojom")
+
+    source4 = """\
+/* Multi-line C-style comments.
+*/
+/*
+Foo.
+Bar.
+*/
+
+/* Baz
+   Quux. */
+asdf4
+"""
+    with self.assertRaisesRegexp(
+        parser.ParseError,
+        r"^my_file\.mojom:10: Error: Unexpected 'asdf4':\nasdf4$"):
+      parser.Parse(source4, "my_file.mojom")
+
 
   def testSimpleStruct(self):
     """Tests a simple .mojom source that just defines a struct."""
@@ -76,6 +137,7 @@ struct MyStruct {
     expected = \
 [('MODULE',
   'my_module',
+  None,
   [('STRUCT',
     'MyStruct',
     None,
@@ -94,6 +156,7 @@ struct MyStruct {
     expected = \
 [('MODULE',
   '',
+  None,
   [('STRUCT',
     'MyStruct',
     None,
@@ -154,6 +217,7 @@ enum MyEnum {
     expected = \
 [('MODULE',
   'my_module',
+  None,
   [('ENUM',
     'MyEnum',
     [('ENUM_FIELD', 'MY_ENUM_1', ('EXPRESSION', ['1'])),
@@ -208,10 +272,10 @@ module my_module {
 // This isn't actually valid .mojom, but the problem (missing ordinals) should
 // be handled at a different level.
 struct MyStruct {
-  int32 a0 @0;
-  int32 a1 @1;
-  int32 a2 @2;
-  int32 a9 @9;
+  int32 a0@0;
+  int32 a1@1;
+  int32 a2@2;
+  int32 a9@9;
   int32 a10 @10;
   int32 a11 @11;
   int32 a29 @29;
@@ -223,6 +287,7 @@ struct MyStruct {
     expected = \
 [('MODULE',
   'my_module',
+  None,
   [('STRUCT',
     'MyStruct',
     None,
@@ -242,7 +307,7 @@ struct MyStruct {
 module my_module {
 
 struct MyStruct {
-  int32 a_missing @;
+  int32 a_missing@;
 };
 
 }  // module my_module
@@ -256,7 +321,7 @@ struct MyStruct {
 module my_module {
 
 struct MyStruct {
-  int32 a_octal @01;
+  int32 a_octal@01;
 };
 
 }  // module my_module
@@ -268,7 +333,7 @@ struct MyStruct {
       parser.Parse(source2, "my_file.mojom")
 
     source3 = """\
-module my_module { struct MyStruct { int32 a_invalid_octal @08; }; }
+module my_module { struct MyStruct { int32 a_invalid_octal@08; }; }
 """
     with self.assertRaisesRegexp(
         lexer.LexError,
@@ -277,7 +342,7 @@ module my_module { struct MyStruct { int32 a_invalid_octal @08; }; }
       parser.Parse(source3, "my_file.mojom")
 
     source4 = """\
-module my_module { struct MyStruct { int32 a_hex @0x1aB9; }; }
+module my_module { struct MyStruct { int32 a_hex@0x1aB9; }; }
 """
     with self.assertRaisesRegexp(
         lexer.LexError,
@@ -286,7 +351,7 @@ module my_module { struct MyStruct { int32 a_hex @0x1aB9; }; }
       parser.Parse(source4, "my_file.mojom")
 
     source5 = """\
-module my_module { struct MyStruct { int32 a_hex @0X0; }; }
+module my_module { struct MyStruct { int32 a_hex@0X0; }; }
 """
     with self.assertRaisesRegexp(
         lexer.LexError,
@@ -296,18 +361,18 @@ module my_module { struct MyStruct { int32 a_hex @0X0; }; }
 
     source6 = """\
 struct MyStruct {
-  int32 a_too_big @999999999999;
+  int32 a_too_big@999999999999;
 };
 """
     with self.assertRaisesRegexp(
         parser.ParseError,
         r"^my_file\.mojom:2: Error: "
             r"Ordinal value 999999999999 too large:\n"
-            r"  int32 a_too_big @999999999999;$"):
+            r"  int32 a_too_big@999999999999;$"):
       parser.Parse(source6, "my_file.mojom")
 
   def testNestedNamespace(self):
-    """Tests nested namespaces work."""
+    """Tests that "nested" namespaces work."""
     source = """\
 module my.mod {
 
@@ -320,10 +385,121 @@ struct MyStruct {
     expected = \
 [('MODULE',
   'my.mod',
+  None,
   [('STRUCT',
     'MyStruct',
     None,
     [('FIELD', 'int32', 'a', ast.Ordinal(None), None)])])]
+    self.assertEquals(parser.Parse(source, "my_file.mojom"), expected)
+
+  def testValidHandleTypes(self):
+    """Tests (valid) handle types."""
+    source = """\
+struct MyStruct {
+  handle a;
+  handle<data_pipe_consumer> b;
+  handle <data_pipe_producer> c;
+  handle < message_pipe > d;
+  handle
+    < shared_buffer
+    > e;
+};
+"""
+    expected = \
+[('MODULE',
+  '',
+  None,
+  [('STRUCT',
+    'MyStruct',
+    None,
+    [('FIELD', 'handle', 'a', ast.Ordinal(None), None),
+     ('FIELD', 'handle<data_pipe_consumer>', 'b', ast.Ordinal(None), None),
+     ('FIELD', 'handle<data_pipe_producer>', 'c', ast.Ordinal(None), None),
+     ('FIELD', 'handle<message_pipe>', 'd', ast.Ordinal(None), None),
+     ('FIELD', 'handle<shared_buffer>', 'e', ast.Ordinal(None), None)])])]
+    self.assertEquals(parser.Parse(source, "my_file.mojom"), expected)
+
+  def testInvalidHandleType(self):
+    """Tests an invalid (unknown) handle type."""
+    source = """\
+struct MyStruct {
+  handle<wtf_is_this> foo;
+};
+"""
+    with self.assertRaisesRegexp(
+        parser.ParseError,
+        r"^my_file\.mojom:2: Error: "
+            r"Invalid handle type 'wtf_is_this':\n"
+            r"  handle<wtf_is_this> foo;$"):
+      parser.Parse(source, "my_file.mojom")
+
+  def testValidDefaultValues(self):
+    """Tests default values that are valid (to the parser)."""
+    source = """\
+struct MyStruct {
+  int16 a0 = 0;
+  uint16 a1 = 0x0;
+  uint16 a2 = 0x00;
+  uint16 a3 = 0x01;
+  uint16 a4 = 0xcd;
+  int32 a5 = 12345;
+  int64 a6 = -12345;
+  int64 a7 = +12345;
+  uint32 a8 = 0x12cd3;
+  uint32 a9 = -0x12cD3;
+  uint32 a10 = +0x12CD3;
+  bool a11 = true;
+  bool a12 = false;
+  float a13 = 1.2345;
+  float a14 = -1.2345;
+  float a15 = +1.2345;
+  float a16 = 123.;
+  float a17 = .123;
+  double a18 = 1.23E10;
+  double a19 = 1.E-10;
+  double a20 = .5E+10;
+  double a21 = -1.23E10;
+  double a22 = +.123E10;
+};
+"""
+    expected = \
+[('MODULE',
+  '',
+  None,
+  [('STRUCT',
+    'MyStruct',
+    None,
+    [('FIELD', 'int16', 'a0', ast.Ordinal(None), ('EXPRESSION', ['0'])),
+     ('FIELD', 'uint16', 'a1', ast.Ordinal(None), ('EXPRESSION', ['0x0'])),
+     ('FIELD', 'uint16', 'a2', ast.Ordinal(None), ('EXPRESSION', ['0x00'])),
+     ('FIELD', 'uint16', 'a3', ast.Ordinal(None), ('EXPRESSION', ['0x01'])),
+     ('FIELD', 'uint16', 'a4', ast.Ordinal(None), ('EXPRESSION', ['0xcd'])),
+     ('FIELD', 'int32', 'a5', ast.Ordinal(None), ('EXPRESSION', ['12345'])),
+     ('FIELD', 'int64', 'a6', ast.Ordinal(None),
+      ('EXPRESSION', ['-', ('EXPRESSION', ['12345'])])),
+     ('FIELD', 'int64', 'a7', ast.Ordinal(None),
+      ('EXPRESSION', ['+', ('EXPRESSION', ['12345'])])),
+     ('FIELD', 'uint32', 'a8', ast.Ordinal(None), ('EXPRESSION', ['0x12cd3'])),
+     ('FIELD', 'uint32', 'a9', ast.Ordinal(None),
+      ('EXPRESSION', ['-', ('EXPRESSION', ['0x12cD3'])])),
+     ('FIELD', 'uint32', 'a10', ast.Ordinal(None),
+      ('EXPRESSION', ['+', ('EXPRESSION', ['0x12CD3'])])),
+     ('FIELD', 'bool', 'a11', ast.Ordinal(None), ('EXPRESSION', ['true'])),
+     ('FIELD', 'bool', 'a12', ast.Ordinal(None), ('EXPRESSION', ['false'])),
+     ('FIELD', 'float', 'a13', ast.Ordinal(None), ('EXPRESSION', ['1.2345'])),
+     ('FIELD', 'float', 'a14', ast.Ordinal(None),
+      ('EXPRESSION', ['-', ('EXPRESSION', ['1.2345'])])),
+     ('FIELD', 'float', 'a15', ast.Ordinal(None),
+      ('EXPRESSION', ['+', ('EXPRESSION', ['1.2345'])])),
+     ('FIELD', 'float', 'a16', ast.Ordinal(None), ('EXPRESSION', ['123.'])),
+     ('FIELD', 'float', 'a17', ast.Ordinal(None), ('EXPRESSION', ['.123'])),
+     ('FIELD', 'double', 'a18', ast.Ordinal(None), ('EXPRESSION', ['1.23E10'])),
+     ('FIELD', 'double', 'a19', ast.Ordinal(None), ('EXPRESSION', ['1.E-10'])),
+     ('FIELD', 'double', 'a20', ast.Ordinal(None), ('EXPRESSION', ['.5E+10'])),
+     ('FIELD', 'double', 'a21', ast.Ordinal(None),
+      ('EXPRESSION', ['-', ('EXPRESSION', ['1.23E10'])])),
+     ('FIELD', 'double', 'a22', ast.Ordinal(None),
+      ('EXPRESSION', ['+', ('EXPRESSION', ['.123E10'])]))])])]
     self.assertEquals(parser.Parse(source, "my_file.mojom"), expected)
 
 

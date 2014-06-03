@@ -16,16 +16,17 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/sys_info.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/base/locale_util.h"
 #include "chrome/browser/chromeos/idle_detector.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
-#include "chrome/browser/chromeos/login/input_events_blocker.h"
-#include "chrome/browser/chromeos/login/login_display_host.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/screens/core_oobe_actor.h"
+#include "chrome/browser/chromeos/login/ui/input_events_blocker.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
 #include "chrome/browser/chromeos/system/timezone_util.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
@@ -35,7 +36,6 @@
 #include "chromeos/ime/extension_ime_util.h"
 #include "chromeos/network/network_handler.h"
 #include "chromeos/network/network_state_handler.h"
-#include "chromeos/network/shill_property_util.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -165,6 +165,14 @@ void NetworkScreenHandler::Show() {
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableDemoMode))
     return;
+  if (base::SysInfo::IsRunningOnChromeOS()) {
+    std::string track;
+    // We're running on an actual device; if we cannot find our release track
+    // value or if the track contains "testimage", don't start demo mode.
+    if (!base::SysInfo::GetLsbReleaseValue("CHROMEOS_RELEASE_TRACK", &track) ||
+        track.find("testimage") != std::string::npos)
+      return;
+  }
 
   if (IsDerelict())
     StartIdleDetection();
@@ -302,6 +310,12 @@ void NetworkScreenHandler::OnLanguageChangedCallback(
   }
 
   self->ReloadLocalizedContent();
+
+  // We still do not have device owner, so owner settings are not applied.
+  // But Guest session can be started before owner is created, so we need to
+  // save locale settings directly here.
+  g_browser_process->local_state()->SetString(prefs::kApplicationLocale,
+                                              self->selected_language_code_);
 
   AccessibilityManager::Get()->OnLocaleChanged();
 }

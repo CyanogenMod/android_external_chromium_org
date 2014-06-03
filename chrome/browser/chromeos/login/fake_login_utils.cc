@@ -7,12 +7,13 @@
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/login/login_display_host.h"
-#include "chrome/browser/chromeos/login/mock_authenticator.h"
-#include "chrome/browser/chromeos/login/supervised_user_manager.h"
-#include "chrome/browser/chromeos/login/user.h"
+#include "chrome/browser/chromeos/login/auth/mock_authenticator.h"
+#include "chrome/browser/chromeos/login/auth/user_context.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host.h"
 #include "chrome/browser/chromeos/login/user_flow.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
@@ -59,8 +60,8 @@ void FakeLoginUtils::PrepareProfile(const UserContext& user_context,
                                     bool has_active_session,
                                     LoginUtils::Delegate* delegate) {
   UserManager::Get()->UserLoggedIn(
-      user_context.username, user_context.username_hash, false);
-  User* user = UserManager::Get()->FindUserAndModify(user_context.username);
+      user_context.GetUserID(), user_context.GetUserIDHash(), false);
+  User* user = UserManager::Get()->FindUserAndModify(user_context.GetUserID());
   DCHECK(user);
 
   // Make sure that we get the real Profile instead of the login Profile.
@@ -100,8 +101,7 @@ void FakeLoginUtils::SetFirstLoginPrefs(PrefService* prefs) {
 
 scoped_refptr<Authenticator> FakeLoginUtils::CreateAuthenticator(
     LoginStatusConsumer* consumer) {
-  authenticator_ =
-      new MockAuthenticator(consumer, expected_username_, expected_password_);
+  authenticator_ = new MockAuthenticator(consumer, expected_user_context_);
   return authenticator_;
 }
 
@@ -113,13 +113,11 @@ void FakeLoginUtils::InitRlzDelayed(Profile* user_profile) {
   NOTREACHED() << "Method not implemented.";
 }
 
-void FakeLoginUtils::SetExpectedCredentials(const std::string& username,
-                                            const std::string& password) {
-  expected_username_ = username;
-  expected_password_ = password;
-  if (authenticator_.get()) {
+void FakeLoginUtils::SetExpectedCredentials(const UserContext& user_context) {
+  expected_user_context_ = user_context;
+  if (authenticator_) {
     static_cast<MockAuthenticator*>(authenticator_.get())->
-        SetExpectedCredentials(username, password);
+        SetExpectedCredentials(user_context);
   }
 }
 

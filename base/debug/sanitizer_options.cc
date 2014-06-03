@@ -70,3 +70,40 @@ const char *__asan_default_options() {
 }
 #endif  // OS_LINUX || OS_MACOSX
 #endif  // ADDRESS_SANITIZER
+
+#if defined(THREAD_SANITIZER) && defined(OS_LINUX)
+// Default options for ThreadSanitizer in various configurations:
+//   detect_deadlocks=1 - enable deadlock (lock inversion) detection.
+//   second_deadlock_stack=1 - more verbose deadlock reports.
+//   report_signal_unsafe=0 - do not report async-signal-unsafe functions
+//     called from signal handlers.
+//   report_thread_leaks=0 - do not report unjoined threads at the end of
+//     the program execution.
+//   print_suppressions=1 - print the list of matched suppressions.
+const char kTsanDefaultOptions[] =
+    "detect_deadlocks=1 second_deadlock_stack=1 report_signal_unsafe=0 "
+    "report_thread_leaks=0 print_suppressions=1 ";
+
+extern "C"
+__attribute__((no_sanitize_thread))
+__attribute__((visibility("default")))
+// The function isn't referenced from the executable itself. Make sure it isn't
+// stripped by the linker.
+__attribute__((used))
+const char *__tsan_default_options() {
+  return kTsanDefaultOptions;
+}
+
+extern "C" char kTSanDefaultSuppressions[];
+
+extern "C"
+__attribute__((no_sanitize_thread))
+__attribute__((visibility("default")))
+// The function isn't referenced from the executable itself. Make sure it isn't
+// stripped by the linker.
+__attribute__((used))
+const char *__tsan_default_suppressions() {
+  return kTSanDefaultSuppressions;
+}
+
+#endif  // THREAD_SANITIZER && OS_LINUX

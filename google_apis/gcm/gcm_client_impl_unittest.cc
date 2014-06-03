@@ -10,7 +10,7 @@
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/time/clock.h"
-#include "components/os_crypt/os_crypt_switches.h"
+#include "google_apis/gcm/base/fake_encryptor.h"
 #include "google_apis/gcm/base/mcs_message.h"
 #include "google_apis/gcm/base/mcs_util.h"
 #include "google_apis/gcm/engine/fake_connection_factory.h"
@@ -42,7 +42,6 @@ enum LastEvent {
 const uint64 kDeviceAndroidId = 54321;
 const uint64 kDeviceSecurityToken = 12345;
 const int64 kSettingsCheckinInterval = 16 * 60 * 60;
-const char kSettingsDefaultDigest[] = "default_digest";
 const char kAppId[] = "app_id";
 const char kSender[] = "project_id";
 const char kSender2[] = "project_id2";
@@ -250,6 +249,7 @@ class GCMClientImplTest : public testing::Test,
       const std::string& app_id,
       const gcm::GCMClient::SendErrorDetails& send_error_details) OVERRIDE;
   virtual void OnGCMReady() OVERRIDE;
+  virtual void OnActivityRecorded() OVERRIDE {}
 
   GCMClientImpl* gcm_client() const { return gcm_client_.get(); }
   FakeMCSClient* mcs_client() const {
@@ -329,10 +329,6 @@ GCMClientImplTest::~GCMClientImplTest() {}
 
 void GCMClientImplTest::SetUp() {
   testing::Test::SetUp();
-#if defined(OS_MACOSX)
-  base::CommandLine::ForCurrentProcess()->AppendSwitch(
-      os_crypt::switches::kUseMockKeychain);
-#endif  // OS_MACOSX
   ASSERT_TRUE(CreateUniqueTempDir());
   InitializeLoop();
   BuildGCMClient(base::TimeDelta());
@@ -392,6 +388,7 @@ void GCMClientImplTest::CompleteCheckin(
       setting->set_name(it->first);
       setting->set_value(it->second);
     }
+    response.set_settings_diff(false);
   }
 
   std::string response_string;
@@ -447,16 +444,17 @@ void GCMClientImplTest::InitializeGCMClient() {
   clock()->Advance(base::TimeDelta::FromMilliseconds(1));
 
   // Actual initialization.
-  checkin_proto::ChromeBuildProto chrome_build_proto;
-  gcm_client_->Initialize(chrome_build_proto,
+  GCMClient::ChromeBuildInfo chrome_build_info;
+  gcm_client_->Initialize(chrome_build_info,
                           temp_directory_.path(),
                           std::vector<std::string>(),
                           message_loop_.message_loop_proxy(),
                           url_request_context_getter_,
+                          make_scoped_ptr<Encryptor>(new FakeEncryptor),
                           this);
 
   // Start loading and check-in.
-  gcm_client_->Load();
+  gcm_client_->Start();
 
   PumpLoopUntilIdle();
 }
@@ -689,8 +687,6 @@ class GCMClientImplCheckinTest : public GCMClientImplTest {
   virtual ~GCMClientImplCheckinTest();
 
   virtual void SetUp() OVERRIDE;
-
-  std::map<std::string, std::string> GenerateSettings(int64 checkin_interval);
 };
 
 GCMClientImplCheckinTest::GCMClientImplCheckinTest() {
@@ -701,10 +697,6 @@ GCMClientImplCheckinTest::~GCMClientImplCheckinTest() {
 
 void GCMClientImplCheckinTest::SetUp() {
   testing::Test::SetUp();
-#if defined(OS_MACOSX)
-  base::CommandLine::ForCurrentProcess()->AppendSwitch(
-      os_crypt::switches::kUseMockKeychain);
-#endif  // OS_MACOSX
   // Creating unique temp directory that will be used by GCMStore shared between
   // GCM Client and G-services settings.
   ASSERT_TRUE(CreateUniqueTempDir());
@@ -718,19 +710,23 @@ TEST_F(GCMClientImplCheckinTest, GServicesSettingsAfterInitialCheckin) {
   std::map<std::string, std::string> settings;
   settings["checkin_interval"] = base::Int64ToString(kSettingsCheckinInterval);
   settings["checkin_url"] = "http://alternative.url/checkin";
-  settings["gcm_hostname"] = "http://alternative.gcm.host";
-  settings["gcm_secure_port"] = "443";
+  settings["gcm_hostname"] = "alternative.gcm.host";
+  settings["gcm_secure_port"] = "7777";
   settings["gcm_registration_url"] = "http://alternative.url/registration";
-  CompleteCheckin(
-      kDeviceAndroidId, kDeviceSecurityToken, kSettingsDefaultDigest, settings);
+  CompleteCheckin(kDeviceAndroidId,
+                  kDeviceSecurityToken,
+                  GServicesSettings::CalculateDigest(settings),
+                  settings);
   EXPECT_EQ(base::TimeDelta::FromSeconds(kSettingsCheckinInterval),
-            gservices_settings().checkin_interval());
+            gservices_settings().GetCheckinInterval());
   EXPECT_EQ(GURL("http://alternative.url/checkin"),
-            gservices_settings().checkin_url());
+            gservices_settings().GetCheckinURL());
   EXPECT_EQ(GURL("http://alternative.url/registration"),
-            gservices_settings().registration_url());
-  EXPECT_EQ("http://alternative.gcm.host", gservices_settings().mcs_hostname());
-  EXPECT_EQ(443, gservices_settings().mcs_secure_port());
+            gservices_settings().GetRegistrationURL());
+  EXPECT_EQ(GURL("https://alternative.gcm.host:7777"),
+            gservices_settings().GetMCSMainEndpoint());
+  EXPECT_EQ(GURL("https://alternative.gcm.host:443"),
+            gservices_settings().GetMCSFallbackEndpoint());
 }
 
 // This test only checks that periodic checkin happens.
@@ -738,39 +734,47 @@ TEST_F(GCMClientImplCheckinTest, PeriodicCheckin) {
   std::map<std::string, std::string> settings;
   settings["checkin_interval"] = base::IntToString(kSettingsCheckinInterval);
   settings["checkin_url"] = "http://alternative.url/checkin";
-  settings["gcm_hostname"] = "http://alternative.gcm.host";
-  settings["gcm_secure_port"] = "443";
+  settings["gcm_hostname"] = "alternative.gcm.host";
+  settings["gcm_secure_port"] = "7777";
   settings["gcm_registration_url"] = "http://alternative.url/registration";
-  CompleteCheckin(
-      kDeviceAndroidId, kDeviceSecurityToken, kSettingsDefaultDigest, settings);
+  CompleteCheckin(kDeviceAndroidId,
+                  kDeviceSecurityToken,
+                  GServicesSettings::CalculateDigest(settings),
+                  settings);
   EXPECT_EQ(2, clock()->call_count());
 
   PumpLoopUntilIdle();
-  CompleteCheckin(
-      kDeviceAndroidId, kDeviceSecurityToken, kSettingsDefaultDigest, settings);
+  CompleteCheckin(kDeviceAndroidId,
+                  kDeviceSecurityToken,
+                  GServicesSettings::CalculateDigest(settings),
+                  settings);
 }
 
 TEST_F(GCMClientImplCheckinTest, LoadGSettingsFromStore) {
   std::map<std::string, std::string> settings;
   settings["checkin_interval"] = base::IntToString(kSettingsCheckinInterval);
   settings["checkin_url"] = "http://alternative.url/checkin";
-  settings["gcm_hostname"] = "http://alternative.gcm.host";
-  settings["gcm_secure_port"] = "443";
+  settings["gcm_hostname"] = "alternative.gcm.host";
+  settings["gcm_secure_port"] = "7777";
   settings["gcm_registration_url"] = "http://alternative.url/registration";
-  CompleteCheckin(
-      kDeviceAndroidId, kDeviceSecurityToken, kSettingsDefaultDigest, settings);
+  CompleteCheckin(kDeviceAndroidId,
+                  kDeviceSecurityToken,
+                  GServicesSettings::CalculateDigest(settings),
+                  settings);
 
   BuildGCMClient(base::TimeDelta());
   InitializeGCMClient();
 
   EXPECT_EQ(base::TimeDelta::FromSeconds(kSettingsCheckinInterval),
-            gservices_settings().checkin_interval());
+            gservices_settings().GetCheckinInterval());
   EXPECT_EQ(GURL("http://alternative.url/checkin"),
-            gservices_settings().checkin_url());
+            gservices_settings().GetCheckinURL());
   EXPECT_EQ(GURL("http://alternative.url/registration"),
-            gservices_settings().registration_url());
-  EXPECT_EQ("http://alternative.gcm.host", gservices_settings().mcs_hostname());
-  EXPECT_EQ(443, gservices_settings().mcs_secure_port());
+            gservices_settings().GetRegistrationURL());
+  EXPECT_EQ(GURL("https://alternative.gcm.host:7777"),
+            gservices_settings().GetMCSMainEndpoint());
+  EXPECT_EQ(GURL("https://alternative.gcm.host:443"),
+            gservices_settings().GetMCSFallbackEndpoint());
 }
 
 }  // namespace gcm

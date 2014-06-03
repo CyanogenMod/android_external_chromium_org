@@ -21,6 +21,9 @@ class GURL;
 
 namespace content {
 
+#if defined(OS_ANDROID)
+class RendererCdmManager;
+#endif
 class WebContentDecryptionModuleSessionImpl;
 
 // Owns the CDM instance and makes calls from session objects to the CDM.
@@ -35,6 +38,8 @@ class CdmSessionAdapter : public base::RefCounted<CdmSessionAdapter> {
   bool Initialize(
 #if defined(ENABLE_PEPPER_CDMS)
       const CreatePepperCdmCB& create_pepper_cdm_cb,
+#elif defined(OS_ANDROID)
+      RendererCdmManager* manager,
 #endif
       const std::string& key_system,
       const GURL& security_origin);
@@ -84,7 +89,7 @@ class CdmSessionAdapter : public base::RefCounted<CdmSessionAdapter> {
   void OnSessionCreated(uint32 session_id, const std::string& web_session_id);
   void OnSessionMessage(uint32 session_id,
                         const std::vector<uint8>& message,
-                        const std::string& destination_url);
+                        const GURL& destination_url);
   void OnSessionReady(uint32 session_id);
   void OnSessionClosed(uint32 session_id);
   void OnSessionError(uint32 session_id,

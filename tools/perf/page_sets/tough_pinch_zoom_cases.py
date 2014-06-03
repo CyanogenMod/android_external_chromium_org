@@ -30,7 +30,7 @@ class GoogleSearchPage(ToughPinchZoomCasesPage):
       page_set=page_set)
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
+    action_runner.NavigateToPage(self)
     action_runner.RunAction(WaitAction(
       {
         'text': 'Next',
@@ -50,7 +50,7 @@ class GmailPage(ToughPinchZoomCasesPage):
     self.credentials = 'google'
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
+    action_runner.NavigateToPage(self)
     action_runner.RunAction(WaitAction(
       {
         'javascript' : (
@@ -71,14 +71,14 @@ class GoogleCalendarPage(ToughPinchZoomCasesPage):
     self.credentials = 'google'
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
+    action_runner.NavigateToPage(self)
     action_runner.RunAction(WaitAction({'seconds':2}))
 
   def RunSmoothness(self, action_runner):
     action_runner.RunAction(PinchAction(
       {
         'left_anchor_percentage': 0.1,
-        'top_anchor_percentage': 0.1
+        'top_anchor_percentage': 0.3
       }))
 
 
@@ -106,7 +106,7 @@ class GooglePlusPage(ToughPinchZoomCasesPage):
     self.credentials = 'google'
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
+    action_runner.NavigateToPage(self)
     action_runner.RunAction(WaitAction(
       {
         'text': 'Home',
@@ -118,7 +118,7 @@ class GooglePlusPage(ToughPinchZoomCasesPage):
       {
         'element_function': '''
           function(callback) {
-            callback(document.getElementsByClassName("Ct")[0])
+            callback(document.getElementById("110031535020051778989-tab-bar"))
           }'''
       }))
 
@@ -135,7 +135,7 @@ class YoutubePage(ToughPinchZoomCasesPage):
     self.credentials = 'google'
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
+    action_runner.NavigateToPage(self)
     action_runner.RunAction(WaitAction({'seconds':2}))
 
 class BlogSpotPage(ToughPinchZoomCasesPage):
@@ -151,7 +151,7 @@ class BlogSpotPage(ToughPinchZoomCasesPage):
       page_set=page_set, name='Blogger')
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
+    action_runner.NavigateToPage(self)
     action_runner.RunAction(WaitAction(
       {
         'text': 'accessibility',
@@ -170,7 +170,7 @@ class FacebookPage(ToughPinchZoomCasesPage):
     self.credentials = 'facebook'
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
+    action_runner.NavigateToPage(self)
     action_runner.RunAction(WaitAction(
       {
         'text': 'About',
@@ -208,7 +208,7 @@ class TwitterPage(ToughPinchZoomCasesPage):
       page_set=page_set, name='Twitter')
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
+    action_runner.NavigateToPage(self)
     action_runner.RunAction(WaitAction({'seconds':2}))
 
 class ESPNPage(ToughPinchZoomCasesPage):
@@ -242,8 +242,28 @@ class YahooGamePage(ToughPinchZoomCasesPage):
       page_set=page_set)
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
+    action_runner.NavigateToPage(self)
     action_runner.RunAction(WaitAction({'seconds':2}))
+
+
+class YahooAnswersPage(ToughPinchZoomCasesPage):
+
+  """ Why: #1 Alexa reference """
+
+  def __init__(self, page_set):
+    super(YahooAnswersPage, self).__init__(
+      url='http://answers.yahoo.com',
+      page_set=page_set)
+
+  def RunSmoothness(self, action_runner):
+    action_runner.RunAction(PinchAction(
+      {
+        'element_function': '''
+          function(callback) {
+            callback(document.getElementById("ya-content-apps"))
+          }'''
+      }))
+
 
 class ToughPinchZoomCasesPageSet(page_set_module.PageSet):
 
@@ -288,8 +308,7 @@ class ToughPinchZoomCasesPageSet(page_set_module.PageSet):
     # Why: #1 Alexa recreation
     self.AddPage(ToughPinchZoomCasesPage('http://booking.com', self))
 
-    # Why: #1 Alexa reference
-    self.AddPage(ToughPinchZoomCasesPage('http://answers.yahoo.com', self))
+    self.AddPage(YahooAnswersPage(self))
 
     # Why: #1 Alexa sports
     self.AddPage(ToughPinchZoomCasesPage('http://sports.yahoo.com/', self))

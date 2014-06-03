@@ -138,6 +138,17 @@ void VolumeInfoToVolumeMetadata(
         new std::string(volume_info.source_path.AsUTF8Unsafe()));
   }
 
+  if (volume_info.type == VOLUME_TYPE_PROVIDED) {
+    volume_metadata->extension_id.reset(
+        new std::string(volume_info.extension_id));
+
+    volume_metadata->file_system_id.reset(
+        new std::string(volume_info.file_system_id));
+  }
+
+  volume_metadata->volume_label.reset(
+      new std::string(volume_info.volume_label));
+
   switch (volume_info.type) {
     case VOLUME_TYPE_GOOGLE_DRIVE:
       volume_metadata->volume_type =
@@ -168,6 +179,9 @@ void VolumeInfoToVolumeMetadata(
       volume_metadata->volume_type =
           file_browser_private::VOLUME_TYPE_TESTING;
       break;
+    case NUM_VOLUME_TYPE:
+      NOTREACHED();
+      break;
   }
 
   // Fill device_type iff the volume is removable partition.
@@ -194,8 +208,6 @@ void VolumeInfoToVolumeMetadata(
     }
     volume_metadata->device_path.reset(
         new std::string(volume_info.system_path_prefix.AsUTF8Unsafe()));
-    volume_metadata->device_label.reset(
-        new std::string(volume_info.drive_label));
     volume_metadata->is_parent_device.reset(
         new bool(volume_info.is_parent));
   } else {

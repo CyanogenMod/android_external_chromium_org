@@ -92,7 +92,6 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   virtual bool ShouldUseNativeFrame() const OVERRIDE;
   virtual bool ShouldWindowContentsBeTransparent() const OVERRIDE;
   virtual void FrameTypeChanged() OVERRIDE;
-  virtual NonClientFrameView* CreateNonClientFrameView() OVERRIDE;
   virtual void SetFullscreen(bool fullscreen) OVERRIDE;
   virtual bool IsFullscreen() const OVERRIDE;
   virtual void SetOpacity(unsigned char opacity) OVERRIDE;
@@ -204,6 +203,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
                              WPARAM w_param,
                              LPARAM l_param) OVERRIDE;
   virtual bool HandleScrollEvent(const ui::ScrollEvent& event) OVERRIDE;
+  virtual void HandleWindowSizeChanging() OVERRIDE;
 
   Widget* GetWidget();
   const Widget* GetWidget() const;

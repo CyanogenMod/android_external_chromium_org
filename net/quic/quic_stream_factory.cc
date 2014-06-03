@@ -56,6 +56,17 @@ enum CreateSessionFailure {
 // The initial receive window size for both streams and sessions.
 const int32 kInitialReceiveWindowSize = 10 * 1024 * 1024;  // 10MB
 
+// The suggested initial congestion windows for a server to use.
+// TODO: This should be tested and optimized, and even better, suggest a window
+// that corresponds to historical bandwidth and min-RTT.
+// Larger initial congestion windows can, if we don't overshoot, reduce latency
+// by avoiding the RTT needed for slow start to double (and re-double) from a
+// default of 10.
+// We match SPDY's use of 32 when secure (since we'd compete with SPDY).
+const int32 kServerSecureInitialCongestionWindow = 32;
+// Be conservative, and just use double a typical TCP  ICWND for HTTP.
+const int32 kServerInecureInitialCongestionWindow = 20;
+
 void HistogramCreateSessionFailure(enum CreateSessionFailure error) {
   UMA_HISTOGRAM_ENUMERATION("Net.QuicSession.CreationError", error,
                             CREATION_ERROR_MAX);
@@ -324,7 +335,7 @@ int QuicStreamFactory::Job::DoConnectComplete(int rv) {
   // existing session instead.
   AddressList address(session_->connection()->peer_address());
   if (factory_->OnResolution(server_id_, address)) {
-    session_->connection()->SendConnectionClose(QUIC_NO_ERROR);
+    session_->connection()->SendConnectionClose(QUIC_CONNECTION_IP_POOLED);
     session_ = NULL;
     return OK;
   }
@@ -571,9 +582,9 @@ void QuicStreamFactory::OnSessionGoingAway(QuicClientSession* session) {
     }
 
     active_sessions_.erase(*it);
-    ProcessGoingAwaySession(session, *it);
+    ProcessGoingAwaySession(session, *it, true);
   }
-  ProcessGoingAwaySession(session, all_sessions_[session]);
+  ProcessGoingAwaySession(session, all_sessions_[session], false);
   if (!aliases.empty()) {
     const IpAliasKey ip_alias_key(session->connection()->peer_address(),
                                   aliases.begin()->is_https());
@@ -736,13 +747,16 @@ int QuicStreamFactory::CreateSession(
 
   QuicConnection* connection =
       new QuicConnection(connection_id, addr, helper_.get(), writer.get(),
-                         false, supported_versions_, kInitialReceiveWindowSize);
+                         false, supported_versions_);
   writer->SetConnection(connection);
   connection->options()->max_packet_length = max_packet_length_;
 
   InitializeCachedStateInCryptoConfig(server_id, server_info);
 
   QuicConfig config = config_;
+  config_.SetInitialCongestionWindowToSend(
+      server_id.is_https() ? kServerSecureInitialCongestionWindow
+                           : kServerInecureInitialCongestionWindow);
   if (http_server_properties_) {
     const HttpServerProperties::NetworkStats* stats =
         http_server_properties_->GetServerNetworkStats(
@@ -755,7 +769,7 @@ int QuicStreamFactory::CreateSession(
   *session = new QuicClientSession(
       connection, socket.Pass(), writer.Pass(), this,
       quic_crypto_client_stream_factory_, server_info.Pass(), server_id,
-      config, &crypto_config_, net_log.net_log());
+      config, kInitialReceiveWindowSize, &crypto_config_, net_log.net_log());
   all_sessions_[*session] = server_id;  // owning pointer
   return OK;
 }
@@ -802,12 +816,25 @@ void QuicStreamFactory::InitializeCachedStateInCryptoConfig(
 
 void QuicStreamFactory::ProcessGoingAwaySession(
     QuicClientSession* session,
-    const QuicServerId& server_id) {
+    const QuicServerId& server_id,
+    bool session_was_active) {
   if (!http_server_properties_)
     return;
 
   const QuicConnectionStats& stats = session->connection()->GetStats();
-  if (!session->IsCryptoHandshakeConfirmed()) {
+  if (session->IsCryptoHandshakeConfirmed()) {
+    HttpServerProperties::NetworkStats network_stats;
+    network_stats.srtt = base::TimeDelta::FromMicroseconds(stats.srtt_us);
+    network_stats.bandwidth_estimate = stats.estimated_bandwidth;
+    http_server_properties_->SetServerNetworkStats(server_id.host_port_pair(),
+                                                   network_stats);
+    return;
+  }
+
+  UMA_HISTOGRAM_COUNTS("Net.QuicHandshakeNotConfirmedNumPacketsReceived",
+                       stats.packets_received);
+
+  if (session_was_active) {
     // TODO(rch):  In the special case where the session has received no
     // packets from the peer, we should consider blacklisting this
     // differently so that we still race TCP but we don't consider the
@@ -816,16 +843,7 @@ void QuicStreamFactory::ProcessGoingAwaySession(
         BROKEN_ALTERNATE_PROTOCOL_LOCATION_QUIC_STREAM_FACTORY);
     http_server_properties_->SetBrokenAlternateProtocol(
         server_id.host_port_pair());
-    UMA_HISTOGRAM_COUNTS("Net.QuicHandshakeNotConfirmedNumPacketsReceived",
-                         stats.packets_received);
-    return;
   }
-
-  HttpServerProperties::NetworkStats network_stats;
-  network_stats.srtt = base::TimeDelta::FromMicroseconds(stats.srtt_us);
-  network_stats.bandwidth_estimate = stats.estimated_bandwidth;
-  http_server_properties_->SetServerNetworkStats(server_id.host_port_pair(),
-                                                 network_stats);
 }
 
 }  // namespace net

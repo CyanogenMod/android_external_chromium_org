@@ -10,8 +10,8 @@
 #include "base/compiler_specific.h"
 #include "chrome/browser/sync/glue/bookmark_model_associator.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
-#include "components/bookmarks/core/browser/bookmark_model_observer.h"
-#include "components/bookmarks/core/browser/bookmark_node.h"
+#include "components/bookmarks/browser/bookmark_model_observer.h"
+#include "components/bookmarks/browser/bookmark_node.h"
 #include "components/sync_driver/change_processor.h"
 #include "components/sync_driver/data_type_error_handler.h"
 
@@ -133,6 +133,13 @@ class BookmarkChangeProcessor : public BookmarkModelObserver,
                               BookmarkModelAssociator* associator,
                               DataTypeErrorHandler* error_handler);
 
+  // Update |bookmark_node|'s sync node.
+  static int64 UpdateSyncNode(const BookmarkNode* bookmark_node,
+                              BookmarkModel* model,
+                              syncer::WriteTransaction* trans,
+                              BookmarkModelAssociator* associator,
+                              DataTypeErrorHandler* error_handler);
+
   // Update transaction version of |model| and |nodes| to |new_version| if
   // it's valid.
   static void UpdateTransactionVersion(
@@ -195,6 +202,9 @@ class BookmarkChangeProcessor : public BookmarkModelObserver,
 
   // Remove all the sync nodes associated with |node| and its children.
   void RemoveSyncNodeHierarchy(const BookmarkNode* node);
+
+  // Creates or updates a sync node associated with |node|.
+  void CreateOrUpdateSyncNode(const BookmarkNode* node);
 
   // The bookmark model we are processing changes from.  Non-NULL when
   // |running_| is true.

@@ -8,6 +8,7 @@
 #include <set>
 #include <vector>
 
+#include "base/base_paths.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
@@ -36,21 +37,22 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
+#include "chrome/browser/chromeos/login/auth/parallel_authenticator.h"
+#include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/chrome_restart_request.h"
 #include "chrome/browser/chromeos/login/demo_mode/demo_app_launcher.h"
-#include "chrome/browser/chromeos/login/input_events_blocker.h"
-#include "chrome/browser/chromeos/login/login_display_host.h"
-#include "chrome/browser/chromeos/login/oauth2_login_manager.h"
-#include "chrome/browser/chromeos/login/oauth2_login_manager_factory.h"
-#include "chrome/browser/chromeos/login/parallel_authenticator.h"
+#include "chrome/browser/chromeos/login/lock/screen_locker.h"
 #include "chrome/browser/chromeos/login/profile_auth_data.h"
 #include "chrome/browser/chromeos/login/saml/saml_offline_signin_limiter.h"
 #include "chrome/browser/chromeos/login/saml/saml_offline_signin_limiter_factory.h"
-#include "chrome/browser/chromeos/login/screen_locker.h"
+#include "chrome/browser/chromeos/login/signin/oauth2_login_manager.h"
+#include "chrome/browser/chromeos/login/signin/oauth2_login_manager_factory.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/login/supervised_user_manager.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/ui/input_events_blocker.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host.h"
+#include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/first_run/first_run.h"
@@ -65,7 +67,6 @@
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/app_list/start_page_service.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
-#include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/logging_chrome.h"
 #include "chrome/common/pref_names.h"
@@ -98,7 +99,9 @@ const base::FilePath::CharType kRLZDisabledFlagName[] =
     FILE_PATH_LITERAL(".rlz_disabled");
 
 base::FilePath GetRlzDisabledFlagPath() {
-  return base::GetHomeDir().Append(kRLZDisabledFlagName);
+  base::FilePath homedir;
+  PathService::Get(base::DIR_HOME, &homedir);
+  return homedir.Append(kRLZDisabledFlagName);
 }
 #endif
 
@@ -357,6 +360,8 @@ void LoginUtilsImpl::DoBrowserLaunchOnLocaleLoadedImpl(
   if (login_host)
     login_host->Finalize();
   UserManager::Get()->SessionStarted();
+  chromeos::BootTimesLoader::Get()->LoginDone(
+      chromeos::UserManager::Get()->IsCurrentUserNew());
 }
 
 void LoginUtilsImpl::DoBrowserLaunch(Profile* profile,
@@ -386,19 +391,19 @@ void LoginUtilsImpl::PrepareProfile(
     LoginUtils::Delegate* delegate) {
   BootTimesLoader* btl = BootTimesLoader::Get();
 
-  VLOG(1) << "Completing login for " << user_context.username;
+  VLOG(1) << "Completing login for " << user_context.GetUserID();
 
   if (!has_active_session) {
     btl->AddLoginTimeMarker("StartSession-Start", false);
     DBusThreadManager::Get()->GetSessionManagerClient()->StartSession(
-        user_context.username);
+        user_context.GetUserID());
     btl->AddLoginTimeMarker("StartSession-End", false);
   }
 
   btl->AddLoginTimeMarker("UserLoggedIn-Start", false);
   UserManager* user_manager = UserManager::Get();
-  user_manager->UserLoggedIn(user_context.username,
-                             user_context.username_hash,
+  user_manager->UserLoggedIn(user_context.GetUserID(),
+                             user_context.GetUserIDHash(),
                              false);
   btl->AddLoginTimeMarker("UserLoggedIn-End", false);
 
@@ -408,7 +413,7 @@ void LoginUtilsImpl::PrepareProfile(
 
   // Update user's displayed email.
   if (!display_email.empty())
-    user_manager->SaveUserDisplayEmail(user_context.username, display_email);
+    user_manager->SaveUserDisplayEmail(user_context.GetUserID(), display_email);
 
   user_context_ = user_context;
 
@@ -416,19 +421,19 @@ void LoginUtilsImpl::PrepareProfile(
   delegate_ = delegate;
   InitSessionRestoreStrategy();
 
-  if (DemoAppLauncher::IsDemoAppSession(user_context.username)) {
+  if (DemoAppLauncher::IsDemoAppSession(user_context.GetUserID())) {
     g_browser_process->profile_manager()->CreateProfileAsync(
-        user_manager->GetUserProfileDir(user_context.username),
+        user_manager->GetUserProfileDir(user_context.GetUserID()),
         base::Bind(&LoginUtilsImpl::OnOTRProfileCreated, AsWeakPtr(),
-                   user_context.username),
+                   user_context.GetUserID()),
         base::string16(), base::string16(), std::string());
   } else {
     // Can't use display_email because it is empty when existing user logs in
     // using sing-in pod on login screen (i.e. user didn't type email).
     g_browser_process->profile_manager()->CreateProfileAsync(
-        user_manager->GetUserProfileDir(user_context.username),
+        user_manager->GetUserProfileDir(user_context.GetUserID()),
         base::Bind(&LoginUtilsImpl::OnProfileCreated, AsWeakPtr(),
-                   user_context.username),
+                   user_context.GetUserID()),
         base::string16(), base::string16(), std::string());
   }
 }
@@ -478,12 +483,12 @@ void LoginUtilsImpl::InitSessionRestoreStrategy() {
     }
 
     if (command_line->HasSwitch(::switches::kAppModeAuthCode)) {
-      user_context_.auth_code = command_line->GetSwitchValueASCII(
-          ::switches::kAppModeAuthCode);
+      user_context_.SetAuthCode(command_line->GetSwitchValueASCII(
+          ::switches::kAppModeAuthCode));
     }
 
     DCHECK(!has_web_auth_cookies_);
-    if (!user_context_.auth_code.empty()) {
+    if (!user_context_.GetAuthCode().empty()) {
       session_restore_strategy_ = OAuth2LoginManager::RESTORE_FROM_AUTH_CODE;
     } else if (!oauth2_refresh_token_.empty()) {
       session_restore_strategy_ =
@@ -497,7 +502,7 @@ void LoginUtilsImpl::InitSessionRestoreStrategy() {
 
   if (has_web_auth_cookies_) {
     session_restore_strategy_ = OAuth2LoginManager::RESTORE_FROM_COOKIE_JAR;
-  } else if (!user_context_.auth_code.empty()) {
+  } else if (!user_context_.GetAuthCode().empty()) {
     session_restore_strategy_ = OAuth2LoginManager::RESTORE_FROM_AUTH_CODE;
   } else {
     session_restore_strategy_ =
@@ -554,7 +559,7 @@ void LoginUtilsImpl::UserProfileInitialized(Profile* user_profile) {
   BootTimesLoader* btl = BootTimesLoader::Get();
   btl->AddLoginTimeMarker("UserProfileGotten", false);
 
-  if (user_context_.using_oauth) {
+  if (user_context_.IsUsingOAuth()) {
     // Transfer proxy authentication cache, cookies (optionally) and server
     // bound certs from the profile that was used for authentication.  This
     // profile contains cookies that auth extension should have already put in
@@ -615,7 +620,7 @@ void LoginUtilsImpl::RestoreAuthSession(Profile* user_profile,
           : NULL,
       session_restore_strategy_,
       oauth2_refresh_token_,
-      user_context_.auth_code);
+      user_context_.GetAuthCode());
 }
 
 void LoginUtilsImpl::FinalizePrepareProfile(Profile* user_profile) {
@@ -637,7 +642,7 @@ void LoginUtilsImpl::FinalizePrepareProfile(Profile* user_profile) {
     SAMLOfflineSigninLimiter* saml_offline_signin_limiter =
         SAMLOfflineSigninLimiterFactory::GetForProfile(user_profile);
     if (saml_offline_signin_limiter)
-      saml_offline_signin_limiter->SignedIn(user_context_.auth_flow);
+      saml_offline_signin_limiter->SignedIn(user_context_.GetAuthFlow());
   }
 
   user_profile->OnLogin();

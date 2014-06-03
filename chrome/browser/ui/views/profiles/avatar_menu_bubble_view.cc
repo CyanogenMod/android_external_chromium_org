@@ -220,7 +220,7 @@ class ProfileItemView : public views::CustomButton,
                   AvatarMenuBubbleView* parent,
                   AvatarMenu* menu);
 
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
@@ -297,7 +297,7 @@ ProfileItemView::ProfileItemView(const AvatarMenu::Item& item,
   OnHighlightStateChanged();
 }
 
-gfx::Size ProfileItemView::GetPreferredSize() {
+gfx::Size ProfileItemView::GetPreferredSize() const {
   int text_width = std::max(name_label_->GetPreferredSize().width(),
                             sync_state_label_->GetPreferredSize().width());
   text_width = std::max(edit_link_->GetPreferredSize().width(), text_width);
@@ -485,6 +485,7 @@ bool AvatarMenuBubbleView::close_on_deactivate_for_testing_ = true;
 void AvatarMenuBubbleView::ShowBubble(
     views::View* anchor_view,
     views::BubbleBorder::Arrow arrow,
+    views::BubbleBorder::ArrowPaintType arrow_paint_type,
     views::BubbleBorder::BubbleAlignment border_alignment,
     const gfx::Rect& anchor_rect,
     Browser* browser) {
@@ -498,6 +499,7 @@ void AvatarMenuBubbleView::ShowBubble(
   avatar_bubble_->set_close_on_deactivate(close_on_deactivate_for_testing_);
   avatar_bubble_->SetBackgroundColors();
   avatar_bubble_->SetAlignment(border_alignment);
+  avatar_bubble_->SetArrowPaintType(arrow_paint_type);
   avatar_bubble_->GetWidget()->Show();
 }
 
@@ -535,7 +537,7 @@ AvatarMenuBubbleView::AvatarMenuBubbleView(
 AvatarMenuBubbleView::~AvatarMenuBubbleView() {
 }
 
-gfx::Size AvatarMenuBubbleView::GetPreferredSize() {
+gfx::Size AvatarMenuBubbleView::GetPreferredSize() const {
   const int kBubbleViewMinWidth = 175;
   gfx::Size preferred_size(kBubbleViewMinWidth, 0);
   for (size_t i = 0; i < item_views_.size(); ++i) {
@@ -698,7 +700,7 @@ void AvatarMenuBubbleView::LinkClicked(views::Link* source, int event_flags) {
   }
 }
 
-gfx::Rect AvatarMenuBubbleView::GetAnchorRect() {
+gfx::Rect AvatarMenuBubbleView::GetAnchorRect() const {
   return anchor_rect_;
 }
 

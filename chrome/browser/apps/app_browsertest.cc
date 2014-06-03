@@ -33,13 +33,14 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/test/test_utils.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/pref_names.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -47,8 +48,8 @@
 
 #if defined(OS_CHROMEOS)
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/chromeos/login/mock_user_manager.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/mock_user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "chromeos/dbus/fake_power_manager_client.h"
@@ -949,13 +950,14 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, ReloadRelaunches) {
 
 namespace {
 
-// Simple observer to check for NOTIFICATION_EXTENSION_INSTALLED events to
+// Simple observer to check for NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED
+// events to
 // ensure installation does or does not occur in certain scenarios.
 class CheckExtensionInstalledObserver : public content::NotificationObserver {
  public:
   CheckExtensionInstalledObserver() : seen_(false) {
     registrar_.Add(this,
-                   chrome::NOTIFICATION_EXTENSION_INSTALLED,
+                   chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
                    content::NotificationService::AllSources());
   }
 
@@ -1017,7 +1019,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
   // should not cause it to be re-installed. Instead, we wait for the OnLaunched
   // in a different observer (which would timeout if not the app was not
   // previously installed properly) and then check this observer to make sure it
-  // never saw the NOTIFICATION_EXTENSION_INSTALLED event.
+  // never saw the NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED event.
   CheckExtensionInstalledObserver should_not_install;
   const Extension* extension = LoadExtensionAsComponent(
       test_data_dir_.AppendASCII("platform_apps").AppendASCII("component"));
@@ -1100,23 +1102,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_WebContentsHasFocus) {
                   ->HasFocus());
 }
 
-// The next three tests will only run automatically with Chrome branded builds
-// because they require the PDF preview plug-in. To run these tests manually for
-// Chromium (non-Chrome branded) builds in a development environment:
-//
-//   1) Remove "MAYBE_" in the first line of each test definition
-//   2) Build Chromium browser_tests
-//   3) Make a copy of the PDF plug-in from a recent version of Chrome (Canary
-//      or a recent development build) to your Chromium build:
-//      - On Linux and Chrome OS, copy /opt/google/chrome/libpdf.so to
-//        <path-to-your-src>/out/Debug
-//      - On OS X, copy PDF.plugin from
-//        <recent-chrome-app-folder>/*/*/*/*/"Internet Plug-Ins" to
-//        <path-to-your-src>/out/Debug/Chromium.app/*/*/*/*/"Internet Plug-Ins"
-//   4) Run browser_tests with the --enable-print-preview flag
-
-#if !defined(GOOGLE_CHROME_BUILD) || \
-    (defined(GOOGLE_CHROME_BUILD) && (defined(OS_WIN) || defined(OS_LINUX)))
+#if defined(OS_WIN) || defined(OS_LINUX)
 #define MAYBE_WindowDotPrintShouldBringUpPrintPreview \
     DISABLED_WindowDotPrintShouldBringUpPrintPreview
 #else
@@ -1131,17 +1117,9 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
   preview_delegate.WaitUntilPreviewIsReady();
 }
 
-#if !defined(GOOGLE_CHROME_BUILD)
-#define MAYBE_ClosingWindowWhilePrintingShouldNotCrash \
-    DISABLED_ClosingWindowWhilePrintingShouldNotCrash
-#else
-#define MAYBE_ClosingWindowWhilePrintingShouldNotCrash \
-    ClosingWindowWhilePrintingShouldNotCrash
-#endif
-
 // This test verifies that http://crbug.com/297179 is fixed.
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
-                       MAYBE_ClosingWindowWhilePrintingShouldNotCrash) {
+                       DISABLED_ClosingWindowWhilePrintingShouldNotCrash) {
   ScopedPreviewTestingDelegate preview_delegate(false);
   ASSERT_TRUE(RunPlatformAppTest("platform_apps/print_api")) << message_;
   preview_delegate.WaitUntilPreviewIsReady();
@@ -1150,7 +1128,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
 
 // This test currently only passes on OS X (on other platforms the print preview
 // dialog's size is limited by the size of the window being printed).
-#if !defined(GOOGLE_CHROME_BUILD) || !defined(OS_MACOSX)
+#if !defined(OS_MACOSX)
 #define MAYBE_PrintPreviewShouldNotBeTooSmall \
     DISABLED_PrintPreviewShouldNotBeTooSmall
 #else

@@ -11,7 +11,6 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
 #include "base/numerics/safe_conversions.h"
-#include "base/platform_file.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/child/blink_glue.h"
@@ -38,18 +37,20 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/webplugininfo.h"
 #include "content/public/renderer/content_renderer_client.h"
+#include "content/renderer/battery_status/battery_status_dispatcher.h"
 #include "content/renderer/device_sensors/device_motion_event_pump.h"
 #include "content/renderer/device_sensors/device_orientation_event_pump.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 #include "content/renderer/gamepad_shared_memory_reader.h"
 #include "content/renderer/media/audio_decoder.h"
 #include "content/renderer/media/crypto/key_systems.h"
-#include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/renderer_webaudiodevice_impl.h"
 #include "content/renderer/media/renderer_webmidiaccessor_impl.h"
 #include "content/renderer/media/webcontentdecryptionmodule_impl.h"
+#include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_clipboard_client.h"
+#include "content/renderer/screen_orientation/mock_screen_orientation_controller.h"
 #include "content/renderer/screen_orientation/screen_orientation_dispatcher.h"
 #include "content/renderer/webclipboard_impl.h"
 #include "content/renderer/webgraphicscontext3d_provider_impl.h"
@@ -61,6 +62,7 @@
 #include "media/filters/stream_parser_factory.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_util.h"
+#include "third_party/WebKit/public/platform/WebBatteryStatusListener.h"
 #include "third_party/WebKit/public/platform/WebBlobRegistry.h"
 #include "third_party/WebKit/public/platform/WebDeviceMotionListener.h"
 #include "third_party/WebKit/public/platform/WebDeviceOrientationListener.h"
@@ -137,6 +139,8 @@ using blink::WebVector;
 
 namespace content {
 
+namespace {
+
 static bool g_sandbox_enabled = true;
 static blink::WebGamepadListener* web_gamepad_listener = NULL;
 base::LazyInstance<WebGamepads>::Leaky g_test_gamepads =
@@ -145,8 +149,10 @@ base::LazyInstance<blink::WebDeviceMotionData>::Leaky
     g_test_device_motion_data = LAZY_INSTANCE_INITIALIZER;
 base::LazyInstance<blink::WebDeviceOrientationData>::Leaky
     g_test_device_orientation_data = LAZY_INSTANCE_INITIALIZER;
-static blink::WebScreenOrientationListener*
-    g_test_screen_orientation_listener = NULL;
+base::LazyInstance<MockScreenOrientationController>::Leaky
+    g_test_screen_orientation_controller = LAZY_INSTANCE_INITIALIZER;
+
+} // namespace
 
 //------------------------------------------------------------------------------
 
@@ -915,8 +921,8 @@ RendererWebKitPlatformSupportImpl::createRTCPeerConnectionHandler(
   if (peer_connection_handler)
     return peer_connection_handler;
 
-  MediaStreamDependencyFactory* rtc_dependency_factory =
-      render_thread->GetMediaStreamDependencyFactory();
+  PeerConnectionDependencyFactory* rtc_dependency_factory =
+      render_thread->GetPeerConnectionDependencyFactory();
   return rtc_dependency_factory->CreateRTCPeerConnectionHandler(client);
 #else
   return NULL;
@@ -1009,16 +1015,6 @@ RendererWebKitPlatformSupportImpl::createOffscreenGraphicsContext3D(
           CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE));
 
   WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits limits;
-
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kWebGLCommandBufferSizeKb)) {
-    std::string size_string = command_line->GetSwitchValueASCII(
-        switches::kWebGLCommandBufferSizeKb);
-    size_t buffer_size_kb;
-    if (base::StringToSizeT(size_string, &buffer_size_kb)) {
-      limits.command_buffer_size = buffer_size_kb * 1024;
-    }
-  }
   bool lose_context_when_out_of_memory = false;
   return WebGraphicsContext3DCommandBufferImpl::CreateOffscreenContext(
       gpu_channel_host.get(),
@@ -1081,6 +1077,12 @@ void RendererWebKitPlatformSupportImpl::SetMockDeviceMotionDataForTesting(
   g_test_device_motion_data.Get() = data;
 }
 
+// static
+void RendererWebKitPlatformSupportImpl::ResetMockScreenOrientationForTesting()
+{
+  g_test_screen_orientation_controller.Get().ResetData();
+}
+
 //------------------------------------------------------------------------------
 
 void RendererWebKitPlatformSupportImpl::setDeviceOrientationListener(
@@ -1129,7 +1131,7 @@ void RendererWebKitPlatformSupportImpl::setScreenOrientationListener(
     // backend in order to let Blink get tested properly, That means that screen
     // orientation updates have to be done manually instead of from signals sent
     // by the browser process.
-    g_test_screen_orientation_listener = listener;
+    g_test_screen_orientation_controller.Get().SetListener(listener);
     return;
   }
 
@@ -1145,6 +1147,7 @@ void RendererWebKitPlatformSupportImpl::lockOrientation(
     blink::WebScreenOrientationLockType orientation) {
   if (RenderThreadImpl::current() &&
       RenderThreadImpl::current()->layout_test_mode()) {
+    g_test_screen_orientation_controller.Get().UpdateLock(orientation);
     return;
   }
   RenderThread::Get()->Send(new ScreenOrientationHostMsg_Lock(orientation));
@@ -1153,6 +1156,7 @@ void RendererWebKitPlatformSupportImpl::lockOrientation(
 void RendererWebKitPlatformSupportImpl::unlockOrientation() {
   if (RenderThreadImpl::current() &&
       RenderThreadImpl::current()->layout_test_mode()) {
+    g_test_screen_orientation_controller.Get().ResetLock();
     return;
   }
   RenderThread::Get()->Send(new ScreenOrientationHostMsg_Unlock);
@@ -1161,9 +1165,8 @@ void RendererWebKitPlatformSupportImpl::unlockOrientation() {
 // static
 void RendererWebKitPlatformSupportImpl::SetMockScreenOrientationForTesting(
     blink::WebScreenOrientationType orientation) {
-  if (!g_test_screen_orientation_listener)
-    return;
-  g_test_screen_orientation_listener->didChangeScreenOrientation(orientation);
+  g_test_screen_orientation_controller.Get()
+      .UpdateDeviceOrientation(orientation);
 }
 
 //------------------------------------------------------------------------------
@@ -1180,6 +1183,17 @@ void RendererWebKitPlatformSupportImpl::queryStorageUsageAndQuota(
           storage_partition,
           static_cast<quota::StorageType>(type),
           QuotaDispatcher::CreateWebStorageQuotaCallbacksWrapper(callbacks));
+}
+
+//------------------------------------------------------------------------------
+
+void RendererWebKitPlatformSupportImpl::setBatteryStatusListener(
+    blink::WebBatteryStatusListener* listener) {
+  if (!battery_status_dispatcher_) {
+    battery_status_dispatcher_.reset(
+        new BatteryStatusDispatcher(RenderThreadImpl::current()));
+  }
+  battery_status_dispatcher_->SetListener(listener);
 }
 
 }  // namespace content

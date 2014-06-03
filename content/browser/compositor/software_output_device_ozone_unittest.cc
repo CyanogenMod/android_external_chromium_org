@@ -99,20 +99,20 @@ SoftwareOutputDeviceOzoneTest::~SoftwareOutputDeviceOzoneTest() {
 }
 
 void SoftwareOutputDeviceOzoneTest::SetUp() {
-  ui::InitializeContextFactoryForTests(enable_pixel_output_);
-  ui::Compositor::Initialize();
+  ui::ContextFactory* context_factory =
+      ui::InitializeContextFactoryForTests(enable_pixel_output_);
 
   surface_factory_.reset(new MockSurfaceFactoryOzone());
-  gfx::SurfaceFactoryOzone::SetInstance(surface_factory_.get());
 
   const gfx::Size size(500, 400);
   compositor_.reset(new ui::Compositor(
-      gfx::SurfaceFactoryOzone::GetInstance()->GetAcceleratedWidget()));
+      gfx::SurfaceFactoryOzone::GetInstance()->GetAcceleratedWidget(),
+      context_factory));
   compositor_->SetScaleAndSize(1.0f, size);
 
   output_device_.reset(new content::SoftwareOutputDeviceOzone(
       compositor_.get()));
-  output_device_->Resize(size);
+  output_device_->Resize(size, 1.f);
 }
 
 void SoftwareOutputDeviceOzoneTest::TearDown() {
@@ -120,7 +120,6 @@ void SoftwareOutputDeviceOzoneTest::TearDown() {
   compositor_.reset();
   surface_factory_.reset();
   ui::TerminateContextFactoryForTests();
-  ui::Compositor::Terminate();
 }
 
 class SoftwareOutputDeviceOzonePixelTest
@@ -138,7 +137,7 @@ TEST_F(SoftwareOutputDeviceOzoneTest, CheckCorrectResizeBehavior) {
   gfx::Rect damage(0, 0, 100, 100);
   gfx::Size size(200, 100);
   // Reduce size.
-  output_device_->Resize(size);
+  output_device_->Resize(size, 1.f);
 
   SkCanvas* canvas = output_device_->BeginPaint(damage);
   gfx::Size canvas_size(canvas->getDeviceSize().width(),
@@ -147,7 +146,7 @@ TEST_F(SoftwareOutputDeviceOzoneTest, CheckCorrectResizeBehavior) {
 
   size.SetSize(1000, 500);
   // Increase size.
-  output_device_->Resize(size);
+  output_device_->Resize(size, 1.f);
 
   canvas = output_device_->BeginPaint(damage);
   canvas_size.SetSize(canvas->getDeviceSize().width(),
@@ -160,7 +159,7 @@ TEST_F(SoftwareOutputDeviceOzonePixelTest, CheckCopyToBitmap) {
   const int width = 6;
   const int height = 4;
   const gfx::Rect area(width, height);
-  output_device_->Resize(area.size());
+  output_device_->Resize(area.size(), 1.f);
   SkCanvas* canvas = output_device_->BeginPaint(area);
 
   // Clear the background to black.

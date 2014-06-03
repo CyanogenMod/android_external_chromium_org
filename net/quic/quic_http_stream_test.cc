@@ -60,7 +60,7 @@ class TestQuicConnection : public QuicConnection {
                      QuicConnectionHelper* helper,
                      QuicPacketWriter* writer)
       : QuicConnection(connection_id, address, helper, writer, false,
-                       versions, kInitialFlowControlWindowForTest) {
+                       versions) {
   }
 
   void SetSendAlgorithm(SendAlgorithmInterface* send_algorithm) {
@@ -129,7 +129,7 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
         use_closing_stream_(false),
         read_buffer_(new IOBufferWithSize(4096)),
         connection_id_(2),
-        stream_id_(5),
+        stream_id_(kClientDataStreamId1),
         maker_(GetParam(), connection_id_),
         random_generator_(0) {
     IPAddressNumber ip;
@@ -212,7 +212,9 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
                               make_scoped_ptr((QuicServerInfo*)NULL),
                               QuicServerId(kServerHostname, kServerPort,
                                            false, PRIVACY_MODE_DISABLED),
-                              DefaultQuicConfig(), &crypto_config_, NULL));
+                              DefaultQuicConfig(),
+                              kInitialFlowControlWindowForTest, &crypto_config_,
+                              NULL));
     session_->GetCryptoStream()->CryptoConnect();
     EXPECT_TRUE(session_->IsCryptoHandshakeConfirmed());
     stream_.reset(use_closing_stream_ ?
@@ -344,7 +346,6 @@ TEST_P(QuicHttpStreamTest, GetRequest) {
                                           net_log_, callback_.callback()));
   EXPECT_EQ(OK, stream_->SendRequest(headers_, &response_,
                                      callback_.callback()));
-  EXPECT_EQ(&response_, stream_->GetResponseInfo());
 
   // Ack the request.
   ProcessPacket(ConstructAckPacket(1, 0, 0));
@@ -382,7 +383,6 @@ TEST_P(QuicHttpStreamTest, GetRequestLargeResponse) {
                                           net_log_, callback_.callback()));
   EXPECT_EQ(OK, stream_->SendRequest(headers_, &response_,
                                      callback_.callback()));
-  EXPECT_EQ(&response_, stream_->GetResponseInfo());
 
   // Ack the request.
   ProcessPacket(ConstructAckPacket(1, 0, 0));
@@ -436,7 +436,6 @@ TEST_P(QuicHttpStreamTest, SendPostRequest) {
                                           net_log_, callback_.callback()));
   EXPECT_EQ(OK, stream_->SendRequest(headers_, &response_,
                                      callback_.callback()));
-  EXPECT_EQ(&response_, stream_->GetResponseInfo());
 
   // Ack both packets in the request.
   ProcessPacket(ConstructAckPacket(1, 0, 0));
@@ -485,7 +484,6 @@ TEST_P(QuicHttpStreamTest, SendChunkedPostRequest) {
                                           net_log_, callback_.callback()));
   ASSERT_EQ(ERR_IO_PENDING, stream_->SendRequest(headers_, &response_,
                                                  callback_.callback()));
-  EXPECT_EQ(&response_, stream_->GetResponseInfo());
 
   upload_data_stream.AppendChunk(kUploadData, chunk_size, true);
 
@@ -530,7 +528,6 @@ TEST_P(QuicHttpStreamTest, DestroyedEarly) {
                                           net_log_, callback_.callback()));
   EXPECT_EQ(OK, stream_->SendRequest(headers_, &response_,
                                      callback_.callback()));
-  EXPECT_EQ(&response_, stream_->GetResponseInfo());
 
   // Ack the request.
   ProcessPacket(ConstructAckPacket(1, 0, 0));
@@ -567,7 +564,6 @@ TEST_P(QuicHttpStreamTest, Priority) {
 
   EXPECT_EQ(OK, stream_->SendRequest(headers_, &response_,
                                      callback_.callback()));
-  EXPECT_EQ(&response_, stream_->GetResponseInfo());
 
   // Check that priority has now dropped back to MEDIUM.
   DCHECK_EQ(MEDIUM, ConvertQuicPriorityToRequestPriority(

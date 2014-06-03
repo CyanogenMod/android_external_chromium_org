@@ -24,7 +24,6 @@
 #include "third_party/WebKit/public/web/WebAXEnums.h"
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebPopupType.h"
-#include "third_party/WebKit/public/web/WebTextDirection.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/base/window_open_disposition.h"
@@ -54,7 +53,7 @@ struct SelectedFileInfo;
 
 namespace content {
 
-class BrowserMediaPlayerManager;
+class MediaWebContentsObserver;
 class ChildProcessSecurityPolicyImpl;
 class PageState;
 class RenderWidgetHostDelegate;
@@ -211,6 +210,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   virtual void GetAudioOutputControllers(
       const GetAudioOutputControllersCallback& callback) const OVERRIDE;
   virtual void SetWebUIHandle(mojo::ScopedMessagePipeHandle handle) OVERRIDE;
+  virtual void SelectWordAroundCaret() OVERRIDE;
 
 #if defined(OS_ANDROID)
   virtual void ActivateNearestFindResult(int request_id,
@@ -232,8 +232,11 @@ class CONTENT_EXPORT RenderViewHostImpl
   // RenderView is told to start issuing page IDs at |max_page_id| + 1.
   // |window_was_created_with_opener| is true if this top-level frame was
   // created with an opener. (The opener may have been closed since.)
+  // The |proxy_route_id| is only used when creating a RenderView in swapped out
+  // state.
   virtual bool CreateRenderView(const base::string16& frame_name,
                                 int opener_route_id,
+                                int proxy_route_id,
                                 int32 max_page_id,
                                 bool window_was_created_with_opener);
 
@@ -389,8 +392,8 @@ class CONTENT_EXPORT RenderViewHostImpl
 #endif
 
 #if defined(OS_ANDROID)
-  BrowserMediaPlayerManager* media_player_manager() {
-    return media_player_manager_.get();
+  MediaWebContentsObserver* media_web_contents_observer() {
+    return media_web_contents_observer_.get();
   }
 
   void DidSelectPopupMenuItems(const std::vector<int>& selected_indices);
@@ -409,7 +412,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   // renderer process, and the accessibility tree it sent can be
   // retrieved using accessibility_tree_for_testing().
   void SetAccessibilityCallbackForTesting(
-      const base::Callback<void(ui::AXEvent)>& callback);
+      const base::Callback<void(ui::AXEvent, int)>& callback);
 
   // Only valid if SetAccessibilityCallbackForTesting was called and
   // the callback was run at least once. Returns a snapshot of the
@@ -482,24 +485,16 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnRenderViewReady();
   void OnRenderProcessGone(int status, int error_code);
   void OnUpdateState(int32 page_id, const PageState& state);
-  void OnUpdateTitle(int32 page_id,
-                     const base::string16& title,
-                     blink::WebTextDirection title_direction);
-  void OnUpdateEncoding(const std::string& encoding);
   void OnUpdateTargetURL(int32 page_id, const GURL& url);
   void OnClose();
   void OnRequestMove(const gfx::Rect& pos);
-  void OnDidChangeLoadProgress(double load_progress);
-  void OnDocumentAvailableInMainFrame();
+  void OnDocumentAvailableInMainFrame(bool uses_temporary_zoom_level);
   void OnToggleFullscreen(bool enter_fullscreen);
   void OnDidContentsPreferredSizeChange(const gfx::Size& new_size);
   void OnDidChangeScrollOffset();
   void OnDidChangeScrollOffsetPinningForMainFrame(bool is_pinned_to_left,
                                                   bool is_pinned_to_right);
   void OnDidChangeNumWheelEvents(int count);
-#if defined(OS_ANDROID)
-  void OnSelectionRootBoundsChanged(const gfx::Rect& bounds);
-#endif
   void OnPasteFromSelectionClipboard();
   void OnRouteCloseEvent();
   void OnRouteMessageEvent(const ViewMsg_PostMessage_Params& params);
@@ -519,7 +514,7 @@ class CONTENT_EXPORT RenderViewHostImpl
       const std::vector<AccessibilityHostMsg_EventParams>& params);
   void OnAccessibilityLocationChanges(
       const std::vector<AccessibilityHostMsg_LocationChangeParams>& params);
-  void OnDidZoomURL(double zoom_level, bool remember, const GURL& url);
+  void OnDidZoomURL(double zoom_level, const GURL& url);
   void OnRunFileChooser(const FileChooserParams& params);
   void OnFocusedNodeTouched(bool editable);
 
@@ -612,7 +607,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   bool unload_ack_is_for_cross_site_transition_;
 
   // Accessibility callback for testing.
-  base::Callback<void(ui::AXEvent)> accessibility_testing_callback_;
+  base::Callback<void(ui::AXEvent, int)> accessibility_testing_callback_;
 
   // The most recently received accessibility tree - for testing only.
   scoped_ptr<ui::AXTree> ax_tree_;
@@ -627,8 +622,9 @@ class CONTENT_EXPORT RenderViewHostImpl
   bool virtual_keyboard_requested_;
 
 #if defined(OS_ANDROID)
-  // Manages all the android mediaplayer objects and handling IPCs for video.
-  scoped_ptr<BrowserMediaPlayerManager> media_player_manager_;
+  // Manages all the android mediaplayer managers and forwards IPCs to the
+  // managers.
+  scoped_ptr<MediaWebContentsObserver> media_web_contents_observer_;
 #endif
 
   // Used to swap out or shutdown this RVH when the unload event is taking too

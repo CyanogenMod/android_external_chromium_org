@@ -16,7 +16,9 @@ class Oobe(web_contents.WebContents):
     for gaia_context in range(15):
       try:
         if self.EvaluateJavaScriptInContext(
-            "document.getElementById('Email') != null", gaia_context):
+            "document.readyState == 'complete' && "
+            "document.getElementById('Email') != null",
+            gaia_context):
           return gaia_context
       except exceptions.EvaluateException:
         pass
@@ -24,8 +26,7 @@ class Oobe(web_contents.WebContents):
 
   def _ExecuteOobeApi(self, api, *args):
     logging.info('Invoking %s' % api)
-    util.WaitFor(lambda: self.EvaluateJavaScript(
-        "typeof Oobe !== 'undefined'"), 10)
+    self.WaitForJavaScriptExpression("typeof Oobe == 'function'", 20)
 
     if self.EvaluateJavaScript("typeof %s == 'undefined'" % api):
       raise exceptions.LoginException('%s js api missing' % api)

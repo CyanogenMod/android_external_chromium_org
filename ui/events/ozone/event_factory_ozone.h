@@ -9,9 +9,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_pump_libevent.h"
-#include "base/task_runner.h"
-#include "ui/events/events_export.h"
-#include "ui/events/platform/platform_event_source.h"
+#include "ui/events/ozone/events_ozone_export.h"
 #include "ui/gfx/native_widget_types.h"
 
 namespace gfx {
@@ -27,23 +25,10 @@ class Event;
 // Ozone presumes that the set of file desctiprtors can vary at runtime so this
 // class supports dynamically adding and removing |EventConverterOzone|
 // instances as necessary.
-class EVENTS_EXPORT EventFactoryOzone : public ui::PlatformEventSource {
+class EVENTS_OZONE_EXPORT EventFactoryOzone {
  public:
   EventFactoryOzone();
   virtual ~EventFactoryOzone();
-
-  // Called from WindowTreeHostOzone to initialize and start processing events.
-  // This should create the initial set of converters, and potentially arrange
-  // for more converters to be created as new event sources become available.
-  // No events processing should happen until this is called. All processes have
-  // an EventFactoryOzone but not all of them should process events. In chrome,
-  // events are dispatched in the browser process on the UI thread.
-  virtual void StartProcessingEvents();
-
-  // Sets the TaskRunner to use for file I/O. The thread that calls
-  // StartProcessingEvents() should only be used for I/O that is critical
-  // to event dispatching.
-  virtual void SetFileTaskRunner(scoped_refptr<base::TaskRunner> task_runner);
 
   // Request to warp the cursor to a location within an AccelerateWidget.
   // If the cursor actually moves, the implementation must dispatch a mouse
@@ -51,11 +36,8 @@ class EVENTS_EXPORT EventFactoryOzone : public ui::PlatformEventSource {
   virtual void WarpCursorTo(gfx::AcceleratedWidget widget,
                             const gfx::PointF& location);
 
-  // Returns the static instance last set using SetInstance().
+  // Returns the singleton instance.
   static EventFactoryOzone* GetInstance();
-
-  // Sets the implementation delegate. Ownership is retained by the caller.
-  static void SetInstance(EventFactoryOzone*);
 
  private:
   static EventFactoryOzone* impl_;  // not owned

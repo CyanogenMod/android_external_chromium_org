@@ -10,9 +10,14 @@
 
 namespace android_webview {
 
-DrawGLInput::DrawGLInput() : frame_id(0), width(0), height(0) {}
+DrawGLInput::DrawGLInput() : width(0), height(0) {
+}
 
-DrawGLResult::DrawGLResult() : frame_id(0), clip_contains_visible_rect(false) {}
+DrawGLInput::~DrawGLInput() {
+}
+
+DrawGLResult::DrawGLResult() : clip_contains_visible_rect(false) {
+}
 
 SharedRendererState::SharedRendererState(
     scoped_refptr<base::MessageLoopProxy> ui_loop,
@@ -23,7 +28,9 @@ SharedRendererState::SharedRendererState(
       ui_thread_weak_ptr_(weak_factory_on_ui_thread_.GetWeakPtr()),
       compositor_(NULL),
       memory_policy_dirty_(false),
-      hardware_initialized_(false) {
+      hardware_allowed_(false),
+      hardware_initialized_(false),
+      share_context_(NULL) {
   DCHECK(ui_loop_->BelongsToCurrentThread());
   DCHECK(client_on_ui_);
 }
@@ -76,37 +83,25 @@ SharedRendererState::GetMemoryPolicy() const {
   return memory_policy_;
 }
 
-void SharedRendererState::SetDrawGLInput(const DrawGLInput& input) {
+void SharedRendererState::SetDrawGLInput(scoped_ptr<DrawGLInput> input) {
   base::AutoLock lock(lock_);
-  draw_gl_input_ = input;
+  DCHECK(!draw_gl_input_.get());
+  draw_gl_input_ = input.Pass();
 }
 
-DrawGLInput SharedRendererState::GetDrawGLInput() const {
+scoped_ptr<DrawGLInput> SharedRendererState::PassDrawGLInput() {
   base::AutoLock lock(lock_);
-  return draw_gl_input_;
+  return draw_gl_input_.Pass();
 }
 
-void SharedRendererState::ClearClosureQueue() {
+void SharedRendererState::SetHardwareAllowed(bool allowed) {
   base::AutoLock lock(lock_);
-  std::queue<base::Closure> empty;
-  std::swap(closure_queue_, empty);
+  hardware_allowed_ = allowed;
 }
 
-void SharedRendererState::AppendClosure(const base::Closure& closure) {
+bool SharedRendererState::IsHardwareAllowed() const {
   base::AutoLock lock(lock_);
-  closure_queue_.push(closure);
-}
-
-base::Closure SharedRendererState::PopFrontClosure() {
-  base::Closure closure;
-
-  base::AutoLock lock(lock_);
-  if (!closure_queue_.empty()) {
-    closure = closure_queue_.front();
-    closure_queue_.pop();
-  }
-
-  return closure;
+  return hardware_allowed_;
 }
 
 void SharedRendererState::SetHardwareInitialized(bool initialized) {
@@ -119,6 +114,18 @@ bool SharedRendererState::IsHardwareInitialized() const {
   return hardware_initialized_;
 }
 
+void SharedRendererState::SetSharedContext(gpu::GLInProcessContext* context) {
+  base::AutoLock lock(lock_);
+  DCHECK(!share_context_ || !context);
+  share_context_ = context;
+}
+
+gpu::GLInProcessContext* SharedRendererState::GetSharedContext() const {
+  base::AutoLock lock(lock_);
+  DCHECK(share_context_);
+  return share_context_;
+}
+
 void SharedRendererState::SetMemoryPolicyDirty(bool is_dirty) {
   base::AutoLock lock(lock_);
   memory_policy_dirty_ = is_dirty;
@@ -127,6 +134,30 @@ void SharedRendererState::SetMemoryPolicyDirty(bool is_dirty) {
 bool SharedRendererState::IsMemoryPolicyDirty() const {
   base::AutoLock lock(lock_);
   return memory_policy_dirty_;
+}
+
+void SharedRendererState::ReturnResources(
+    const cc::TransferableResourceArray& input) {
+  base::AutoLock lock(lock_);
+  cc::TransferableResource::ReturnResources(input, &returned_resources_);
+}
+
+void SharedRendererState::InsertReturnedResources(
+    const cc::ReturnedResourceArray& resources) {
+  base::AutoLock lock(lock_);
+  returned_resources_.insert(
+      returned_resources_.end(), resources.begin(), resources.end());
+}
+
+void SharedRendererState::SwapReturnedResources(
+    cc::ReturnedResourceArray* resources) {
+  base::AutoLock lock(lock_);
+  resources->swap(returned_resources_);
+}
+
+bool SharedRendererState::ReturnedResourcesEmpty() const {
+  base::AutoLock lock(lock_);
+  return returned_resources_.empty();
 }
 
 }  // namespace android_webview

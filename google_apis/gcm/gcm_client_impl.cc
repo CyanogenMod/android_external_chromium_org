@@ -14,12 +14,14 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/default_clock.h"
+#include "google_apis/gcm/base/encryptor.h"
 #include "google_apis/gcm/base/mcs_message.h"
 #include "google_apis/gcm/base/mcs_util.h"
 #include "google_apis/gcm/engine/checkin_request.h"
 #include "google_apis/gcm/engine/connection_factory_impl.h"
 #include "google_apis/gcm/engine/gcm_store_impl.h"
 #include "google_apis/gcm/monitoring/gcm_stats_recorder.h"
+#include "google_apis/gcm/protocol/checkin.pb.h"
 #include "google_apis/gcm/protocol/mcs.pb.h"
 #include "net/http/http_network_session.h"
 #include "net/url_request/url_request_context.h"
@@ -83,13 +85,6 @@ enum OutgoingMessageTTLCategory {
   TTL_CATEGORY_COUNT
 };
 
-// MCS endpoints. SSL Key pinning is done automatically due to the *.google.com
-// pinning rule.
-// Note: modifying the endpoints will affect the ability to compare the
-// GCM.CurrentEnpoint histogram across versions.
-const char kMCSEndpointMain[] = "https://mtalk.google.com:5228";
-const char kMCSEndpointFallback[] = "https://mtalk.google.com:443";
-
 const int kMaxRegistrationRetries = 5;
 const char kMessageTypeDataMessage[] = "gcm";
 const char kMessageTypeDeletedMessagesKey[] = "deleted_messages";
@@ -119,6 +114,67 @@ GCMClient::Result ToGCMClientResult(MCSClient::MessageSendStatus status) {
       break;
   }
   return GCMClientImpl::UNKNOWN_ERROR;
+}
+
+void ToCheckinProtoVersion(
+    const GCMClient::ChromeBuildInfo& chrome_build_info,
+    checkin_proto::ChromeBuildProto* android_build_info) {
+  checkin_proto::ChromeBuildProto_Platform platform;
+  switch (chrome_build_info.platform) {
+    case GCMClient::PLATFORM_WIN:
+      platform = checkin_proto::ChromeBuildProto_Platform_PLATFORM_WIN;
+      break;
+    case GCMClient::PLATFORM_MAC:
+      platform = checkin_proto::ChromeBuildProto_Platform_PLATFORM_MAC;
+      break;
+    case GCMClient::PLATFORM_LINUX:
+      platform = checkin_proto::ChromeBuildProto_Platform_PLATFORM_LINUX;
+      break;
+    case GCMClient::PLATFORM_IOS:
+      platform = checkin_proto::ChromeBuildProto_Platform_PLATFORM_IOS;
+      break;
+    case GCMClient::PLATFORM_ANDROID:
+      platform = checkin_proto::ChromeBuildProto_Platform_PLATFORM_ANDROID;
+      break;
+    case GCMClient::PLATFORM_CROS:
+      platform = checkin_proto::ChromeBuildProto_Platform_PLATFORM_CROS;
+      break;
+    case GCMClient::PLATFORM_UNKNOWN:
+      // For unknown platform, return as LINUX.
+      platform = checkin_proto::ChromeBuildProto_Platform_PLATFORM_LINUX;
+      break;
+    default:
+      NOTREACHED();
+      platform = checkin_proto::ChromeBuildProto_Platform_PLATFORM_LINUX;
+      break;
+  }
+  android_build_info->set_platform(platform);
+
+  checkin_proto::ChromeBuildProto_Channel channel;
+  switch (chrome_build_info.channel) {
+    case GCMClient::CHANNEL_STABLE:
+      channel = checkin_proto::ChromeBuildProto_Channel_CHANNEL_STABLE;
+      break;
+    case GCMClient::CHANNEL_BETA:
+      channel = checkin_proto::ChromeBuildProto_Channel_CHANNEL_BETA;
+      break;
+    case GCMClient::CHANNEL_DEV:
+      channel = checkin_proto::ChromeBuildProto_Channel_CHANNEL_DEV;
+      break;
+    case GCMClient::CHANNEL_CANARY:
+      channel = checkin_proto::ChromeBuildProto_Channel_CHANNEL_CANARY;
+      break;
+    case GCMClient::CHANNEL_UNKNOWN:
+      channel = checkin_proto::ChromeBuildProto_Channel_CHANNEL_UNKNOWN;
+      break;
+    default:
+      NOTREACHED();
+      channel = checkin_proto::ChromeBuildProto_Channel_CHANNEL_UNKNOWN;
+      break;
+  }
+  android_build_info->set_channel(channel);
+
+  android_build_info->set_chrome_version(chrome_build_info.version);
 }
 
 MessageType DecodeMessageType(const std::string& value) {
@@ -207,13 +263,14 @@ GCMClientImpl::~GCMClientImpl() {
 }
 
 void GCMClientImpl::Initialize(
-    const checkin_proto::ChromeBuildProto& chrome_build_proto,
+    const ChromeBuildInfo& chrome_build_info,
     const base::FilePath& path,
     const std::vector<std::string>& account_ids,
     const scoped_refptr<base::SequencedTaskRunner>& blocking_task_runner,
     const scoped_refptr<net::URLRequestContextGetter>&
         url_request_context_getter,
-    Delegate* delegate) {
+    scoped_ptr<Encryptor> encryptor,
+    GCMClient::Delegate* delegate) {
   DCHECK_EQ(UNINITIALIZED, state_);
   DCHECK(url_request_context_getter);
   DCHECK(delegate);
@@ -225,17 +282,20 @@ void GCMClientImpl::Initialize(
   DCHECK(network_session_params);
   network_session_ = new net::HttpNetworkSession(*network_session_params);
 
-  chrome_build_proto_.CopyFrom(chrome_build_proto);
+  chrome_build_info_ = chrome_build_info;
   account_ids_ = account_ids;
 
-  gcm_store_.reset(new GCMStoreImpl(path, blocking_task_runner));
+  gcm_store_.reset(
+      new GCMStoreImpl(path, blocking_task_runner, encryptor.Pass()));
 
   delegate_ = delegate;
+
+  recorder_.SetDelegate(this);
 
   state_ = INITIALIZED;
 }
 
-void GCMClientImpl::Load() {
+void GCMClientImpl::Start() {
   DCHECK_EQ(INITIALIZED, state_);
 
   // Once the loading is completed, the check-in will be initiated.
@@ -273,8 +333,8 @@ void GCMClientImpl::OnLoadCompleted(scoped_ptr<GCMStore::LoadResult> result) {
 void GCMClientImpl::InitializeMCSClient(
     scoped_ptr<GCMStore::LoadResult> result) {
   std::vector<GURL> endpoints;
-  endpoints.push_back(GURL(kMCSEndpointMain));
-  endpoints.push_back(GURL(kMCSEndpointFallback));
+  endpoints.push_back(gservices_settings_.GetMCSMainEndpoint());
+  endpoints.push_back(gservices_settings_.GetMCSFallbackEndpoint());
   connection_factory_ = internals_builder_->BuildConnectionFactory(
       endpoints,
       kDefaultBackoffPolicy,
@@ -282,7 +342,7 @@ void GCMClientImpl::InitializeMCSClient(
       net_log_.net_log(),
       &recorder_);
   mcs_client_ = internals_builder_->BuildMCSClient(
-      chrome_build_proto_.chrome_version(),
+      chrome_build_info_.version,
       clock_.get(),
       connection_factory_.get(),
       gcm_store_.get(),
@@ -335,13 +395,15 @@ void GCMClientImpl::StartCheckin() {
   if (checkin_request_.get())
     return;
 
+  checkin_proto::ChromeBuildProto chrome_build_proto;
+  ToCheckinProtoVersion(chrome_build_info_, &chrome_build_proto);
   CheckinRequest::RequestInfo request_info(device_checkin_info_.android_id,
                                            device_checkin_info_.secret,
                                            gservices_settings_.digest(),
                                            account_ids_,
-                                           chrome_build_proto_);
+                                           chrome_build_proto);
   checkin_request_.reset(
-      new CheckinRequest(gservices_settings_.checkin_url(),
+      new CheckinRequest(gservices_settings_.GetCheckinURL(),
                          request_info,
                          kDefaultBackoffPolicy,
                          base::Bind(&GCMClientImpl::OnCheckinCompleted,
@@ -380,7 +442,7 @@ void GCMClientImpl::OnCheckinCompleted(
     // First update G-services settings, as something might have changed.
     if (gservices_settings_.UpdateFromCheckinResponse(checkin_response)) {
       gcm_store_->SetGServicesSettings(
-          gservices_settings_.GetSettingsMap(),
+          gservices_settings_.settings_map(),
           gservices_settings_.digest(),
           base::Bind(&GCMClientImpl::SetGServicesSettingsCallback,
                      weak_ptr_factory_.GetWeakPtr()));
@@ -420,7 +482,7 @@ void GCMClientImpl::SchedulePeriodicCheckin() {
 }
 
 base::TimeDelta GCMClientImpl::GetTimeToNextCheckin() const {
-  return last_checkin_time_ + gservices_settings_.checkin_interval() -
+  return last_checkin_time_ + gservices_settings_.GetCheckinInterval() -
          clock_->Now();
 }
 
@@ -478,7 +540,7 @@ void GCMClientImpl::Register(const std::string& app_id,
   DCHECK_EQ(0u, pending_registration_requests_.count(app_id));
 
   RegistrationRequest* registration_request =
-      new RegistrationRequest(gservices_settings_.registration_url(),
+      new RegistrationRequest(gservices_settings_.GetRegistrationURL(),
                               request_info,
                               kDefaultBackoffPolicy,
                               base::Bind(&GCMClientImpl::OnRegisterCompleted,
@@ -552,16 +614,15 @@ void GCMClientImpl::Unregister(const std::string& app_id) {
       device_checkin_info_.secret,
       app_id);
 
-  UnregistrationRequest* unregistration_request =
-      new UnregistrationRequest(
-          gservices_settings_.registration_url(),
-          request_info,
-          kDefaultBackoffPolicy,
-          base::Bind(&GCMClientImpl::OnUnregisterCompleted,
-                     weak_ptr_factory_.GetWeakPtr(),
-                     app_id),
-          url_request_context_getter_,
-          &recorder_);
+  UnregistrationRequest* unregistration_request = new UnregistrationRequest(
+      gservices_settings_.GetRegistrationURL(),
+      request_info,
+      kDefaultBackoffPolicy,
+      base::Bind(&GCMClientImpl::OnUnregisterCompleted,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 app_id),
+      url_request_context_getter_,
+      &recorder_);
   pending_unregistration_requests_[app_id] = unregistration_request;
   unregistration_request->Start();
 }
@@ -664,6 +725,10 @@ GCMClient::GCMStatistics GCMClientImpl::GetStatistics() const {
     stats.registered_app_ids.push_back(it->first);
   }
   return stats;
+}
+
+void GCMClientImpl::OnActivityRecorded() {
+  delegate_->OnActivityRecorded();
 }
 
 void GCMClientImpl::OnMessageReceivedFromMCS(const gcm::MCSMessage& message) {

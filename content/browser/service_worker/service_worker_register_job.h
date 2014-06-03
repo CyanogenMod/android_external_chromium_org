@@ -57,8 +57,10 @@ class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase {
   virtual RegistrationJobType GetType() OVERRIDE;
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerRegisterJobAndProviderHostTest,
-                           AssociatePendingVersionToDocuments);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerProviderHostWaitingVersionTest,
+                           AssociateWaitingVersionToDocuments);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerProviderHostWaitingVersionTest,
+                           DisassociateWaitingVersionFromDocuments);
 
   enum Phase {
      INITIAL,
@@ -77,6 +79,8 @@ class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase {
     Internal();
     ~Internal();
     scoped_refptr<ServiceWorkerRegistration> registration;
+
+    // Holds 'installing' or 'waiting' version depending on the phase.
     scoped_refptr<ServiceWorkerVersion> pending_version;
   };
 
@@ -104,8 +108,16 @@ class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase {
                       ServiceWorkerRegistration* registration,
                       ServiceWorkerVersion* version);
 
-  CONTENT_EXPORT void AssociatePendingVersionToDocuments(
+  // Associates a waiting version to documents matched with a scope of the
+  // version.
+  CONTENT_EXPORT static void AssociateWaitingVersionToDocuments(
+      base::WeakPtr<ServiceWorkerContextCore> context,
       ServiceWorkerVersion* version);
+
+  // Disassociates a waiting version specified by |version_id| from documents.
+  CONTENT_EXPORT static void DisassociateWaitingVersionFromDocuments(
+      base::WeakPtr<ServiceWorkerContextCore> context,
+      int64 version_id);
 
   // The ServiceWorkerContextCore object should always outlive this.
   base::WeakPtr<ServiceWorkerContextCore> context_;

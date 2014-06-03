@@ -28,6 +28,7 @@
 #include "chrome/browser/extensions/extension_disabled_ui.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_ui_util.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/extensions/updater/extension_updater.h"
@@ -100,7 +101,7 @@ GURL GetImageURLFromData(const std::string& contents) {
   base::Base64Encode(contents, &contents_base64);
 
   // TODO(dvh): make use of content::kDataScheme. Filed as crbug/297301.
-  const char kDataURLPrefix[] = "data:image;base64,";
+  const char kDataURLPrefix[] = "data:;base64,";
   return GURL(kDataURLPrefix + contents_base64);
 }
 
@@ -173,8 +174,8 @@ DeveloperPrivateAPI::DeveloperPrivateAPI(content::BrowserContext* context)
 
 DeveloperPrivateEventRouter::DeveloperPrivateEventRouter(Profile* profile)
     : profile_(profile) {
-  int types[] = {chrome::NOTIFICATION_EXTENSION_INSTALLED,
-                 chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
+  int types[] = {chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
+                 chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
                  chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                  chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  chrome::NOTIFICATION_EXTENSION_VIEW_REGISTERED,
@@ -216,12 +217,12 @@ void DeveloperPrivateEventRouter::Observe(
   const Extension* extension = NULL;
 
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_INSTALLED:
+    case chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED:
       event_data.event_type = developer::EVENT_TYPE_INSTALLED;
       extension =
           content::Details<const InstalledExtensionInfo>(details)->extension;
       break;
-    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED:
+    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED:
       event_data.event_type = developer::EVENT_TYPE_UNINSTALLED;
       extension = content::Details<const Extension>(details).ptr();
       break;
@@ -393,7 +394,7 @@ DeveloperPrivateGetItemsInfoFunction::CreateItemInfo(const Extension& item,
         }
       }
     } else {
-      for (std::vector<extensions::InstallWarning>::const_iterator it =
+      for (std::vector<InstallWarning>::const_iterator it =
                item.install_warnings().begin();
            it != item.install_warnings().end();
            ++it) {
@@ -426,8 +427,8 @@ DeveloperPrivateGetItemsInfoFunction::CreateItemInfo(const Extension& item,
   }
 
   if (item.is_app()) {
-    info->app_launch_url.reset(new std::string(
-        extensions::AppLaunchInfo::GetFullLaunchURL(&item).spec()));
+    info->app_launch_url.reset(
+        new std::string(AppLaunchInfo::GetFullLaunchURL(&item).spec()));
   }
 
   info->may_disable = system->management_policy()->
@@ -546,7 +547,7 @@ ItemInspectViewList DeveloperPrivateGetItemsInfoFunction::
         bool extension_is_enabled) {
   ItemInspectViewList result;
   // Get the extension process's active views.
-  extensions::ProcessManager* process_manager =
+  ProcessManager* process_manager =
       ExtensionSystem::Get(GetProfile())->process_manager();
   GetInspectablePagesForExtensionProcess(
       extension,
@@ -603,7 +604,7 @@ bool DeveloperPrivateGetItemsInfoFunction::RunAsync() {
   bool include_disabled = params->include_disabled;
   bool include_terminated = params->include_terminated;
 
-  extensions::ExtensionSet items;
+  ExtensionSet items;
 
   ExtensionRegistry* registry = ExtensionRegistry::Get(GetProfile());
 
@@ -622,8 +623,8 @@ bool DeveloperPrivateGetItemsInfoFunction::RunAsync() {
   std::map<std::string, ExtensionResource> id_to_icon;
   ItemInfoList item_list;
 
-  for (extensions::ExtensionSet::const_iterator iter = items.begin();
-       iter != items.end(); ++iter) {
+  for (ExtensionSet::const_iterator iter = items.begin(); iter != items.end();
+       ++iter) {
     const Extension& item = *iter->get();
 
     ExtensionResource item_resource =
@@ -633,7 +634,7 @@ bool DeveloperPrivateGetItemsInfoFunction::RunAsync() {
     id_to_icon[item.id()] = item_resource;
 
     // Don't show component extensions and invisible apps.
-    if (item.ShouldNotBeVisible())
+    if (ui_util::ShouldNotBeVisible(&item, GetProfile()))
       continue;
 
     item_list.push_back(make_linked_ptr<developer::ItemInfo>(
@@ -661,8 +662,9 @@ bool DeveloperPrivateAllowFileAccessFunction::RunSync() {
 
   ExtensionSystem* system = ExtensionSystem::Get(GetProfile());
   ManagementPolicy* management_policy = system->management_policy();
-  ExtensionService* service = GetProfile()->GetExtensionService();
-  const Extension* extension = service->GetInstalledExtension(params->item_id);
+  const Extension* extension =
+      ExtensionRegistry::Get(GetProfile())
+          ->GetExtensionById(params->item_id, ExtensionRegistry::EVERYTHING);
   bool result = true;
 
   if (!extension) {
@@ -688,8 +690,9 @@ bool DeveloperPrivateAllowIncognitoFunction::RunSync() {
       AllowIncognito::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
-  ExtensionService* service = GetProfile()->GetExtensionService();
-  const Extension* extension = service->GetInstalledExtension(params->item_id);
+  const Extension* extension =
+      ExtensionRegistry::Get(GetProfile())
+          ->GetExtensionById(params->item_id, ExtensionRegistry::EVERYTHING);
   bool result = true;
 
   if (!extension)
@@ -715,14 +718,15 @@ bool DeveloperPrivateReloadFunction::RunSync() {
 
 bool DeveloperPrivateShowPermissionsDialogFunction::RunSync() {
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &extension_id_));
-  ExtensionService* service = GetProfile()->GetExtensionService();
   CHECK(!extension_id_.empty());
   AppWindowRegistry* registry = AppWindowRegistry::Get(GetProfile());
   DCHECK(registry);
   AppWindow* app_window =
       registry->GetAppWindowForRenderViewHost(render_view_host());
   prompt_.reset(new ExtensionInstallPrompt(app_window->web_contents()));
-  const Extension* extension = service->GetInstalledExtension(extension_id_);
+  const Extension* extension =
+      ExtensionRegistry::Get(GetProfile())
+          ->GetExtensionById(extension_id_, ExtensionRegistry::EVERYTHING);
 
   if (!extension)
     return false;
@@ -730,7 +734,7 @@ bool DeveloperPrivateShowPermissionsDialogFunction::RunSync() {
   // Released by InstallUIAbort or InstallUIProceed.
   AddRef();
   std::vector<base::FilePath> retained_file_paths;
-  if (extension->HasAPIPermission(extensions::APIPermission::kFileSystem)) {
+  if (extension->HasAPIPermission(APIPermission::kFileSystem)) {
     std::vector<apps::SavedFileEntry> retained_file_entries =
         apps::SavedFilesService::Get(GetProfile())
             ->GetAllFileEntries(extension_id_);
@@ -776,15 +780,15 @@ bool DeveloperPrivateEnableFunction::RunSync() {
 
   std::string extension_id = params->item_id;
 
-  ExtensionSystem* system = ExtensionSystem::Get(GetProfile());
-  ManagementPolicy* policy = system->management_policy();
-  ExtensionService* service = GetProfile()->GetExtensionService();
-
-  const Extension* extension = service->GetInstalledExtension(extension_id);
+  const Extension* extension =
+      ExtensionRegistry::Get(GetProfile())
+          ->GetExtensionById(extension_id, ExtensionRegistry::EVERYTHING);
   if (!extension) {
     LOG(ERROR) << "Did not find extension with id " << extension_id;
     return false;
   }
+  ExtensionSystem* system = ExtensionSystem::Get(GetProfile());
+  ManagementPolicy* policy = system->management_policy();
   bool enable = params->enable;
   if (!policy->UserMayModifySettings(extension, NULL) ||
       (!enable && policy->MustRemainEnabled(extension, NULL)) ||
@@ -794,6 +798,7 @@ bool DeveloperPrivateEnableFunction::RunSync() {
     return false;
   }
 
+  ExtensionService* service = system->extension_service();
   if (enable) {
     ExtensionPrefs* prefs = ExtensionPrefs::Get(GetProfile());
     if (prefs->DidExtensionEscalatePermissions(extension_id)) {

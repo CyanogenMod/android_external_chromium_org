@@ -190,6 +190,7 @@ class ExtensionPrefs : public ExtensionScopedPrefs, public KeyedService {
   void OnExtensionInstalled(const Extension* extension,
                             Extension::State initial_state,
                             bool blacklisted_for_malware,
+                            bool is_ephemeral,
                             const syncer::StringOrdinal& page_ordinal,
                             const std::string& install_parameter);
 
@@ -254,8 +255,10 @@ class ExtensionPrefs : public ExtensionScopedPrefs, public KeyedService {
       const Extension* extension,
       bool did_escalate);
 
-  // Getter and setters for disabled reason.
+  // Getters and setters for disabled reason.
   int GetDisableReasons(const std::string& extension_id) const;
+  bool HasDisableReason(const std::string& extension_id,
+                        Extension::DisableReason disable_reason) const;
   void AddDisableReason(const std::string& extension_id,
                         Extension::DisableReason disable_reason);
   void RemoveDisableReason(const std::string& extension_id,
@@ -279,9 +282,6 @@ class ExtensionPrefs : public ExtensionScopedPrefs, public KeyedService {
   // Re-writes the extension manifest into the prefs.
   // Called to change the extension's manifest when it's re-localized.
   void UpdateManifest(const Extension* extension);
-
-  // Returns extension path based on extension ID, or empty FilePath on error.
-  base::FilePath GetExtensionPath(const std::string& extension_id);
 
   // Returns base extensions install directory.
   const base::FilePath& install_directory() const { return install_directory_; }
@@ -440,6 +440,7 @@ class ExtensionPrefs : public ExtensionScopedPrefs, public KeyedService {
   void SetDelayedInstallInfo(const Extension* extension,
                              Extension::State initial_state,
                              bool blacklisted_for_malware,
+                             bool is_ephemeral,
                              DelayReason delay_reason,
                              const syncer::StringOrdinal& page_ordinal,
                              const std::string& install_parameter);
@@ -472,6 +473,12 @@ class ExtensionPrefs : public ExtensionScopedPrefs, public KeyedService {
 
   // Permanently remove the preferences for an evicted ephemeral app.
   void RemoveEvictedEphemeralApp(const std::string& extension_id);
+
+  // Returns true if the extension is an ephemeral app.
+  bool IsEphemeralApp(const std::string& extension_id) const;
+
+  // Promotes an ephemeral app to a regular installed app.
+  void OnEphemeralAppPromoted(const std::string& extension_id);
 
   // Returns true if the user repositioned the app on the app launcher via drag
   // and drop.
@@ -679,6 +686,7 @@ class ExtensionPrefs : public ExtensionScopedPrefs, public KeyedService {
                                   const base::Time install_time,
                                   Extension::State initial_state,
                                   bool blacklisted_for_malware,
+                                  bool is_ephemeral,
                                   const std::string& install_parameter,
                                   base::DictionaryValue* extension_dict);
 

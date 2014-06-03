@@ -58,7 +58,7 @@ ImageSkia* GetErrorImageSkia() {
   SkBitmap bitmap;
   bitmap.setConfig(SkBitmap::kARGB_8888_Config, 16, 16);
   bitmap.allocPixels();
-  bitmap.eraseRGB(0xff, 0, 0);
+  bitmap.eraseARGB(0xff, 0xff, 0, 0);
   return new gfx::ImageSkia(gfx::ImageSkiaRep(bitmap, 1.0f));
 }
 
@@ -102,7 +102,6 @@ scoped_refptr<base::RefCountedMemory> Get1xPNGBytesFromImageSkia(
 
 class ImageRepPNG;
 class ImageRepSkia;
-class ImageRepGdk;
 class ImageRepCocoa;
 class ImageRepCocoaTouch;
 
@@ -697,11 +696,7 @@ void Image::SetSourceColorSpace(CGColorSpaceRef color_space) {
 
 Image::RepresentationType Image::DefaultRepresentationType() const {
   CHECK(storage_.get());
-  RepresentationType default_type = storage_->default_representation_type();
-  // The conversions above assume that the default representation type is never
-  // kImageRepCairo.
-  DCHECK_NE(default_type, kImageRepCairo);
-  return default_type;
+  return storage_->default_representation_type();
 }
 
 internal::ImageRep* Image::GetRepresentation(

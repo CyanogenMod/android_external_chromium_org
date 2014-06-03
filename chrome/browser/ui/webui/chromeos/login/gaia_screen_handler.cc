@@ -7,10 +7,11 @@
 #include "base/logging.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/login/user_adding_screen.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/ui/user_adding_screen.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
+#include "chromeos/chromeos_switches.h"
 #include "chromeos/settings/cros_settings_names.h"
 #include "google_apis/gaia/gaia_switches.h"
 #include "google_apis/gaia/gaia_urls.h"
@@ -138,12 +139,16 @@ void GaiaScreenHandler::LoadGaia(const GaiaContext& context) {
     params.Set("localizedStrings", localized_strings);
   }
 
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+
   const GURL gaia_url =
-      CommandLine::ForCurrentProcess()->HasSwitch(::switches::kGaiaUrl)
-          ? GURL(CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-                ::switches::kGaiaUrl))
+      command_line->HasSwitch(::switches::kGaiaUrl)
+          ? GURL(command_line->GetSwitchValueASCII(::switches::kGaiaUrl))
           : GaiaUrls::GetInstance()->gaia_url();
   params.SetString("gaiaUrl", gaia_url.spec());
+
+  if (command_line->HasSwitch(chromeos::switches::kEnableEmbeddedSignin))
+    params.SetBoolean("useEmbedded", true);
 
   frame_state_ = FRAME_STATE_LOADING;
   CallJS("loadAuthExtension", params);
@@ -183,7 +188,11 @@ void GaiaScreenHandler::DeclareLocalizedValues(
                IDS_CREATE_LOCALLY_MANAGED_USER_FEATURE_NAME);
 
   // Strings used by the fatal error dialog.
-  builder->Add("fatalErrorMessageGeneric", IDS_LOGIN_FATAL_ERROR_TEXT_GENERIC);
+  builder->Add("fatalErrorMessageNoEmail",  IDS_LOGIN_FATAL_ERROR_NO_EMAIL);
+  builder->Add("fatalErrorMessageNoPassword",
+               IDS_LOGIN_FATAL_ERROR_NO_PASSWORD);
+  builder->Add("fatalErrorMessageVerificationFailed",
+               IDS_LOGIN_FATAL_ERROR_PASSWORD_VERIFICATION);
   builder->Add("fatalErrorMessageInsecureURL",
                IDS_LOGIN_FATAL_ERROR_TEXT_INSECURE_URL);
   builder->Add("fatalErrorInstructions", IDS_LOGIN_FATAL_ERROR_INSTRUCTIONS);

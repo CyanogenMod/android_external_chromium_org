@@ -13,8 +13,8 @@
 #include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "jni/MojoMain_jni.h"
+#include "mojo/public/cpp/application/application.h"
 #include "mojo/public/cpp/environment/environment.h"
-#include "mojo/public/cpp/shell/application.h"
 #include "mojo/service_manager/service_loader.h"
 #include "mojo/service_manager/service_manager.h"
 #include "mojo/shell/context.h"
@@ -38,14 +38,14 @@ LazyInstance<scoped_ptr<shell::Context> > g_context =
 LazyInstance<scoped_ptr<mojo::Environment> > g_env =
     LAZY_INSTANCE_INITIALIZER;
 
-}  // namspace
+}  // namespace
 
 static void Init(JNIEnv* env, jclass clazz, jobject context) {
   base::android::ScopedJavaLocalRef<jobject> scoped_context(env, context);
 
   base::android::InitApplicationContext(env, scoped_context);
 
-  CommandLine::Init(0, 0);
+  base::CommandLine::Init(0, 0);
   mojo::shell::InitializeLogging();
 
   g_java_message_loop.Get().reset(new base::MessageLoopForUI);
@@ -71,7 +71,7 @@ static void Start(JNIEnv* env, jclass clazz, jobject context, jstring jurl) {
     std::vector<std::string> argv;
     argv.push_back("mojo_shell");
     argv.push_back(app_url);
-    CommandLine::ForCurrentProcess()->InitFromArgv(argv);
+    base::CommandLine::ForCurrentProcess()->InitFromArgv(argv);
   }
 
   g_env.Get().reset(new Environment);

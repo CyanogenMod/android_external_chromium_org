@@ -16,11 +16,14 @@ namespace media {
 // in Device Thread (a.k.a. Audio Thread).
 class MEDIA_EXPORT VideoCaptureDeviceFactory {
  public:
+  static scoped_ptr<VideoCaptureDeviceFactory> CreateFactory();
+
   VideoCaptureDeviceFactory();
-  virtual ~VideoCaptureDeviceFactory() {}
+  virtual ~VideoCaptureDeviceFactory();
 
   // Creates a VideoCaptureDevice object. Returns NULL if something goes wrong.
   virtual scoped_ptr<VideoCaptureDevice> Create(
+      scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
       const VideoCaptureDevice::Name& device_name);
 
   // Gets the names of all video capture devices connected to this computer.

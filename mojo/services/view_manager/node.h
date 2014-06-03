@@ -15,8 +15,8 @@
 #include "ui/aura/window_observer.h"
 
 namespace mojo {
-namespace services {
 namespace view_manager {
+namespace service {
 
 class NodeDelegate;
 class View;
@@ -39,13 +39,27 @@ class MOJO_VIEW_MANAGER_EXPORT Node
 
   aura::Window* window() { return &window_; }
 
-  Node* GetParent();
+  const gfx::Rect& bounds() const { return window_.bounds(); }
 
+  const Node* GetParent() const;
+  Node* GetParent() {
+    return const_cast<Node*>(const_cast<const Node*>(this)->GetParent());
+  }
+
+  const Node* GetRoot() const;
+  Node* GetRoot() {
+    return const_cast<Node*>(const_cast<const Node*>(this)->GetRoot());
+  }
+
+  std::vector<const Node*> GetChildren() const;
   std::vector<Node*> GetChildren();
+
+  bool Contains(const Node* node) const;
 
   // Sets the view associated with this node. Node does not own its View.
   void SetView(View* view);
   View* view() { return view_; }
+  const View* view() const { return view_; }
 
  private:
   // WindowObserver overrides:
@@ -85,8 +99,8 @@ class MOJO_VIEW_MANAGER_EXPORT Node
   DISALLOW_COPY_AND_ASSIGN(Node);
 };
 
+}  // namespace service
 }  // namespace view_manager
-}  // namespace services
 }  // namespace mojo
 
 #endif  // MOJO_SERVICES_VIEW_MANAGER_NODE_H_

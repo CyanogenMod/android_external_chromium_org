@@ -8,6 +8,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "ui/app_list/app_list_export.h"
 #include "ui/views/view.h"
 
 namespace content {
@@ -29,14 +30,19 @@ class AppListModel;
 class AppListViewDelegate;
 class AppsContainerView;
 class PaginationModel;
+class StartPageView;
 
 // A view to manage sub views under the search box (apps grid view + page
 // switcher and search results). The two sets of sub views are mutually
 // exclusive. ContentsView manages a show state to choose one set to show
 // and animates the transition between show states.
-class ContentsView : public views::View {
+class APP_LIST_EXPORT ContentsView : public views::View {
  public:
-  enum ShowState { SHOW_APPS, SHOW_SEARCH_RESULTS, };
+  enum ShowState {
+    SHOW_APPS,
+    SHOW_SEARCH_RESULTS,
+    SHOW_START_PAGE,
+  };
 
   ContentsView(AppListMainView* app_list_main_view,
                PaginationModel* pagination_model,
@@ -61,9 +67,12 @@ class ContentsView : public views::View {
   void Prerender();
 
   AppsContainerView* apps_container_view() { return apps_container_view_; }
+  StartPageView* start_page_view() { return start_page_view_; }
+
+  ShowState show_state() const { return show_state_; }
 
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
   virtual bool OnMouseWheel(const ui::MouseWheelEvent& event) OVERRIDE;
@@ -83,6 +92,9 @@ class ContentsView : public views::View {
   PaginationModel* pagination_model_;  // Owned by AppListController.
 
   AppsContainerView* apps_container_view_;  // Owned by the views hierarchy.
+  StartPageView* start_page_view_;          // Owned by the views hierarchy.
+
+  AppListMainView* app_list_main_view_;     // Parent view, owns this.
 
   scoped_ptr<views::ViewModel> view_model_;
   scoped_ptr<views::BoundsAnimator> bounds_animator_;

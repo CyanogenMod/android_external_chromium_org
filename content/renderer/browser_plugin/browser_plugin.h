@@ -55,10 +55,6 @@ class CONTENT_EXPORT BrowserPlugin :
   // Checks if the attribute |attribute_name| exists in the DOM.
   bool HasDOMAttribute(const std::string& attribute_name) const;
 
-  // Get the name attribute value.
-  std::string GetNameAttribute() const;
-  // Parse the name attribute value.
-  void ParseNameAttribute();
   // Get the allowtransparency attribute value.
   bool GetAllowTransparencyAttribute() const;
   // Parse the allowtransparency attribute and adjust transparency of
@@ -275,7 +271,6 @@ class CONTENT_EXPORT BrowserPlugin :
   void OnSetCursor(int instance_id, const WebCursor& cursor);
   void OnSetMouseLock(int instance_id, bool enable);
   void OnShouldAcceptTouchEvents(int instance_id, bool accept);
-  void OnUpdatedName(int instance_id, const std::string& name);
   void OnUpdateRect(int instance_id,
                     const BrowserPluginMsg_UpdateRect_Params& params);
 
@@ -285,11 +280,11 @@ class CONTENT_EXPORT BrowserPlugin :
   // This indicates whether this BrowserPlugin has been attached to a
   // WebContents.
   bool attached_;
-  base::WeakPtr<RenderViewImpl> render_view_;
+  const base::WeakPtr<RenderViewImpl> render_view_;
   // We cache the |render_view_|'s routing ID because we need it on destruction.
   // If the |render_view_| is destroyed before the BrowserPlugin is destroyed
   // then we will attempt to access a NULL pointer.
-  int render_view_routing_id_;
+  const int render_view_routing_id_;
   blink::WebPluginContainer* container_;
   scoped_ptr<BrowserPluginBindings> bindings_;
   bool paint_ack_received_;
@@ -311,7 +306,7 @@ class CONTENT_EXPORT BrowserPlugin :
   // embedder RenderView's visibility.
   bool visible_;
 
-  bool auto_navigate_;
+  const bool auto_navigate_;
   std::string html_string_;
 
   WebCursor cursor_;
@@ -323,7 +318,7 @@ class CONTENT_EXPORT BrowserPlugin :
   // BrowserPlugin outlives RenderViewImpl in Chrome Apps and so we need to
   // store the BrowserPlugin's BrowserPluginManager in a member variable to
   // avoid accessing the RenderViewImpl.
-  scoped_refptr<BrowserPluginManager> browser_plugin_manager_;
+  const scoped_refptr<BrowserPluginManager> browser_plugin_manager_;
 
   // Used for HW compositing.
   scoped_refptr<ChildFrameCompositingHelper> compositing_helper_;
@@ -332,7 +327,7 @@ class CONTENT_EXPORT BrowserPlugin :
   scoped_ptr<struct _NPP> npp_;
 
   // URL for the embedder frame.
-  GURL embedder_frame_url_;
+  const GURL embedder_frame_url_;
 
   std::vector<EditCommand> edit_commands_;
 

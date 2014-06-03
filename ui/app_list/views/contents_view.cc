@@ -16,6 +16,7 @@
 #include "ui/app_list/views/apps_container_view.h"
 #include "ui/app_list/views/apps_grid_view.h"
 #include "ui/app_list/views/search_result_list_view.h"
+#include "ui/app_list/views/start_page_view.h"
 #include "ui/events/event.h"
 #include "ui/views/animation/bounds_animator.h"
 #include "ui/views/view_model.h"
@@ -28,6 +29,7 @@ namespace {
 // Indexes of interesting views in ViewModel of ContentsView.
 const int kIndexAppsContainer = 0;
 const int kIndexSearchResults = 1;
+const int kIndexStartPage = 2;
 
 const int kMinMouseWheelToSwitchPage = 20;
 const int kMinScrollToSwitchPage = 20;
@@ -44,6 +46,10 @@ SearchResultListView* GetSearchResultListView(views::ViewModel* model) {
       model->view_at(kIndexSearchResults));
 }
 
+StartPageView* GetStartPageView(views::ViewModel* model) {
+  return static_cast<StartPageView*>(model->view_at(kIndexStartPage));
+}
+
 }  // namespace
 
 ContentsView::ContentsView(AppListMainView* app_list_main_view,
@@ -52,6 +58,8 @@ ContentsView::ContentsView(AppListMainView* app_list_main_view,
                            AppListViewDelegate* view_delegate)
     : show_state_(SHOW_APPS),
       pagination_model_(pagination_model),
+      start_page_view_(NULL),
+      app_list_main_view_(app_list_main_view),
       view_model_(new views::ViewModel),
       bounds_animator_(new views::BoundsAnimator(this)) {
   DCHECK(model);
@@ -68,6 +76,12 @@ ContentsView::ContentsView(AppListMainView* app_list_main_view,
       app_list_main_view, view_delegate);
   AddChildView(search_results_view);
   view_model_->Add(search_results_view, kIndexSearchResults);
+
+  if (app_list::switches::IsExperimentalAppListEnabled()) {
+    start_page_view_ = new StartPageView(app_list_main_view, view_delegate);
+    AddChildView(start_page_view_);
+    view_model_->Add(start_page_view_, kIndexStartPage);
+  }
 
   GetSearchResultListView(view_model_.get())->SetResults(model->results());
 }
@@ -107,6 +121,12 @@ void ContentsView::ShowStateChanged() {
     results_view->SetSelectedIndex(0);
   results_view->UpdateAutoLaunchState();
 
+  // Notify parent AppListMainView of show state change.
+  app_list_main_view_->OnContentsViewShowStateChanged();
+
+  if (show_state_ == SHOW_START_PAGE)
+    GetStartPageView(view_model_.get())->Reset();
+
   AnimateToIdealBounds();
 }
 
@@ -124,13 +144,16 @@ void ContentsView::CalculateIdealBounds() {
       case SHOW_SEARCH_RESULTS:
         incoming_view_index = kIndexSearchResults;
         break;
+      case SHOW_START_PAGE:
+        incoming_view_index = kIndexStartPage;
+        break;
       default:
         NOTREACHED();
     }
 
     gfx::Rect incoming_target(rect);
     gfx::Rect outgoing_target(rect);
-    outgoing_target.set_y(-outgoing_target.height());
+    outgoing_target.set_x(-outgoing_target.width());
 
     for (int i = 0; i < view_model_->view_size(); ++i) {
       view_model_->set_ideal_bounds(i,
@@ -184,7 +207,7 @@ void ContentsView::Prerender() {
   apps_container_view_->apps_grid_view()->Prerender(selected_page);
 }
 
-gfx::Size ContentsView::GetPreferredSize() {
+gfx::Size ContentsView::GetPreferredSize() const {
   const gfx::Size container_size = GetAppsContainerView(view_model_.get())->
       apps_grid_view()->GetPreferredSize();
   const gfx::Size results_size =
@@ -206,6 +229,8 @@ bool ContentsView::OnKeyPressed(const ui::KeyEvent& event) {
       return GetAppsContainerView(view_model_.get())->OnKeyPressed(event);
     case SHOW_SEARCH_RESULTS:
       return GetSearchResultListView(view_model_.get())->OnKeyPressed(event);
+    case SHOW_START_PAGE:
+      return GetStartPageView(view_model_.get())->OnKeyPressed(event);
     default:
       NOTREACHED() << "Unknown show state " << show_state_;
   }
@@ -276,12 +301,12 @@ void ContentsView::OnScrollEvent(ui::ScrollEvent* event) {
   }
 
   float offset;
-  if (abs(event->x_offset()) > abs(event->y_offset()))
+  if (std::abs(event->x_offset()) > std::abs(event->y_offset()))
     offset = event->x_offset();
   else
     offset = event->y_offset();
 
-  if (abs(offset) > kMinScrollToSwitchPage) {
+  if (std::abs(offset) > kMinScrollToSwitchPage) {
     if (!pagination_model_->has_transition()) {
       pagination_model_->SelectPageRelative(offset > 0 ? -1 : 1,
                                             true);

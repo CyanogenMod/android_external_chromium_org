@@ -129,8 +129,6 @@ PnaclCoordinator* PnaclCoordinator::BitcodeToNative(
       new PnaclCoordinator(plugin, pexe_url,
                            pnacl_options,
                            translate_notify_callback);
-  PLUGIN_PRINTF(("PnaclCoordinator::BitcodeToNative (manifest_id=%d)\n",
-                 coordinator->manifest_id_));
 
   coordinator->pnacl_init_time_ = NaClGetTimeOfDayMicroseconds();
   int cpus = plugin->nacl_interface()->GetNumberOfProcessors();
@@ -153,8 +151,6 @@ PnaclCoordinator::PnaclCoordinator(
     plugin_(plugin),
     translate_notify_callback_(translate_notify_callback),
     translation_finished_reported_(false),
-    manifest_id_(
-        GetNaClInterface()->CreatePnaclManifest(plugin->pp_instance())),
     pexe_url_(pexe_url),
     pnacl_options_(pnacl_options),
     architecture_attributes_(GetArchitectureAttributes(plugin)),
@@ -199,9 +195,9 @@ PnaclCoordinator::~PnaclCoordinator() {
   }
 }
 
-nacl::DescWrapper* PnaclCoordinator::ReleaseTranslatedFD() {
+PP_FileHandle PnaclCoordinator::TakeTranslatedFileHandle() {
   DCHECK(temp_nexe_file_ != NULL);
-  return temp_nexe_file_->release_read_wrapper();
+  return temp_nexe_file_->TakeFileHandle();
 }
 
 void PnaclCoordinator::ReportNonPpapiError(PP_NaClError err_code,
@@ -340,8 +336,7 @@ void PnaclCoordinator::NexeReadDidOpen(int32_t pp_error) {
 
 void PnaclCoordinator::OpenBitcodeStream() {
   // Now open the pexe stream.
-  streaming_downloader_.reset(new FileDownloader());
-  streaming_downloader_->Initialize(plugin_);
+  streaming_downloader_.reset(new FileDownloader(plugin_));
   // Mark the request as requesting a PNaCl bitcode file,
   // so that component updater can detect this user action.
   streaming_downloader_->set_request_headers(
@@ -387,8 +382,7 @@ void PnaclCoordinator::BitcodeStreamDidOpen(int32_t pp_error) {
   // The first step of loading resources: read the resource info file.
   pp::CompletionCallback resource_info_read_cb =
       callback_factory_.NewCallback(&PnaclCoordinator::ResourceInfoWasRead);
-  resources_->ReadResourceInfo(PnaclUrls::GetResourceInfoUrl(),
-                               resource_info_read_cb);
+  resources_->ReadResourceInfo(resource_info_read_cb);
 }
 
 void PnaclCoordinator::ResourceInfoWasRead(int32_t pp_error) {
@@ -430,7 +424,7 @@ void PnaclCoordinator::ResourcesDidLoad(int32_t pp_error) {
           headers.c_str(),
           architecture_attributes_.c_str(), // Extra compile flags.
           &is_cache_hit_,
-          temp_nexe_file_->existing_handle(),
+          temp_nexe_file_->internal_handle(),
           cb.pp_completion_callback());
   if (nexe_fd_err < PP_OK_COMPLETIONPENDING) {
     ReportPpapiError(PP_NACL_ERROR_PNACL_CREATE_TEMP, nexe_fd_err,
@@ -440,16 +434,15 @@ void PnaclCoordinator::ResourcesDidLoad(int32_t pp_error) {
 
 void PnaclCoordinator::NexeFdDidOpen(int32_t pp_error) {
   PLUGIN_PRINTF(("PnaclCoordinator::NexeFdDidOpen (pp_error=%"
-                 NACL_PRId32 ", hit=%d, handle=%d)\n", pp_error,
-                 is_cache_hit_ == PP_TRUE,
-                 *temp_nexe_file_->existing_handle()));
+                 NACL_PRId32 ", hit=%d)\n", pp_error,
+                 is_cache_hit_ == PP_TRUE));
   if (pp_error < PP_OK) {
     ReportPpapiError(PP_NACL_ERROR_PNACL_CREATE_TEMP, pp_error,
                      nacl::string("GetNexeFd failed"));
     return;
   }
 
-  if (*temp_nexe_file_->existing_handle() == PP_kInvalidFileHandle) {
+  if (*temp_nexe_file_->internal_handle() == PP_kInvalidFileHandle) {
     ReportNonPpapiError(
         PP_NACL_ERROR_PNACL_CREATE_TEMP,
         nacl::string(
@@ -462,28 +455,36 @@ void PnaclCoordinator::NexeFdDidOpen(int32_t pp_error) {
     // Cache hit -- no need to stream the rest of the file.
     streaming_downloader_.reset(NULL);
     // Open it for reading as the cached nexe file.
-    pp::CompletionCallback cb =
-        callback_factory_.NewCallback(&PnaclCoordinator::NexeReadDidOpen);
-    temp_nexe_file_->Open(cb, false);
+    NexeReadDidOpen(temp_nexe_file_->Open(false));
   } else {
     // Open an object file first so the translator can start writing to it
     // during streaming translation.
     for (int i = 0; i < split_module_count_; i++) {
       obj_files_.push_back(new TempFile(plugin_));
-
-      pp::CompletionCallback obj_cb =
-          callback_factory_.NewCallback(&PnaclCoordinator::ObjectFileDidOpen);
-      obj_files_[i]->Open(obj_cb, true);
+      int32_t pp_error = obj_files_[i]->Open(true);
+      if (pp_error != PP_OK) {
+        ReportPpapiError(PP_NACL_ERROR_PNACL_CREATE_TEMP,
+                         pp_error,
+                         "Failed to open scratch object file.");
+      } else {
+        num_object_files_opened_++;
+      }
     }
     invalid_desc_wrapper_.reset(plugin_->wrapper_factory()->MakeInvalid());
 
     // Meanwhile, a miss means we know we need to stream the bitcode, so stream
-    // the rest of it now. (Calling FinishStreaming means that the downloader
+    // the rest of it now. (Calling BeginStreaming means that the downloader
     // will begin handing data to the coordinator, which is safe any time after
     // the translate_thread_ object has been initialized).
     pp::CompletionCallback finish_cb = callback_factory_.NewCallback(
         &PnaclCoordinator::BitcodeStreamDidFinish);
-    streaming_downloader_->FinishStreaming(finish_cb);
+    streaming_downloader_->BeginStreaming(finish_cb);
+
+    if (num_object_files_opened_ == split_module_count_) {
+      // Open the nexe file for connecting ld and sel_ldr.
+      // Start translation when done with this last step of setup!
+      RunTranslate(temp_nexe_file_->Open(true));
+    }
   }
 }
 
@@ -590,25 +591,6 @@ void PnaclCoordinator::GetCurrentProgress(int64_t* bytes_loaded,
   *bytes_total = expected_pexe_size_;
 }
 
-void PnaclCoordinator::ObjectFileDidOpen(int32_t pp_error) {
-  PLUGIN_PRINTF(("PnaclCoordinator::ObjectFileDidOpen (pp_error=%"
-                 NACL_PRId32 ")\n", pp_error));
-  if (pp_error != PP_OK) {
-    ReportPpapiError(PP_NACL_ERROR_PNACL_CREATE_TEMP,
-                     pp_error,
-                     "Failed to open scratch object file.");
-    return;
-  }
-  num_object_files_opened_++;
-  if (num_object_files_opened_ == split_module_count_) {
-    // Open the nexe file for connecting ld and sel_ldr.
-    // Start translation when done with this last step of setup!
-    pp::CompletionCallback cb =
-        callback_factory_.NewCallback(&PnaclCoordinator::RunTranslate);
-    temp_nexe_file_->Open(cb, true);
-  }
-}
-
 void PnaclCoordinator::RunTranslate(int32_t pp_error) {
   PLUGIN_PRINTF(("PnaclCoordinator::RunTranslate (pp_error=%"
                  NACL_PRId32 ")\n", pp_error));
@@ -619,7 +601,6 @@ void PnaclCoordinator::RunTranslate(int32_t pp_error) {
 
   CHECK(translate_thread_ != NULL);
   translate_thread_->RunTranslate(report_translate_finished,
-                                  manifest_id_,
                                   &obj_files_,
                                   temp_nexe_file_.get(),
                                   invalid_desc_wrapper_.get(),

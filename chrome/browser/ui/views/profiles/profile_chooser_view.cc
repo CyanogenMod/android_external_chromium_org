@@ -15,6 +15,7 @@
 #include "chrome/browser/profiles/profile_window.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/signin_header_helper.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/ui/browser.h"
@@ -27,6 +28,7 @@
 #include "chrome/common/url_constants.h"
 #include "components/signin/core/browser/mutable_profile_oauth2_token_service.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/signin_error_controller.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "grit/chromium_strings.h"
@@ -38,6 +40,8 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
+#include "ui/gfx/path.h"
+#include "ui/gfx/skia_util.h"
 #include "ui/gfx/text_elider.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/controls/button/blue_button.h"
@@ -94,6 +98,30 @@ gfx::ImageSkia CreateSquarePlaceholderImage(int size) {
   bitmap.allocPixels();
   bitmap.eraseARGB(0, 0, 0, 0);
   return gfx::ImageSkia::CreateFrom1xBitmap(bitmap);
+}
+
+bool HasAuthError(Profile* profile) {
+  const SigninErrorController* error =
+      profiles::GetSigninErrorController(profile);
+  return error && error->HasError();
+}
+
+std::string GetAuthErrorAccountId(Profile* profile) {
+  const SigninErrorController* error =
+      profiles::GetSigninErrorController(profile);
+  if (!error)
+    return std::string();
+
+  return error->error_account_id();
+}
+
+std::string GetAuthErrorUsername(Profile* profile) {
+  const SigninErrorController* error =
+      profiles::GetSigninErrorController(profile);
+  if (!error)
+    return std::string();
+
+  return error->error_username();
 }
 
 // BackgroundColorHoverButton -------------------------------------------------
@@ -157,13 +185,11 @@ class EditableProfilePhoto : public views::ImageView {
     SetImage(image.ToImageSkia());
     SetBoundsRect(bounds);
 
-    ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
-    views::ImageView* frame_overlay = new views::ImageView();
-    frame_overlay->SetImage(rb->GetImageNamed(
-        IDR_ICON_PROFILES_AVATAR_PHOTO_FRAME).ToImageSkia());
-    frame_overlay->SetVerticalAlignment(views::ImageView::CENTER);
-    frame_overlay->SetBoundsRect(bounds);
-    AddChildView(frame_overlay);
+    // Calculate the circular mask that will be used to display the photo.
+    gfx::Point center = bounds.CenterPoint();
+    circular_mask_.addCircle(SkIntToScalar(center.x()),
+                             SkIntToScalar(center.y()),
+                             SkIntToScalar(bounds.width() / 2));
 
     if (!is_editing_allowed)
       return;
@@ -179,11 +205,25 @@ class EditableProfilePhoto : public views::ImageView {
     change_photo_button_->set_background(
         views::Background::CreateSolidBackground(kBackgroundColor));
     change_photo_button_->SetImage(views::LabelButton::STATE_NORMAL,
-        *rb->GetImageSkiaNamed(IDR_ICON_PROFILES_EDIT_CAMERA));
+        *ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+            IDR_ICON_PROFILES_EDIT_CAMERA));
 
     change_photo_button_->SetBoundsRect(bounds);
     change_photo_button_->SetVisible(false);
     AddChildView(change_photo_button_);
+  }
+
+  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
+    // Display the profile picture as a circle.
+    canvas->ClipPath(circular_mask_, true);
+    views::ImageView::OnPaint(canvas);
+  }
+
+  virtual void PaintChildren(gfx::Canvas* canvas,
+                     const views::CullSet& cull_set) OVERRIDE {
+    // Display any children (the "change photo" overlay) as a circle.
+    canvas->ClipPath(circular_mask_, true);
+    View::PaintChildren(canvas, cull_set);
   }
 
   views::LabelButton* change_photo_button() { return change_photo_button_; }
@@ -199,6 +239,8 @@ class EditableProfilePhoto : public views::ImageView {
     if (change_photo_button_)
       change_photo_button_->SetVisible(false);
   }
+
+  gfx::Path circular_mask_;
 
   // Button that is shown when hovering over the image view. Can be NULL if
   // the photo isn't allowed to be edited (e.g. for guest profiles).
@@ -225,8 +267,10 @@ class EditableProfileName : public views::LabelButton,
     SetFontList(medium_font_list);
     SetHorizontalAlignment(gfx::ALIGN_CENTER);
 
-    if (!is_editing_allowed)
+    if (!is_editing_allowed) {
+      SetBorder(views::Border::CreateEmptyBorder(2, 0, 2, 0));
       return;
+    }
 
     // Show an "edit" pencil icon when hovering over. In the default state,
     // we need to create an empty placeholder of the correct size, so that
@@ -365,7 +409,7 @@ class TitleCard : public views::View {
     title_label_->SetBoundsRect(GetContentsBounds());
   }
 
-  virtual gfx::Size GetPreferredSize() OVERRIDE{
+  virtual gfx::Size GetPreferredSize() const OVERRIDE{
     int height = std::max(title_label_->GetPreferredSize().height(),
         back_button_->GetPreferredSize().height());
     return gfx::Size(width(), height);
@@ -385,14 +429,18 @@ bool ProfileChooserView::close_on_deactivate_for_testing_ = true;
 
 // static
 void ProfileChooserView::ShowBubble(
-    BubbleViewMode view_mode,
+    profiles::BubbleViewMode view_mode,
+    signin::GAIAServiceType service_type,
     views::View* anchor_view,
     views::BubbleBorder::Arrow arrow,
     views::BubbleBorder::BubbleAlignment border_alignment,
     const gfx::Rect& anchor_rect,
     Browser* browser) {
+  if (IsShowing())
+    return;
+
   profile_bubble_ = new ProfileChooserView(anchor_view, arrow, anchor_rect,
-                                           browser, view_mode);
+                                           browser, view_mode, service_type);
   views::BubbleDelegateView::CreateBubble(profile_bubble_);
   profile_bubble_->set_close_on_deactivate(close_on_deactivate_for_testing_);
   profile_bubble_->SetAlignment(border_alignment);
@@ -415,11 +463,13 @@ ProfileChooserView::ProfileChooserView(views::View* anchor_view,
                                        views::BubbleBorder::Arrow arrow,
                                        const gfx::Rect& anchor_rect,
                                        Browser* browser,
-                                       BubbleViewMode view_mode)
+                                       profiles::BubbleViewMode view_mode,
+                                       signin::GAIAServiceType service_type)
     : BubbleDelegateView(anchor_view, arrow),
       browser_(browser),
       view_mode_(view_mode),
-      tutorial_mode_(TUTORIAL_MODE_NONE) {
+      tutorial_mode_(profiles::TUTORIAL_MODE_NONE),
+      gaia_service_type_(service_type) {
   // Reset the default margins inherited from the BubbleDelegateView.
   set_margins(gfx::Insets());
 
@@ -464,11 +514,19 @@ void ProfileChooserView::ResetView() {
   account_removal_cancel_button_ = NULL;
   gaia_signin_cancel_button_ = NULL;
   open_other_profile_indexes_map_.clear();
-  current_profile_accounts_map_.clear();
-  tutorial_mode_ = TUTORIAL_MODE_NONE;
+  delete_account_button_map_.clear();
+  reauth_account_button_map_.clear();
+  tutorial_mode_ = profiles::TUTORIAL_MODE_NONE;
 }
 
 void ProfileChooserView::Init() {
+  // If view mode is PROFILE_CHOOSER but there is an auth error, force
+  // ACCOUNT_MANAGEMENT mode.
+  if (view_mode_ == profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER &&
+      HasAuthError(browser_->profile())) {
+    view_mode_ = profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT;
+  }
+
   ShowView(view_mode_, avatar_menu_.get());
 }
 
@@ -477,39 +535,40 @@ void ProfileChooserView::OnAvatarMenuChanged(
   // Refresh the view with the new menu. We can't just update the local copy
   // as this may have been triggered by a sign out action, in which case
   // the view is being destroyed.
-  ShowView(BUBBLE_VIEW_MODE_PROFILE_CHOOSER, avatar_menu);
+  ShowView(profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER, avatar_menu);
 }
 
 void ProfileChooserView::OnRefreshTokenAvailable(
     const std::string& account_id) {
   // Refresh the account management view when a new account is added to the
   // profile.
-  if (view_mode_ == BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT ||
-      view_mode_ == BUBBLE_VIEW_MODE_GAIA_SIGNIN ||
-      view_mode_ == BUBBLE_VIEW_MODE_GAIA_ADD_ACCOUNT) {
-    ShowView(BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT, avatar_menu_.get());
+  if (view_mode_ == profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT ||
+      view_mode_ == profiles::BUBBLE_VIEW_MODE_GAIA_SIGNIN ||
+      view_mode_ == profiles::BUBBLE_VIEW_MODE_GAIA_ADD_ACCOUNT ||
+      view_mode_ == profiles::BUBBLE_VIEW_MODE_GAIA_REAUTH) {
+    ShowView(profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT, avatar_menu_.get());
   }
 }
 
 void ProfileChooserView::OnRefreshTokenRevoked(const std::string& account_id) {
   // Refresh the account management view when an account is removed from the
   // profile.
-  if (view_mode_ == BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT)
-    ShowView(BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT, avatar_menu_.get());
+  if (view_mode_ == profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT)
+    ShowView(profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT, avatar_menu_.get());
 }
 
-void ProfileChooserView::ShowView(BubbleViewMode view_to_display,
+void ProfileChooserView::ShowView(profiles::BubbleViewMode view_to_display,
                                   AvatarMenu* avatar_menu) {
   // The account management view should only be displayed if the active profile
   // is signed in.
-  if (view_to_display == BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT) {
+  if (view_to_display == profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT) {
     const AvatarMenu::Item& active_item = avatar_menu->GetItemAt(
         avatar_menu->GetActiveProfileIndex());
     DCHECK(active_item.signed_in);
   }
 
   // Records the last tutorial mode.
-  TutorialMode last_tutorial_mode = tutorial_mode_;
+  profiles::TutorialMode last_tutorial_mode = tutorial_mode_;
   ResetView();
   RemoveAllChildViews(true);
   view_mode_ = view_to_display;
@@ -517,17 +576,17 @@ void ProfileChooserView::ShowView(BubbleViewMode view_to_display,
   views::GridLayout* layout;
   views::View* sub_view;
   switch (view_mode_) {
-    case BUBBLE_VIEW_MODE_GAIA_SIGNIN:
-    case BUBBLE_VIEW_MODE_GAIA_ADD_ACCOUNT:
+    case profiles::BUBBLE_VIEW_MODE_GAIA_SIGNIN:
+    case profiles::BUBBLE_VIEW_MODE_GAIA_ADD_ACCOUNT:
+    case profiles::BUBBLE_VIEW_MODE_GAIA_REAUTH:
       layout = CreateSingleColumnLayout(this, kFixedGaiaViewWidth);
-      sub_view = CreateGaiaSigninView(
-          view_mode_ == BUBBLE_VIEW_MODE_GAIA_ADD_ACCOUNT);
+      sub_view = CreateGaiaSigninView();
       break;
-    case BUBBLE_VIEW_MODE_ACCOUNT_REMOVAL:
+    case profiles::BUBBLE_VIEW_MODE_ACCOUNT_REMOVAL:
       layout = CreateSingleColumnLayout(this, kFixedAccountRemovalViewWidth);
       sub_view = CreateAccountRemovalView();
       break;
-    case BUBBLE_VIEW_MODE_END_PREVIEW:
+    case profiles::BUBBLE_VIEW_MODE_END_PREVIEW:
       layout = CreateSingleColumnLayout(this, kFixedEndPreviewViewWidth);
       sub_view = CreateEndPreviewView();
       break;
@@ -566,6 +625,7 @@ void ProfileChooserView::ButtonPressed(views::Button* sender,
       profiles::CloseGuestProfileWindows();
   } else if (sender == lock_button_) {
     profiles::LockProfile(browser_->profile());
+    PostActionPerformed(ProfileMetrics::PROFILE_DESKTOP_MENU_LOCK);
   } else if (sender == tutorial_ok_button_) {
     // If the user manually dismissed the tutorial, never show it again by
     // setting the number of times shown to the maximum plus 1, so that later we
@@ -576,7 +636,7 @@ void ProfileChooserView::ButtonPressed(views::Button* sender,
 
     ProfileMetrics::LogProfileUpgradeEnrollment(
         ProfileMetrics::PROFILE_ENROLLMENT_CLOSE_WELCOME_CARD);
-    ShowView(BUBBLE_VIEW_MODE_PROFILE_CHOOSER, avatar_menu_.get());
+    ShowView(profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER, avatar_menu_.get());
   } else if (sender == tutorial_enable_new_profile_management_button_) {
     ProfileMetrics::LogProfileUpgradeEnrollment(
         ProfileMetrics::PROFILE_ENROLLMENT_ACCEPT_NEW_PROFILE_MGMT);
@@ -585,32 +645,38 @@ void ProfileChooserView::ButtonPressed(views::Button* sender,
     RemoveAccount();
   } else if (sender == account_removal_cancel_button_) {
     account_id_to_remove_.clear();
-    ShowView(BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT, avatar_menu_.get());
+    ShowView(profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT, avatar_menu_.get());
   } else if (sender == gaia_signin_cancel_button_) {
     std::string primary_account =
         SigninManagerFactory::GetForProfile(browser_->profile())->
         GetAuthenticatedUsername();
-    ShowView(primary_account.empty() ? BUBBLE_VIEW_MODE_PROFILE_CHOOSER :
-                                       BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT,
+    ShowView(primary_account.empty() ?
+                 profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER :
+                 profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT,
              avatar_menu_.get());
   } else if (sender == question_mark_button_) {
-    tutorial_mode_ = TUTORIAL_MODE_SEND_FEEDBACK;
-    ShowView(BUBBLE_VIEW_MODE_PROFILE_CHOOSER, avatar_menu_.get());
+    tutorial_mode_ = profiles::TUTORIAL_MODE_SEND_FEEDBACK;
+    ShowView(profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER, avatar_menu_.get());
   } else if (sender == tutorial_send_feedback_button_) {
+    ProfileMetrics::LogProfileUpgradeEnrollment(
+        ProfileMetrics::PROFILE_ENROLLMENT_SEND_FEEDBACK);
     chrome::OpenFeedbackDialog(browser_);
   } else if (sender == end_preview_and_relaunch_button_) {
+    ProfileMetrics::LogProfileUpgradeEnrollment(
+        ProfileMetrics::PROFILE_ENROLLMENT_DISABLE_NEW_PROFILE_MGMT);
     profiles::DisableNewProfileManagementPreview();
   } else if (sender == end_preview_cancel_button_) {
-    tutorial_mode_ = TUTORIAL_MODE_SEND_FEEDBACK;
-    ShowView(BUBBLE_VIEW_MODE_PROFILE_CHOOSER, avatar_menu_.get());
+    tutorial_mode_ = profiles::TUTORIAL_MODE_SEND_FEEDBACK;
+    ShowView(profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER, avatar_menu_.get());
   } else if (current_profile_photo_ &&
              sender == current_profile_photo_->change_photo_button()) {
     avatar_menu_->EditProfile(avatar_menu_->GetActiveProfileIndex());
+    PostActionPerformed(ProfileMetrics::PROFILE_DESKTOP_MENU_EDIT_IMAGE);
   } else if (sender == signin_current_profile_link_) {
     // Only show the inline signin if the new UI flag is flipped. Otherwise,
     // use the tab signin page.
     if (switches::IsNewProfileManagement())
-      ShowView(BUBBLE_VIEW_MODE_GAIA_SIGNIN, avatar_menu_.get());
+      ShowView(profiles::BUBBLE_VIEW_MODE_GAIA_SIGNIN, avatar_menu_.get());
     else
       chrome::ShowBrowserSignin(browser_, signin::SOURCE_MENU);
   } else {
@@ -626,10 +692,16 @@ void ProfileChooserView::ButtonPressed(views::Button* sender,
     } else {
       // This was a profile accounts button.
       AccountButtonIndexes::const_iterator account_match =
-      current_profile_accounts_map_.find(sender);
-      DCHECK(account_match != current_profile_accounts_map_.end());
-      account_id_to_remove_ = account_match->second;
-      ShowView(BUBBLE_VIEW_MODE_ACCOUNT_REMOVAL, avatar_menu_.get());
+          delete_account_button_map_.find(sender);
+      if (account_match != delete_account_button_map_.end()) {
+        account_id_to_remove_ = account_match->second;
+        ShowView(profiles::BUBBLE_VIEW_MODE_ACCOUNT_REMOVAL,
+            avatar_menu_.get());
+      } else {
+        account_match = reauth_account_button_map_.find(sender);
+        DCHECK(account_match != reauth_account_button_map_.end());
+        ShowView(profiles::BUBBLE_VIEW_MODE_GAIA_REAUTH, avatar_menu_.get());
+      }
     }
   }
 }
@@ -639,11 +711,13 @@ void ProfileChooserView::RemoveAccount() {
   MutableProfileOAuth2TokenService* oauth2_token_service =
       ProfileOAuth2TokenServiceFactory::GetPlatformSpecificForProfile(
       browser_->profile());
-  if (oauth2_token_service)
+  if (oauth2_token_service) {
     oauth2_token_service->RevokeCredentials(account_id_to_remove_);
+    PostActionPerformed(ProfileMetrics::PROFILE_DESKTOP_MENU_REMOVE_ACCT);
+  }
   account_id_to_remove_.clear();
 
-  ShowView(BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT, avatar_menu_.get());
+  ShowView(profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT, avatar_menu_.get());
 }
 
 void ProfileChooserView::LinkClicked(views::Link* sender, int event_flags) {
@@ -652,12 +726,13 @@ void ProfileChooserView::LinkClicked(views::Link* sender, int event_flags) {
     // depending on which view it is displayed. ShowView() will DCHECK if
     // the account management view is displayed for non signed-in users.
     ShowView(
-        view_mode_ == BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT ?
-            BUBBLE_VIEW_MODE_PROFILE_CHOOSER :
-            BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT,
+        view_mode_ == profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT ?
+            profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER :
+            profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT,
         avatar_menu_.get());
   } else if (sender == add_account_link_) {
-    ShowView(BUBBLE_VIEW_MODE_GAIA_ADD_ACCOUNT, avatar_menu_.get());
+    ShowView(profiles::BUBBLE_VIEW_MODE_GAIA_ADD_ACCOUNT, avatar_menu_.get());
+    PostActionPerformed(ProfileMetrics::PROFILE_DESKTOP_MENU_ADD_ACCT);
   } else if (sender == tutorial_learn_more_link_) {
     ProfileMetrics::LogProfileUpgradeEnrollment(
         ProfileMetrics::PROFILE_ENROLLMENT_LAUNCH_LEARN_MORE);
@@ -671,7 +746,7 @@ void ProfileChooserView::LinkClicked(views::Link* sender, int event_flags) {
     chrome::Navigate(&params);
   } else {
     DCHECK(sender == tutorial_end_preview_link_);
-    ShowView(BUBBLE_VIEW_MODE_END_PREVIEW, avatar_menu_.get());
+    ShowView(profiles::BUBBLE_VIEW_MODE_END_PREVIEW, avatar_menu_.get());
   }
 }
 
@@ -703,15 +778,22 @@ bool ProfileChooserView::HandleKeyEvent(views::Textfield* sender,
       return true;
 
     profiles::UpdateProfileName(profile, new_profile_name);
+    PostActionPerformed(ProfileMetrics::PROFILE_DESKTOP_MENU_EDIT_NAME);
     current_profile_name_->ShowReadOnlyView();
     return true;
   }
   return false;
 }
 
+void ProfileChooserView::PostActionPerformed(
+    ProfileMetrics::ProfileDesktopMenu action_performed) {
+  ProfileMetrics::LogProfileDesktopMenu(action_performed, gaia_service_type_);
+  gaia_service_type_ = signin::GAIA_SERVICE_TYPE_NONE;
+}
+
 views::View* ProfileChooserView::CreateProfileChooserView(
     AvatarMenu* avatar_menu,
-    TutorialMode last_tutorial_mode) {
+    profiles::TutorialMode last_tutorial_mode) {
   // TODO(guohui, noms): the view should be customized based on whether new
   // profile management preview is enabled or not.
 
@@ -729,12 +811,13 @@ views::View* ProfileChooserView::CreateProfileChooserView(
     if (item.active) {
       option_buttons_view = CreateOptionsView(item.signed_in);
       current_profile_view = CreateCurrentProfileView(item, false);
-      if (view_mode_ == BUBBLE_VIEW_MODE_PROFILE_CHOOSER) {
+      if (view_mode_ == profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER) {
         if (is_new_profile_management) {
-          tutorial_view = last_tutorial_mode == TUTORIAL_MODE_SEND_FEEDBACK ?
+          tutorial_view =
+              last_tutorial_mode == profiles::TUTORIAL_MODE_SEND_FEEDBACK ?
               CreateSendPreviewFeedbackView() :
               CreatePreviewEnabledTutorialView(
-                  item, last_tutorial_mode == TUTORIAL_MODE_PREVIEW_ENABLED);
+                  item, last_tutorial_mode == profiles::TUTORIAL_MODE_WELCOME);
         } else {
           tutorial_view = CreateNewProfileManagementPreviewView();
         }
@@ -766,7 +849,14 @@ views::View* ProfileChooserView::CreateProfileChooserView(
   layout->StartRow(1, 0);
   layout->AddView(current_profile_view);
 
-  if (view_mode_ == BUBBLE_VIEW_MODE_PROFILE_CHOOSER) {
+  if (browser_->profile()->IsManaged()) {
+    layout->StartRow(0, 0);
+    layout->AddView(new views::Separator(views::Separator::HORIZONTAL));
+    layout->StartRow(1, 0);
+    layout->AddView(CreateSupervisedUserDisclaimerView());
+  }
+
+  if (view_mode_ == profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER) {
     layout->StartRow(1, 0);
     if (switches::IsFastUserSwitching())
       layout->AddView(CreateOtherProfilesView(other_profiles));
@@ -811,7 +901,7 @@ views::View* ProfileChooserView::CreatePreviewEnabledTutorialView(
   }
 
   return CreateTutorialView(
-      TUTORIAL_MODE_PREVIEW_ENABLED,
+      profiles::TUTORIAL_MODE_WELCOME,
       l10n_util::GetStringUTF16(IDS_PROFILES_PREVIEW_ENABLED_TUTORIAL_TITLE),
       l10n_util::GetStringUTF16(
           IDS_PROFILES_PREVIEW_ENABLED_TUTORIAL_CONTENT_TEXT),
@@ -823,7 +913,7 @@ views::View* ProfileChooserView::CreatePreviewEnabledTutorialView(
 
 views::View* ProfileChooserView::CreateSendPreviewFeedbackView() {
   return CreateTutorialView(
-      TUTORIAL_MODE_SEND_FEEDBACK,
+      profiles::TUTORIAL_MODE_SEND_FEEDBACK,
       l10n_util::GetStringUTF16(IDS_PROFILES_FEEDBACK_TUTORIAL_TITLE),
       l10n_util::GetStringUTF16(
           IDS_PROFILES_FEEDBACK_TUTORIAL_CONTENT_TEXT),
@@ -834,7 +924,7 @@ views::View* ProfileChooserView::CreateSendPreviewFeedbackView() {
 }
 
 views::View* ProfileChooserView::CreateTutorialView(
-    TutorialMode tutorial_mode,
+    profiles::TutorialMode tutorial_mode,
     const base::string16& title_text,
     const base::string16& content_text,
     const base::string16& link_text,
@@ -965,8 +1055,10 @@ views::View* ProfileChooserView::CreateCurrentProfileView(
   layout->AddView(current_profile_photo_);
 
   // Profile name, centered.
+  bool editing_allowed = !is_guest && !browser_->profile()->IsManaged();
   current_profile_name_ = new EditableProfileName(
-      this, profiles::GetAvatarNameForProfile(browser_->profile()), !is_guest);
+      this, profiles::GetAvatarNameForProfile(browser_->profile()),
+                                              editing_allowed);
   layout->StartRow(1, 0);
   layout->AddView(current_profile_name_);
 
@@ -974,11 +1066,11 @@ views::View* ProfileChooserView::CreateCurrentProfileView(
     return view;
 
   // The available links depend on the type of profile that is active.
-  layout->StartRow(1, 0);
   if (avatar_item.signed_in) {
+    layout->StartRow(1, 0);
     if (switches::IsNewProfileManagement()) {
       base::string16 link_title = l10n_util::GetStringUTF16(
-          view_mode_ ==  BUBBLE_VIEW_MODE_PROFILE_CHOOSER ?
+          view_mode_ == profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER ?
               IDS_PROFILES_PROFILE_MANAGE_ACCOUNTS_BUTTON :
               IDS_PROFILES_PROFILE_HIDE_MANAGE_ACCOUNTS_BUTTON);
       manage_accounts_link_ = CreateLink(link_title, this);
@@ -990,10 +1082,16 @@ views::View* ProfileChooserView::CreateCurrentProfileView(
       layout->AddView(email_label);
     }
   } else {
-    signin_current_profile_link_ = new views::BlueButton(
-      this, l10n_util::GetStringFUTF16(IDS_SYNC_START_SYNC_BUTTON_LABEL,
-          l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME)));
-    layout->AddView(signin_current_profile_link_);
+    SigninManagerBase* signin_manager =
+        SigninManagerFactory::GetForProfile(
+            browser_->profile()->GetOriginalProfile());
+    if (signin_manager->IsSigninAllowed()) {
+      signin_current_profile_link_ = new views::BlueButton(
+        this, l10n_util::GetStringFUTF16(IDS_SYNC_START_SYNC_BUTTON_LABEL,
+            l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME)));
+      layout->StartRow(1, 0);
+      layout->AddView(signin_current_profile_link_);
+    }
   }
 
   return view;
@@ -1099,6 +1197,26 @@ views::View* ProfileChooserView::CreateOptionsView(bool enable_lock) {
   return view;
 }
 
+views::View* ProfileChooserView::CreateSupervisedUserDisclaimerView() {
+  views::View* view = new views::View();
+  views::GridLayout* layout = CreateSingleColumnLayout(
+      view, kFixedMenuWidth - 2 * views::kButtonHEdgeMarginNew);
+  layout->SetInsets(views::kRelatedControlVerticalSpacing,
+                    views::kButtonHEdgeMarginNew,
+                    views::kRelatedControlVerticalSpacing,
+                    views::kButtonHEdgeMarginNew);
+  views::Label* disclaimer = new views::Label(
+      avatar_menu_->GetManagedUserInformation());
+  disclaimer->SetMultiLine(true);
+  disclaimer->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+  ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
+  disclaimer->SetFontList(rb->GetFontList(ui::ResourceBundle::SmallFont));
+  layout->StartRow(1, 0);
+  layout->AddView(disclaimer);
+
+  return view;
+}
+
 views::View* ProfileChooserView::CreateCurrentProfileAccountsView(
     const AvatarMenu::Item& avatar_item) {
   DCHECK(avatar_item.signed_in);
@@ -1114,13 +1232,18 @@ views::View* ProfileChooserView::CreateCurrentProfileAccountsView(
   std::vector<std::string>accounts =
       profiles::GetSecondaryAccountsForProfile(profile, primary_account);
 
+  // Get state of authentication error, if any.
+  std::string error_account_id = GetAuthErrorAccountId(profile);
+
   // The primary account should always be listed first.
   // TODO(rogerta): we still need to further differentiate the primary account
   // from the others in the UI, so more work is likely required here:
   // crbug.com/311124.
-  CreateAccountButton(layout, primary_account, true, kFixedMenuWidth);
+  CreateAccountButton(layout, primary_account, true,
+                      error_account_id == primary_account, kFixedMenuWidth);
   for (size_t i = 0; i < accounts.size(); ++i)
-    CreateAccountButton(layout, accounts[i], false, kFixedMenuWidth);
+    CreateAccountButton(layout, accounts[i], false,
+                        error_account_id == accounts[i], kFixedMenuWidth);
   layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
 
   add_account_link_ = CreateLink(l10n_util::GetStringFUTF16(
@@ -1136,13 +1259,18 @@ views::View* ProfileChooserView::CreateCurrentProfileAccountsView(
 void ProfileChooserView::CreateAccountButton(views::GridLayout* layout,
                                              const std::string& account,
                                              bool is_primary_account,
+                                             bool reauth_required,
                                              int width) {
   ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
-  const gfx::ImageSkia* default_image =
+  const gfx::ImageSkia* delete_default_image =
       rb->GetImageNamed(IDR_CLOSE_1).ToImageSkia();
-  int kDeleteButtonWidth = default_image->width();
+  const int kDeleteButtonWidth = delete_default_image->width();
+  const gfx::ImageSkia* warning_default_image = reauth_required ?
+      rb->GetImageNamed(IDR_WARNING).ToImageSkia() : NULL;
+  const int kWarningButtonWidth = reauth_required ?
+      warning_default_image->width() + views::kRelatedButtonHSpacing : 0;
   int available_width = width -
-      kDeleteButtonWidth - views::kButtonHEdgeMarginNew;
+      kDeleteButtonWidth - kWarningButtonWidth - views::kButtonHEdgeMarginNew;
 
   views::LabelButton* email_button = new BackgroundColorHoverButton(
       NULL,
@@ -1159,39 +1287,74 @@ void ProfileChooserView::CreateAccountButton(views::GridLayout* layout,
   delete_button->SetImageAlignment(views::ImageButton::ALIGN_RIGHT,
                                    views::ImageButton::ALIGN_MIDDLE);
   delete_button->SetImage(views::ImageButton::STATE_NORMAL,
-                          default_image);
+                          delete_default_image);
   delete_button->SetImage(views::ImageButton::STATE_HOVERED,
                           rb->GetImageSkiaNamed(IDR_CLOSE_1_H));
   delete_button->SetImage(views::ImageButton::STATE_PRESSED,
                           rb->GetImageSkiaNamed(IDR_CLOSE_1_P));
   delete_button->SetBounds(
-      available_width, 0, kDeleteButtonWidth, kButtonHeight);
+      available_width + kWarningButtonWidth, 0,
+      kDeleteButtonWidth, kButtonHeight);
 
   email_button->set_notify_enter_exit_on_child(true);
   email_button->AddChildView(delete_button);
 
   // Save the original email address, as the button text could be elided.
-  current_profile_accounts_map_[delete_button] = account;
+  delete_account_button_map_[delete_button] = account;
+
+  // Warning button.
+  if (reauth_required) {
+    views::ImageButton* reauth_button = new views::ImageButton(this);
+    reauth_button->SetImageAlignment(views::ImageButton::ALIGN_LEFT,
+                                     views::ImageButton::ALIGN_MIDDLE);
+    reauth_button->SetImage(views::ImageButton::STATE_NORMAL,
+                            warning_default_image);
+    reauth_button->SetBounds(
+        available_width, 0, kWarningButtonWidth, kButtonHeight);
+
+    email_button->AddChildView(reauth_button);
+    reauth_account_button_map_[reauth_button] = account;
+  }
 }
 
-views::View* ProfileChooserView::CreateGaiaSigninView(
-    bool add_secondary_account) {
+views::View* ProfileChooserView::CreateGaiaSigninView() {
+  GURL url;
+  int message_id;
+
+  switch (view_mode_) {
+    case profiles::BUBBLE_VIEW_MODE_GAIA_SIGNIN:
+      url = signin::GetPromoURL(signin::SOURCE_AVATAR_BUBBLE_SIGN_IN,
+                                false /* auto_close */,
+                                true /* is_constrained */);
+      message_id = IDS_PROFILES_GAIA_SIGNIN_TITLE;
+      break;
+    case profiles::BUBBLE_VIEW_MODE_GAIA_ADD_ACCOUNT:
+      url = signin::GetPromoURL(signin::SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT,
+                                false /* auto_close */,
+                                true /* is_constrained */);
+      message_id = IDS_PROFILES_GAIA_ADD_ACCOUNT_TITLE;
+      break;
+    case profiles::BUBBLE_VIEW_MODE_GAIA_REAUTH: {
+      DCHECK(HasAuthError(browser_->profile()));
+      url = signin::GetReauthURL(browser_->profile(),
+                                 GetAuthErrorUsername(browser_->profile()));
+      message_id = IDS_PROFILES_GAIA_REAUTH_TITLE;
+      break;
+    }
+    default:
+      NOTREACHED() << "Called with invalid mode=" << view_mode_;
+      return NULL;
+  }
+
   // Adds Gaia signin webview
   Profile* profile = browser_->profile();
   views::WebView* web_view = new views::WebView(profile);
-  signin::Source source = add_secondary_account ?
-      signin::SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT :
-      signin::SOURCE_AVATAR_BUBBLE_SIGN_IN;
-  GURL url(signin::GetPromoURL(
-      source, false /* auto_close */, true /* is_constrained */));
   web_view->LoadInitialURL(url);
   web_view->SetPreferredSize(
       gfx::Size(kFixedGaiaViewWidth, kFixedGaiaViewHeight));
 
-  TitleCard* title_card = new TitleCard(
-      add_secondary_account ? IDS_PROFILES_GAIA_ADD_ACCOUNT_TITLE :
-                              IDS_PROFILES_GAIA_SIGNIN_TITLE,
-      this, &gaia_signin_cancel_button_);
+  TitleCard* title_card = new TitleCard(message_id, this,
+                                        &gaia_signin_cancel_button_);
   return TitleCard::AddPaddedTitleCard(
       web_view, title_card, kFixedGaiaViewWidth);
 }
@@ -1259,7 +1422,7 @@ views::View* ProfileChooserView::CreateAccountRemovalView() {
 
 views::View* ProfileChooserView::CreateNewProfileManagementPreviewView() {
   return CreateTutorialView(
-      TUTORIAL_MODE_ENABLE_PREVIEW,
+      profiles::TUTORIAL_MODE_ENABLE_PREVIEW,
       l10n_util::GetStringUTF16(IDS_PROFILES_PREVIEW_TUTORIAL_TITLE),
       l10n_util::GetStringUTF16(IDS_PROFILES_PREVIEW_TUTORIAL_CONTENT_TEXT),
       l10n_util::GetStringUTF16(IDS_PROFILES_PROFILE_TUTORIAL_LEARN_MORE),

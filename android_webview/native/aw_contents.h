@@ -37,7 +37,7 @@ class AwContentsContainer;
 class AwContentsClientBridge;
 class AwPdfExporter;
 class AwWebContentsDelegate;
-class HardwareRenderer;
+class HardwareRendererInterface;
 class PermissionRequestHandler;
 
 // Native side of java-class of same name.
@@ -149,11 +149,19 @@ class AwContents : public FindHelper::Listener,
     return permission_request_handler_.get();
   }
 
+  void PreauthorizePermission(JNIEnv* env,
+                              jobject obj,
+                              jstring origin,
+                              jlong resources);
+
   // Find-in-page API and related methods.
   void FindAllAsync(JNIEnv* env, jobject obj, jstring search_string);
   void FindNext(JNIEnv* env, jobject obj, jboolean forward);
   void ClearMatches(JNIEnv* env, jobject obj);
   FindHelper* GetFindHelper();
+
+  // Per WebView Cookie Policy
+  bool AllowThirdPartyCookies();
 
   // FindHelper::Listener implementation.
   virtual void OnFindResultReceived(int active_ordinal,
@@ -177,15 +185,13 @@ class AwContents : public FindHelper::Listener,
   virtual void PostInvalidate() OVERRIDE;
   virtual void OnNewPicture() OVERRIDE;
   virtual gfx::Point GetLocationOnScreen() OVERRIDE;
-  virtual void SetMaxContainerViewScrollOffset(
-      gfx::Vector2d new_value) OVERRIDE;
   virtual void ScrollContainerViewTo(gfx::Vector2d new_value) OVERRIDE;
   virtual bool IsFlingActive() const OVERRIDE;
-  virtual void SetPageScaleFactorAndLimits(
-      float page_scale_factor,
-      float min_page_scale_factor,
-      float max_page_scale_factor) OVERRIDE;
-  virtual void SetContentsSize(gfx::SizeF contents_size_dip) OVERRIDE;
+  virtual void UpdateScrollState(gfx::Vector2d max_scroll_offset,
+                                 gfx::SizeF contents_size_dip,
+                                 float page_scale_factor,
+                                 float min_page_scale_factor,
+                                 float max_page_scale_factor) OVERRIDE;
   virtual void DidOverscroll(gfx::Vector2d overscroll_delta) OVERRIDE;
 
   const BrowserViewRenderer* GetBrowserViewRenderer() const;
@@ -211,14 +217,8 @@ class AwContents : public FindHelper::Listener,
  private:
   void InitDataReductionProxyIfNecessary();
   void InitAutofillIfNecessary(bool enabled);
-  void DidDrawGL(const DrawGLResult& result);
 
   void InitializeHardwareDrawIfNeeded();
-  void InitializeHardwareDrawOnRenderThread();
-  void ReleaseHardwareDrawOnRenderThread();
-
-  base::WeakPtrFactory<AwContents> weak_factory_on_ui_thread_;
-  base::WeakPtr<AwContents> ui_thread_weak_ptr_;
 
   JavaObjectWeakGlobalRef java_ref_;
   scoped_ptr<content::WebContents> web_contents_;
@@ -230,7 +230,7 @@ class AwContents : public FindHelper::Listener,
   scoped_ptr<AwContents> pending_contents_;
   SharedRendererState shared_renderer_state_;
   BrowserViewRenderer browser_view_renderer_;
-  scoped_ptr<HardwareRenderer> hardware_renderer_;
+  scoped_ptr<HardwareRendererInterface> hardware_renderer_;
   scoped_ptr<AwPdfExporter> pdf_exporter_;
   scoped_ptr<PermissionRequestHandler> permission_request_handler_;
 
@@ -241,6 +241,7 @@ class AwContents : public FindHelper::Listener,
   // The first element in the list is always the currently pending request.
   std::list<OriginCallback> pending_geolocation_prompts_;
 
+  base::Lock render_thread_lock_;
   GLViewRendererManager::Key renderer_manager_key_;
 
   DISALLOW_COPY_AND_ASSIGN(AwContents);

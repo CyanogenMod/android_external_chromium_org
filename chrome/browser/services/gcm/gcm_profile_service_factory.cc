@@ -7,10 +7,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/services/gcm/gcm_client_factory.h"
 #include "chrome/browser/services/gcm/gcm_profile_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
+#include "components/gcm_driver/gcm_client_factory.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 
 #if !defined(OS_ANDROID)
@@ -50,11 +50,9 @@ GCMProfileServiceFactory::~GCMProfileServiceFactory() {
 
 KeyedService* GCMProfileServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
-  Profile* profile = static_cast<Profile*>(context);
-  GCMProfileService* service = new GCMProfileService(profile);
-  scoped_ptr<GCMClientFactory> gcm_client_factory(new GCMClientFactory);
-  service->Initialize(gcm_client_factory.Pass());
-  return service;
+  return new GCMProfileService(
+      Profile::FromBrowserContext(context),
+      scoped_ptr<GCMClientFactory>(new GCMClientFactory));
 }
 
 content::BrowserContext* GCMProfileServiceFactory::GetBrowserContextToUse(

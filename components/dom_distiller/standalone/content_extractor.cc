@@ -9,6 +9,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
+#include "base/strings/string_number_conversions.h"
 #include "components/dom_distiller/content/distiller_page_web_contents.h"
 #include "components/dom_distiller/core/distiller.h"
 #include "components/dom_distiller/core/dom_distiller_database.h"
@@ -22,6 +23,7 @@
 #include "content/public/test/content_browser_test.h"
 #include "content/shell/browser/shell.h"
 #include "net/dns/mock_host_resolver.h"
+#include "third_party/dom_distiller_js/dom_distiller.pb.h"
 #include "ui/base/resource/resource_bundle.h"
 
 using content::ContentBrowserTest;
@@ -43,6 +45,12 @@ const char* kOutputFile = "output-file";
 // output.
 const char* kShouldOutputBinary = "output-binary";
 
+// Indicates to output only the text of the article and not the enclosing html.
+const char* kExtractTextOnly = "extract-text-only";
+
+// Indicates to include debug output.
+const char* kDebugLevel = "debug-level";
+
 scoped_ptr<DomDistillerService> CreateDomDistillerService(
     content::BrowserContext* context,
     const base::FilePath& db_path) {
@@ -61,8 +69,21 @@ scoped_ptr<DomDistillerService> CreateDomDistillerService(
       new DistillerPageWebContentsFactory(context));
   scoped_ptr<DistillerURLFetcherFactory> distiller_url_fetcher_factory(
       new DistillerURLFetcherFactory(context->GetRequestContext()));
+
+  dom_distiller::proto::DomDistillerOptions options;
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(kExtractTextOnly)) {
+    options.set_extract_text_only(true);
+  }
+  int debug_level = 0;
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(kDebugLevel) &&
+      base::StringToInt(
+          base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+              kDebugLevel),
+          &debug_level)) {
+    options.set_debug_level(debug_level);
+  }
   scoped_ptr<DistillerFactory> distiller_factory(
-      new DistillerFactoryImpl(distiller_url_fetcher_factory.Pass()));
+      new DistillerFactoryImpl(distiller_url_fetcher_factory.Pass(), options));
 
   return scoped_ptr<DomDistillerService>(new DomDistillerService(
       dom_distiller_store.PassAs<DomDistillerStoreInterface>(),

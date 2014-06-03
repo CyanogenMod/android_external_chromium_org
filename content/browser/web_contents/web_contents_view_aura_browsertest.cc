@@ -267,17 +267,14 @@ class WebContentsViewAuraTest : public ContentBrowserTest {
   DISALLOW_COPY_AND_ASSIGN(WebContentsViewAuraTest);
 };
 
-// Flaky on Windows (perhaps just Win-Aura): http://crbug.com/305722
-#if defined(OS_WIN)
-#define MAYBE_OverscrollNavigation DISABLED_OverscrollNavigation
-#else
-#define MAYBE_OverscrollNavigation OverscrollNavigation
-#endif
-IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, MAYBE_OverscrollNavigation) {
+// Flaky on Windows and ChromeOS: http://crbug.com/305722
+IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
+    DISABLED_OverscrollNavigation) {
   TestOverscrollNavigation(false);
 }
 
-// Flaky on Windows (perhaps just Win-Aura): http://crbug.com/305722
+// Flaky on Windows (might be related to the above test):
+// http://crbug.com/305722
 #if defined(OS_WIN)
 #define MAYBE_OverscrollNavigationWithTouchHandler \
         DISABLED_OverscrollNavigationWithTouchHandler
@@ -380,13 +377,9 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
 //  - interactively, when user does an overscroll gesture
 //  - interactively, when user navigates in history without the overscroll
 //    gesture.
-#if defined(OS_WIN)
-// http://crbug.com/357311
-#define MAYBE_OverscrollScreenshot DISABLED_OverscrollScreenshot
-#else
-#define MAYBE_OverscrollScreenshot OverscrollScreenshot
-#endif
-IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, MAYBE_OverscrollScreenshot) {
+// Flaky on Windows and ChromeOS (http://crbug.com/357311). Might be related to
+// OverscrollNavigation test.
+IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, DISABLED_OverscrollScreenshot) {
   // Disable the test for WinXP.  See http://crbug/294116.
 #if defined(OS_WIN)
   if (base::win::GetVersion() < base::win::VERSION_VISTA) {
@@ -594,8 +587,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
   window->AddChild(shell()->web_contents()->GetContentNativeView());
 }
 
-IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
-                       ContentWindowClose) {
+IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, ContentWindowClose) {
   ASSERT_NO_FATAL_FAILURE(
       StartTestWithPage("files/overscroll_navigation.html"));
 
@@ -682,6 +674,19 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
   EXPECT_EQ(2, GetCurrentIndex());
   EXPECT_TRUE(controller.CanGoBack());
   EXPECT_FALSE(controller.CanGoForward());
+}
+
+// Verify that hiding a parent of the renderer will hide the content too.
+IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, HideContentOnParenHide) {
+  ASSERT_NO_FATAL_FAILURE(StartTestWithPage("files/title1.html"));
+  WebContentsImpl* web_contents =
+      static_cast<WebContentsImpl*>(shell()->web_contents());
+  aura::Window* content = web_contents->GetNativeView()->parent();
+  EXPECT_TRUE(web_contents->should_normally_be_visible());
+  content->Hide();
+  EXPECT_FALSE(web_contents->should_normally_be_visible());
+  content->Show();
+  EXPECT_TRUE(web_contents->should_normally_be_visible());
 }
 
 }  // namespace content

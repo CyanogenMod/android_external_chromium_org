@@ -7,7 +7,6 @@
 #import <Carbon/Carbon.h>
 #import <Cocoa/Cocoa.h>
 
-#include "apps/app_shim/app_shim_mac.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_enumerator.h"
@@ -135,6 +134,12 @@ bool AddGfxImageToIconFamily(IconFamilyHandle icon_family,
   OSErr result = SetIconFamilyData(icon_family, icon_type, raw_data.Get());
   DCHECK_EQ(noErr, result);
   return result == noErr;
+}
+
+bool AppShimsDisabledForTest() {
+  // Disable app shims in tests because shims created in ~/Applications will not
+  // be cleaned up.
+  return CommandLine::ForCurrentProcess()->HasSwitch(switches::kTestType);
 }
 
 base::FilePath GetWritableApplicationsDirectory() {
@@ -298,6 +303,16 @@ NSImageRep* OverlayImageRep(NSImage* background, NSImageRep* overlay) {
   return canvas.autorelease();
 }
 
+// Helper function to extract the single NSImageRep held in a resource bundle
+// image.
+NSImageRep* ImageRepForResource(int resource_id) {
+  gfx::Image& image =
+      ResourceBundle::GetSharedInstance().GetNativeImageNamed(resource_id);
+  NSArray* image_reps = [image.AsNSImage() representations];
+  DCHECK_EQ(1u, [image_reps count]);
+  return [image_reps objectAtIndex:0];
+}
+
 // Adds a localized strings file for the Chrome Apps directory using the current
 // locale. OSX will use this for the display name.
 // + Chrome Apps.localized (|apps_directory|)
@@ -325,22 +340,27 @@ void UpdateAppShortcutsSubdirLocalizedName(
   [strings_dict writeToFile:strings_path
                  atomically:YES];
 
-  // Brand the folder with an embossed app launcher logo.
+  base::scoped_nsobject<NSImage> folder_icon_image([[NSImage alloc] init]);
+
+  // Use complete assets for the small icon sizes. -[NSWorkspace setIcon:] has a
+  // bug when dealing with named NSImages where it incorrectly handles alpha
+  // premultiplication. This is most noticable with small assets since the 1px
+  // border is a much larger component of the small icons.
+  // See http://crbug.com/305373 for details.
+  [folder_icon_image addRepresentation:ImageRepForResource(IDR_APPS_FOLDER_16)];
+  [folder_icon_image addRepresentation:ImageRepForResource(IDR_APPS_FOLDER_32)];
+
+  // Brand larger folder assets with an embossed app launcher logo to conserve
+  // distro size and for better consistency with changing hue across OSX
+  // versions. The folder is textured, so compresses poorly without this.
   const int kBrandResourceIds[] = {
-    IDR_APPS_FOLDER_OVERLAY_16,
-    IDR_APPS_FOLDER_OVERLAY_32,
     IDR_APPS_FOLDER_OVERLAY_128,
     IDR_APPS_FOLDER_OVERLAY_512,
   };
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
   NSImage* base_image = [NSImage imageNamed:NSImageNameFolder];
-  base::scoped_nsobject<NSImage> folder_icon_image([[NSImage alloc] init]);
   for (size_t i = 0; i < arraysize(kBrandResourceIds); ++i) {
-    gfx::Image& image_rep = rb.GetNativeImageNamed(kBrandResourceIds[i]);
-    NSArray* image_reps = [image_rep.AsNSImage() representations];
-    DCHECK_EQ(1u, [image_reps count]);
-    NSImageRep* with_overlay = OverlayImageRep(base_image,
-                                               [image_reps objectAtIndex:0]);
+    NSImageRep* with_overlay =
+        OverlayImageRep(base_image, ImageRepForResource(kBrandResourceIds[i]));
     DCHECK(with_overlay);
     if (with_overlay)
       [folder_icon_image addRepresentation:with_overlay];
@@ -421,14 +441,12 @@ web_app::ShortcutInfo BuildShortcutInfoFromBundle(
 
 void UpdateFileTypes(NSMutableDictionary* plist,
                      const extensions::FileHandlersInfo& file_handlers_info) {
-  const std::vector<extensions::FileHandlerInfo>& handlers =
-      file_handlers_info.handlers;
   NSMutableArray* document_types =
-      [NSMutableArray arrayWithCapacity:handlers.size()];
+      [NSMutableArray arrayWithCapacity:file_handlers_info.size()];
 
-  for (std::vector<extensions::FileHandlerInfo>::const_iterator info_it =
-           handlers.begin();
-       info_it != handlers.end();
+  for (extensions::FileHandlersInfo::const_iterator info_it =
+           file_handlers_info.begin();
+       info_it != file_handlers_info.end();
        ++info_it) {
     const extensions::FileHandlerInfo& info = *info_it;
 
@@ -470,7 +488,7 @@ namespace web_app {
 
 WebAppShortcutCreator::WebAppShortcutCreator(
     const base::FilePath& app_data_dir,
-    const web_app::ShortcutInfo& shortcut_info,
+    const ShortcutInfo& shortcut_info,
     const extensions::FileHandlersInfo& file_handlers_info)
     : app_data_dir_(app_data_dir),
       info_(shortcut_info),
@@ -552,7 +570,7 @@ size_t WebAppShortcutCreator::CreateShortcutsIn(
 
 bool WebAppShortcutCreator::CreateShortcuts(
     ShortcutCreationReason creation_reason,
-    web_app::ShortcutLocations creation_locations) {
+    ShortcutLocations creation_locations) {
   const base::FilePath applications_dir = GetApplicationsDirname();
   if (applications_dir.empty() ||
       !base::DirectoryExists(applications_dir.DirName())) {
@@ -829,15 +847,14 @@ void WebAppShortcutCreator::RevealAppShimInFinder() const {
       inFileViewerRootedAtPath:nil];
 }
 
-base::FilePath GetAppInstallPath(
-    const web_app::ShortcutInfo& shortcut_info) {
+base::FilePath GetAppInstallPath(const ShortcutInfo& shortcut_info) {
   WebAppShortcutCreator shortcut_creator(
       base::FilePath(), shortcut_info, extensions::FileHandlersInfo());
   return shortcut_creator.GetApplicationsShortcutPath();
 }
 
-void MaybeLaunchShortcut(const web_app::ShortcutInfo& shortcut_info) {
-  if (!apps::IsAppShimsEnabled())
+void MaybeLaunchShortcut(const ShortcutInfo& shortcut_info) {
+  if (AppShimsDisabledForTest())
     return;
 
   content::BrowserThread::PostTask(
@@ -851,7 +868,7 @@ void CreateAppShortcutInfoLoaded(
     Profile* profile,
     const extensions::Extension* app,
     const base::Callback<void(bool)>& close_callback,
-    const web_app::ShortcutInfo& shortcut_info) {
+    const ShortcutInfo& shortcut_info) {
   base::scoped_nsobject<NSAlert> alert([[NSAlert alloc] init]);
 
   NSButton* continue_button = [alert
@@ -890,10 +907,8 @@ void CreateAppShortcutInfoLoaded(
   if ([alert runModal] == NSAlertFirstButtonReturn &&
       [application_folder_checkbox state] == NSOnState) {
     dialog_accepted = true;
-    web_app::CreateShortcuts(web_app::SHORTCUT_CREATION_BY_USER,
-                             web_app::ShortcutLocations(),
-                             profile,
-                             app);
+    CreateShortcuts(
+        SHORTCUT_CREATION_BY_USER, ShortcutLocations(), profile, app);
   }
 
   if (!close_callback.is_null())
@@ -904,19 +919,21 @@ namespace internals {
 
 bool CreatePlatformShortcuts(
     const base::FilePath& app_data_path,
-    const web_app::ShortcutInfo& shortcut_info,
+    const ShortcutInfo& shortcut_info,
     const extensions::FileHandlersInfo& file_handlers_info,
-    const web_app::ShortcutLocations& creation_locations,
+    const ShortcutLocations& creation_locations,
     ShortcutCreationReason creation_reason) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
+  if (AppShimsDisabledForTest())
+    return true;
+
   WebAppShortcutCreator shortcut_creator(
       app_data_path, shortcut_info, file_handlers_info);
   return shortcut_creator.CreateShortcuts(creation_reason, creation_locations);
 }
 
-void DeletePlatformShortcuts(
-    const base::FilePath& app_data_path,
-    const web_app::ShortcutInfo& shortcut_info) {
+void DeletePlatformShortcuts(const base::FilePath& app_data_path,
+                             const ShortcutInfo& shortcut_info) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
   WebAppShortcutCreator shortcut_creator(
       app_data_path, shortcut_info, extensions::FileHandlersInfo());
@@ -926,9 +943,12 @@ void DeletePlatformShortcuts(
 void UpdatePlatformShortcuts(
     const base::FilePath& app_data_path,
     const base::string16& old_app_title,
-    const web_app::ShortcutInfo& shortcut_info,
+    const ShortcutInfo& shortcut_info,
     const extensions::FileHandlersInfo& file_handlers_info) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
+  if (AppShimsDisabledForTest())
+    return;
+
   WebAppShortcutCreator shortcut_creator(
       app_data_path, shortcut_info, file_handlers_info);
   shortcut_creator.UpdateShortcuts();

@@ -28,9 +28,8 @@ const char kKeyUp[] = "keyup";
 
 void SendProcessKeyEvent(ui::EventType type,
                          aura::WindowTreeHost* host) {
-  ui::TranslatedKeyEvent event(type == ui::ET_KEY_PRESSED,
-                               ui::VKEY_PROCESSKEY,
-                               ui::EF_NONE);
+  ui::KeyEvent event(type, ui::VKEY_PROCESSKEY, ui::EF_NONE, false);
+  event.SetTranslated(true);
   ui::EventDispatchDetails details =
       host->event_processor()->OnEventFromSource(&event);
   CHECK(!details.dispatcher_destroyed);
@@ -44,6 +43,9 @@ bool g_accessibility_keyboard_enabled = false;
 base::LazyInstance<GURL> g_override_content_url = LAZY_INSTANCE_INITIALIZER;
 
 bool g_touch_keyboard_enabled = false;
+
+keyboard::KeyboardOverscrolOverride g_keyboard_overscroll_override =
+    keyboard::KEYBOARD_OVERSCROLL_OVERRIDE_NONE;
 
 }  // namespace
 
@@ -110,15 +112,28 @@ bool IsKeyboardUsabilityExperimentEnabled() {
 bool IsKeyboardOverscrollEnabled() {
   if (!IsKeyboardEnabled())
     return false;
+
   // Users of the accessibility on-screen keyboard are likely to be using mouse
   // input, which may interfere with overscrolling.
   if (g_accessibility_keyboard_enabled)
     return false;
+
+  // If overscroll enabled override is set, use it instead. Currently
+  // login / out-of-box disable keyboard overscroll. http://crbug.com/363635
+  if (g_keyboard_overscroll_override != KEYBOARD_OVERSCROLL_OVERRIDE_NONE) {
+    return g_keyboard_overscroll_override ==
+        KEYBOARD_OVERSCROLL_OVERRIDE_ENABLED;
+  }
+
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableVirtualKeyboardOverscroll)) {
     return false;
   }
   return true;
+}
+
+void SetKeyboardOverscrollOverride(KeyboardOverscrolOverride override) {
+  g_keyboard_overscroll_override = override;
 }
 
 bool IsInputViewEnabled() {

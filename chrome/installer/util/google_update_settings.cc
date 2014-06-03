@@ -20,6 +20,7 @@
 #include "base/win/registry.h"
 #include "base/win/win_util.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/installer/util/app_registration_data.h"
 #include "chrome/installer/util/browser_distribution.h"
 #include "chrome/installer/util/channel_info.h"
 #include "chrome/installer/util/google_update_constants.h"
@@ -55,27 +56,25 @@ namespace {
 bool ReadGoogleUpdateStrKey(const wchar_t* const name, std::wstring* value) {
   BrowserDistribution* dist = BrowserDistribution::GetDistribution();
   std::wstring reg_path = dist->GetStateKey();
-  RegKey key(HKEY_CURRENT_USER, reg_path.c_str(), KEY_READ);
+  RegKey key(HKEY_CURRENT_USER, reg_path.c_str(), KEY_READ | KEY_WOW64_32KEY);
   if (key.ReadValue(name, value) != ERROR_SUCCESS) {
-    RegKey hklm_key(HKEY_LOCAL_MACHINE, reg_path.c_str(), KEY_READ);
+    RegKey hklm_key(
+        HKEY_LOCAL_MACHINE, reg_path.c_str(), KEY_READ | KEY_WOW64_32KEY);
     return (hklm_key.ReadValue(name, value) == ERROR_SUCCESS);
   }
   return true;
 }
 
-// Update a state registry key |name| to be |value| for the given browser
-// |dist|.  If this is a |system_install|, then update the value under
-// HKLM (istead of HKCU for user-installs) using a group of keys (one
-// for each OS user) and also include the method to |aggregate| these
-// values when reporting.
-bool WriteGoogleUpdateStrKeyInternal(BrowserDistribution* dist,
+// Updates a registry key |name| to be |value| for the given |app_reg_data|.
+// If this is a |system_install|, then update the value under HKLM (istead of
+// HKCU for user-installs) using a group of keys (one for each OS user) and also
+// include the method to |aggregate| these values when reporting.
+bool WriteGoogleUpdateStrKeyInternal(const AppRegistrationData& app_reg_data,
                                      bool system_install,
                                      const wchar_t* const name,
                                      // presubmit: allow wstring
                                      const std::wstring& value,
                                      const wchar_t* const aggregate) {
-  DCHECK(dist);
-
   if (system_install) {
     DCHECK(aggregate);
     // Machine installs require each OS user to write a unique key under a
@@ -87,8 +86,7 @@ bool WriteGoogleUpdateStrKeyInternal(BrowserDistribution* dist,
       return false;
     }
 
-    // presubmit: allow wstring
-    std::wstring reg_path(dist->GetStateMediumKey());
+    base::string16 reg_path(app_reg_data.GetStateMediumKey());
     reg_path.append(L"\\");
     reg_path.append(name);
     RegKey key(HKEY_LOCAL_MACHINE, reg_path.c_str(), KEY_SET_VALUE);
@@ -96,7 +94,8 @@ bool WriteGoogleUpdateStrKeyInternal(BrowserDistribution* dist,
     return (key.WriteValue(uniquename.c_str(), value.c_str()) == ERROR_SUCCESS);
   } else {
     // User installs are easy: just write the values to HKCU tree.
-    RegKey key(HKEY_CURRENT_USER, dist->GetStateKey().c_str(), KEY_SET_VALUE);
+    RegKey key(HKEY_CURRENT_USER, app_reg_data.GetStateKey().c_str(),
+               KEY_SET_VALUE);
     return (key.WriteValue(name, value.c_str()) == ERROR_SUCCESS);
   }
 }
@@ -104,29 +103,16 @@ bool WriteGoogleUpdateStrKeyInternal(BrowserDistribution* dist,
 bool WriteGoogleUpdateStrKey(const wchar_t* const name,
                              const std::wstring& value) {
   BrowserDistribution* dist = BrowserDistribution::GetDistribution();
-  return WriteGoogleUpdateStrKeyInternal(dist, false, name, value, NULL);
-}
-
-bool WriteGoogleUpdateStrKeyMultiInstall(BrowserDistribution* dist,
-                                         const wchar_t* const name,
-                                         const std::wstring& value,
-                                         bool system_level) {
-  bool result = WriteGoogleUpdateStrKeyInternal(dist, false, name, value, NULL);
-  if (!InstallUtil::IsMultiInstall(dist, system_level))
-    return result;
-  // It is a multi-install distro. Must write the reg value again.
-  BrowserDistribution* multi_dist =
-      BrowserDistribution::GetSpecificDistribution(
-          BrowserDistribution::CHROME_BINARIES);
-  return
-      WriteGoogleUpdateStrKeyInternal(multi_dist, false, name, value, NULL) &&
-      result;
+  return WriteGoogleUpdateStrKeyInternal(
+      dist->GetAppRegistrationData(), false, name, value, NULL);
 }
 
 bool ClearGoogleUpdateStrKey(const wchar_t* const name) {
   BrowserDistribution* dist = BrowserDistribution::GetDistribution();
   std::wstring reg_path = dist->GetStateKey();
-  RegKey key(HKEY_CURRENT_USER, reg_path.c_str(), KEY_READ | KEY_WRITE);
+  RegKey key(HKEY_CURRENT_USER,
+             reg_path.c_str(),
+             KEY_READ | KEY_WRITE | KEY_WOW64_32KEY);
   std::wstring value;
   if (key.ReadValue(name, &value) != ERROR_SUCCESS)
     return false;
@@ -136,7 +122,9 @@ bool ClearGoogleUpdateStrKey(const wchar_t* const name) {
 bool RemoveGoogleUpdateStrKey(const wchar_t* const name) {
   BrowserDistribution* dist = BrowserDistribution::GetDistribution();
   std::wstring reg_path = dist->GetStateKey();
-  RegKey key(HKEY_CURRENT_USER, reg_path.c_str(), KEY_READ | KEY_WRITE);
+  RegKey key(HKEY_CURRENT_USER,
+             reg_path.c_str(),
+             KEY_READ | KEY_WRITE | KEY_WOW64_32KEY);
   if (!key.HasValue(name))
     return true;
   return (key.DeleteValue(name) == ERROR_SUCCESS);
@@ -152,7 +140,7 @@ bool GetChromeChannelInternal(bool system_install,
 
   HKEY root_key = system_install ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
   base::string16 reg_path = dist->GetStateKey();
-  RegKey key(root_key, reg_path.c_str(), KEY_READ);
+  RegKey key(root_key, reg_path.c_str(), KEY_READ | KEY_WOW64_32KEY);
 
   installer::ChannelInfo channel_info;
   if (!channel_info.Initialize(key)) {
@@ -167,9 +155,9 @@ bool GetChromeChannelInternal(bool system_install,
   // Tag the channel name if this is a multi-install.
   if (add_multi_modifier && channel_info.IsMultiInstall()) {
     if (!channel->empty()) {
-      channel->append(1, L'-');
+      channel->push_back(L'-');
     }
-    channel->append(1, L'm');
+    channel->push_back(L'm');
   }
 
   return true;
@@ -192,6 +180,15 @@ bool GetUpdatePolicyFromDword(
       LOG(WARNING) << "Unexpected update policy override value: " << value;
   }
   return false;
+}
+
+// Convenience routine: GoogleUpdateSettings::UpdateDidRunStateForApp()
+// specialized for Chrome Binaries.
+bool UpdateDidRunStateForBinaries(bool did_run) {
+  BrowserDistribution* dist = BrowserDistribution::GetSpecificDistribution(
+      BrowserDistribution::CHROME_BINARIES);
+  return GoogleUpdateSettings::UpdateDidRunStateForApp(
+      dist->GetAppRegistrationData(), did_run);
 }
 
 }  // namespace
@@ -393,24 +390,28 @@ bool GoogleUpdateSettings::ClearReferral() {
   return ClearGoogleUpdateStrKey(google_update::kRegReferralField);
 }
 
-bool GoogleUpdateSettings::UpdateDidRunState(bool did_run,
-                                             bool system_level) {
+bool GoogleUpdateSettings::UpdateDidRunStateForApp(
+    const AppRegistrationData& app_reg_data,
+    bool did_run) {
+  return WriteGoogleUpdateStrKeyInternal(app_reg_data,
+                                         false, // user level.
+                                         google_update::kRegDidRunField,
+                                         did_run ? L"1" : L"0",
+                                         NULL);
+}
+
+bool GoogleUpdateSettings::UpdateDidRunState(bool did_run, bool system_level) {
   BrowserDistribution* dist = BrowserDistribution::GetDistribution();
-  return UpdateDidRunStateForDistribution(dist, did_run, system_level);
+  bool result = UpdateDidRunStateForApp(dist->GetAppRegistrationData(),
+                                        did_run);
+  // Update state for binaries, even if the previous call was unsuccessful.
+  if (InstallUtil::IsMultiInstall(dist, system_level))
+    result = UpdateDidRunStateForBinaries(did_run) && result;
+  return result;
 }
 
-bool GoogleUpdateSettings::UpdateDidRunStateForDistribution(
-    BrowserDistribution* dist,
-    bool did_run,
-    bool system_level) {
-  return WriteGoogleUpdateStrKeyMultiInstall(dist,
-                                             google_update::kRegDidRunField,
-                                             did_run ? L"1" : L"0",
-                                             system_level);
-}
-
-std::wstring GoogleUpdateSettings::GetChromeChannel(bool system_install) {
-  std::wstring channel;
+base::string16 GoogleUpdateSettings::GetChromeChannel(bool system_install) {
+  base::string16 channel;
   GetChromeChannelInternal(system_install, false, &channel);
   return channel;
 }
@@ -433,8 +434,9 @@ void GoogleUpdateSettings::UpdateInstallStatus(bool system_install,
   std::wstring reg_key(google_update::kRegPathClientState);
   reg_key.append(L"\\");
   reg_key.append(product_guid);
-  LONG result = key.Open(reg_root, reg_key.c_str(),
-                         KEY_QUERY_VALUE | KEY_SET_VALUE);
+  LONG result = key.Open(reg_root,
+                         reg_key.c_str(),
+                         KEY_QUERY_VALUE | KEY_SET_VALUE | KEY_WOW64_32KEY);
   if (result == ERROR_SUCCESS)
     channel_info.Initialize(key);
   else if (result != ERROR_FILE_NOT_FOUND)
@@ -445,10 +447,12 @@ void GoogleUpdateSettings::UpdateInstallStatus(bool system_install,
     // We have a modified channel_info value to write.
     // Create the app's ClientState key if it doesn't already exist.
     if (!key.Valid()) {
-      result = key.Open(reg_root, google_update::kRegPathClientState,
-                        KEY_CREATE_SUB_KEY);
+      result = key.Open(reg_root,
+                        google_update::kRegPathClientState,
+                        KEY_CREATE_SUB_KEY | KEY_WOW64_32KEY);
       if (result == ERROR_SUCCESS)
-        result = key.CreateKey(product_guid.c_str(), KEY_SET_VALUE);
+        result = key.CreateKey(product_guid.c_str(),
+                               KEY_SET_VALUE | KEY_WOW64_32KEY);
 
       if (result != ERROR_SUCCESS) {
         LOG(ERROR) << "Failed to create " << reg_key << "; Error: " << result;
@@ -504,11 +508,13 @@ void GoogleUpdateSettings::UpdateProfileCounts(int profiles_active,
                                                int profiles_signedin) {
   BrowserDistribution* dist = BrowserDistribution::GetDistribution();
   bool system_install = IsSystemInstall();
-  WriteGoogleUpdateStrKeyInternal(dist, system_install,
+  WriteGoogleUpdateStrKeyInternal(dist->GetAppRegistrationData(),
+                                  system_install,
                                   google_update::kRegProfilesActive,
                                   base::Int64ToString16(profiles_active),
                                   L"sum()");
-  WriteGoogleUpdateStrKeyInternal(dist, system_install,
+  WriteGoogleUpdateStrKeyInternal(dist->GetAppRegistrationData(),
+                                  system_install,
                                   google_update::kRegProfilesSignedIn,
                                   base::Int64ToString16(profiles_signedin),
                                   L"sum()");
@@ -519,7 +525,8 @@ int GoogleUpdateSettings::DuplicateGoogleUpdateSystemClientKey() {
   std::wstring reg_path = dist->GetStateKey();
 
   // Minimum access needed is to be able to write to this key.
-  RegKey reg_key(HKEY_LOCAL_MACHINE, reg_path.c_str(), KEY_SET_VALUE);
+  RegKey reg_key(
+      HKEY_LOCAL_MACHINE, reg_path.c_str(), KEY_SET_VALUE | KEY_WOW64_32KEY);
   if (!reg_key.Valid())
     return 0;
 
@@ -552,6 +559,7 @@ GoogleUpdateSettings::UpdatePolicy GoogleUpdateSettings::GetAppUpdatePolicy(
   RegKey policy_key;
 
   // Google Update Group Policy settings are always in HKLM.
+  // TODO(wfh): Check if policies should go into Wow6432Node or not.
   if (policy_key.Open(HKEY_LOCAL_MACHINE, kPoliciesKey, KEY_QUERY_VALUE) ==
           ERROR_SUCCESS) {
     DWORD value = 0;
@@ -703,9 +711,9 @@ Version GoogleUpdateSettings::GetGoogleUpdateVersion(bool system_install) {
 
   if (key.Open(root_key,
                google_update::kRegPathGoogleUpdate,
-               KEY_QUERY_VALUE) == ERROR_SUCCESS &&
-      key.ReadValue(google_update::kRegGoogleUpdateVersion,
-                    &version) == ERROR_SUCCESS) {
+               KEY_QUERY_VALUE | KEY_WOW64_32KEY) == ERROR_SUCCESS &&
+      key.ReadValue(google_update::kRegGoogleUpdateVersion, &version) ==
+          ERROR_SUCCESS) {
     return Version(base::UTF16ToUTF8(version));
   }
 
@@ -717,8 +725,9 @@ base::Time GoogleUpdateSettings::GetGoogleUpdateLastStartedAU(
   const HKEY root_key = system_install ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
   RegKey update_key;
 
-  if (update_key.Open(root_key, google_update::kRegPathGoogleUpdate,
-                      KEY_QUERY_VALUE) == ERROR_SUCCESS) {
+  if (update_key.Open(root_key,
+                      google_update::kRegPathGoogleUpdate,
+                      KEY_QUERY_VALUE | KEY_WOW64_32KEY) == ERROR_SUCCESS) {
     DWORD last_start;
     if (update_key.ReadValueDW(google_update::kRegLastStartedAUField,
                                &last_start) == ERROR_SUCCESS) {
@@ -734,8 +743,9 @@ base::Time GoogleUpdateSettings::GetGoogleUpdateLastChecked(
   const HKEY root_key = system_install ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
   RegKey update_key;
 
-  if (update_key.Open(root_key, google_update::kRegPathGoogleUpdate,
-                      KEY_QUERY_VALUE) == ERROR_SUCCESS) {
+  if (update_key.Open(root_key,
+                      google_update::kRegPathGoogleUpdate,
+                      KEY_QUERY_VALUE | KEY_WOW64_32KEY) == ERROR_SUCCESS) {
     DWORD last_check;
     if (update_key.ReadValueDW(google_update::kRegLastCheckedField,
                                &last_check) == ERROR_SUCCESS) {
@@ -760,8 +770,9 @@ bool GoogleUpdateSettings::GetUpdateDetailForApp(bool system_install,
   clientstate_reg_path.append(app_guid);
 
   RegKey clientstate;
-  if (clientstate.Open(root_key, clientstate_reg_path.c_str(),
-                       KEY_QUERY_VALUE) == ERROR_SUCCESS) {
+  if (clientstate.Open(root_key,
+                       clientstate_reg_path.c_str(),
+                       KEY_QUERY_VALUE | KEY_WOW64_32KEY) == ERROR_SUCCESS) {
     base::string16 version;
     DWORD dword_value;
     if ((clientstate.ReadValueDW(google_update::kRegLastCheckSuccessField,
@@ -824,7 +835,7 @@ bool GoogleUpdateSettings::SetExperimentLabels(
     base::string16 client_state_path(
         system_install ? dist->GetStateMediumKey() : dist->GetStateKey());
     RegKey client_state(
-        reg_root, client_state_path.c_str(), KEY_SET_VALUE);
+        reg_root, client_state_path.c_str(), KEY_SET_VALUE | KEY_WOW64_32KEY);
     if (experiment_labels.empty()) {
       success = client_state.DeleteValue(google_update::kExperimentLabels)
           == ERROR_SUCCESS;
@@ -852,8 +863,8 @@ bool GoogleUpdateSettings::ReadExperimentLabels(
       system_install ? dist->GetStateMediumKey() : dist->GetStateKey());
 
   RegKey client_state;
-  LONG result =
-      client_state.Open(reg_root, client_state_path.c_str(), KEY_QUERY_VALUE);
+  LONG result = client_state.Open(
+      reg_root, client_state_path.c_str(), KEY_QUERY_VALUE | KEY_WOW64_32KEY);
   if (result == ERROR_SUCCESS) {
     result = client_state.ReadValue(google_update::kExperimentLabels,
                                     experiment_labels);

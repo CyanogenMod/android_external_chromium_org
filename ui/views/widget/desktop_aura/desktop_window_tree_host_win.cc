@@ -35,7 +35,6 @@
 #include "ui/views/widget/widget_hwnd_utils.h"
 #include "ui/views/win/fullscreen_handler.h"
 #include "ui/views/win/hwnd_message_handler.h"
-#include "ui/views/window/native_frame_view.h"
 #include "ui/wm/core/compound_event_filter.h"
 #include "ui/wm/core/input_method_event_filter.h"
 #include "ui/wm/core/window_animations.h"
@@ -382,11 +381,6 @@ void DesktopWindowTreeHostWin::FrameTypeChanged() {
   SetWindowTransparency();
 }
 
-NonClientFrameView* DesktopWindowTreeHostWin::CreateNonClientFrameView() {
-  return GetWidget()->ShouldUseNativeFrame() ?
-      new NativeFrameView(GetWidget()) : NULL;
-}
-
 void DesktopWindowTreeHostWin::SetFullscreen(bool fullscreen) {
   message_handler_->fullscreen_handler()->SetFullscreen(fullscreen);
   // TODO(sky): workaround for ScopedFullscreenVisibility showing window
@@ -492,12 +486,7 @@ void DesktopWindowTreeHostWin::SetBounds(const gfx::Rect& bounds) {
   window_enlargement_ =
       gfx::Vector2d(new_expanded.width() - expanded.width(),
                     new_expanded.height() - expanded.height());
-  message_handler_->SetBounds(new_expanded);
-
-  // The client area size may have changed even though the window bounds have
-  // not, if the window bounds were expanded to 64 pixels both times.
-  if (old_hwnd_size == new_expanded.size() && old_content_size != bounds.size())
-    HandleClientSizeChanged(new_expanded.size());
+  message_handler_->SetBounds(new_expanded, old_content_size != bounds.size());
 }
 
 gfx::Point DesktopWindowTreeHostWin::GetLocationOnNativeScreen() const {
@@ -611,7 +600,7 @@ bool DesktopWindowTreeHostWin::IsModal() const {
 }
 
 int DesktopWindowTreeHostWin::GetInitialShowState() const {
-  return SW_SHOWNORMAL;
+  return CanActivate() ? SW_SHOWNORMAL : SW_SHOWNOACTIVATE;
 }
 
 bool DesktopWindowTreeHostWin::WillProcessWorkAreaChange() const {
@@ -656,7 +645,7 @@ void DesktopWindowTreeHostWin::ResetWindowControls() {
 }
 
 void DesktopWindowTreeHostWin::PaintLayeredWindow(gfx::Canvas* canvas) {
-  GetWidget()->GetRootView()->Paint(canvas);
+  GetWidget()->GetRootView()->Paint(canvas, views::CullSet());
 }
 
 gfx::NativeViewAccessible DesktopWindowTreeHostWin::GetNativeViewAccessible() {
@@ -864,7 +853,9 @@ bool DesktopWindowTreeHostWin::HandlePaintAccelerated(
 }
 
 void DesktopWindowTreeHostWin::HandlePaint(gfx::Canvas* canvas) {
-  compositor()->ScheduleRedrawRect(gfx::Rect());
+  // It appears possible to get WM_PAINT after WM_DESTROY.
+  if (compositor())
+    compositor()->ScheduleRedrawRect(gfx::Rect());
 }
 
 bool DesktopWindowTreeHostWin::HandleTooltipNotify(int w_param,
@@ -905,6 +896,11 @@ bool DesktopWindowTreeHostWin::HandleScrollEvent(
     const ui::ScrollEvent& event) {
   SendEventToProcessor(const_cast<ui::ScrollEvent*>(&event));
   return event.handled();
+}
+
+void DesktopWindowTreeHostWin::HandleWindowSizeChanging() {
+  if (compositor())
+    compositor()->FinishAllRendering();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

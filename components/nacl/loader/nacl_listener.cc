@@ -26,7 +26,7 @@
 #include "ipc/ipc_sync_message_filter.h"
 #include "native_client/src/public/chrome_main.h"
 #include "native_client/src/public/nacl_app.h"
-#include "native_client/src/trusted/validator/nacl_file_info.h"
+#include "native_client/src/public/nacl_file_info.h"
 
 #if defined(OS_POSIX)
 #include "base/file_descriptor_posix.h"
@@ -109,6 +109,10 @@ int AttachDebugExceptionHandler(const void* info, size_t info_size) {
   return result;
 }
 
+void DebugStubPortSelectedHandler(uint16_t port) {
+  g_listener->Send(new NaClProcessHostMsg_DebugStubPortSelected(port));
+}
+
 #endif
 
 // Creates the PPAPI IPC channel between the NaCl IRT and the host
@@ -165,7 +169,7 @@ class BrowserValidationDBProxy : public NaClValidationDB {
                                 int32* fd, std::string* path) OVERRIDE {
     *fd = -1;
     *path = "";
-    if (file_token->lo == 0 && file_token->hi == 0) {
+    if (!NaClFileTokenIsValid(file_token)) {
       return false;
     }
     IPC::PlatformFileForTransit ipc_fd = IPC::InvalidPlatformFileForTransit();
@@ -464,6 +468,8 @@ void NaClListener::OnStart(const nacl::NaClStartParams& params) {
 #if defined(OS_WIN)
   args->broker_duplicate_handle_func = BrokerDuplicateHandle;
   args->attach_debug_exception_handler_func = AttachDebugExceptionHandler;
+  args->debug_stub_server_port_selected_handler_func =
+      DebugStubPortSelectedHandler;
 #endif
 #if defined(OS_LINUX)
   args->prereserved_sandbox_size = prereserved_sandbox_size_;

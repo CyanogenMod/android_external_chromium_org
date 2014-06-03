@@ -65,11 +65,6 @@ executable("chrome") {
 
 static_library("browser") {
   if (is_linux) {
-    if (toolkit_uses_gtk) {
-      libs = [ "gconf-2" ]
-    }
-  }
-  if (is_linux) {
     configs += [
       "//build/config/linux:x11",
     ]
@@ -96,6 +91,8 @@ source_set("debugger") {
   sources = [
     "browser/devtools/device/adb/adb_client_socket.cc",
     "browser/devtools/device/adb/adb_client_socket.h",
+    "browser/devtools/device/adb/adb_device_info_query.h",
+    "browser/devtools/device/adb/adb_device_info_query.cc",
     "browser/devtools/device/adb/adb_device_provider.cc",
     "browser/devtools/device/adb/adb_device_provider.h",
     "browser/devtools/device/android_device_manager.cc",
@@ -198,8 +195,6 @@ action("about_credits") {
   # the last change file to force an update whenever the code is updated.
   source_prereqs = [ "//build/util/LASTCHANGE" ]
 
-  hard_dep = true
-
   args = [ "credits", build_relative_about_credits_file ]
 }
 
@@ -291,15 +286,8 @@ action("about_credits") {
 #  source = "browser/resources/translate_internals_resources.grd"
 #}
 #
-#group("theme_resources") {
-#  deps = [
-#    ":theme_resources_gen",
-#    #"//ui:ui_resources",
-#  ]
-#}
-#
 ## TODO(brettw) rename "app_theme_resources" or something when we don't support
 ## GYP any more. This name is required to match the GYP build.
-#grit("theme_resources_gen") {
+#grit("theme_resources") {
 #  source = "app/theme/theme_resources.grd"
 #}

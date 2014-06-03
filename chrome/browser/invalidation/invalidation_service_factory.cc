@@ -9,7 +9,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/invalidation/fake_invalidation_service.h"
 #include "chrome/browser/invalidation/invalidation_service_android.h"
-#include "chrome/browser/invalidation/invalidator_storage.h"
 #include "chrome/browser/invalidation/ticl_invalidation_service.h"
 #include "chrome/browser/invalidation/ticl_profile_settings_provider.h"
 #include "chrome/browser/profiles/profile.h"
@@ -21,11 +20,12 @@
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/common/pref_names.h"
 #include "components/invalidation/invalidation_service.h"
+#include "components/invalidation/invalidator_storage.h"
 #include "components/invalidation/ticl_settings_provider.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
-#include "components/user_prefs/pref_registry_syncable.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "sync/notifier/invalidation_state_tracker.h"
 
@@ -35,7 +35,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "base/files/file_path.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/device_identity_provider.h"
@@ -125,7 +125,7 @@ KeyedService* InvalidationServiceFactory::BuildServiceInstanceFor(
       identity_provider.Pass(),
       scoped_ptr<TiclSettingsProvider>(
           new TiclProfileSettingsProvider(profile)),
-      gcm::GCMProfileServiceFactory::GetForProfile(profile),
+      gcm::GCMProfileServiceFactory::GetForProfile(profile)->driver(),
       profile->GetRequestContext());
   service->Init(scoped_ptr<syncer::InvalidationStateTracker>(
       new InvalidatorStorage(profile->GetPrefs())));

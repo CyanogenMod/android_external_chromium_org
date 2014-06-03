@@ -95,10 +95,11 @@ class LogoutButton : public TrayPopupLabelButton {
   virtual ~LogoutButton() {}
 
  private:
-  virtual void Paint(gfx::Canvas* canvas) OVERRIDE {
+  virtual void Paint(gfx::Canvas* canvas,
+                     const views::CullSet& cull_set) OVERRIDE {
     // Just skip paint if this button used as a placeholder.
     if (!placeholder_)
-      TrayPopupLabelButton::Paint(canvas);
+      TrayPopupLabelButton::Paint(canvas, cull_set);
   }
 
   bool placeholder_;
@@ -136,7 +137,7 @@ class AddUserView : public views::View {
 
  private:
   // Overridden from views::View.
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
   // Create the additional client content for this item.
   void AddContent();
@@ -163,7 +164,7 @@ AddUserView::~AddUserView() {
   owner_->ForceBorderVisible(false);
 }
 
-gfx::Size AddUserView::GetPreferredSize() {
+gfx::Size AddUserView::GetPreferredSize() const {
   return owner_->bounds().size();
 }
 
@@ -256,7 +257,7 @@ gfx::Rect UserView::GetBoundsInScreenOfUserButtonForTest() {
   return user_card_view_->GetBoundsInScreen();
 }
 
-gfx::Size UserView::GetPreferredSize() {
+gfx::Size UserView::GetPreferredSize() const {
   gfx::Size size = views::View::GetPreferredSize();
   // Only the active user panel will be forced to a certain height.
   if (!multiprofile_index_) {
@@ -266,7 +267,7 @@ gfx::Size UserView::GetPreferredSize() {
   return size;
 }
 
-int UserView::GetHeightForWidth(int width) {
+int UserView::GetHeightForWidth(int width) const {
   return GetPreferredSize().height();
 }
 

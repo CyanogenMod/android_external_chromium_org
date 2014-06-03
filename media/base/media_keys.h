@@ -12,6 +12,7 @@
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "media/base/media_export.h"
+#include "url/gurl.h"
 
 namespace media {
 
@@ -84,8 +85,7 @@ typedef base::Callback<
 
 typedef base::Callback<void(uint32 session_id,
                             const std::vector<uint8>& message,
-                            const std::string& destination_url)>
-    SessionMessageCB;
+                            const GURL& destination_url)> SessionMessageCB;
 
 typedef base::Callback<void(uint32 session_id)> SessionReadyCB;
 

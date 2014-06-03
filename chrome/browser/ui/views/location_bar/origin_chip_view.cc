@@ -169,12 +169,6 @@ OriginChipView::~OriginChipView() {
     sb_service->ui_manager()->RemoveObserver(this);
 }
 
-bool OriginChipView::ShouldShow() {
-  return chrome::ShouldDisplayOriginChipV2() &&
-      location_bar_view_->GetToolbarModel()->WouldOmitURLDueToOriginChip() &&
-      location_bar_view_->GetToolbarModel()->origin_chip_enabled();
-}
-
 void OriginChipView::Update(content::WebContents* web_contents) {
   if (!web_contents)
     return;
@@ -278,7 +272,7 @@ void OriginChipView::FadeIn() {
   fade_in_animation_->Show();
 }
 
-gfx::Size OriginChipView::GetPreferredSize() {
+gfx::Size OriginChipView::GetPreferredSize() const {
   gfx::Size label_size = host_label_->GetPreferredSize();
   gfx::Size icon_size = location_icon_view_->GetPreferredSize();
   int icon_spacing = showing_16x16_icon_ ?

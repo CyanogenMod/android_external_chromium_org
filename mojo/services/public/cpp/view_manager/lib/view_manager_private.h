@@ -10,7 +10,6 @@
 #include "mojo/services/public/cpp/view_manager/view_manager.h"
 
 namespace mojo {
-namespace services {
 namespace view_manager {
 
 class ViewManagerSynchronizer;
@@ -23,12 +22,15 @@ class ViewManagerPrivate {
   ViewManagerSynchronizer* synchronizer() {
     return manager_->synchronizer_.get();
   }
-  Shell* shell() { return manager_->shell_; }
+  ServiceProvider* service_provider() { return manager_->service_provider_; }
 
   void set_root(ViewTreeNode* root) { manager_->tree_ = root; }
 
   void AddNode(TransportNodeId node_id, ViewTreeNode* node);
   void RemoveNode(TransportNodeId node_id);
+
+  void AddView(TransportViewId view_id, View* view);
+  void RemoveView(TransportViewId view_id);
 
   // Returns true if the ViewManager's synchronizer is connected to the service.
   bool connected() { return manager_->synchronizer_->connected(); }
@@ -40,7 +42,6 @@ class ViewManagerPrivate {
 };
 
 }  // namespace view_manager
-}  // namespace services
 }  // namespace mojo
 
 #endif  // MOJO_SERVICES_PUBLIC_CPP_VIEW_MANAGER_LIB_VIEW_MANAGER_PRIVATE_H_

@@ -11,6 +11,7 @@
 #include "base/android/scoped_java_ref.h"
 #include "base/callback.h"
 #include "base/cancelable_callback.h"
+#include "base/values.h"
 #include "content/public/browser/android/synchronous_compositor_client.h"
 #include "skia/ext/refptr.h"
 #include "ui/gfx/rect.h"
@@ -80,7 +81,8 @@ class BrowserViewRenderer : public content::SynchronousCompositorClient,
               const gfx::Vector2d& scroll,
               const gfx::Rect& global_visible_rect,
               const gfx::Rect& clip);
-  void DidDrawGL(const DrawGLResult& result);
+  void DidDrawGL(scoped_ptr<DrawGLResult> result);
+  void DidDrawDelegated(scoped_ptr<DrawGLResult> result);
 
   // CapturePicture API methods.
   skia::RefPtr<SkPicture> CapturePicture(int width, int height);
@@ -120,17 +122,16 @@ class BrowserViewRenderer : public content::SynchronousCompositorClient,
   virtual void DidDestroyCompositor(content::SynchronousCompositor* compositor)
       OVERRIDE;
   virtual void SetContinuousInvalidate(bool invalidate) OVERRIDE;
-  virtual void SetMaxRootLayerScrollOffset(gfx::Vector2dF new_value) OVERRIDE;
-  virtual void SetTotalRootLayerScrollOffset(gfx::Vector2dF new_value_css)
-      OVERRIDE;
   virtual void DidUpdateContent() OVERRIDE;
   virtual gfx::Vector2dF GetTotalRootLayerScrollOffset() OVERRIDE;
+  virtual void UpdateRootLayerState(
+      const gfx::Vector2dF& total_scroll_offset_dip,
+      const gfx::Vector2dF& max_scroll_offset_dip,
+      const gfx::SizeF& scrollable_size_dip,
+      float page_scale_factor,
+      float min_page_scale_factor,
+      float max_page_scale_factor) OVERRIDE;
   virtual bool IsExternalFlingActive() const OVERRIDE;
-  virtual void SetRootLayerPageScaleFactorAndLimits(float page_scale_factor,
-                                                    float min_page_scale_factor,
-                                                    float max_page_scale_factor)
-      OVERRIDE;
-  virtual void SetRootLayerScrollableSize(gfx::SizeF scrollable_size) OVERRIDE;
   virtual void DidOverscroll(gfx::Vector2dF accumulated_overscroll,
                              gfx::Vector2dF latest_overscroll_delta,
                              gfx::Vector2dF current_fling_velocity) OVERRIDE;
@@ -141,6 +142,7 @@ class BrowserViewRenderer : public content::SynchronousCompositorClient,
                            bool effective_immediately) OVERRIDE;
 
  private:
+  void SetTotalRootLayerScrollOffset(gfx::Vector2dF new_value_dip);
   // Checks the continuous invalidate and block invalidate state, and schedule
   // invalidates appropriately. If |force_invalidate| is true, then send a view
   // invalidate regardless of compositor expectation.
@@ -148,6 +150,13 @@ class BrowserViewRenderer : public content::SynchronousCompositorClient,
   bool DrawSWInternal(jobject java_canvas, const gfx::Rect& clip_bounds);
   bool CompositeSW(SkCanvas* canvas);
   void DidComposite(bool force_invalidate);
+  scoped_ptr<base::Value> RootLayerStateAsValue(
+      const gfx::Vector2dF& total_scroll_offset_dip,
+      const gfx::SizeF& scrollable_size_dip);
+
+  bool OnDrawHardwareLegacy(jobject java_canvas);
+  bool OnDrawHardware(jobject java_canvas);
+  void ReturnResources();
 
   // If we call up view invalidate and OnDraw is not called before a deadline,
   // then we keep ticking the SynchronousCompositor so it can make progress.
@@ -185,10 +194,14 @@ class BrowserViewRenderer : public content::SynchronousCompositorClient,
   bool view_visible_;
   bool window_visible_;  // Only applicable if |attached_to_window_| is true.
   bool attached_to_window_;
+  bool hardware_enabled_;
   float dip_scale_;
   float page_scale_factor_;
   bool on_new_picture_enable_;
   bool clear_view_;
+
+  gfx::Vector2d last_on_draw_scroll_offset_;
+  gfx::Rect last_on_draw_global_visible_rect_;
 
   // When true, we should continuously invalidate and keep drawing, for example
   // to drive animation. This value is set by the compositor and should always
@@ -204,8 +217,6 @@ class BrowserViewRenderer : public content::SynchronousCompositorClient,
 
   int width_;
   int height_;
-
-  DrawGLInput draw_gl_input_;
 
   // Current scroll offset in CSS pixels.
   gfx::Vector2dF scroll_offset_dip_;

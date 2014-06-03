@@ -6,12 +6,14 @@
 
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_util.h"
+#include "base/time/default_tick_clock.h"
 #include "build/build_config.h"
 #include "chrome/browser/apps/chrome_apps_client.h"
 #include "chrome/browser/background/background_mode_manager.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_impl.h"
 #include "chrome/browser/extensions/chrome_extensions_browser_client.h"
+#include "chrome/browser/network_time/network_time_tracker.h"
 #include "chrome/browser/printing/print_job_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/test/base/testing_browser_process_platform_part.h"
@@ -360,6 +362,16 @@ WebRtcLogUploader* TestingBrowserProcess::webrtc_log_uploader() {
 }
 #endif
 
+NetworkTimeTracker* TestingBrowserProcess::network_time_tracker() {
+  if (!network_time_tracker_) {
+    DCHECK(local_state_);
+    network_time_tracker_.reset(new NetworkTimeTracker(
+        scoped_ptr<base::TickClock>(new base::DefaultTickClock()),
+        local_state_));
+  }
+  return network_time_tracker_.get();
+}
+
 void TestingBrowserProcess::SetSystemRequestContext(
     net::URLRequestContextGetter* context_getter) {
   system_request_context_ = context_getter;
@@ -376,6 +388,7 @@ void TestingBrowserProcess::SetLocalState(PrefService* local_state) {
     // (assumedly as part of exiting the test and freeing TestingBrowserProcess)
     // any components owned by TestingBrowserProcess that depend on local_state
     // are also freed.
+    network_time_tracker_.reset();
 #if !defined(OS_IOS)
     notification_ui_manager_.reset();
 #endif

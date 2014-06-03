@@ -9,13 +9,13 @@
 #include "base/bind.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/ui/website_settings/permission_bubble_manager.h"
 #include "chrome/browser/ui/website_settings/permission_bubble_request.h"
 #include "chrome/common/pref_names.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
 #include "components/infobars/core/infobar.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_details.h"
@@ -283,11 +283,13 @@ void ChromeQuotaPermissionContext::RequestQuotaPermission(
   if (PermissionBubbleManager::Enabled()) {
     PermissionBubbleManager* bubble_manager =
         PermissionBubbleManager::FromWebContents(web_contents);
-    bubble_manager->AddRequest(new QuotaPermissionRequest(this,
-            params.origin_url, params.requested_size, params.user_gesture,
-            Profile::FromBrowserContext(web_contents->GetBrowserContext())->
-                GetPrefs()->GetString(prefs::kAcceptLanguages),
-            callback));
+    if (bubble_manager) {
+      bubble_manager->AddRequest(new QuotaPermissionRequest(this,
+              params.origin_url, params.requested_size, params.user_gesture,
+              Profile::FromBrowserContext(web_contents->GetBrowserContext())->
+                  GetPrefs()->GetString(prefs::kAcceptLanguages),
+              callback));
+    }
     return;
   }
 

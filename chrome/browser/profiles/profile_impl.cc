@@ -61,6 +61,7 @@
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/prefs/chrome_pref_service_factory.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
+#include "chrome/browser/prefs/tracked/tracked_preference_validation_delegate.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
 #include "chrome/browser/profiles/bookmark_model_loaded_observer.h"
 #include "chrome/browser/profiles/chrome_version_service.h"
@@ -81,11 +82,11 @@
 #include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 #include "components/dom_distiller/content/dom_distiller_viewer_source.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "components/startup_metric_utils/startup_metric_utils.h"
-#include "components/user_prefs/pref_registry_syncable.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/dom_storage_context.h"
@@ -130,7 +131,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/locale_change_guard.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/preferences.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #endif
@@ -353,11 +354,7 @@ void ProfileImpl::RegisterProfilePrefs(
 #endif
   registry->RegisterBooleanPref(
       prefs::kPrintPreviewDisabled,
-#if defined(GOOGLE_CHROME_BUILD)
       false,
-#else
-      true,
-#endif
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterBooleanPref(
       prefs::kForceEphemeralProfiles,
@@ -464,6 +461,7 @@ ProfileImpl::ProfileImpl(
       path_, sequenced_task_runner, create_mode == CREATE_MODE_SYNCHRONOUS);
 #endif
 
+  // TODO(grt): construct pref_validation_delegate_.
   {
     // On startup, preference loading is always synchronous so a scoped timer
     // will work here.
@@ -472,6 +470,7 @@ ProfileImpl::ProfileImpl(
     prefs_ = chrome_prefs::CreateProfilePrefs(
         path_,
         sequenced_task_runner,
+        pref_validation_delegate_.get(),
         profile_policy_connector_->policy_service(),
         managed_user_settings,
         new ExtensionPrefStore(
@@ -923,10 +922,10 @@ PrefService* ProfileImpl::GetOffTheRecordPrefs() {
 
 net::URLRequestContextGetter* ProfileImpl::CreateRequestContext(
     content::ProtocolHandlerMap* protocol_handlers,
-    content::ProtocolHandlerScopedVector protocol_interceptors) {
+    content::URLRequestInterceptorScopedVector request_interceptors) {
   return io_data_.CreateMainRequestContextGetter(
       protocol_handlers,
-      protocol_interceptors.Pass(),
+      request_interceptors.Pass(),
       g_browser_process->local_state(),
       g_browser_process->io_thread()).get();
 }
@@ -997,18 +996,14 @@ void ProfileImpl::CancelMidiSysExPermissionRequest(
 void ProfileImpl::RequestProtectedMediaIdentifierPermission(
     int render_process_id,
     int render_view_id,
-    int bridge_id,
-    int group_id,
-    const GURL& requesting_frame,
+    const GURL& origin,
     const ProtectedMediaIdentifierPermissionCallback& callback) {
 #if defined(OS_ANDROID)
   ProtectedMediaIdentifierPermissionContext* context =
       ProtectedMediaIdentifierPermissionContextFactory::GetForProfile(this);
   context->RequestProtectedMediaIdentifierPermission(render_process_id,
                                                      render_view_id,
-                                                     bridge_id,
-                                                     group_id,
-                                                     requesting_frame,
+                                                     origin,
                                                      callback);
 #else
   NOTIMPLEMENTED();
@@ -1017,11 +1012,14 @@ void ProfileImpl::RequestProtectedMediaIdentifierPermission(
 }
 
 void ProfileImpl::CancelProtectedMediaIdentifierPermissionRequests(
-    int group_id) {
+    int render_process_id,
+    int render_view_id,
+    const GURL& origin) {
 #if defined(OS_ANDROID)
   ProtectedMediaIdentifierPermissionContext* context =
       ProtectedMediaIdentifierPermissionContextFactory::GetForProfile(this);
-  context->CancelProtectedMediaIdentifierPermissionRequests(group_id);
+  context->CancelProtectedMediaIdentifierPermissionRequests(
+      render_process_id, render_view_id, origin);
 #else
   NOTIMPLEMENTED();
 #endif  // defined(OS_ANDROID)
@@ -1040,12 +1038,12 @@ ProfileImpl::CreateRequestContextForStoragePartition(
     const base::FilePath& partition_path,
     bool in_memory,
     content::ProtocolHandlerMap* protocol_handlers,
-    content::ProtocolHandlerScopedVector protocol_interceptors) {
+    content::URLRequestInterceptorScopedVector request_interceptors) {
   return io_data_.CreateIsolatedAppRequestContextGetter(
       partition_path,
       in_memory,
       protocol_handlers,
-      protocol_interceptors.Pass()).get();
+      request_interceptors.Pass()).get();
 }
 
 net::SSLConfigService* ProfileImpl::GetSSLConfigService() {
@@ -1071,8 +1069,7 @@ content::GeolocationPermissionContext*
   return ChromeGeolocationPermissionContextFactory::GetForProfile(this);
 }
 
-content::BrowserPluginGuestManagerDelegate*
-    ProfileImpl::GetGuestManagerDelegate() {
+content::BrowserPluginGuestManager* ProfileImpl::GetGuestManager() {
   return GuestViewManager::FromBrowserContext(this);
 }
 
@@ -1244,9 +1241,16 @@ chrome_browser_net::Predictor* ProfileImpl::GetNetworkPredictor() {
   return predictor_;
 }
 
-void ProfileImpl::ClearNetworkingHistorySince(base::Time time,
-                                              const base::Closure& completion) {
+void ProfileImpl::ClearNetworkingHistorySince(
+    base::Time time,
+    const base::Closure& completion) {
   io_data_.ClearNetworkingHistorySince(time, completion);
+}
+
+void ProfileImpl::ClearDomainReliabilityMonitor(
+    domain_reliability::DomainReliabilityClearMode mode,
+    const base::Closure& completion) {
+  io_data_.ClearDomainReliabilityMonitor(mode, completion);
 }
 
 GURL ProfileImpl::GetHomePage() {

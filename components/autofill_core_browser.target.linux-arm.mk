@@ -39,6 +39,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS := \
 LOCAL_SRC_FILES := \
 	components/autofill/core/browser/address.cc \
 	components/autofill/core/browser/address_field.cc \
+	components/autofill/core/browser/address_i18n.cc \
 	components/autofill/core/browser/autocomplete_history_manager.cc \
 	components/autofill/core/browser/autofill_country.cc \
 	components/autofill/core/browser/autofill_data_model.cc \
@@ -87,7 +88,14 @@ MY_CFLAGS_Debug := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
+	-Wno-unused-local-typedefs \
 	-fno-tree-sra \
+	-fno-partial-inlining \
+	-fno-early-inlining \
+	-fno-tree-copy-prop \
+	-fno-tree-loop-optimize \
+	-fno-move-loop-invariants \
+	-fno-caller-saves \
 	-Wno-psabi \
 	-ffunction-sections \
 	-funwind-tables \
@@ -119,12 +127,17 @@ MY_DEFS_Debug := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
+	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
+	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
+	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DVIDEO_HOLE=1' \
 	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DSK_ENABLE_INST_COUNT=0' \
@@ -134,10 +147,12 @@ MY_DEFS_Debug := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
+	'-DSK_SUPPORT_LEGACY_ASIMAGEINFO' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
+	'-DSK_IGNORE_CORRECT_HIGH_QUALITY_IMAGE_SCALE' \
+	'-DSK_SUPPORT_LEGACY_INSTALLPIXELSPARAMS' \
+	'-DSK_SUPPORT_LEGACY_IMAGEGENERATORAPI' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
@@ -151,6 +166,8 @@ MY_DEFS_Debug := \
 	'-DNO_SOUND_SYSTEM' \
 	'-DANDROID' \
 	'-DPOSIX' \
+	'-DCUSTOM_BASICTYPES="base/basictypes.h"' \
+	'-DCUSTOM_SCOPED_PTR="base/memory/scoped_ptr.h"' \
 	'-DI18N_PHONENUMBERS_USE_ICU_REGEXP=1' \
 	'-DPROTOBUF_USE_DLLS' \
 	'-DGOOGLE_PROTOBUF_NO_RTTI' \
@@ -194,10 +211,12 @@ LOCAL_C_INCLUDES_Debug := \
 	$(PWD)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/libjingle/overrides \
 	$(LOCAL_PATH)/third_party/libjingle/source \
+	$(LOCAL_PATH)/third_party/webrtc/overrides \
 	$(LOCAL_PATH)/testing/gtest/include \
 	$(LOCAL_PATH)/third_party \
 	$(LOCAL_PATH)/third_party/webrtc \
 	$(PWD)/external/expat/lib \
+	$(LOCAL_PATH)/third_party/libaddressinput/chromium/cpp/include \
 	$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber \
 	$(LOCAL_PATH)/third_party/libphonenumber/src \
 	$(gyp_shared_intermediate_dir)/protoc_out \
@@ -234,7 +253,14 @@ MY_CFLAGS_Release := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
+	-Wno-unused-local-typedefs \
 	-fno-tree-sra \
+	-fno-partial-inlining \
+	-fno-early-inlining \
+	-fno-tree-copy-prop \
+	-fno-tree-loop-optimize \
+	-fno-move-loop-invariants \
+	-fno-caller-saves \
 	-Wno-psabi \
 	-ffunction-sections \
 	-funwind-tables \
@@ -266,12 +292,17 @@ MY_DEFS_Release := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
+	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
+	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
+	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DVIDEO_HOLE=1' \
 	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DSK_ENABLE_INST_COUNT=0' \
@@ -281,10 +312,12 @@ MY_DEFS_Release := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
+	'-DSK_SUPPORT_LEGACY_ASIMAGEINFO' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
+	'-DSK_IGNORE_CORRECT_HIGH_QUALITY_IMAGE_SCALE' \
+	'-DSK_SUPPORT_LEGACY_INSTALLPIXELSPARAMS' \
+	'-DSK_SUPPORT_LEGACY_IMAGEGENERATORAPI' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
@@ -298,6 +331,8 @@ MY_DEFS_Release := \
 	'-DNO_SOUND_SYSTEM' \
 	'-DANDROID' \
 	'-DPOSIX' \
+	'-DCUSTOM_BASICTYPES="base/basictypes.h"' \
+	'-DCUSTOM_SCOPED_PTR="base/memory/scoped_ptr.h"' \
 	'-DI18N_PHONENUMBERS_USE_ICU_REGEXP=1' \
 	'-DPROTOBUF_USE_DLLS' \
 	'-DGOOGLE_PROTOBUF_NO_RTTI' \
@@ -342,10 +377,12 @@ LOCAL_C_INCLUDES_Release := \
 	$(PWD)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/libjingle/overrides \
 	$(LOCAL_PATH)/third_party/libjingle/source \
+	$(LOCAL_PATH)/third_party/webrtc/overrides \
 	$(LOCAL_PATH)/testing/gtest/include \
 	$(LOCAL_PATH)/third_party \
 	$(LOCAL_PATH)/third_party/webrtc \
 	$(PWD)/external/expat/lib \
+	$(LOCAL_PATH)/third_party/libaddressinput/chromium/cpp/include \
 	$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber \
 	$(LOCAL_PATH)/third_party/libphonenumber/src \
 	$(gyp_shared_intermediate_dir)/protoc_out \

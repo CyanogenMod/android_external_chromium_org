@@ -207,7 +207,7 @@ bool MP4StreamParser::ParseMoov(BoxReader* reader) {
       }
 
       uint8 audio_type = entry.esds.object_type;
-      DVLOG(1) << "audio_type " << std::hex << audio_type;
+      DVLOG(1) << "audio_type " << std::hex << static_cast<int>(audio_type);
       if (audio_object_types_.find(audio_type) == audio_object_types_.end()) {
         MEDIA_LOG(log_cb_) << "audio object type 0x" << std::hex << audio_type
                            << " does not match what is specified in the"
@@ -366,7 +366,8 @@ bool MP4StreamParser::PrepareAVCBuffer(
     RCHECK(AVC::InsertParamSetsAnnexB(avc_config, frame_buf, subsamples));
   }
 
-  DCHECK(AVC::IsValidAnnexB(*frame_buf));
+  // TODO(acolwell): Improve IsValidAnnexB() so it can handle encrypted content.
+  DCHECK(runs_->is_encrypted() || AVC::IsValidAnnexB(*frame_buf));
   return true;
 }
 
@@ -499,9 +500,13 @@ bool MP4StreamParser::EnqueueSample(BufferQueue* audio_buffers,
   // TODO(wolenetz/acolwell): Validate and use a common cross-parser TrackId
   // type and allow multiple tracks for same media type, if applicable. See
   // https://crbug.com/341581.
+  //
+  // NOTE: MPEG's "random access point" concept is equivalent to the
+  // downstream code's "is keyframe" concept.
   scoped_refptr<StreamParserBuffer> stream_buf =
       StreamParserBuffer::CopyFrom(&frame_buf[0], frame_buf.size(),
-                                   runs_->is_keyframe(), buffer_type, 0);
+                                   runs_->is_random_access_point(),
+                                   buffer_type, 0);
 
   if (decrypt_config)
     stream_buf->set_decrypt_config(decrypt_config.Pass());
@@ -512,6 +517,7 @@ bool MP4StreamParser::EnqueueSample(BufferQueue* audio_buffers,
 
   DVLOG(3) << "Pushing frame: aud=" << audio
            << ", key=" << runs_->is_keyframe()
+           << ", rap=" << runs_->is_random_access_point()
            << ", dur=" << runs_->duration().InMilliseconds()
            << ", dts=" << runs_->dts().InMilliseconds()
            << ", cts=" << runs_->cts().InMilliseconds()

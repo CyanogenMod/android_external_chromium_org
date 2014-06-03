@@ -7,15 +7,27 @@
 
 #include "mojo/public/cpp/bindings/error_handler.h"
 #include "mojo/public/cpp/bindings/interface_ptr.h"
+#include "mojo/public/cpp/bindings/lib/filter_chain.h"
+#include "mojo/public/cpp/bindings/lib/message_header_validator.h"
 #include "mojo/public/cpp/system/macros.h"
 
 namespace mojo {
 namespace internal {
 
 template <typename Interface>
+class InterfaceImplBase : public Interface {
+ public:
+  virtual ~InterfaceImplBase() {}
+  virtual void OnConnectionEstablished() = 0;
+  virtual void OnConnectionError() = 0;
+};
+
+template <typename Interface>
 class InterfaceImplState : public ErrorHandler {
  public:
-  explicit InterfaceImplState(WithErrorHandler<Interface>* instance)
+  typedef typename Interface::Client Client;
+
+  explicit InterfaceImplState(InterfaceImplBase<Interface>* instance)
       : router_(NULL),
         proxy_(NULL) {
     assert(instance);
@@ -42,25 +54,34 @@ class InterfaceImplState : public ErrorHandler {
             MojoAsyncWaiter* waiter) {
     assert(!router_);
 
-    router_ = new Router(handle.Pass(), waiter);
+    FilterChain filters;
+    filters.Append<MessageHeaderValidator>();
+    filters.Append<typename Interface::RequestValidator_>();
+    filters.Append<typename Interface::Client::ResponseValidator_>();
+
+    router_ = new Router(handle.Pass(), filters.Pass(), waiter);
     router_->set_incoming_receiver(&stub_);
     router_->set_error_handler(this);
 
-    proxy_ = new typename Interface::Client_::Proxy_(router_);
+    proxy_ = new typename Client::Proxy_(router_);
 
-    stub_.sink()->SetClient(proxy_);
+    instance()->OnConnectionEstablished();
   }
 
   Router* router() { return router_; }
+  Client* client() { return proxy_; }
 
  private:
-  virtual void OnConnectionError() MOJO_OVERRIDE {
-    static_cast<WithErrorHandler<Interface>*>(stub_.sink())->
-        OnConnectionError();
+  InterfaceImplBase<Interface>* instance() {
+    return static_cast<InterfaceImplBase<Interface>*>(stub_.sink());
   }
 
-  internal::Router* router_;
-  typename Interface::Client_::Proxy_* proxy_;
+  virtual void OnConnectionError() MOJO_OVERRIDE {
+    instance()->OnConnectionError();
+  }
+
+  Router* router_;
+  typename Client::Proxy_* proxy_;
   typename Interface::Stub_ stub_;
 
   MOJO_DISALLOW_COPY_AND_ASSIGN(InterfaceImplState);

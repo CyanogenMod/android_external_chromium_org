@@ -19,7 +19,6 @@
 #include "dbus/bus.h"
 #include "device/bluetooth/bluetooth_adapter_chromeos.h"
 #include "device/bluetooth/bluetooth_pairing_chromeos.h"
-#include "device/bluetooth/bluetooth_profile_chromeos.h"
 #include "device/bluetooth/bluetooth_remote_gatt_service_chromeos.h"
 #include "device/bluetooth/bluetooth_socket.h"
 #include "device/bluetooth/bluetooth_socket_chromeos.h"
@@ -128,6 +127,7 @@ BluetoothDeviceChromeOS::BluetoothDeviceChromeOS(
     : adapter_(adapter),
       object_path_(object_path),
       num_connecting_calls_(0),
+      connection_monitor_started_(false),
       ui_task_runner_(ui_task_runner),
       socket_thread_(socket_thread),
       weak_ptr_factory_(this) {
@@ -194,7 +194,7 @@ std::string BluetoothDeviceChromeOS::GetAddress() const {
           GetProperties(object_path_);
   DCHECK(properties);
 
-  return properties->address.value();
+  return CanonicalizeAddress(properties->address.value());
 }
 
 BluetoothDevice::VendorIDSource
@@ -223,18 +223,39 @@ uint16 BluetoothDeviceChromeOS::GetDeviceID() const {
 }
 
 int BluetoothDeviceChromeOS::GetRSSI() const {
-  NOTIMPLEMENTED();
-  return kUnknownPower;
+  BluetoothDeviceClient::Properties* properties =
+      DBusThreadManager::Get()->GetBluetoothDeviceClient()->GetProperties(
+          object_path_);
+  DCHECK(properties);
+
+  if (!IsConnected()) {
+    NOTIMPLEMENTED();
+    return kUnknownPower;
+  }
+
+  return connection_monitor_started_ ? properties->connection_rssi.value()
+                                     : kUnknownPower;
 }
 
 int BluetoothDeviceChromeOS::GetCurrentHostTransmitPower() const {
-  NOTIMPLEMENTED();
-  return kUnknownPower;
+  BluetoothDeviceClient::Properties* properties =
+      DBusThreadManager::Get()->GetBluetoothDeviceClient()->GetProperties(
+          object_path_);
+  DCHECK(properties);
+
+  return IsConnected() && connection_monitor_started_
+             ? properties->connection_tx_power.value()
+             : kUnknownPower;
 }
 
 int BluetoothDeviceChromeOS::GetMaximumHostTransmitPower() const {
-  NOTIMPLEMENTED();
-  return kUnknownPower;
+  BluetoothDeviceClient::Properties* properties =
+      DBusThreadManager::Get()->GetBluetoothDeviceClient()->GetProperties(
+          object_path_);
+  DCHECK(properties);
+
+  return IsConnected() ? properties->connection_tx_power_max.value()
+                       : kUnknownPower;
 }
 
 bool BluetoothDeviceChromeOS::IsPaired() const {
@@ -404,7 +425,7 @@ void BluetoothDeviceChromeOS::Forget(const ErrorCallback& error_callback) {
   VLOG(1) << object_path_.value() << ": Removing device";
   DBusThreadManager::Get()->GetBluetoothAdapterClient()->
       RemoveDevice(
-          adapter_->object_path_,
+          adapter_->object_path(),
           object_path_,
           base::Bind(&base::DoNothing),
           base::Bind(&BluetoothDeviceChromeOS::OnForgetError,
@@ -416,47 +437,38 @@ void BluetoothDeviceChromeOS::ConnectToProfile(
     device::BluetoothProfile* profile,
     const base::Closure& callback,
     const ConnectToProfileErrorCallback& error_callback) {
-  BluetoothProfileChromeOS* profile_chromeos =
-      static_cast<BluetoothProfileChromeOS*>(profile);
-  VLOG(1) << object_path_.value() << ": Connecting profile: "
-          << profile_chromeos->uuid().canonical_value();
-  DBusThreadManager::Get()->GetBluetoothDeviceClient()->
-      ConnectProfile(
-          object_path_,
-          profile_chromeos->uuid().canonical_value(),
-          base::Bind(
-              &BluetoothDeviceChromeOS::OnConnectProfile,
-              weak_ptr_factory_.GetWeakPtr(),
-              profile,
-              callback),
-          base::Bind(
-              &BluetoothDeviceChromeOS::OnConnectProfileError,
-              weak_ptr_factory_.GetWeakPtr(),
-              profile,
-              error_callback));
+  // TODO(keybuK): Remove.
+  error_callback.Run("Removed. Use chrome.bluetoothSocket.connect() instead.");
 }
 
 void BluetoothDeviceChromeOS::ConnectToService(
     const BluetoothUUID& uuid,
     const ConnectToServiceCallback& callback,
     const ConnectToServiceErrorCallback& error_callback) {
-  // TODO(keybuk): implement
-  NOTIMPLEMENTED();
+  VLOG(1) << object_path_.value() << ": Connecting to service: "
+          << uuid.canonical_value();
+  scoped_refptr<BluetoothSocketChromeOS> socket =
+      BluetoothSocketChromeOS::CreateBluetoothSocket(
+          ui_task_runner_,
+          socket_thread_,
+          NULL,
+          net::NetLog::Source());
+  socket->Connect(this, uuid,
+                  base::Bind(callback, socket),
+                  error_callback);
 }
 
-void BluetoothDeviceChromeOS::SetOutOfBandPairingData(
-    const device::BluetoothOutOfBandPairingData& data,
+void BluetoothDeviceChromeOS::StartConnectionMonitor(
     const base::Closure& callback,
     const ErrorCallback& error_callback) {
-  // TODO(keybuk): implement
-  error_callback.Run();
-}
-
-void BluetoothDeviceChromeOS::ClearOutOfBandPairingData(
-    const base::Closure& callback,
-    const ErrorCallback& error_callback) {
-  // TODO(keybuk): implement
-  error_callback.Run();
+  DBusThreadManager::Get()->GetBluetoothDeviceClient()->StartConnectionMonitor(
+      object_path_,
+      base::Bind(&BluetoothDeviceChromeOS::OnStartConnectionMonitor,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 callback),
+      base::Bind(&BluetoothDeviceChromeOS::OnStartConnectionMonitorError,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 error_callback));
 }
 
 BluetoothPairingChromeOS* BluetoothDeviceChromeOS::BeginPairing(
@@ -655,6 +667,22 @@ void BluetoothDeviceChromeOS::OnSetTrusted(bool success) {
                             << ": Failed to set device as trusted";
 }
 
+void BluetoothDeviceChromeOS::OnStartConnectionMonitor(
+    const base::Closure& callback) {
+  connection_monitor_started_ = true;
+  callback.Run();
+}
+
+void BluetoothDeviceChromeOS::OnStartConnectionMonitorError(
+    const ErrorCallback& error_callback,
+    const std::string& error_name,
+    const std::string& error_message) {
+  LOG(WARNING) << object_path_.value()
+               << ": Failed to start connection monitor: " << error_name << ": "
+               << error_message;
+  error_callback.Run();
+}
+
 void BluetoothDeviceChromeOS::OnDisconnect(const base::Closure& callback) {
   VLOG(1) << object_path_.value() << ": Disconnected";
   callback.Run();
@@ -676,29 +704,6 @@ void BluetoothDeviceChromeOS::OnForgetError(
   LOG(WARNING) << object_path_.value() << ": Failed to remove device: "
                << error_name << ": " << error_message;
   error_callback.Run();
-}
-
-void BluetoothDeviceChromeOS::OnConnectProfile(
-    device::BluetoothProfile* profile,
-    const base::Closure& callback) {
-  BluetoothProfileChromeOS* profile_chromeos =
-      static_cast<BluetoothProfileChromeOS*>(profile);
-  VLOG(1) << object_path_.value() << ": Profile connected: "
-          << profile_chromeos->uuid().canonical_value();
-  callback.Run();
-}
-
-void BluetoothDeviceChromeOS::OnConnectProfileError(
-    device::BluetoothProfile* profile,
-    const ConnectToProfileErrorCallback& error_callback,
-    const std::string& error_name,
-    const std::string& error_message) {
-  BluetoothProfileChromeOS* profile_chromeos =
-      static_cast<BluetoothProfileChromeOS*>(profile);
-  VLOG(1) << object_path_.value() << ": Profile connection failed: "
-          << profile_chromeos->uuid().canonical_value() << ": "
-          << error_name << ": " << error_message;
-  error_callback.Run(error_message);
 }
 
 }  // namespace chromeos

@@ -6,7 +6,6 @@
 
 #include "base/values.h"
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
-#include "content/browser/browser_plugin/browser_plugin_guest_manager.h"
 #include "content/browser/browser_plugin/browser_plugin_host_factory.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -15,6 +14,7 @@
 #include "content/common/drag_messages.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/browser_plugin_guest_manager.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/render_view_host.h"
@@ -68,51 +68,29 @@ WebContentsImpl* BrowserPluginEmbedder::GetWebContents() const {
 
 BrowserPluginGuestManager*
 BrowserPluginEmbedder::GetBrowserPluginGuestManager() const {
-  return BrowserPluginGuestManager::FromBrowserContext(
-      GetWebContents()->GetBrowserContext());
+  return GetWebContents()->GetBrowserContext()->GetGuestManager();
 }
 
 bool BrowserPluginEmbedder::DidSendScreenRectsCallback(
-   BrowserPluginGuest* guest) {
+   WebContents* guest_web_contents) {
   static_cast<RenderViewHostImpl*>(
-      guest->GetWebContents()->GetRenderViewHost())->SendScreenRects();
+      guest_web_contents->GetRenderViewHost())->SendScreenRects();
   // Not handled => Iterate over all guests.
   return false;
 }
 
 void BrowserPluginEmbedder::DidSendScreenRects() {
-  BrowserPluginGuestManager::FromBrowserContext(
-      GetWebContents()->GetBrowserContext())->ForEachGuest(
+  GetBrowserPluginGuestManager()->ForEachGuest(
           GetWebContents(), base::Bind(
               &BrowserPluginEmbedder::DidSendScreenRectsCallback,
               base::Unretained(this)));
 }
 
-bool BrowserPluginEmbedder::UnlockMouseIfNecessaryCallback(
-    const NativeWebKeyboardEvent& event,
-    BrowserPluginGuest* guest) {
-  return guest->UnlockMouseIfNecessary(event);
-}
-
-bool BrowserPluginEmbedder::HandleKeyboardEvent(
-    const NativeWebKeyboardEvent& event) {
-  if ((event.type != blink::WebInputEvent::RawKeyDown) ||
-      (event.windowsKeyCode != ui::VKEY_ESCAPE) ||
-      (event.modifiers & blink::WebInputEvent::InputModifiers)) {
-    return false;
-  }
-
-  return GetBrowserPluginGuestManager()->ForEachGuest(
-      GetWebContents(),
-      base::Bind(&BrowserPluginEmbedder::UnlockMouseIfNecessaryCallback,
-                 base::Unretained(this),
-                 event));
-}
-
 bool BrowserPluginEmbedder::SetZoomLevelCallback(
-    double level, BrowserPluginGuest* guest) {
+    double level, WebContents* guest_web_contents) {
   double zoom_factor = content::ZoomLevelToZoomFactor(level);
-  guest->SetZoom(zoom_factor);
+  static_cast<WebContentsImpl*>(guest_web_contents)->GetBrowserPluginGuest()->
+      SetZoom(zoom_factor);
   // Not handled => Iterate over all guests.
   return false;
 }
@@ -172,8 +150,10 @@ void BrowserPluginEmbedder::OnGuestCallback(
     int instance_id,
     const BrowserPluginHostMsg_Attach_Params& params,
     const base::DictionaryValue* extra_params,
-    BrowserPluginGuest* guest) {
-  BrowserPluginGuestManager* guest_manager = GetBrowserPluginGuestManager();
+    WebContents* guest_web_contents) {
+  BrowserPluginGuest* guest = guest_web_contents ?
+      static_cast<WebContentsImpl*>(guest_web_contents)->
+          GetBrowserPluginGuest() : NULL;
   if (guest) {
     // There is an implicit order expectation here:
     // 1. The content embedder is made aware of the attachment.
@@ -189,10 +169,15 @@ void BrowserPluginEmbedder::OnGuestCallback(
   }
 
   scoped_ptr<base::DictionaryValue> copy_extra_params(extra_params->DeepCopy());
-  guest = guest_manager->CreateGuest(
+  guest_web_contents = GetBrowserPluginGuestManager()->CreateGuest(
       GetWebContents()->GetSiteInstance(),
-      instance_id, params,
+      instance_id,
+      params.storage_partition_id,
+      params.persist_storage,
       copy_extra_params.Pass());
+  guest = guest_web_contents ?
+      static_cast<WebContentsImpl*>(guest_web_contents)->
+          GetBrowserPluginGuest() : NULL;
   if (guest) {
     GetContentClient()->browser()->GuestWebContentsAttached(
         guest->GetWebContents(),

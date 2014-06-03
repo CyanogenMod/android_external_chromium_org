@@ -23,7 +23,6 @@
 #include "chrome/browser/sync/glue/bookmark_data_type_controller.h"
 #include "chrome/browser/sync/glue/bookmark_model_associator.h"
 #include "chrome/browser/sync/glue/chrome_report_unrecoverable_error.h"
-#include "chrome/browser/sync/glue/data_type_manager_impl.h"
 #include "chrome/browser/sync/glue/extension_data_type_controller.h"
 #include "chrome/browser/sync/glue/extension_setting_data_type_controller.h"
 #include "chrome/browser/sync/glue/password_data_type_controller.h"
@@ -53,15 +52,17 @@
 #include "components/dom_distiller/core/dom_distiller_service.h"
 #include "components/password_manager/core/browser/password_store.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "components/sync_driver/data_type_manager_impl.h"
 #include "components/sync_driver/data_type_manager_observer.h"
 #include "components/sync_driver/generic_change_processor.h"
 #include "components/sync_driver/proxy_data_type_controller.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/extension_system.h"
 #include "sync/api/attachments/attachment_service.h"
-#include "sync/api/attachments/fake_attachment_service.h"
-#include "sync/api/attachments/fake_attachment_store.h"
+#include "sync/api/attachments/attachment_service_impl.h"
 #include "sync/api/syncable_service.h"
+#include "sync/internal_api/public/attachments/fake_attachment_store.h"
+#include "sync/internal_api/public/attachments/fake_attachment_uploader.h"
 
 #if defined(ENABLE_EXTENSIONS)
 #include "chrome/browser/extensions/api/storage/settings_sync_util.h"
@@ -421,7 +422,8 @@ DataTypeManager* ProfileSyncComponentsFactoryImpl::CreateDataTypeManager(
     SyncBackendHost* backend,
     DataTypeManagerObserver* observer,
     browser_sync::FailedDataTypesHandler* failed_data_types_handler) {
-  return new DataTypeManagerImpl(debug_info_listener,
+  return new DataTypeManagerImpl(base::Bind(ChromeReportUnrecoverableError),
+                                 debug_info_listener,
                                  controllers,
                                  encryption_handler,
                                  backend,
@@ -433,8 +435,11 @@ browser_sync::SyncBackendHost*
 ProfileSyncComponentsFactoryImpl::CreateSyncBackendHost(
     const std::string& name,
     Profile* profile,
-    const base::WeakPtr<sync_driver::SyncPrefs>& sync_prefs) {
-  return new browser_sync::SyncBackendHostImpl(name, profile, sync_prefs);
+    invalidation::InvalidationService* invalidator,
+    const base::WeakPtr<sync_driver::SyncPrefs>& sync_prefs,
+    const base::FilePath& sync_folder) {
+  return new browser_sync::SyncBackendHostImpl(name, profile, invalidator,
+                                               sync_prefs, sync_folder);
 }
 
 base::WeakPtr<syncer::SyncableService> ProfileSyncComponentsFactoryImpl::
@@ -562,13 +567,24 @@ base::WeakPtr<syncer::SyncableService> ProfileSyncComponentsFactoryImpl::
   }
 }
 
-scoped_ptr<syncer::AttachmentStore>
-    ProfileSyncComponentsFactoryImpl::CreateCustomAttachmentStoreForType(
-    syncer::ModelType type) {
-  scoped_ptr<syncer::AttachmentStore> store(
+scoped_ptr<syncer::AttachmentService>
+ProfileSyncComponentsFactoryImpl::CreateAttachmentService(
+    syncer::AttachmentService::Delegate* delegate) {
+  // TODO(maniscalco): Use a shared (one per profile) thread-safe instance of
+  // AttachmentUpload instead of creating a new one per AttachmentService (bug
+  // 369536).
+  scoped_ptr<syncer::AttachmentUploader> attachment_uploader(
+      new syncer::FakeAttachmentUploader);
+
+  scoped_ptr<syncer::AttachmentStore> attachment_store(
       new syncer::FakeAttachmentStore(
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)));
-  return store.Pass();
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)));
+
+  scoped_ptr<syncer::AttachmentService> attachment_service(
+      new syncer::AttachmentServiceImpl(
+          attachment_store.Pass(), attachment_uploader.Pass(), delegate));
+
+  return attachment_service.Pass();
 }
 
 ProfileSyncComponentsFactory::SyncComponents

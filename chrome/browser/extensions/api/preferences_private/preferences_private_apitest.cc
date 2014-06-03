@@ -25,9 +25,13 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/bookmarks/core/common/bookmark_constants.h"
+#include "components/bookmarks/common/bookmark_constants.h"
 #include "components/sync_driver/sync_prefs.h"
 #include "content/public/browser/browser_context.h"
+
+#if defined(OS_CHROMEOS)
+#include "chromeos/chromeos_switches.h"
+#endif
 
 using extensions::PreferencesPrivateGetSyncCategoriesWithoutPassphraseFunction;
 
@@ -106,6 +110,13 @@ class PreferencesPrivateApiTest : public ExtensionApiTest {
  public:
   PreferencesPrivateApiTest() : browser_(NULL), service_(NULL) {}
   virtual ~PreferencesPrivateApiTest() {}
+
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+#if defined(OS_CHROMEOS)
+    command_line->AppendSwitch(
+        chromeos::switches::kIgnoreUserProfileMappingForTests);
+#endif
+  }
 
   virtual void SetUpOnMainThread() OVERRIDE {
     ExtensionApiTest::SetUpOnMainThread();

@@ -749,12 +749,16 @@ void OneClickSigninHelper::LogHistogramValue(
       UMA_HISTOGRAM_ENUMERATION("Signin.DevicesPageActions", action,
                                 one_click_signin::HISTOGRAM_MAX);
       break;
+    case signin::SOURCE_REAUTH:
+      UMA_HISTOGRAM_ENUMERATION("Signin.ReauthActions", action,
+                                one_click_signin::HISTOGRAM_MAX);
+      break;
     default:
       // This switch statement needs to be updated when the enum Source changes.
-      COMPILE_ASSERT(signin::SOURCE_UNKNOWN == 12,
+      COMPILE_ASSERT(signin::SOURCE_UNKNOWN == 13,
                      kSourceEnumHasChangedButNotThisSwitchStatement);
-      NOTREACHED();
-      return;
+      UMA_HISTOGRAM_ENUMERATION("Signin.UnknownActions", action,
+                                one_click_signin::HISTOGRAM_MAX);
   }
   UMA_HISTOGRAM_ENUMERATION("Signin.AllAccessPointActions", action,
                             one_click_signin::HISTOGRAM_MAX);
@@ -1105,7 +1109,7 @@ void OneClickSigninHelper::ShowInfoBarUIThread(
   // show a modal dialog asking the user to confirm.
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
-  ChromeSigninClient* signin_client =
+  SigninClient* signin_client =
       profile ? ChromeSigninClientFactory::GetForProfile(profile) : NULL;
   helper->untrusted_confirmation_required_ |=
       (signin_client && !signin_client->IsSigninProcess(child_id));
@@ -1306,7 +1310,7 @@ void OneClickSigninHelper::DidNavigateMainFrame(
     // sign-in process when a navigation to a non-sign-in URL occurs.
     Profile* profile =
         Profile::FromBrowserContext(web_contents()->GetBrowserContext());
-    ChromeSigninClient* signin_client =
+    SigninClient* signin_client =
         profile ? ChromeSigninClientFactory::GetForProfile(profile) : NULL;
     int process_id = web_contents()->GetRenderProcessHost()->GetID();
     if (signin_client && signin_client->IsSigninProcess(process_id))

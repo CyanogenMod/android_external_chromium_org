@@ -10,13 +10,14 @@
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/auth/key.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_constants.h"
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_creation_screen.h"
 #include "chrome/browser/chromeos/login/managed/supervised_user_authentication.h"
-#include "chrome/browser/chromeos/login/supervised_user_manager.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -88,7 +89,7 @@ void SupervisedUserLoginFlow::ConfigureSync(const std::string& token) {
 
 void SupervisedUserLoginFlow::HandleLoginSuccess(
     const UserContext& login_context) {
-  context_.CopyFrom(login_context);
+  context_ = login_context;
 }
 
 void SupervisedUserLoginFlow::OnPasswordChangeDataLoaded(
@@ -146,7 +147,7 @@ void SupervisedUserLoginFlow::OnPasswordChangeDataLoaded(
     key.privileges = kCryptohomeManagedUserIncompleteKeyPrivileges;
 
     VLOG(1) << "Adding new schema key";
-    DCHECK_EQ(context_.key_label, std::string());
+    DCHECK(context_.GetKey()->GetLabel().empty());
     authenticator_->AddKey(context_,
                            key,
                            false /* no key exists */,
@@ -162,7 +163,7 @@ void SupervisedUserLoginFlow::OnPasswordChangeDataLoaded(
       key.privileges = kCryptohomeManagedUserIncompleteKeyPrivileges;
     }
     // Just update the key.
-    DCHECK_EQ(context_.key_label, kCryptohomeManagedUserKeyLabel);
+    DCHECK_EQ(context_.GetKey()->GetLabel(), kCryptohomeManagedUserKeyLabel);
     authenticator_->UpdateKeyAuthorized(
         context_,
         key,

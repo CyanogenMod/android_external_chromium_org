@@ -123,6 +123,13 @@ class GCMStatsRecorderTest : public testing::Test {
     EXPECT_EQ(expected_count,
               static_cast<int>(recorder_.sending_activities().size()));
   }
+  void VerifyAllActivityQueueEmpty(const std::string& remark) {
+    EXPECT_TRUE(recorder_.checkin_activities().empty()) << remark;
+    EXPECT_TRUE(recorder_.connection_activities().empty()) << remark;
+    EXPECT_TRUE(recorder_.registration_activities().empty()) << remark;
+    EXPECT_TRUE(recorder_.receiving_activities().empty()) << remark;
+    EXPECT_TRUE(recorder_.sending_activities().empty()) << remark;
+  }
 
   void VerifyCheckinInitiated(const std::string& remark) {
     VerifyCheckin(recorder_.checkin_activities(),
@@ -279,7 +286,7 @@ class GCMStatsRecorderTest : public testing::Test {
 
  protected:
   void VerifyCheckin(
-      const std::deque<GCMStatsRecorder::CheckinActivity>& queue,
+      const std::deque<CheckinActivity>& queue,
       const std::string& event,
       const std::string& details,
       const std::string& remark) {
@@ -288,7 +295,7 @@ class GCMStatsRecorderTest : public testing::Test {
   }
 
   void VerifyConnection(
-      const std::deque<GCMStatsRecorder::ConnectionActivity>& queue,
+      const std::deque<ConnectionActivity>& queue,
       const std::string& event,
       const std::string& details,
       const std::string& remark) {
@@ -297,7 +304,7 @@ class GCMStatsRecorderTest : public testing::Test {
   }
 
   void VerifyRegistration(
-      const std::deque<GCMStatsRecorder::RegistrationActivity>& queue,
+      const std::deque<RegistrationActivity>& queue,
       const std::string& sender_ids,
       const std::string& event,
       const std::string& details,
@@ -309,7 +316,7 @@ class GCMStatsRecorderTest : public testing::Test {
   }
 
   void VerifyReceivingData(
-      const std::deque<GCMStatsRecorder::ReceivingActivity>& queue,
+      const std::deque<ReceivingActivity>& queue,
       const std::string& event,
       const std::string& details,
       const std::string& remark) {
@@ -321,7 +328,7 @@ class GCMStatsRecorderTest : public testing::Test {
   }
 
   void VerifySendingData(
-      const std::deque<GCMStatsRecorder::SendingActivity>& queue,
+      const std::deque<SendingActivity>& queue,
       const std::string& event, const std::string& details,
       const std::string& remark) {
     EXPECT_EQ(kAppId, queue.front().app_id) << remark;
@@ -354,9 +361,46 @@ TEST_F(GCMStatsRecorderTest, StartStopRecordingTest) {
 
   recorder_.SetRecording(false);
   EXPECT_FALSE(recorder_.is_recording());
+  recorder_.Clear();
+  VerifyAllActivityQueueEmpty("all cleared");
+
+  // Exercise every recording method below and verify that nothing is recorded.
+  recorder_.RecordCheckinInitiated(kAndroidId);
+  recorder_.RecordCheckinDelayedDueToBackoff(kDelay);
+  recorder_.RecordCheckinSuccess();
+  recorder_.RecordCheckinFailure(kCheckinStatus, true);
+  VerifyAllActivityQueueEmpty("no checkin");
+
+  recorder_.RecordConnectionInitiated(kHost);
+  recorder_.RecordConnectionDelayedDueToBackoff(kDelay);
+  recorder_.RecordConnectionSuccess();
+  recorder_.RecordConnectionFailure(kNetworkError);
+  recorder_.RecordConnectionResetSignaled(kReason);
+  VerifyAllActivityQueueEmpty("no registration");
+
+  recorder_.RecordRegistrationSent(kAppId, kSenderIds);
+  recorder_.RecordRegistrationResponse(kAppId, sender_ids_,
+                                       kRegistrationStatus);
+  recorder_.RecordRegistrationRetryRequested(kAppId, sender_ids_, kRetries);
+  recorder_.RecordUnregistrationSent(kAppId);
+  recorder_.RecordUnregistrationResponse(kAppId, kUnregistrationStatus);
+  recorder_.RecordUnregistrationRetryDelayed(kAppId, kDelay);
+  VerifyAllActivityQueueEmpty("no unregistration");
+
+  recorder_.RecordDataMessageReceived(kAppId, kFrom, kByteSize, true,
+                                      GCMStatsRecorder::DATA_MESSAGE);
+  recorder_.RecordDataMessageReceived(kAppId, kFrom, kByteSize, true,
+                                      GCMStatsRecorder::DELETED_MESSAGES);
+  recorder_.RecordDataMessageReceived(kAppId, kFrom, kByteSize, false,
+                                      GCMStatsRecorder::DATA_MESSAGE);
+  VerifyAllActivityQueueEmpty("no receiving");
+
   recorder_.RecordDataSentToWire(kAppId, kReceiverId, kMessageId, kQueuedSec);
-  VerifyRecordedSendingCount(1);
-  VerifyDataSentToWire("2nd call");
+  recorder_.RecordNotifySendStatus(kAppId, kReceiverId, kMessageId,
+                                   kMessageSendStatus, kByteSize, kTTL);
+  recorder_.RecordIncomingSendError(kAppId, kReceiverId, kMessageId);
+  recorder_.RecordDataSentToWire(kAppId, kReceiverId, kMessageId, kQueuedSec);
+  VerifyAllActivityQueueEmpty("no sending");
 }
 
 TEST_F(GCMStatsRecorderTest, ClearLogTest) {

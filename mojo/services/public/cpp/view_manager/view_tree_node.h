@@ -10,11 +10,12 @@
 #include "base/basictypes.h"
 #include "base/observer_list.h"
 #include "mojo/services/public/cpp/view_manager/view_manager_types.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace mojo {
-namespace services {
 namespace view_manager {
 
+class View;
 class ViewManager;
 class ViewTreeNodeObserver;
 
@@ -34,6 +35,10 @@ class ViewTreeNode {
   // Configuration.
   TransportNodeId id() const { return id_; }
 
+  // Geometric disposition.
+  const gfx::Rect& bounds() { return bounds_; }
+  void SetBounds(const gfx::Rect& bounds);
+
   // Observation.
   void AddObserver(ViewTreeNodeObserver* observer);
   void RemoveObserver(ViewTreeNodeObserver* observer);
@@ -50,6 +55,10 @@ class ViewTreeNode {
 
   ViewTreeNode* GetChildById(TransportNodeId id);
 
+  // View.
+  void SetActiveView(View* view);
+  View* active_view() { return active_view_; }
+
  protected:
   // This class is subclassed only by test classes that provide a public ctor.
   ViewTreeNode();
@@ -63,6 +72,8 @@ class ViewTreeNode {
   void LocalDestroy();
   void LocalAddChild(ViewTreeNode* child);
   void LocalRemoveChild(ViewTreeNode* child);
+  void LocalSetActiveView(View* view);
+  void LocalSetBounds(const gfx::Rect& old_bounds, const gfx::Rect& new_bounds);
 
   ViewManager* manager_;
   TransportNodeId id_;
@@ -71,11 +82,13 @@ class ViewTreeNode {
 
   ObserverList<ViewTreeNodeObserver> observers_;
 
+  gfx::Rect bounds_;
+  View* active_view_;
+
   DISALLOW_COPY_AND_ASSIGN(ViewTreeNode);
 };
 
 }  // namespace view_manager
-}  // namespace services
 }  // namespace mojo
 
 #endif  // MOJO_SERVICES_PUBLIC_CPP_VIEW_MANAGER_VIEW_TREE_NODE_H_

@@ -12,12 +12,12 @@
 
 using content::WebContents;
 
-AdViewGuest::AdViewGuest(WebContents* guest_web_contents,
+AdViewGuest::AdViewGuest(int guest_instance_id,
+                         WebContents* guest_web_contents,
                          const std::string& extension_id)
-    : GuestView<AdViewGuest>(guest_web_contents,
-                             extension_id,
-                             base::WeakPtr<GuestViewBase>()),
-      WebContentsObserver(guest_web_contents) {
+    : GuestView<AdViewGuest>(guest_instance_id,
+                             guest_web_contents,
+                             extension_id) {
 }
 
 // static
@@ -49,8 +49,9 @@ void AdViewGuest::DidFailProvisionalLoad(
     const base::string16& error_description,
     content::RenderViewHost* render_view_host) {
   // Translate the |error_code| into an error string.
-  std::string error_type;
-  base::RemoveChars(net::ErrorToString(error_code), "net::", &error_type);
+  std::string error_type(net::ErrorToString(error_code));
+  DCHECK(StartsWithASCII(error_type, "net::", true));
+  error_type.erase(0, 5);
 
   scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
   args->SetBoolean(guestview::kIsTopLevel, is_main_frame);

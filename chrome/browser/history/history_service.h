@@ -22,12 +22,12 @@
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
 #include "chrome/browser/common/cancelable_request.h"
-#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/history/delete_directive_handler.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/history/typed_url_syncable_service.h"
 #include "chrome/browser/search_engines/template_url_id.h"
 #include "chrome/common/ref_counted_util.h"
+#include "components/favicon_base/favicon_callback.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/visitedlink/browser/visitedlink_delegate.h"
 #include "content/public/browser/download_manager_delegate.h"
@@ -39,7 +39,7 @@
 #include "ui/base/layout.h"
 
 #if defined(OS_ANDROID)
-#include "chrome/browser/history/android/android_history_provider_service.h"
+class AndroidHistoryProviderService;
 #endif
 
 class BookmarkService;
@@ -49,6 +49,7 @@ class PageUsageData;
 class PageUsageRequest;
 class Profile;
 struct HistoryURLProviderParams;
+struct ImportedFaviconUsage;
 
 namespace base {
 class FilePath;
@@ -62,6 +63,7 @@ class VisitedLinkMaster;
 namespace history {
 
 class HistoryBackend;
+class HistoryClient;
 class HistoryDatabase;
 class HistoryDBTask;
 class HistoryQueryTest;
@@ -91,8 +93,9 @@ class HistoryService : public CancelableRequestProvider,
   // Miscellaneous commonly-used types.
   typedef std::vector<PageUsageData*> PageUsageDataList;
 
-  // Must call Init after construction.
-  explicit HistoryService(Profile* profile);
+  // Must call Init after construction. The |history::HistoryClient| object
+  // must be valid for the whole lifetime of |HistoryService|.
+  explicit HistoryService(history::HistoryClient* client, Profile* profile);
   // The empty constructor is provided only for testing.
   HistoryService();
 
@@ -562,6 +565,9 @@ class HistoryService : public CancelableRequestProvider,
   // history. We filter out some URLs such as JavaScript.
   static bool CanAddURL(const GURL& url);
 
+  // Returns the HistoryClient.
+  history::HistoryClient* history_client() { return history_client_; }
+
   base::WeakPtr<HistoryService> AsWeakPtr();
 
   // syncer::SyncableService implementation.
@@ -663,7 +669,7 @@ class HistoryService : public CancelableRequestProvider,
       int icon_types,
       int desired_size_in_dip,
       const std::vector<ui::ScaleFactor>& desired_scale_factors,
-      const FaviconService::FaviconResultsCallback& callback,
+      const favicon_base::FaviconResultsCallback& callback,
       base::CancelableTaskTracker* tracker);
 
   // Used by the FaviconService to get favicons mapped to |page_url| for
@@ -680,7 +686,7 @@ class HistoryService : public CancelableRequestProvider,
       int icon_types,
       int desired_size_in_dip,
       const std::vector<ui::ScaleFactor>& desired_scale_factors,
-      const FaviconService::FaviconResultsCallback& callback,
+      const favicon_base::FaviconResultsCallback& callback,
       base::CancelableTaskTracker* tracker);
 
   // Used by FaviconService to find the first favicon bitmap whose width and
@@ -698,7 +704,7 @@ class HistoryService : public CancelableRequestProvider,
       const GURL& page_url,
       const std::vector<int>& icon_types,
       int minimum_size_in_pixels,
-      const FaviconService::FaviconRawCallback& callback,
+      const favicon_base::FaviconRawCallback& callback,
       base::CancelableTaskTracker* tracker);
 
   // Used by the FaviconService to get the favicon bitmap which most closely
@@ -709,7 +715,7 @@ class HistoryService : public CancelableRequestProvider,
       favicon_base::FaviconID favicon_id,
       int desired_size_in_dip,
       ui::ScaleFactor desired_scale_factor,
-      const FaviconService::FaviconResultsCallback& callback,
+      const favicon_base::FaviconResultsCallback& callback,
       base::CancelableTaskTracker* tracker);
 
   // Used by the FaviconService to replace the favicon mappings to |page_url|
@@ -737,7 +743,7 @@ class HistoryService : public CancelableRequestProvider,
       int icon_types,
       int desired_size_in_dip,
       const std::vector<ui::ScaleFactor>& desired_scale_factors,
-      const FaviconService::FaviconResultsCallback& callback,
+      const favicon_base::FaviconResultsCallback& callback,
       base::CancelableTaskTracker* tracker);
 
   // Used by FaviconService to set a favicon for |page_url| and |icon_url| with
@@ -1018,6 +1024,10 @@ class HistoryService : public CancelableRequestProvider,
   // on the background thread.
   // TODO(mrossetti): Consider changing ownership. See http://crbug.com/138321
   scoped_ptr<history::InMemoryHistoryBackend> in_memory_backend_;
+
+  // The history client, may be null when testing. The object should otherwise
+  // outlive |HistoryService|.
+  history::HistoryClient* history_client_;
 
   // The profile, may be null when testing.
   Profile* profile_;

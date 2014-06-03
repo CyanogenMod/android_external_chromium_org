@@ -181,7 +181,8 @@ void InputRouterImpl::SendGestureEvent(
   if (touch_action_filter_.FilterGestureEvent(&gesture_event.event))
     return;
 
-  touch_event_queue_.OnGestureScrollEvent(gesture_event);
+  if (gesture_event.event.sourceDevice == WebGestureEvent::Touchscreen)
+    touch_event_queue_.OnGestureScrollEvent(gesture_event);
 
   if (!IsInOverscrollGesture() &&
       !gesture_event_queue_.ShouldForward(gesture_event)) {
@@ -267,9 +268,9 @@ void InputRouterImpl::OnViewUpdated(int view_flags) {
 
 bool InputRouterImpl::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
-  bool message_is_ok = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(InputRouterImpl, message, message_is_ok)
+  IPC_BEGIN_MESSAGE_MAP(InputRouterImpl, message)
     IPC_MESSAGE_HANDLER(InputHostMsg_HandleInputEvent_ACK, OnInputEventAck)
+    IPC_MESSAGE_HANDLER(InputHostMsg_DidOverscroll, OnDidOverscroll)
     IPC_MESSAGE_HANDLER(ViewHostMsg_MoveCaret_ACK, OnMsgMoveCaretAck)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SelectRange_ACK, OnSelectRangeAck)
     IPC_MESSAGE_HANDLER(ViewHostMsg_HasTouchEventHandlers,
@@ -278,9 +279,6 @@ bool InputRouterImpl::OnMessageReceived(const IPC::Message& message) {
                         OnSetTouchAction)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
-
-  if (!message_is_ok)
-    ack_handler_->OnUnexpectedEventAck(InputAckHandler::BAD_ACK_MESSAGE);
 
   return handled;
 }
@@ -489,16 +487,21 @@ void InputRouterImpl::SendSyntheticWheelEventForPinch(
       MouseWheelEventWithLatencyInfo(wheelEvent, pinch_event.latency), true));
 }
 
-void InputRouterImpl::OnInputEventAck(WebInputEvent::Type event_type,
-                                      InputEventAckState ack_result,
-                                      const ui::LatencyInfo& latency_info) {
+void InputRouterImpl::OnInputEventAck(
+    const InputHostMsg_HandleInputEvent_ACK_Params& ack) {
   client_->DecrementInFlightEventCount();
 
   // Log the time delta for processing an input event.
   TimeDelta delta = TimeTicks::Now() - input_event_start_time_;
   UMA_HISTOGRAM_TIMES("MPArch.IIR_InputEventDelta", delta);
 
-  ProcessInputEventAck(event_type, ack_result, latency_info, RENDERER);
+  if (ack.overscroll) {
+    DCHECK(ack.type == WebInputEvent::MouseWheel ||
+           ack.type == WebInputEvent::GestureScrollUpdate);
+    OnDidOverscroll(*ack.overscroll);
+  }
+
+  ProcessInputEventAck(ack.type, ack.state, ack.latency, RENDERER);
   // WARNING: |this| may be deleted at this point.
 
   // This is used only for testing, and the other end does not use the
@@ -508,11 +511,15 @@ void InputRouterImpl::OnInputEventAck(WebInputEvent::Type event_type,
   // (ProcessInputEventAck) method, but not on other platforms; using
   // 'void' instead is just as safe (since NotificationSource
   // is not actually typesafe) and avoids this error.
-  int type = static_cast<int>(event_type);
+  int type = static_cast<int>(ack.type);
   NotificationService::current()->Notify(
       NOTIFICATION_RENDER_WIDGET_HOST_DID_RECEIVE_INPUT_EVENT_ACK,
       Source<void>(this),
       Details<int>(&type));
+}
+
+void InputRouterImpl::OnDidOverscroll(const DidOverscrollParams& params) {
+  client_->DidOverscroll(params);
 }
 
 void InputRouterImpl::OnMsgMoveCaretAck() {
@@ -530,6 +537,15 @@ void InputRouterImpl::OnSelectRangeAck() {
 void InputRouterImpl::OnHasTouchEventHandlers(bool has_handlers) {
   TRACE_EVENT1("input", "InputRouterImpl::OnHasTouchEventHandlers",
                "has_handlers", has_handlers);
+
+  // Lack of a touch handler indicates that the page either has no touch-action
+  // modifiers or that all its touch-action modifiers are auto. Resetting the
+  // touch-action here allows forwarding of subsequent gestures even if the
+  // underlying touches never reach the router.
+  // TODO(jdduke): Reset touch-action only at the end of a touch sequence to
+  // prevent potentially strange mid-sequence behavior, crbug.com/375940.
+  if (!has_handlers)
+    touch_action_filter_.ResetTouchAction();
 
   touch_event_queue_.OnHasTouchEventHandlers(has_handlers);
   client_->OnHasTouchEventHandlers(has_handlers);
@@ -609,6 +625,7 @@ void InputRouterImpl::ProcessMouseAck(blink::WebInputEvent::Type type,
   if (type != WebInputEvent::MouseMove)
     return;
 
+  DCHECK(mouse_move_pending_);
   mouse_move_pending_ = false;
 
   if (next_mouse_move_) {

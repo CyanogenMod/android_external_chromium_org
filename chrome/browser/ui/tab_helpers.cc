@@ -29,6 +29,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "components/autofill/content/browser/content_autofill_driver.h"
 #include "components/autofill/core/browser/autofill_manager.h"
+#include "components/dom_distiller/content/web_contents_main_frame_observer.h"
 #include "components/password_manager/core/browser/password_manager.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/view_type_utils.h"
@@ -41,7 +42,6 @@
 #include "chrome/browser/extensions/api/web_navigation/web_navigation_api.h"
 #include "chrome/browser/extensions/chrome_extension_web_contents_observer.h"
 #include "chrome/browser/net/predictor_tab_helper.h"
-#include "chrome/browser/network_time/navigation_time_helper.h"
 #include "chrome/browser/plugins/plugin_observer.h"
 #include "chrome/browser/safe_browsing/safe_browsing_tab_observer.h"
 #include "chrome/browser/thumbnails/thumbnail_tab_helper.h"
@@ -155,7 +155,6 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
   extensions::WebNavigationTabObserver::CreateForWebContents(web_contents);
   HungPluginTabHelper::CreateForWebContents(web_contents);
   ManagePasswordsUIController::CreateForWebContents(web_contents);
-  NavigationTimeHelper::CreateForWebContents(web_contents);
   PDFTabHelper::CreateForWebContents(web_contents);
   PermissionBubbleManager::CreateForWebContents(web_contents);
   PluginObserver::CreateForWebContents(web_contents);
@@ -190,6 +189,12 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
   printing::PrintViewManagerBasic::CreateForWebContents(web_contents);
 #endif  // defined(ENABLE_FULL_PRINTING)
 #endif  // defined(ENABLE_PRINTING) && !defined(OS_ANDROID)
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableDomDistiller)) {
+    dom_distiller::WebContentsMainFrameObserver::CreateForWebContents(
+        web_contents);
+  }
 
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
   // If this is not an incognito window, setup to handle one-click login.

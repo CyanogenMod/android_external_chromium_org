@@ -182,7 +182,8 @@ ExtensionStorageMonitor::ExtensionStorageMonitor(
       observer_rate_(kStorageEventRateSec),
       context_(context),
       weak_ptr_factory_(this) {
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
                  content::Source<content::BrowserContext>(context_));
   registrar_.Add(this, chrome::NOTIFICATION_PROFILE_DESTROYED,
                  content::Source<content::BrowserContext>(context_));
@@ -199,7 +200,7 @@ void ExtensionStorageMonitor::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED: {
+    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED: {
       const Extension* extension =
           content::Details<const Extension>(details).ptr();
       RemoveNotificationForExtension(extension->id());
@@ -211,7 +212,7 @@ void ExtensionStorageMonitor::Observe(
     }
     default:
       NOTREACHED();
-  };
+  }
 }
 
 void ExtensionStorageMonitor::OnExtensionLoaded(
@@ -324,7 +325,7 @@ void ExtensionStorageMonitor::OnNotificationButtonClick(
     }
     default:
       NOTREACHED();
-  };
+  }
 }
 
 void ExtensionStorageMonitor::DisableStorageMonitoring(
@@ -348,13 +349,15 @@ void ExtensionStorageMonitor::StartMonitoringStorage(
   if (extension->location() == Manifest::COMPONENT)
     return;
 
-  // First apply this feature only to experimental ephemeral apps. If it works
-  // well, roll it out to all extensions and apps.
-  if (!extension->is_ephemeral() && !enable_for_all_extensions_)
-    return;
-
   ExtensionPrefs* prefs = ExtensionPrefs::Get(context_);
   DCHECK(prefs);
+
+  // First apply this feature only to experimental ephemeral apps. If it works
+  // well, roll it out to all extensions and apps.
+  bool is_ephemeral = prefs->IsEphemeralApp(extension->id());
+  if (!is_ephemeral && !enable_for_all_extensions_)
+    return;
+
   if (!prefs->IsStorageNotificationEnabled(extension->id()))
     return;
 
@@ -380,8 +383,8 @@ void ExtensionStorageMonitor::StartMonitoringStorage(
   if (next_threshold == 0) {
     // The next threshold is written to the prefs after the initial threshold is
     // exceeded.
-    next_threshold = extension->is_ephemeral() ? initial_ephemeral_threshold_
-                                               : initial_extension_threshold_;
+    next_threshold = is_ephemeral ? initial_ephemeral_threshold_
+                                  : initial_extension_threshold_;
   }
 
   BrowserThread::PostTask(

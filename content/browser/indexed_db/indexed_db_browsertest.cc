@@ -502,7 +502,9 @@ INSTANTIATE_TEST_CASE_P(IndexedDBBrowserCorruptionTestInstantiation,
                                           "iterate",
                                           "clearObjectStore"));
 
-IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, DeleteCompactsBackingStore) {
+// Crashes flakily on various platforms. crbug.com/375856
+IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest,
+                       DISABLED_DeleteCompactsBackingStore) {
   const GURL test_url = GetTestUrl("indexeddb", "delete_compact.html");
   SimpleTest(GURL(test_url.spec() + "#fill"));
   int64 after_filling = RequestDiskUsage();
@@ -607,7 +609,8 @@ class IndexedDBBrowserTestSingleProcess : public IndexedDBBrowserTest {
 };
 
 // Crashing on Android due to kSingleProcess flag: http://crbug.com/342525
-#if defined(OS_ANDROID)
+// Leaks memory by design: http://crbug.com/378404
+#if defined(OS_ANDROID) || defined(LEAK_SANITIZER)
 #define MAYBE_RenderThreadShutdownTest DISABLED_RenderThreadShutdownTest
 #else
 #define MAYBE_RenderThreadShutdownTest RenderThreadShutdownTest

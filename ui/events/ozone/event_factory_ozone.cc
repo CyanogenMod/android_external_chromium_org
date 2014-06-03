@@ -4,32 +4,27 @@
 
 #include "ui/events/ozone/event_factory_ozone.h"
 
-#include "base/command_line.h"
-#include "base/debug/trace_event.h"
-#include "base/strings/stringprintf.h"
-#include "ui/events/event.h"
-#include "ui/events/event_switches.h"
+#include "base/logging.h"
 
 namespace ui {
 
 // static
 EventFactoryOzone* EventFactoryOzone::impl_ = NULL;
 
-EventFactoryOzone::EventFactoryOzone() {}
+EventFactoryOzone::EventFactoryOzone() {
+  CHECK(!impl_) << "There should only be a single EventFactoryOzone";
+  impl_ = this;
+}
 
-EventFactoryOzone::~EventFactoryOzone() {}
+EventFactoryOzone::~EventFactoryOzone() {
+  CHECK_EQ(impl_, this);
+  impl_ = NULL;
+}
 
 EventFactoryOzone* EventFactoryOzone::GetInstance() {
   CHECK(impl_) << "No EventFactoryOzone implementation set.";
   return impl_;
 }
-
-void EventFactoryOzone::SetInstance(EventFactoryOzone* impl) { impl_ = impl; }
-
-void EventFactoryOzone::StartProcessingEvents() {}
-
-void EventFactoryOzone::SetFileTaskRunner(
-    scoped_refptr<base::TaskRunner> task_runner) {}
 
 void EventFactoryOzone::WarpCursorTo(gfx::AcceleratedWidget widget,
                                      const gfx::PointF& location) {

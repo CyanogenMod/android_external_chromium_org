@@ -50,14 +50,13 @@ FileError PrepareUpdate(ResourceMetadata* metadata,
   if (error != FILE_ERROR_OK)
     return error;
 
-  local_state->drive_file_path = metadata->GetFilePath(local_id);
-  if (local_state->drive_file_path.empty())
-    return FILE_ERROR_NOT_FOUND;
+  error = metadata->GetFilePath(local_id, &local_state->drive_file_path);
+  if (error != FILE_ERROR_OK)
+    return error;
 
-  FileCacheEntry cache_entry;
-  cache->GetCacheEntry(local_id, &cache_entry);
   if (!local_state->entry.file_info().is_directory() &&
-      !cache_entry.is_present() && local_state->entry.resource_id().empty()) {
+      !local_state->entry.file_specific_info().cache_state().is_present() &&
+      local_state->entry.resource_id().empty()) {
     // Locally created file with no cache file, store an empty file.
     base::FilePath empty_file;
     if (!base::CreateTemporaryFile(&empty_file))
@@ -66,22 +65,26 @@ FileError PrepareUpdate(ResourceMetadata* metadata,
                          FileCache::FILE_OPERATION_MOVE);
     if (error != FILE_ERROR_OK)
       return error;
-    if (!cache->GetCacheEntry(local_id, &cache_entry))
-      return FILE_ERROR_NOT_FOUND;
+    error = metadata->GetResourceEntryById(local_id, &local_state->entry);
+    if (error != FILE_ERROR_OK)
+      return error;
   }
 
   // Check if content update is needed or not.
-  if (cache_entry.is_dirty() && !cache->IsOpenedForWrite(local_id)) {
+  if (local_state->entry.file_specific_info().cache_state().is_dirty() &&
+      !cache->IsOpenedForWrite(local_id)) {
     // Update cache entry's MD5 if needed.
-    if (cache_entry.md5().empty()) {
+    if (local_state->entry.file_specific_info().cache_state().md5().empty()) {
       error = cache->UpdateMd5(local_id);
       if (error != FILE_ERROR_OK)
         return error;
-      if (!cache->GetCacheEntry(local_id, &cache_entry))
-        return FILE_ERROR_NOT_FOUND;
+      error = metadata->GetResourceEntryById(local_id, &local_state->entry);
+      if (error != FILE_ERROR_OK)
+        return error;
     }
 
-    if (cache_entry.md5() == local_state->entry.file_specific_info().md5()) {
+    if (local_state->entry.file_specific_info().cache_state().md5() ==
+        local_state->entry.file_specific_info().md5()) {
       error = cache->ClearDirty(local_id);
       if (error != FILE_ERROR_OK)
         return error;
@@ -123,8 +126,10 @@ FileError FinishUpdate(ResourceMetadata* metadata,
   switch (error) {
     case FILE_ERROR_OK:
       if (existing_local_id != local_id) {
-        base::FilePath existing_entry_path =
-            metadata->GetFilePath(existing_local_id);
+        base::FilePath existing_entry_path;
+        error = metadata->GetFilePath(existing_local_id, &existing_entry_path);
+        if (error != FILE_ERROR_OK)
+          return error;
         error = metadata->RemoveEntry(existing_local_id);
         if (error != FILE_ERROR_OK)
           return error;
@@ -160,10 +165,9 @@ FileError FinishUpdate(ResourceMetadata* metadata,
     return error;
 
   // Clear dirty bit unless the file has been edited during update.
-  FileCacheEntry cache_entry;
-  if (cache->GetCacheEntry(local_id, &cache_entry) &&
-      cache_entry.is_dirty() &&
-      cache_entry.md5() == entry.file_specific_info().md5()) {
+  if (entry.file_specific_info().cache_state().is_dirty() &&
+      entry.file_specific_info().cache_state().md5() ==
+      entry.file_specific_info().md5()) {
     error = cache->ClearDirty(local_id);
     if (error != FILE_ERROR_OK)
       return error;

@@ -23,7 +23,6 @@
 #include "webkit/common/appcache/appcache_interfaces.h"
 
 using webkit_glue::ResourceLoaderBridge;
-using webkit_glue::ResourceResponseInfo;
 
 namespace content {
 
@@ -46,12 +45,9 @@ class TestRequestCallback : public RequestPeer {
   virtual void OnUploadProgress(uint64 position, uint64 size) OVERRIDE {
   }
 
-  virtual bool OnReceivedRedirect(
-      const GURL& new_url,
-      const ResourceResponseInfo& info,
-      bool* has_new_first_party_for_cookies,
-      GURL* new_first_party_for_cookies) OVERRIDE {
-    *has_new_first_party_for_cookies = false;
+  virtual bool OnReceivedRedirect(const GURL& new_url,
+                                  const GURL& new_first_party_for_cookies,
+                                  const ResourceResponseInfo& info) OVERRIDE {
     return true;
   }
 
@@ -112,10 +108,11 @@ class ResourceDispatcherTest : public testing::Test, public IPC::Sender {
   // returning the hardcoded file contents.
   void ProcessMessages() {
     while (!message_queue_.empty()) {
-      int request_id;
-      ResourceHostMsg_Request request;
+      ResourceHostMsg_RequestResource::Param params;
       ASSERT_TRUE(ResourceHostMsg_RequestResource::Read(
-          &message_queue_[0], &request_id, &request));
+          &message_queue_[0], &params));
+      int request_id = params.b;
+      ResourceHostMsg_Request request = params.c;
 
       // check values
       EXPECT_EQ(test_page_url, request.url.spec());
@@ -268,12 +265,9 @@ class DeferredResourceLoadingTest : public ResourceDispatcherTest,
   virtual void OnUploadProgress(uint64 position, uint64 size) OVERRIDE {
   }
 
-  virtual bool OnReceivedRedirect(
-      const GURL& new_url,
-      const ResourceResponseInfo& info,
-      bool* has_new_first_party_for_cookies,
-      GURL* new_first_party_for_cookies) OVERRIDE {
-    *has_new_first_party_for_cookies = false;
+  virtual bool OnReceivedRedirect(const GURL& new_url,
+                                  const GURL& new_first_party_for_cookies,
+                                  const ResourceResponseInfo& info) OVERRIDE {
     return true;
   }
 
@@ -359,11 +353,9 @@ class TimeConversionTest : public ResourceDispatcherTest,
   virtual void OnUploadProgress(uint64 position, uint64 size) OVERRIDE {
   }
 
-  virtual bool OnReceivedRedirect(
-      const GURL& new_url,
-      const ResourceResponseInfo& info,
-      bool* has_new_first_party_for_cookies,
-      GURL* new_first_party_for_cookies) OVERRIDE {
+  virtual bool OnReceivedRedirect(const GURL& new_url,
+                                  const GURL& new_first_party_for_cookies,
+                                  const ResourceResponseInfo& info) OVERRIDE {
     return true;
   }
 

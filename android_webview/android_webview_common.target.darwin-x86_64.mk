@@ -52,6 +52,7 @@ LOCAL_SRC_FILES := \
 	android_webview/browser/global_tile_manager.cc \
 	android_webview/browser/gpu_memory_buffer_factory_impl.cc \
 	android_webview/browser/hardware_renderer.cc \
+	android_webview/browser/hardware_renderer_legacy.cc \
 	android_webview/browser/icon_helper.cc \
 	android_webview/browser/intercepted_request_data.cc \
 	android_webview/browser/gl_view_renderer_manager.cc \
@@ -61,6 +62,7 @@ LOCAL_SRC_FILES := \
 	android_webview/browser/net/aw_url_request_job_factory.cc \
 	android_webview/browser/net_disk_cache_remover.cc \
 	android_webview/browser/net/input_stream_reader.cc \
+	android_webview/browser/parent_output_surface.cc \
 	android_webview/browser/renderer_host/aw_render_view_host_ext.cc \
 	android_webview/browser/renderer_host/aw_resource_dispatcher_host_delegate.cc \
 	android_webview/browser/renderer_host/print_manager.cc \
@@ -69,6 +71,7 @@ LOCAL_SRC_FILES := \
 	android_webview/common/android_webview_message_generator.cc \
 	android_webview/common/aw_content_client.cc \
 	android_webview/common/aw_hit_test_data.cc \
+	android_webview/common/aw_switches.cc \
 	android_webview/common/print_messages.cc \
 	android_webview/common/render_view_messages.cc \
 	android_webview/common/url_constants.cc \
@@ -130,12 +133,17 @@ MY_DEFS_Debug := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
+	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
+	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
+	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DVIDEO_HOLE=1' \
 	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DLIBPEERCONNECTION_LIB=1' \
@@ -147,10 +155,12 @@ MY_DEFS_Debug := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
+	'-DSK_SUPPORT_LEGACY_ASIMAGEINFO' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
+	'-DSK_IGNORE_CORRECT_HIGH_QUALITY_IMAGE_SCALE' \
+	'-DSK_SUPPORT_LEGACY_INSTALLPIXELSPARAMS' \
+	'-DSK_SUPPORT_LEGACY_IMAGEGENERATORAPI' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
@@ -274,12 +284,17 @@ MY_DEFS_Release := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
+	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
+	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
+	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DVIDEO_HOLE=1' \
 	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DLIBPEERCONNECTION_LIB=1' \
@@ -291,10 +306,12 @@ MY_DEFS_Release := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
+	'-DSK_SUPPORT_LEGACY_ASIMAGEINFO' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
+	'-DSK_IGNORE_CORRECT_HIGH_QUALITY_IMAGE_SCALE' \
+	'-DSK_SUPPORT_LEGACY_INSTALLPIXELSPARAMS' \
+	'-DSK_SUPPORT_LEGACY_IMAGEGENERATORAPI' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \

@@ -29,41 +29,38 @@ namespace autofill {
 class AutofillPopupDelegate;
 }
 
+namespace password_manager {
+
 namespace {
 
 // TODO(dubroy): Implement a TestPasswordManagerDriver that can be shared by
 // all the tests that need it (crbug.com/352566).
-class MockPasswordManagerDriver
-    : public password_manager::PasswordManagerDriver {
+class MockPasswordManagerDriver : public PasswordManagerDriver {
  public:
   MOCK_METHOD1(FillPasswordForm, void(const autofill::PasswordFormFillData&));
   MOCK_METHOD0(DidLastPageLoadEncounterSSLErrors, bool());
   MOCK_METHOD0(IsOffTheRecord, bool());
-  MOCK_METHOD0(GetPasswordGenerationManager,
-               password_manager::PasswordGenerationManager*());
-  MOCK_METHOD0(GetPasswordManager, password_manager::PasswordManager*());
+  MOCK_METHOD0(GetPasswordGenerationManager, PasswordGenerationManager*());
+  MOCK_METHOD0(GetPasswordManager, PasswordManager*());
   MOCK_METHOD0(GetAutofillManager, autofill::AutofillManager*());
   MOCK_METHOD1(AllowPasswordGenerationForForm, void(autofill::PasswordForm*));
   MOCK_METHOD1(AccountCreationFormsFound,
                void(const std::vector<autofill::FormData>&));
-  MOCK_METHOD2(AcceptPasswordAutofillSuggestion,
+  MOCK_METHOD2(FillSuggestion,
                void(const base::string16&, const base::string16&));
-  MOCK_METHOD0(GetPasswordAutofillManager,
-               password_manager::PasswordAutofillManager*());
+  MOCK_METHOD2(PreviewSuggestion,
+               void(const base::string16&, const base::string16&));
+  MOCK_METHOD0(ClearPreviewedForm, void());
+  MOCK_METHOD0(GetPasswordAutofillManager, PasswordAutofillManager*());
 };
 
-class TestPasswordManagerClient
-    : public password_manager::PasswordManagerClient {
+class TestPasswordManagerClient : public PasswordManagerClient {
  public:
   virtual void PromptUserToSavePassword(
-      password_manager::PasswordFormManager* form_to_save) OVERRIDE {}
-  virtual password_manager::PasswordStore* GetPasswordStore() OVERRIDE {
-    return NULL;
-  }
+      PasswordFormManager* form_to_save) OVERRIDE {}
+  virtual PasswordStore* GetPasswordStore() OVERRIDE { return NULL; }
   virtual PrefService* GetPrefs() OVERRIDE { return NULL; }
-  virtual password_manager::PasswordManagerDriver* GetDriver() OVERRIDE {
-    return &driver_;
-  }
+  virtual PasswordManagerDriver* GetDriver() OVERRIDE { return &driver_; }
   virtual void AuthenticateAutofillAndFillForm(
       scoped_ptr<autofill::PasswordFormFillData> fill_data) OVERRIDE {}
   virtual bool IsPasswordSyncEnabled() OVERRIDE { return false; }
@@ -109,18 +106,16 @@ class PasswordAutofillManagerTest : public testing::Test {
   }
 
   void InitializePasswordAutofillManager(
-      password_manager::PasswordManagerClient* client,
+      PasswordManagerClient* client,
       autofill::AutofillManagerDelegate* autofill_manager_delegate) {
     password_autofill_manager_.reset(
-        new password_manager::PasswordAutofillManager(
-            client, autofill_manager_delegate));
+        new PasswordAutofillManager(client, autofill_manager_delegate));
     password_autofill_manager_->OnAddPasswordFormMapping(username_field_,
                                                          fill_data_);
   }
 
  protected:
-  scoped_ptr<password_manager::PasswordAutofillManager>
-      password_autofill_manager_;
+  scoped_ptr<PasswordAutofillManager> password_autofill_manager_;
 
   autofill::FormFieldData username_field_;
   base::string16 test_username_;
@@ -134,29 +129,54 @@ class PasswordAutofillManagerTest : public testing::Test {
   base::MessageLoop message_loop_;
 };
 
-TEST_F(PasswordAutofillManagerTest, AcceptSuggestion) {
+TEST_F(PasswordAutofillManagerTest, FillSuggestion) {
   scoped_ptr<TestPasswordManagerClient> client(new TestPasswordManagerClient);
   InitializePasswordAutofillManager(client.get(), NULL);
 
   EXPECT_CALL(*client->mock_driver(),
-              AcceptPasswordAutofillSuggestion(test_username_, test_password_));
-  EXPECT_TRUE(password_autofill_manager_->AcceptSuggestionForTest(
+              FillSuggestion(test_username_, test_password_));
+  EXPECT_TRUE(password_autofill_manager_->FillSuggestionForTest(
       username_field_, test_username_));
   testing::Mock::VerifyAndClearExpectations(client->mock_driver());
 
   EXPECT_CALL(*client->mock_driver(),
-              AcceptPasswordAutofillSuggestion(_, _)).Times(0);
-  EXPECT_FALSE(password_autofill_manager_->AcceptSuggestionForTest(
+              FillSuggestion(_, _)).Times(0);
+  EXPECT_FALSE(password_autofill_manager_->FillSuggestionForTest(
       username_field_, base::ASCIIToUTF16(kInvalidUsername)));
 
   autofill::FormFieldData invalid_username_field;
   invalid_username_field.name = base::ASCIIToUTF16(kInvalidUsername);
 
-  EXPECT_FALSE(password_autofill_manager_->AcceptSuggestionForTest(
+  EXPECT_FALSE(password_autofill_manager_->FillSuggestionForTest(
       invalid_username_field, test_username_));
 
   password_autofill_manager_->Reset();
-  EXPECT_FALSE(password_autofill_manager_->AcceptSuggestionForTest(
+  EXPECT_FALSE(password_autofill_manager_->FillSuggestionForTest(
+      username_field_, test_username_));
+}
+
+TEST_F(PasswordAutofillManagerTest, PreviewSuggestion) {
+  scoped_ptr<TestPasswordManagerClient> client(new TestPasswordManagerClient);
+  InitializePasswordAutofillManager(client.get(), NULL);
+
+  EXPECT_CALL(*client->mock_driver(),
+              PreviewSuggestion(test_username_, test_password_));
+  EXPECT_TRUE(password_autofill_manager_->PreviewSuggestionForTest(
+      username_field_, test_username_));
+  testing::Mock::VerifyAndClearExpectations(client->mock_driver());
+
+  EXPECT_CALL(*client->mock_driver(), PreviewSuggestion(_, _)).Times(0);
+  EXPECT_FALSE(password_autofill_manager_->PreviewSuggestionForTest(
+      username_field_, base::ASCIIToUTF16(kInvalidUsername)));
+
+  autofill::FormFieldData invalid_username_field;
+  invalid_username_field.name = base::ASCIIToUTF16(kInvalidUsername);
+
+  EXPECT_FALSE(password_autofill_manager_->PreviewSuggestionForTest(
+      invalid_username_field, test_username_));
+
+  password_autofill_manager_->Reset();
+  EXPECT_FALSE(password_autofill_manager_->PreviewSuggestionForTest(
       username_field_, test_username_));
 }
 
@@ -189,3 +209,5 @@ TEST_F(PasswordAutofillManagerTest, ExternalDelegatePasswordSuggestions) {
   password_autofill_manager_->DidAcceptSuggestion(
       suggestions[0], autofill::POPUP_ITEM_ID_PASSWORD_ENTRY);
 }
+
+}  // namespace password_manager

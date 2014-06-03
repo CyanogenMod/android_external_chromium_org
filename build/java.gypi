@@ -39,8 +39,6 @@
 #  R_package - The java package in which the R class (which maps resources to
 #    integer IDs) should be generated, e.g. org.chromium.content.
 #  R_package_relpath - Same as R_package, but replace each '.' with '/'.
-#  java_strings_grd - The name of the grd file from which to generate localized
-#    strings.xml files, if any.
 #  res_extra_dirs - A list of extra directories containing Android resources.
 #    These directories may be generated at build time.
 #  res_extra_files - A list of the files in res_extra_dirs.
@@ -66,7 +64,6 @@
     'generated_src_dirs': ['>@(generated_R_dirs)'],
     'generated_R_dirs': [],
     'has_java_resources%': 0,
-    'java_strings_grd%': '',
     'res_extra_dirs': [],
     'res_extra_files': [],
     'res_v14_verify_only%': 0,
@@ -143,35 +140,18 @@
           # Dependent APKs include this target's resources via
           # additional_res_dirs, additional_res_packages, and
           # additional_R_text_files.
-          'additional_res_dirs': ['<(res_crunched_dir)',
-                                  '<(res_v14_compatibility_dir)',
-                                  '<@(res_input_dirs)'],
+          'additional_res_dirs': [
+              # The order of these is important to ensure that the proper
+              # version (i.e. the crunched version) of resources takes
+              # precedence.
+              '<(res_crunched_dir)',
+              '<(res_v14_compatibility_dir)',
+              '<@(res_input_dirs)'
+              ],
           'additional_res_packages': ['<(R_package)'],
           'additional_R_text_files': ['<(R_text_file)'],
         },
       },
-      'conditions': [
-        ['java_strings_grd != ""', {
-          'variables': {
-            'res_grit_dir': '<(intermediate_dir)/res_grit',
-            'res_input_dirs': ['<(res_grit_dir)'],
-            'grit_grd_file': '<(java_in_dir)/strings/<(java_strings_grd)',
-            'resource_input_paths': ['<!@pymod_do_main(grit_info <@(grit_defines) --outputs "<(res_grit_dir)" <(grit_grd_file))'],
-          },
-          'actions': [
-            {
-              'action_name': 'generate_localized_strings_xml',
-              'variables': {
-                'grit_additional_defines': ['-E', 'ANDROID_JAVA_TAGGED_ONLY=false'],
-                'grit_out_dir': '<(res_grit_dir)',
-                # resource_ids is unneeded since we don't generate .h headers.
-                'grit_resource_ids': '',
-              },
-              'includes': ['../build/grit_action.gypi'],
-            },
-          ],
-        }],
-      ],
       'actions': [
         # Generate R.java and crunch image resources.
         {
@@ -181,8 +161,8 @@
             'android_manifest': '<(DEPTH)/build/android/AndroidManifest.xml',
             # Include the dependencies' res dirs so that references to
             # resources in dependencies can be resolved.
-            'all_res_dirs': ['<@(res_input_dirs)',
-                             '>@(dependencies_res_input_dirs)',],
+            'dependencies_res_dirs': ['<@(res_extra_dirs)',
+                                      '>@(dependencies_res_input_dirs)',],
             # Write the inputs list to a file, so that its mtime is updated when
             # the list of inputs changes.
             'inputs_list_file': '>|(java_resources.<(_target_name).gypcmd >@(resource_input_paths) >@(dependencies_res_files))'
@@ -202,8 +182,8 @@
             '--android-sdk', '<(android_sdk)',
             '--android-sdk-tools', '<(android_sdk_tools)',
             '--R-dir', '<(R_dir)',
-            '--res-dirs', '>(all_res_dirs)',
-            '--crunch-input-dir', '>(res_dir)',
+            '--dependencies-res-dirs', '>(dependencies_res_dirs)',
+            '--resource-dir', '<(res_dir)',
             '--crunch-output-dir', '<(res_crunched_dir)',
             '--android-manifest', '<(android_manifest)',
             '--non-constant-id',

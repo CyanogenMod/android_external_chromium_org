@@ -15,6 +15,7 @@
 #include "google_apis/gcm/engine/mcs_client.h"
 #include "google_apis/gcm/engine/registration_request.h"
 #include "google_apis/gcm/engine/unregistration_request.h"
+#include "google_apis/gcm/gcm_activity.h"
 
 namespace gcm {
 
@@ -33,66 +34,13 @@ class GCM_EXPORT GCMStatsRecorder {
     DELETED_MESSAGES,
   };
 
-  // Contains data that are common to all activity kinds below.
-  struct GCM_EXPORT Activity {
-    Activity();
-    virtual ~Activity();
-
-    base::Time time;
-    std::string event;    // A short description of the event.
-    std::string details;  // Any additional detail about the event.
-  };
-
-  // Contains relevant data of a connection activity.
-  struct GCM_EXPORT ConnectionActivity : Activity {
-    ConnectionActivity();
-    virtual ~ConnectionActivity();
-  };
-
-  // Contains relevant data of a check-in activity.
-  struct GCM_EXPORT CheckinActivity : Activity {
-    CheckinActivity();
-    virtual ~CheckinActivity();
-  };
-
-  // Contains relevant data of a registration/unregistration step.
-  struct GCM_EXPORT RegistrationActivity : Activity {
-    RegistrationActivity();
-    virtual ~RegistrationActivity();
-
-    std::string app_id;
-    std::string sender_ids;  // Comma separated sender ids.
-  };
-
-  // Contains relevant data of a message receiving event.
-  struct GCM_EXPORT ReceivingActivity : Activity {
-    ReceivingActivity();
-    virtual ~ReceivingActivity();
-
-    std::string app_id;
-    std::string from;
-    int message_byte_size;
-  };
-
-  // Contains relevant data of a send-message step.
-  struct GCM_EXPORT SendingActivity : Activity {
-    SendingActivity();
-    virtual ~SendingActivity();
-
-    std::string app_id;
-    std::string receiver_id;
-    std::string message_id;
-  };
-
-  struct GCM_EXPORT RecordedActivities {
-    RecordedActivities();
-    virtual ~RecordedActivities();
-
-    std::vector<GCMStatsRecorder::CheckinActivity> checkin_activities;
-    std::vector<GCMStatsRecorder::ConnectionActivity> connection_activities;
-    std::vector<GCMStatsRecorder::RegistrationActivity> registration_activities;
-    std::vector<GCMStatsRecorder::ReceivingActivity> receiving_activities;
-    std::vector<GCMStatsRecorder::SendingActivity> sending_activities;
+  // A delegate interface that allows the GCMStatsRecorder instance to interact
+  // with its container.
+  class Delegate {
+   public:
+    // Called when the GCMStatsRecorder is recording activities and a new
+    // activity has just been recorded.
+    virtual void OnActivityRecorded() = 0;
   };
 
   GCMStatsRecorder();
@@ -105,6 +53,9 @@ class GCM_EXPORT GCMStatsRecorder {
 
   // Turns recording on/off.
   void SetRecording(bool recording);
+
+  // Set a delegate to receive callback from the recorder.
+  void SetDelegate(Delegate* delegate);
 
   // Clear all recorded activities.
   void Clear();
@@ -219,19 +170,27 @@ class GCM_EXPORT GCMStatsRecorder {
   }
 
  protected:
+  // Notify the recorder delegate, if it exists, that an activity has been
+  // recorded.
+  void NotifyActivityRecorded();
+
   void RecordCheckin(const std::string& event,
                      const std::string& details);
+
   void RecordConnection(const std::string& event,
                         const std::string& details);
+
   void RecordRegistration(const std::string& app_id,
                           const std::string& sender_id,
                           const std::string& event,
                           const std::string& details);
+
   void RecordReceiving(const std::string& app_id,
                        const std::string& from,
                        int message_byte_size,
                        const std::string& event,
                        const std::string& details);
+
   void RecordSending(const std::string& app_id,
                      const std::string& receiver_id,
                      const std::string& message_id,
@@ -239,6 +198,7 @@ class GCM_EXPORT GCMStatsRecorder {
                      const std::string& details);
 
   bool is_recording_;
+  Delegate* delegate_;
 
   std::deque<CheckinActivity> checkin_activities_;
   std::deque<ConnectionActivity> connection_activities_;

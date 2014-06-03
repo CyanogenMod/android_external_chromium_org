@@ -18,10 +18,8 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/extensions/api/file_handlers/file_handlers_parser.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
@@ -33,6 +31,7 @@
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_family.h"
 #include "ui/gfx/image/image_skia.h"
+#include "url/url_constants.h"
 
 #if defined(OS_WIN)
 #include "ui/gfx/icon_util.h"
@@ -69,41 +68,10 @@ bool IconPrecedes(const WebApplicationInfo::IconInfo& left,
 }
 #endif
 
-bool CreateShortcutsWithInfoOnFileThread(
-    web_app::ShortcutCreationReason reason,
-    const web_app::ShortcutLocations& locations,
-    const web_app::ShortcutInfo& shortcut_info,
-    const extensions::FileHandlersInfo& file_handlers_info) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-
-  base::FilePath shortcut_data_dir =
-      web_app::GetWebAppDataDirectory(shortcut_info.profile_path,
-                                      shortcut_info.extension_id,
-                                      shortcut_info.url);
-  return web_app::internals::CreatePlatformShortcuts(
-      shortcut_data_dir, shortcut_info, file_handlers_info, locations, reason);
-}
-
-void DeleteShortcutsOnFileThread(
-    const web_app::ShortcutInfo& shortcut_info) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-
-  base::FilePath shortcut_data_dir = web_app::GetWebAppDataDirectory(
-      shortcut_info.profile_path, shortcut_info.extension_id, GURL());
-  return web_app::internals::DeletePlatformShortcuts(
-      shortcut_data_dir, shortcut_info);
-}
-
-void UpdateShortcutsOnFileThread(
-    const base::string16& old_app_title,
-    const web_app::ShortcutInfo& shortcut_info,
-    const extensions::FileHandlersInfo& file_handlers_info) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-
-  base::FilePath shortcut_data_dir = web_app::GetWebAppDataDirectory(
-      shortcut_info.profile_path, shortcut_info.extension_id, GURL());
-  return web_app::internals::UpdatePlatformShortcuts(
-      shortcut_data_dir, old_app_title, shortcut_info, file_handlers_info);
+base::FilePath GetShortcutDataDir(const web_app::ShortcutInfo& shortcut_info) {
+  return web_app::GetWebAppDataDirectory(shortcut_info.profile_path,
+                                         shortcut_info.extension_id,
+                                         shortcut_info.url);
 }
 
 void CreateShortcutsWithInfo(
@@ -117,8 +85,9 @@ void CreateShortcutsWithInfo(
       BrowserThread::FILE,
       FROM_HERE,
       base::Bind(
-          base::IgnoreResult(&CreateShortcutsWithInfoOnFileThread),
-          reason, locations, shortcut_info, file_handlers_info));
+          base::IgnoreResult(&web_app::internals::CreatePlatformShortcuts),
+          GetShortcutDataDir(shortcut_info),
+          shortcut_info, file_handlers_info, locations, reason));
 }
 
 void UpdateAllShortcutsForShortcutInfo(
@@ -128,7 +97,8 @@ void UpdateAllShortcutsForShortcutInfo(
   BrowserThread::PostTask(
       BrowserThread::FILE,
       FROM_HERE,
-      base::Bind(&UpdateShortcutsOnFileThread,
+      base::Bind(&web_app::internals::UpdatePlatformShortcuts,
+                 GetShortcutDataDir(shortcut_info),
                  old_app_title, shortcut_info, file_handlers_info));
 }
 
@@ -162,11 +132,10 @@ void GetInfoForApp(const extensions::Extension* extension,
                    const InfoCallback& callback) {
   web_app::ShortcutInfo shortcut_info =
       web_app::ShortcutInfoForExtensionAndProfile(extension, profile);
-  extensions::FileHandlersInfo file_handlers_info;
   const std::vector<extensions::FileHandlerInfo>* file_handlers =
       extensions::FileHandlers::GetFileHandlers(extension);
-  if (file_handlers)
-    file_handlers_info.handlers = *file_handlers;
+  extensions::FileHandlersInfo file_handlers_info =
+      file_handlers ? *file_handlers : extensions::FileHandlersInfo();
 
   std::vector<extensions::ImageLoader::ImageRepresentation> info_list;
   for (size_t i = 0; i < kNumDesiredSizes; ++i) {
@@ -244,25 +213,25 @@ base::FilePath GetSanitizedFileName(const base::string16& name) {
   return base::FilePath(file_name);
 }
 
-bool CreateShortcutsOnFileThread(
-    ShortcutCreationReason reason,
-    const web_app::ShortcutLocations& locations,
-    const web_app::ShortcutInfo& shortcut_info) {
+bool CreateShortcutsOnFileThread(ShortcutCreationReason reason,
+                                 const ShortcutLocations& locations,
+                                 const ShortcutInfo& shortcut_info) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
-  return CreateShortcutsWithInfoOnFileThread(
-      reason, locations, shortcut_info, extensions::FileHandlersInfo());
+  return CreatePlatformShortcuts(
+      GetShortcutDataDir(shortcut_info),
+      shortcut_info, extensions::FileHandlersInfo(), locations, reason);
 }
 
 }  // namespace internals
 
-web_app::ShortcutInfo::ShortcutInfo()
+ShortcutInfo::ShortcutInfo()
     : is_platform_app(false) {
 }
 
-web_app::ShortcutInfo::~ShortcutInfo() {}
+ShortcutInfo::~ShortcutInfo() {}
 
-web_app::ShortcutLocations::ShortcutLocations()
+ShortcutLocations::ShortcutLocations()
     : on_desktop(false),
       applications_menu_location(APP_MENU_LOCATION_NONE),
       in_quick_launch_bar(false)
@@ -273,7 +242,7 @@ web_app::ShortcutLocations::ShortcutLocations()
 }
 
 void GetShortcutInfoForTab(content::WebContents* web_contents,
-                           web_app::ShortcutInfo* info) {
+                           ShortcutInfo* info) {
   DCHECK(info);  // Must provide a valid info.
 
   const FaviconTabHelper* favicon_tab_helper =
@@ -300,9 +269,9 @@ void GetShortcutInfoForTab(content::WebContents* web_contents,
 void UpdateShortcutForTabContents(content::WebContents* web_contents) {}
 #endif
 
-web_app::ShortcutInfo ShortcutInfoForExtensionAndProfile(
+ShortcutInfo ShortcutInfoForExtensionAndProfile(
     const extensions::Extension* app, Profile* profile) {
-  web_app::ShortcutInfo shortcut_info;
+  ShortcutInfo shortcut_info;
   shortcut_info.extension_id = app->id();
   shortcut_info.is_platform_app = app->is_platform_app();
   shortcut_info.url = extensions::AppLaunchInfo::GetLaunchWebURL(app);
@@ -315,10 +284,9 @@ web_app::ShortcutInfo ShortcutInfoForExtensionAndProfile(
   return shortcut_info;
 }
 
-void UpdateShortcutInfoAndIconForApp(
-    const extensions::Extension* extension,
-    Profile* profile,
-    const web_app::ShortcutInfoCallback& callback) {
+void UpdateShortcutInfoAndIconForApp(const extensions::Extension* extension,
+                                     Profile* profile,
+                                     const ShortcutInfoCallback& callback) {
   GetInfoForApp(extension,
                 profile,
                 base::Bind(&IgnoreFileHandlersInfo, callback));
@@ -359,15 +327,11 @@ base::FilePath GetWebAppDataDirectory(const base::FilePath& profile_path,
       GURL(extensions::AppLaunchInfo::GetLaunchWebURL(&extension)));
 }
 
-std::string GenerateApplicationNameFromInfo(
-    const web_app::ShortcutInfo& shortcut_info) {
-  if (!shortcut_info.extension_id.empty()) {
-    return web_app::GenerateApplicationNameFromExtensionId(
-        shortcut_info.extension_id);
-  } else {
-    return web_app::GenerateApplicationNameFromURL(
-        shortcut_info.url);
-  }
+std::string GenerateApplicationNameFromInfo(const ShortcutInfo& shortcut_info) {
+  if (!shortcut_info.extension_id.empty())
+    return GenerateApplicationNameFromExtensionId(shortcut_info.extension_id);
+  else
+    return GenerateApplicationNameFromURL(shortcut_info.url);
 }
 
 std::string GenerateApplicationNameFromURL(const GURL& url) {
@@ -379,7 +343,7 @@ std::string GenerateApplicationNameFromURL(const GURL& url) {
 }
 
 std::string GenerateApplicationNameFromExtensionId(const std::string& id) {
-  std::string t(web_app::kCrxAppPrefix);
+  std::string t(kCrxAppPrefix);
   t.append(id);
   return t;
 }
@@ -391,10 +355,9 @@ std::string GetExtensionIdFromApplicationName(const std::string& app_name) {
   return app_name.substr(prefix.length());
 }
 
-void CreateShortcutsForShortcutInfo(
-    web_app::ShortcutCreationReason reason,
-    const web_app::ShortcutLocations& locations,
-    const web_app::ShortcutInfo& shortcut_info) {
+void CreateShortcutsForShortcutInfo(ShortcutCreationReason reason,
+                                    const ShortcutLocations& locations,
+                                    const ShortcutInfo& shortcut_info) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   BrowserThread::PostTask(
@@ -405,11 +368,10 @@ void CreateShortcutsForShortcutInfo(
           reason, locations, shortcut_info));
 }
 
-void CreateShortcuts(
-    ShortcutCreationReason reason,
-    const web_app::ShortcutLocations& locations,
-    Profile* profile,
-    const extensions::Extension* app) {
+void CreateShortcuts(ShortcutCreationReason reason,
+                     const ShortcutLocations& locations,
+                     Profile* profile,
+                     const extensions::Extension* app) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   GetInfoForApp(app,
@@ -420,11 +382,13 @@ void CreateShortcuts(
 void DeleteAllShortcuts(Profile* profile, const extensions::Extension* app) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
+  ShortcutInfo shortcut_info =
+      ShortcutInfoForExtensionAndProfile(app, profile);
   BrowserThread::PostTask(
       BrowserThread::FILE,
       FROM_HERE,
-      base::Bind(&DeleteShortcutsOnFileThread,
-                 web_app::ShortcutInfoForExtensionAndProfile(app, profile)));
+      base::Bind(&web_app::internals::DeletePlatformShortcuts,
+                 GetShortcutDataDir(shortcut_info), shortcut_info));
 }
 
 void UpdateAllShortcuts(const base::string16& old_app_title,
@@ -439,9 +403,9 @@ void UpdateAllShortcuts(const base::string16& old_app_title,
 
 bool IsValidUrl(const GURL& url) {
   static const char* const kValidUrlSchemes[] = {
-      content::kFileScheme,
-      content::kFileSystemScheme,
-      content::kFtpScheme,
+      url::kFileScheme,
+      url::kFileSystemScheme,
+      url::kFtpScheme,
       url::kHttpScheme,
       url::kHttpsScheme,
       extensions::kExtensionScheme,

@@ -11,6 +11,8 @@
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/platform_file.h"
+#include "base/time/time.h"
 #include "ppapi/c/private/ppb_nacl_private.h"
 #include "url/gurl.h"
 
@@ -31,16 +33,22 @@ class NexeLoadManager {
   ~NexeLoadManager();
 
   void NexeFileDidOpen(int32_t pp_error,
-                       int32_t fd,
+                       base::PlatformFile file,
                        int32_t http_status,
                        int64_t nexe_bytes_read,
                        const std::string& url,
-                       int64_t time_since_open);
+                       base::TimeDelta time_since_open);
   void ReportLoadSuccess(const std::string& url,
                          uint64_t loaded_bytes,
                          uint64_t total_bytes);
   void ReportLoadError(PP_NaClError error,
                        const std::string& error_message);
+
+  // console_message is a part of the error that is logged to
+  // the JavaScript console but is not reported to JavaScript via
+  // the lastError property.  This is used to report internal errors which
+  // may easily change in new versions of the browser and we don't want apps
+  // to come to depend on the details of these errors.
   void ReportLoadError(PP_NaClError error,
                        const std::string& error_message,
                        const std::string& console_message);
@@ -74,7 +82,7 @@ class NexeLoadManager {
 
   int64_t nexe_size() const { return nexe_size_; }
 
-  bool RequestNaClManifest(const std::string& url, bool* is_data_uri);
+  bool RequestNaClManifest(const std::string& url);
   void ProcessNaClManifest(const std::string& program_url);
 
   // URL resolution support.

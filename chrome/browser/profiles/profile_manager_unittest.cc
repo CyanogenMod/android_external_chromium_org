@@ -36,6 +36,7 @@
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "grit/generated_resources.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -43,8 +44,8 @@
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/mock_user_manager.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/mock_user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chromeos/chromeos_switches.h"
@@ -377,8 +378,7 @@ class UnittestGuestProfileManager : public UnittestProfileManager {
   }
 };
 
-class ProfileManagerGuestTest : public ProfileManagerTest,
-                                public testing::WithParamInterface<bool>  {
+class ProfileManagerGuestTest : public ProfileManagerTest  {
  protected:
   virtual void SetUp() {
     // Create a new temporary directory, and store the path
@@ -388,17 +388,13 @@ class ProfileManagerGuestTest : public ProfileManagerTest,
 
 #if defined(OS_CHROMEOS)
     CommandLine* cl = CommandLine::ForCurrentProcess();
-    if (GetParam())
-      cl->AppendSwitch(switches::kMultiProfiles);
-
+    // This switch is needed to skip non-test specific behavior in
+    // ProfileManager (accessing DBusThreadManager).
     cl->AppendSwitch(switches::kTestType);
-    if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kMultiProfiles)) {
-      cl->AppendSwitchASCII(chromeos::switches::kLoginProfile,
-                            std::string(chrome::kProfileDirPrefix) +
-                                chromeos::UserManager::kGuestUserName);
-    } else {
-      cl->AppendSwitchASCII(chromeos::switches::kLoginProfile, "user");
-    }
+
+    cl->AppendSwitchASCII(chromeos::switches::kLoginProfile,
+                          std::string(chrome::kProfileDirPrefix) +
+                              chromeos::UserManager::kGuestUserName);
     cl->AppendSwitch(chromeos::switches::kGuestSession);
     cl->AppendSwitch(::switches::kIncognito);
 
@@ -410,11 +406,7 @@ class ProfileManagerGuestTest : public ProfileManagerTest,
   }
 };
 
-INSTANTIATE_TEST_CASE_P(ProfileManagerGuestTestInstantiation,
-                        ProfileManagerGuestTest,
-                        testing::Bool());
-
-TEST_P(ProfileManagerGuestTest, GetLastUsedProfileAllowedByPolicy) {
+TEST_F(ProfileManagerGuestTest, GetLastUsedProfileAllowedByPolicy) {
   ProfileManager* profile_manager = g_browser_process->profile_manager();
   ASSERT_TRUE(profile_manager);
 
@@ -424,7 +416,7 @@ TEST_P(ProfileManagerGuestTest, GetLastUsedProfileAllowedByPolicy) {
 }
 
 #if defined(OS_CHROMEOS)
-TEST_P(ProfileManagerGuestTest, GuestProfileIngonito) {
+TEST_F(ProfileManagerGuestTest, GuestProfileIngonito) {
   Profile* primary_profile = ProfileManager::GetPrimaryUserProfile();
   EXPECT_TRUE(primary_profile->IsOffTheRecord());
 

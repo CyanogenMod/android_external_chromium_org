@@ -37,24 +37,22 @@ class TransportVideoSender : public base::NonThreadSafe {
 
   // Handles the encoded video frames to be processed.
   // Frames will be encrypted, packetized and transmitted to the network.
-  void InsertCodedVideoFrame(const EncodedVideoFrame* coded_frame,
-                             const base::TimeTicks& capture_time);
+  void SendFrame(const EncodedFrame& video_frame);
 
   // Retransmision request.
   void ResendPackets(
       const MissingFramesAndPacketsMap& missing_frames_and_packets);
 
+  size_t send_packet_count() const { return rtp_sender_.send_packet_count(); }
+  size_t send_octet_count() const { return rtp_sender_.send_octet_count(); }
+  uint32 ssrc() const { return rtp_sender_.ssrc(); }
   bool initialized() const { return initialized_; }
-
-  // Subscribe callback to get RTP Audio stats.
-  void SubscribeVideoRtpStatsCallback(
-      const CastTransportRtpStatistics& callback);
 
  private:
   // Caller must allocate the destination |encrypted_video_frame| the data
   // member will be resized to hold the encrypted size.
-  bool EncryptVideoFrame(const EncodedVideoFrame& encoded_frame,
-                         EncodedVideoFrame* encrypted_video_frame);
+  bool EncryptVideoFrame(const EncodedFrame& encoded_frame,
+                         EncodedFrame* encrypted_video_frame);
 
   const base::TimeDelta rtp_max_delay_;
   TransportEncryptionHandler encryptor_;

@@ -12,6 +12,7 @@ class MenuModel;
 }
 
 namespace views {
+class Border;
 class ButtonListener;
 }
 
@@ -30,6 +31,8 @@ class BackButton : public ToolbarButton {
 
  protected:
   virtual gfx::Rect GetThemePaintRect() const OVERRIDE;
+  virtual scoped_ptr<views::LabelButtonBorder> CreateDefaultBorder() const
+      OVERRIDE;
 
  private:
   // Any leading margin to be applied. Used when the back button is in

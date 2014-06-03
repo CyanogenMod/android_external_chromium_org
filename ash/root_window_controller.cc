@@ -423,7 +423,7 @@ void RootWindowController::Shutdown() {
   // ends up with invalid display.
   GetRootWindowSettings(root_window)->display_id =
       gfx::Display::kInvalidDisplayID;
-  GetRootWindowSettings(root_window)->shutdown = true;
+  ash_host_->PrepareForShutdown();
 
   system_background_.reset();
   aura::client::SetScreenPositionClient(root_window, NULL);
@@ -798,8 +798,8 @@ void RootWindowController::Init(RootWindowType root_window_type,
   }
 
 #if defined(OS_CHROMEOS)
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kAshEnableTouchExplorationMode)) {
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAshDisableTouchExplorationMode)) {
     cros_accessibility_observer_.reset(new CrosAccessibilityObserver(this));
   }
 #endif

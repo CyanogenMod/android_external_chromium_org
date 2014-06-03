@@ -14,7 +14,6 @@
 #include "base/process/process.h"
 #include "base/timer/timer.h"
 #include "content/browser/child_process_launcher.h"
-#include "content/browser/geolocation/geolocation_dispatcher_host.h"
 #include "content/browser/power_monitor_message_broadcaster.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/gpu_data_manager_observer.h"
@@ -37,7 +36,6 @@ class Size;
 namespace content {
 class AudioRendererHost;
 class BrowserDemuxerAndroid;
-class GeolocationDispatcherHost;
 class GpuMessageFilter;
 class MessagePortMessageFilter;
 class MojoApplicationHost;
@@ -81,7 +79,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
  public:
   RenderProcessHostImpl(BrowserContext* browser_context,
                         StoragePartitionImpl* storage_partition_impl,
-                        bool is_guest);
+                        bool is_isolated_guest);
   virtual ~RenderProcessHostImpl();
 
   // RenderProcessHost implementation (public portion).
@@ -99,7 +97,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual void WidgetRestored() OVERRIDE;
   virtual void WidgetHidden() OVERRIDE;
   virtual int VisibleWidgetCount() const OVERRIDE;
-  virtual bool IsGuest() const OVERRIDE;
+  virtual bool IsIsolatedGuest() const OVERRIDE;
   virtual StoragePartition* GetStoragePartition() const OVERRIDE;
   virtual bool FastShutdownIfPossible() OVERRIDE;
   virtual void DumpHandles() OVERRIDE;
@@ -140,6 +138,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
   virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
   virtual void OnChannelError() OVERRIDE;
+  virtual void OnBadMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // ChildProcessLauncher::Client implementation.
   virtual void OnProcessLaunched() OVERRIDE;
@@ -162,11 +161,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
       int route_id,
       scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber);
   void EndFrameSubscription(int route_id);
-
-  scoped_refptr<GeolocationDispatcherHost>
-      geolocation_dispatcher_host() const {
-    return make_scoped_refptr(geolocation_dispatcher_host_);
-  }
 
 #if defined(ENABLE_WEBRTC)
   // Fires the webrtc log message callback with |message|, if callback is set.
@@ -228,8 +222,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
     return message_port_message_filter_;
   }
 
-  void SetIsGuestForTesting(bool is_guest) {
-    is_guest_ = is_guest;
+  void set_is_isolated_guest_for_testing(bool is_isolated_guest) {
+    is_isolated_guest_ = is_isolated_guest;
   }
 
   // Called when the existence of the other renderer process which is connected
@@ -390,7 +384,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // Indicates whether this is a RenderProcessHost of a Browser Plugin guest
   // renderer.
-  bool is_guest_;
+  bool is_isolated_guest_;
 
   // Forwards messages between WebRTCInternals in the browser process
   // and PeerConnectionTracker in the renderer process.
@@ -416,9 +410,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
 #if defined(OS_ANDROID)
   scoped_refptr<BrowserDemuxerAndroid> browser_demuxer_android_;
 #endif
-
-  // Message filter for geolocation messages.
-  GeolocationDispatcherHost* geolocation_dispatcher_host_;
 
 #if defined(ENABLE_WEBRTC)
   base::Callback<void(const std::string&)> webrtc_log_message_callback_;

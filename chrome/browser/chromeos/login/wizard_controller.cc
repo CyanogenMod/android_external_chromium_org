@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/bind.h"
+#include "base/callback_helpers.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_registry_simple.h"
@@ -30,10 +31,8 @@
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/hwid_checker.h"
-#include "chrome/browser/chromeos/login/login_display_host.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_creation_screen.h"
-#include "chrome/browser/chromeos/login/oobe_display.h"
 #include "chrome/browser/chromeos/login/screens/error_screen.h"
 #include "chrome/browser/chromeos/login/screens/eula_screen.h"
 #include "chrome/browser/chromeos/login/screens/hid_detection_screen.h"
@@ -46,7 +45,9 @@
 #include "chrome/browser/chromeos/login/screens/user_image_screen.h"
 #include "chrome/browser/chromeos/login/screens/wrong_hwid_screen.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host.h"
+#include "chrome/browser/chromeos/login/ui/oobe_display.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/net/delay_network_call.h"
 #include "chrome/browser/chromeos/net/network_portal_detector.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
@@ -86,10 +87,27 @@ static int kShowDelayMs = 400;
 // Total timezone resolving process timeout.
 const unsigned int kResolveTimeZoneTimeoutSeconds = 60;
 
+// Stores the list of all screens that should be shown when resuming OOBE.
+const char *kResumableScreens[] = {
+  chromeos::WizardController::kNetworkScreenName,
+  chromeos::WizardController::kUpdateScreenName,
+  chromeos::WizardController::kEulaScreenName,
+  chromeos::WizardController::kEnrollmentScreenName,
+  chromeos::WizardController::kTermsOfServiceScreenName
+};
+
 // Checks flag for HID-detection screen show.
 bool CanShowHIDDetectionScreen() {
   return CommandLine::ForCurrentProcess()->HasSwitch(
       chromeos::switches::kEnableHIDDetectionOnOOBE);
+}
+
+bool IsResumableScreen(const std::string& screen) {
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kResumableScreens); ++i) {
+    if (screen == kResumableScreens[i])
+      return true;
+  }
+  return false;
 }
 
 }  // namespace
@@ -151,9 +169,9 @@ WizardController::WizardController(chromeos::LoginDisplayHost* host,
       host_(host),
       oobe_display_(oobe_display),
       usage_statistics_reporting_(true),
-      skip_update_enroll_after_eula_(false),
       login_screen_started_(false),
       user_image_screen_return_to_previous_hack_(false),
+      timezone_resolved_(false),
       weak_factory_(this) {
   DCHECK(default_controller_ == NULL);
   default_controller_ = this;
@@ -209,9 +227,16 @@ void WizardController::Init(
     }
   }
 
-  AdvanceToScreen(first_screen_name);
+  const std::string screen_pref =
+      GetLocalState()->GetString(prefs::kOobeScreenPending);
+  if (is_out_of_box_ && !screen_pref.empty() && (first_screen_name.empty() ||
+      first_screen_name == WizardController::kTestNoScreenName)) {
+    first_screen_name_ = screen_pref;
+  }
+
+  AdvanceToScreen(first_screen_name_);
   if (!IsMachineHWIDCorrect() && !StartupUtils::IsDeviceRegistered() &&
-      first_screen_name.empty())
+      first_screen_name_.empty())
     ShowWrongHWIDScreen();
 }
 
@@ -475,12 +500,7 @@ void WizardController::SkipToLoginForTesting(
   VLOG(1) << "SkipToLoginForTesting.";
   StartupUtils::MarkEulaAccepted();
   PerformPostEulaActions();
-  PerformOOBECompletedActions();
-  if (ShouldAutoStartEnrollment()) {
-    ShowEnrollmentScreen();
-  } else {
-    ShowLoginScreen(context);
-  }
+  OnOOBECompleted();
 }
 
 void WizardController::AddObserver(Observer* observer) {
@@ -493,10 +513,6 @@ void WizardController::RemoveObserver(Observer* observer) {
 
 void WizardController::OnSessionStart() {
   FOR_EACH_OBSERVER(Observer, observer_list_, OnSessionStart());
-}
-
-void WizardController::SkipUpdateEnrollAfterEula() {
-  skip_update_enroll_after_eula_ = true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -551,13 +567,7 @@ void WizardController::OnEulaAccepted() {
 #endif
   }
 
-  if (skip_update_enroll_after_eula_) {
-    PerformPostEulaActions();
-    PerformOOBECompletedActions();
-    ShowEnrollmentScreen();
-  } else {
-    InitiateOOBEUpdate();
-  }
+  InitiateOOBEUpdate();
 }
 
 void WizardController::OnUpdateErrorCheckingForUpdate() {
@@ -710,6 +720,10 @@ void WizardController::PerformPostEulaActions() {
 
 void WizardController::PerformOOBECompletedActions() {
   StartupUtils::MarkOobeCompleted();
+  UMA_HISTOGRAM_COUNTS_100(
+      "HIDDetection.TimesDialogShownPerOOBECompleted",
+      GetLocalState()->GetInteger(prefs::kTimesHIDDialogShown));
+  GetLocalState()->ClearPref(prefs::kTimesHIDDialogShown);
 }
 
 void WizardController::SetCurrentScreen(WizardScreen* new_current) {
@@ -721,6 +735,10 @@ void WizardController::ShowCurrentScreen() {
   // flow has been switched to sign in screen (ExistingUserController).
   if (!oobe_display_)
     return;
+
+  // First remember how far have we reached so that we can resume if needed.
+  if (is_out_of_box_ && IsResumableScreen(current_screen_->GetName()))
+    StartupUtils::SaveOobePendingScreen(current_screen_->GetName());
 
   smooth_show_timer_.Stop();
 
@@ -1000,6 +1018,10 @@ void WizardController::OnTimezoneResolved(
   // (timezone_provider_) in this case. Expect crash here.
   DCHECK(timezone_provider_.get());
 
+  timezone_resolved_ = true;
+  base::ScopedClosureRunner inform_test(on_timezone_resolved_for_testing_);
+  on_timezone_resolved_for_testing_.Reset();
+
   VLOG(1) << "Resolved local timezone={" << timezone->ToStringForDebug()
           << "}.";
 
@@ -1064,6 +1086,15 @@ void WizardController::OnLocationResolved(const Geoposition& position,
       timeout - elapsed,
       base::Bind(&WizardController::OnTimezoneResolved,
                  base::Unretained(this)));
+}
+
+bool WizardController::SetOnTimeZoneResolvedForTesting(
+    const base::Closure& callback) {
+  if (timezone_resolved_)
+    return false;
+
+  on_timezone_resolved_for_testing_ = callback;
+  return true;
 }
 
 }  // namespace chromeos

@@ -8,7 +8,6 @@
 #include "base/metrics/histogram_samples.h"
 #include "base/metrics/statistics_recorder.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/password_manager/test_password_store_service.h"
@@ -19,6 +18,7 @@
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/autofill/core/browser/autofill_test_utils.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
 #include "components/infobars/core/infobar.h"
 #include "components/infobars/core/infobar_manager.h"
 #include "components/password_manager/core/browser/test_password_store.h"
@@ -33,6 +33,7 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/events/keycodes/keyboard_codes.h"
+#include "ui/gfx/geometry/point.h"
 
 
 // NavigationObserver ---------------------------------------------------------
@@ -638,6 +639,40 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
   CheckScriptReturnValue(check_username, true);
   CheckScriptReturnValue(check_password, true);
 }
+
+// The following test is limited to Aura, because
+// RenderWidgetHostViewGuest::ProcessAckedTouchEvent is, and
+// ProcessAckedTouchEvent is what triggers the translation of touch events to
+// gesture events.
+#if defined(USE_AURA)
+IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
+                       PasswordValueAccessibleOnSubmit) {
+  NavigateToFile("/password/form_and_link.html");
+
+  // Fill in the credentials, and make sure they are saved.
+  NavigationObserver form_submit_observer(WebContents());
+  std::string fill_and_submit =
+      "document.getElementById('username_field').value = 'temp';"
+      "document.getElementById('password_field').value = 'random_secret';"
+      "document.getElementById('input_submit_button').click();";
+  ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
+  form_submit_observer.Wait();
+  EXPECT_TRUE(form_submit_observer.infobar_shown());
+
+  // Reload the original page to have the saved credentials autofilled.
+  NavigationObserver reload_observer(WebContents());
+  NavigateToFile("/password/form_and_link.html");
+  reload_observer.Wait();
+
+  NavigationObserver submit_observer(WebContents());
+  // Submit the form via a tap on the submit button. The button is placed at 0,
+  // 100, and has height 300 and width 700.
+  content::SimulateTapAt(WebContents(), gfx::Point(350, 250));
+  submit_observer.Wait();
+  std::string query = WebContents()->GetURL().query();
+  EXPECT_NE(std::string::npos, query.find("random_secret")) << query;
+}
+#endif
 
 // Test fix for crbug.com/338650.
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,

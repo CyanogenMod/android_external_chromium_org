@@ -18,7 +18,7 @@
 #include "webkit/common/fileapi/file_system_types.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/drive/file_system_util.h"
+#include "chrome/browser/chromeos/file_manager/filesystem_api_util.h"
 #endif
 
 using apps::file_handler_util::GrantedFileEntry;
@@ -116,11 +116,7 @@ class WritableFileChecker
   void CheckLocalWritableFiles();
 
 #if defined(OS_CHROMEOS)
-  void CheckRemoteWritableFile(const base::FilePath& remote_path,
-                               drive::FileError error,
-                               const base::FilePath& local_path);
-  void RemoteCheckDone(const base::FilePath& remote_path,
-                       drive::FileError error);
+  void NonNativeLocalPathCheckDone(const base::FilePath& path, bool success);
 #endif
 
   const std::vector<base::FilePath> paths_;
@@ -147,23 +143,23 @@ WritableFileChecker::WritableFileChecker(
 
 void WritableFileChecker::Check() {
 #if defined(OS_CHROMEOS)
-  if (drive::util::IsUnderDriveMountPoint(paths_[0])) {
+  if (file_manager::util::IsUnderNonNativeLocalPath(profile_, paths_[0])) {
     outstanding_tasks_ = paths_.size();
     for (std::vector<base::FilePath>::const_iterator it = paths_.begin();
          it != paths_.end();
          ++it) {
-      DCHECK(drive::util::IsUnderDriveMountPoint(*it));
       if (is_directory_) {
-        drive::util::CheckDirectoryExists(
+        file_manager::util::IsNonNativeLocalPathDirectory(
             profile_,
             *it,
-            base::Bind(&WritableFileChecker::RemoteCheckDone, this, *it));
+            base::Bind(&WritableFileChecker::NonNativeLocalPathCheckDone,
+                       this, *it));
       } else {
-        drive::util::PrepareWritableFileAndRun(
+        file_manager::util::PrepareNonNativeLocalPathWritableFile(
             profile_,
             *it,
-            base::Bind(&WritableFileChecker::CheckRemoteWritableFile, this,
-                       *it));
+            base::Bind(&WritableFileChecker::NonNativeLocalPathCheckDone,
+                       this, *it));
       }
     }
     return;
@@ -216,41 +212,25 @@ void WritableFileChecker::CheckLocalWritableFiles() {
 }
 
 #if defined(OS_CHROMEOS)
-void WritableFileChecker::CheckRemoteWritableFile(
-    const base::FilePath& remote_path,
-    drive::FileError error,
-    const base::FilePath& /* local_path */) {
-  RemoteCheckDone(remote_path, error);
-}
-
-void WritableFileChecker::RemoteCheckDone(
-    const base::FilePath& remote_path,
-    drive::FileError error) {
-  if (error == drive::FILE_ERROR_OK) {
-    content::BrowserThread::PostTask(
-        content::BrowserThread::UI,
-        FROM_HERE,
-        base::Bind(&WritableFileChecker::TaskDone, this));
-  } else {
-    content::BrowserThread::PostTask(
-        content::BrowserThread::UI,
-        FROM_HERE,
-        base::Bind(&WritableFileChecker::Error, this, remote_path));
-  }
+void WritableFileChecker::NonNativeLocalPathCheckDone(
+    const base::FilePath& path,
+    bool success) {
+  if (success)
+    TaskDone();
+  else
+    Error(path);
 }
 #endif
 
 }  // namespace
 
-typedef std::vector<FileHandlerInfo> FileHandlerList;
-
 const FileHandlerInfo* FileHandlerForId(const Extension& app,
                                         const std::string& handler_id) {
-  const FileHandlerList* file_handlers = FileHandlers::GetFileHandlers(&app);
+  const FileHandlersInfo* file_handlers = FileHandlers::GetFileHandlers(&app);
   if (!file_handlers)
     return NULL;
 
-  for (FileHandlerList::const_iterator i = file_handlers->begin();
+  for (FileHandlersInfo::const_iterator i = file_handlers->begin();
        i != file_handlers->end(); i++) {
     if (i->id == handler_id)
       return &*i;
@@ -262,11 +242,11 @@ const FileHandlerInfo* FirstFileHandlerForFile(
     const Extension& app,
     const std::string& mime_type,
     const base::FilePath& path) {
-  const FileHandlerList* file_handlers = FileHandlers::GetFileHandlers(&app);
+  const FileHandlersInfo* file_handlers = FileHandlers::GetFileHandlers(&app);
   if (!file_handlers)
     return NULL;
 
-  for (FileHandlerList::const_iterator i = file_handlers->begin();
+  for (FileHandlersInfo::const_iterator i = file_handlers->begin();
        i != file_handlers->end(); i++) {
     if (FileHandlerCanHandleFile(*i, mime_type, path))
       return &*i;
@@ -281,11 +261,11 @@ std::vector<const FileHandlerInfo*> FindFileHandlersForFiles(
     return handlers;
 
   // Look for file handlers which can handle all the MIME types specified.
-  const FileHandlerList* file_handlers = FileHandlers::GetFileHandlers(&app);
+  const FileHandlersInfo* file_handlers = FileHandlers::GetFileHandlers(&app);
   if (!file_handlers)
     return handlers;
 
-  for (FileHandlerList::const_iterator data = file_handlers->begin();
+  for (FileHandlersInfo::const_iterator data = file_handlers->begin();
        data != file_handlers->end(); ++data) {
     bool handles_all_types = true;
     for (PathAndMimeTypeSet::const_iterator it = files.begin();

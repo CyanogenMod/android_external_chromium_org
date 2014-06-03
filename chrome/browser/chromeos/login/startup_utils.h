@@ -7,6 +7,8 @@
 
 #include <string>
 
+#include "base/callback.h"
+
 class PrefRegistrySimple;
 
 namespace chromeos {
@@ -27,11 +29,14 @@ class StartupUtils {
   // Marks OOBE process as completed.
   static void MarkOobeCompleted();
 
+  // Stores the next pending OOBE screen in case it will need to be resumed.
+  static void SaveOobePendingScreen(const std::string& screen);
+
   // Returns device registration completion status, i.e. second part of OOBE.
   static bool IsDeviceRegistered();
 
   // Marks device registered. i.e. second part of OOBE is completed.
-  static void MarkDeviceRegistered();
+  static void MarkDeviceRegistered(const base::Closure& done_callback);
 
   // Returns initial locale from local settings.
   static std::string GetInitialLocale();

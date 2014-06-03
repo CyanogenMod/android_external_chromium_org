@@ -9,6 +9,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/sequenced_task_runner.h"
 #include "chrome/browser/profiles/profile.h"
+#include "components/domain_reliability/clear_mode.h"
 #include "content/public/browser/browser_context.h"
 
 class ResourceContext;
@@ -59,17 +60,16 @@ class FakeProfile : public Profile {
   virtual void RequestProtectedMediaIdentifierPermission(
       int render_process_id,
       int render_view_id,
-      int bridge_id,
-      int group_id,
-      const GURL& requesting_frame,
+      const GURL& origin,
       const ProtectedMediaIdentifierPermissionCallback& callback) OVERRIDE;
   virtual void CancelProtectedMediaIdentifierPermissionRequests(
-      int group_id) OVERRIDE;
+      int render_process_id,
+      int render_view_id,
+      const GURL& origin) OVERRIDE;
   virtual content::ResourceContext* GetResourceContext() OVERRIDE;
   virtual content::GeolocationPermissionContext*
       GetGeolocationPermissionContext() OVERRIDE;
-  virtual content::BrowserPluginGuestManagerDelegate*
-      GetGuestManagerDelegate() OVERRIDE;
+  virtual content::BrowserPluginGuestManager* GetGuestManager() OVERRIDE;
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
   virtual scoped_refptr<base::SequencedTaskRunner> GetIOTaskRunner() OVERRIDE;
   virtual Profile* GetOffTheRecordProfile() OVERRIDE;
@@ -93,12 +93,12 @@ class FakeProfile : public Profile {
   virtual base::Time GetStartTime() const OVERRIDE;
   virtual net::URLRequestContextGetter* CreateRequestContext(
       content::ProtocolHandlerMap* protocol_handlers,
-      content::ProtocolHandlerScopedVector protocol_interceptors) OVERRIDE;
+      content::URLRequestInterceptorScopedVector request_interceptors) OVERRIDE;
   virtual net::URLRequestContextGetter* CreateRequestContextForStoragePartition(
       const base::FilePath& partition_path,
       bool in_memory,
       content::ProtocolHandlerMap* protocol_handlers,
-      content::ProtocolHandlerScopedVector protocol_interceptors) OVERRIDE;
+      content::URLRequestInterceptorScopedVector request_interceptors) OVERRIDE;
   virtual base::FilePath last_selected_directory() OVERRIDE;
   virtual void set_last_selected_directory(const base::FilePath& path) OVERRIDE;
 
@@ -113,6 +113,9 @@ class FakeProfile : public Profile {
   virtual chrome_browser_net::Predictor* GetNetworkPredictor() OVERRIDE;
   virtual void ClearNetworkingHistorySince(
       base::Time time, const base::Closure& completion) OVERRIDE;
+  virtual void ClearDomainReliabilityMonitor(
+      domain_reliability::DomainReliabilityClearMode mode,
+      const base::Closure& completion) OVERRIDE;
   virtual GURL GetHomePage() OVERRIDE;
   virtual bool WasCreatedByVersionOrLater(const std::string& version) OVERRIDE;
   virtual void SetExitType(ExitType exit_type) OVERRIDE;

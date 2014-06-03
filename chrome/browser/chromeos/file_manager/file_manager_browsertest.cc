@@ -36,7 +36,7 @@
 #include "chrome/browser/chromeos/file_manager/drive_test_util.h"
 #include "chrome/browser/chromeos/file_manager/path_util.h"
 #include "chrome/browser/chromeos/file_manager/volume_manager.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/drive/fake_drive_service.h"
 #include "chrome/browser/extensions/component_loader.h"
@@ -722,15 +722,11 @@ INSTANTIATE_TEST_CASE_P(
                       TestParameter(NOT_IN_GUEST_MODE, "fileDisplayDrive")));
 
 INSTANTIATE_TEST_CASE_P(
-    OpenSpecialTypes,
+    OpenZipFiles,
     FileManagerBrowserTest,
-    ::testing::Values(TestParameter(IN_GUEST_MODE, "galleryOpenDownloads"),
-                      TestParameter(NOT_IN_GUEST_MODE, "galleryOpenDownloads"),
-                      TestParameter(NOT_IN_GUEST_MODE, "galleryOpenDrive"),
-                      TestParameter(IN_GUEST_MODE, "zipOpenDownloads"),
-                      TestParameter(NOT_IN_GUEST_MODE, "zipOpenDownloads")));
-// http://crbug.com/348008
-// DISABLED           TestParameter(NOT_IN_GUEST_MODE, "zipOpenDrive")));
+    ::testing::Values(TestParameter(IN_GUEST_MODE, "zipOpenDownloads"),
+                      TestParameter(NOT_IN_GUEST_MODE, "zipOpenDownloads"),
+                      TestParameter(NOT_IN_GUEST_MODE, "zipOpenDrive")));
 
 INSTANTIATE_TEST_CASE_P(
     OpenVideoFiles,
@@ -739,8 +735,9 @@ INSTANTIATE_TEST_CASE_P(
                       TestParameter(NOT_IN_GUEST_MODE, "videoOpenDownloads"),
                       TestParameter(NOT_IN_GUEST_MODE, "videoOpenDrive")));
 
+// Disabled due to frequent failure; http://crbug.com/374097.
 INSTANTIATE_TEST_CASE_P(
-    OpenAudioFiles,
+    DISABLED_OpenAudioFiles,
     FileManagerBrowserTest,
     ::testing::Values(
         TestParameter(IN_GUEST_MODE, "audioOpenDownloads"),
@@ -753,6 +750,18 @@ INSTANTIATE_TEST_CASE_P(
         TestParameter(NOT_IN_GUEST_MODE, "audioNoRepeatMultipleFileDrive")));
 
 INSTANTIATE_TEST_CASE_P(
+    CreateNewFolder,
+    FileManagerBrowserTest,
+    ::testing::Values(TestParameter(NOT_IN_GUEST_MODE,
+                                    "createNewFolderAfterSelectFile"),
+                      TestParameter(IN_GUEST_MODE,
+                                    "createNewFolderDownloads"),
+                      TestParameter(NOT_IN_GUEST_MODE,
+                                    "createNewFolderDownloads"),
+                      TestParameter(NOT_IN_GUEST_MODE,
+                                    "createNewFolderDrive")));
+
+INSTANTIATE_TEST_CASE_P(
     KeyboardOperations,
     FileManagerBrowserTest,
     ::testing::Values(TestParameter(IN_GUEST_MODE, "keyboardDeleteDownloads"),
@@ -762,12 +771,6 @@ INSTANTIATE_TEST_CASE_P(
                       TestParameter(IN_GUEST_MODE, "keyboardCopyDownloads"),
                       TestParameter(NOT_IN_GUEST_MODE, "keyboardCopyDownloads"),
                       TestParameter(NOT_IN_GUEST_MODE, "keyboardCopyDrive"),
-                      TestParameter(IN_GUEST_MODE,
-                                    "createNewFolderDownloads"),
-                      TestParameter(NOT_IN_GUEST_MODE,
-                                    "createNewFolderDownloads"),
-                      TestParameter(NOT_IN_GUEST_MODE,
-                                    "createNewFolderDrive"),
                       TestParameter(IN_GUEST_MODE,
                                     "renameFileDownloads"),
                       TestParameter(NOT_IN_GUEST_MODE,
@@ -873,7 +876,10 @@ INSTANTIATE_TEST_CASE_P(
     ::testing::Values(
         TestParameter(NOT_IN_GUEST_MODE, "copyBetweenWindowsLocalToDrive"),
         TestParameter(NOT_IN_GUEST_MODE, "copyBetweenWindowsLocalToUsb"),
-        TestParameter(NOT_IN_GUEST_MODE, "copyBetweenWindowsUsbToDrive")));
+        TestParameter(NOT_IN_GUEST_MODE, "copyBetweenWindowsUsbToDrive"),
+        TestParameter(NOT_IN_GUEST_MODE, "copyBetweenWindowsDriveToLocal"),
+        TestParameter(NOT_IN_GUEST_MODE, "copyBetweenWindowsDriveToUsb"),
+        TestParameter(NOT_IN_GUEST_MODE, "copyBetweenWindowsUsbToLocal")));
 
 // Structure to describe an account info.
 struct TestAccountInfo {
@@ -901,7 +907,6 @@ class MultiProfileFileManagerBrowserTest : public FileManagerBrowserTestBase {
   // Enables multi-profiles.
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     FileManagerBrowserTestBase::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(switches::kMultiProfiles);
     // Logs in to a dummy profile (For making MultiProfileWindowManager happy;
     // browser test creates a default window and the manager tries to assign a
     // user for it, and we need a profile connected to a user.)

@@ -361,7 +361,7 @@ class NotificationBridge
 }
 
 - (void)mouseExited:(NSEvent*)theEvent {
-  [[hoveredButton_ cell] setMouseInside:NO animate:YES];
+  [[hoveredButton_ cell] setIsMouseInside:NO];
   [hoveredButton_ release];
   hoveredButton_ = nil;
 }
@@ -374,7 +374,7 @@ class NotificationBridge
   // button cell that cares.  GradientButtonCell derived cells care.
   if (([targetView isKindOfClass:[NSButton class]]) &&
       ([[targetView cell]
-         respondsToSelector:@selector(setMouseInside:animate:)]))
+         respondsToSelector:@selector(setIsMouseInside:)]))
     return targetView;
   return nil;
 }
@@ -382,8 +382,8 @@ class NotificationBridge
 - (void)mouseMoved:(NSEvent*)theEvent {
   NSButton* targetView = [self hoverButtonForEvent:theEvent];
   if (hoveredButton_ != targetView) {
-    [[hoveredButton_ cell] setMouseInside:NO animate:YES];
-    [[targetView cell] setMouseInside:YES animate:YES];
+    [[hoveredButton_ cell] setIsMouseInside:NO];
+    [[targetView cell] setIsMouseInside:YES];
     [hoveredButton_ release];
     hoveredButton_ = [targetView retain];
   }
@@ -818,7 +818,7 @@ class NotificationBridge
   GURL url(URLFixerUpper::FixupURL(
       base::SysNSStringToUTF8([urls objectAtIndex:0]), std::string()));
 
-  if (url.SchemeIs(content::kJavaScriptScheme)) {
+  if (url.SchemeIs(url::kJavaScriptScheme)) {
     browser_->window()->GetLocationBar()->GetOmniboxView()->SetUserText(
           OmniboxView::StripJavascriptSchemas(base::UTF8ToUTF16(url.spec())));
   }

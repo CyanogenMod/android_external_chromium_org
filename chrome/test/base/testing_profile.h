@@ -11,14 +11,11 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/profiles/profile.h"
+#include "components/domain_reliability/clear_mode.h"
 #include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 
 namespace content {
 class MockResourceContext;
-}
-
-namespace extensions {
-class ExtensionPrefs;
 }
 
 namespace history {
@@ -44,8 +41,6 @@ class BrowserContextDependencyManager;
 class ExtensionSpecialStoragePolicy;
 class HostContentSettingsMap;
 class PrefServiceSyncable;
-class ProfileSyncService;
-class TemplateURLService;
 class TestingPrefServiceSyncable;
 
 class TestingProfile : public Profile {
@@ -182,7 +177,7 @@ class TestingProfile : public Profile {
   // Shuts down and nulls out the reference to TopSites.
   void DestroyTopSites();
 
-  // Creates the BookmkarBarModel. If not invoked the bookmark bar model is
+  // Creates the BookmarkBarModel. If not invoked the bookmark bar model is
   // NULL. If |delete_file| is true, the bookmarks file is deleted first, then
   // the model is created. As TestingProfile deletes the directory containing
   // the files used by HistoryService, the boolean only matters if you're
@@ -216,14 +211,13 @@ class TestingProfile : public Profile {
   virtual net::URLRequestContextGetter* GetRequestContext() OVERRIDE;
   virtual net::URLRequestContextGetter* CreateRequestContext(
       content::ProtocolHandlerMap* protocol_handlers,
-      content::ProtocolHandlerScopedVector protocol_interceptors) OVERRIDE;
+      content::URLRequestInterceptorScopedVector request_interceptors) OVERRIDE;
   virtual net::URLRequestContextGetter* GetRequestContextForRenderProcess(
       int renderer_child_id) OVERRIDE;
   virtual content::ResourceContext* GetResourceContext() OVERRIDE;
   virtual content::GeolocationPermissionContext*
       GetGeolocationPermissionContext() OVERRIDE;
-  virtual content::BrowserPluginGuestManagerDelegate*
-      GetGuestManagerDelegate() OVERRIDE;
+  virtual content::BrowserPluginGuestManager* GetGuestManager() OVERRIDE;
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
 
   virtual TestingProfile* AsTestingProfile() OVERRIDE;
@@ -296,30 +290,22 @@ class TestingProfile : public Profile {
   virtual void RequestProtectedMediaIdentifierPermission(
       int render_process_id,
       int render_view_id,
-      int bridge_id,
-      int group_id,
-      const GURL& requesting_frame,
+      const GURL& origin,
       const ProtectedMediaIdentifierPermissionCallback& callback) OVERRIDE;
   virtual void CancelProtectedMediaIdentifierPermissionRequests(
-      int group_id) OVERRIDE;
+      int render_process_id,
+      int render_view_id,
+      const GURL& origin) OVERRIDE;
   virtual net::URLRequestContextGetter* CreateRequestContextForStoragePartition(
       const base::FilePath& partition_path,
       bool in_memory,
       content::ProtocolHandlerMap* protocol_handlers,
-      content::ProtocolHandlerScopedVector protocol_interceptors) OVERRIDE;
+      content::URLRequestInterceptorScopedVector request_interceptors) OVERRIDE;
   virtual net::SSLConfigService* GetSSLConfigService() OVERRIDE;
   virtual HostContentSettingsMap* GetHostContentSettingsMap() OVERRIDE;
-  virtual std::wstring GetName();
-  virtual void SetName(const std::wstring& name) {}
-  virtual std::wstring GetID();
-  virtual void SetID(const std::wstring& id);
   void set_last_session_exited_cleanly(bool value) {
     last_session_exited_cleanly_ = value;
   }
-  virtual void MergeResourceString(int message_id,
-                                   std::wstring* output_string) {}
-  virtual void MergeResourceInteger(int message_id, int* output_value) {}
-  virtual void MergeResourceBoolean(int message_id, bool* output_value) {}
   virtual bool IsSameProfile(Profile *p) OVERRIDE;
   virtual base::Time GetStartTime() const OVERRIDE;
   virtual base::FilePath last_selected_directory() OVERRIDE;
@@ -348,6 +334,9 @@ class TestingProfile : public Profile {
   virtual chrome_browser_net::Predictor* GetNetworkPredictor() OVERRIDE;
   virtual void ClearNetworkingHistorySince(
       base::Time time,
+      const base::Closure& completion) OVERRIDE;
+  virtual void ClearDomainReliabilityMonitor(
+      domain_reliability::DomainReliabilityClearMode mode,
       const base::Closure& completion) OVERRIDE;
   virtual GURL GetHomePage() OVERRIDE;
 
@@ -383,8 +372,6 @@ class TestingProfile : public Profile {
   // Internally, this is a TestURLRequestContextGetter that creates a dummy
   // request context. Currently, only the CookieMonster is hooked up.
   scoped_refptr<net::URLRequestContextGetter> extensions_request_context_;
-
-  std::wstring id_;
 
   bool incognito_;
   bool force_incognito_;

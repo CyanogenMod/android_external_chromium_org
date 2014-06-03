@@ -16,6 +16,9 @@
 // Google employees: please update http://go/chrome-api-whitelist to map
 // hashes back to ids.
 
+// If you add a new platform_app permission please update the "stubs_app" test:
+// chrome/test/data/extensions/api_test/stubs_app/manifest.json
+
 {
   "accessibilityFeatures.modify": {
     "channel": "dev",
@@ -67,10 +70,46 @@
     "channel": "stable",
     "extension_types": ["platform_app"]
   },
-  "app.window.shape": {
-    "channel": "beta",
-    "extension_types": ["platform_app"]
-  },
+  "app.window.shape": [
+    {
+      "channel": "beta",
+      "extension_types": ["platform_app"]
+    },
+    {
+      "channel": "stable",
+      "extension_types": ["platform_app"],
+      "whitelist": [
+        "0F42756099D914A026DADFA182871C015735DD95",  // http://crbug.com/323773
+        "2D22CDB6583FD0A13758AEBE8B15E45208B4E9A7",
+        "E7E2461CE072DF036CF9592740196159E2D7C089",  // http://crbug.com/356200
+        "A74A4D44C7CFCD8844830E6140C8D763E12DD8F3",
+        "312745D9BF916161191143F6490085EEA0434997",
+        "53041A2FA309EECED01FFC751E7399186E860B2C",
+        "EBA908206905323CECE6DC4B276A58A0F4AC573F",
+        "2775E568AC98F9578791F1EAB65A1BF5F8CEF414",
+        "4AA3C5D69A4AECBD236CAD7884502209F0F5C169",
+        "E410CDAB2C6E6DD408D731016CECF2444000A912",
+        "9E930B2B5EABA6243AE6C710F126E54688E8FAF6",
+        "FAFE8EFDD2D6AE2EEB277AFEB91C870C79064D9E",  // http://crbug.com/327507
+        "3B52D273A271D4E2348233E322426DBAE854B567",
+        "5DF6ADC8708DF59FCFDDBF16AFBFB451380C2059",
+        "1037DEF5F6B06EA46153AD87B6C5C37440E3F2D1",
+        "F5815DAFEB8C53B078DD1853B2059E087C42F139",
+        "6A08EFFF9C16E090D6DCC7EC55A01CADAE840513",
+        "C32D6D93E12F5401DAA3A723E0C3CC5F25429BA4",  // http://crbug.com/354258
+        "9099782647D39C778E15C8C6E0D23C88F5CDE170",
+        "B7D5B52D1E5B106288BD7F278CAFA5E8D76108B0",
+        "89349DBAA2C4022FB244AA50182AB60934EB41EE",
+        "CB593E510640572A995CB1B6D41BD85ED51E63F8",
+        "1AD1AC86C87969CD3434FA08D99DBA6840AEA612",
+        "9C2EA21D7975BDF2B3C01C3A454EE44854067A6D",
+        "D2C488C80C3C90C3E01A991112A05E37831E17D0",
+        "6EEC061C0E74B46C7B5BE2EEFA49436368F4988F",
+        "8B344D9E8A4C505EF82A0DBBC25B8BD1F984E777",
+        "E06AFCB1EB0EFD237824CC4AC8FDD3D43E8BC868"
+      ]
+    }
+  ],
   "audio": [
     {
       "channel": "dev",
@@ -337,6 +376,12 @@
       "16CA7A47AAE4BE49B1E75A6B960C3875E945B264"   // Google Cast Stable
     ]
   },
+  "enterprise.platformKeys": {
+    "channel": "dev",
+    "platforms": ["chromeos"],
+    "extension_types": ["extension", "legacy_packaged_app"],
+    "location": "policy"
+  },
   "enterprise.platformKeysPrivate": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"],
@@ -502,6 +547,10 @@
     "extension_types": ["extension", "legacy_packaged_app", "platform_app"],
     "location": "component"
   }],
+  "ledger": {
+    "channel": "trunk",
+    "extension_types": ["extension", "platform_app"]
+  },
   "location": [
     {
       "channel": "dev",
@@ -617,7 +666,10 @@
       "3F65507A3B39259B38C8173C6FFA3D12DF64CCE9",  // http://crbug.com/371562.
       "06BE211D5F014BAB34BC22D9DDA09C63A81D828E",  // Official XKB virtual kbd
       "CFBF7EE448FA48960FFDA7CEB30F7A21B26AA981",  // Official m17n virtual kbd
-      "B9EF10DDFEA11EF77873CC5009809E5037FC4C7A"   // Google input tools
+      "B9EF10DDFEA11EF77873CC5009809E5037FC4C7A",  // Google input tools
+      "7D7A4B147FE39908A5AF13F85E38989C54BBE41C",  // http://crbug.com/374955
+      "0EEDFC0EED87871237213F34EBC7B4982A195C95",  // http://crbug.com/374955
+      "D2DAA9362153E8A5E3CF593E6DF4666421ABAD21"   // http://crbug.com/374965
     ]
   },
   "mdns": {
@@ -701,8 +753,8 @@
       "extension", "legacy_packaged_app", "platform_app"
     ]
   },
-  "preferencesPrivate":  {
-    "channel": "dev",
+  "preferencesPrivate": {
+    "channel": "stable",
     "extension_types": [
       "extension"
     ],
@@ -757,7 +809,8 @@
     "extension_types": ["platform_app"],
     "whitelist": [
       "A291B26E088FA6BA53FFD72F0916F06EBA7C585A", // http://crbug.com/329088
-      "D7986543275120831B39EF28D1327552FC343960"  // http://crbug.com/329088
+      "D7986543275120831B39EF28D1327552FC343960", // http://crbug.com/329088
+      "BCC85C0D7F85897F2699974421EA402144C35C0C"  // API Test
     ]
   },
   "readingListPrivate": {
@@ -819,6 +872,10 @@
   },
   "syncFileSystem": {
     "channel": "stable",
+    "extension_types": ["platform_app"]
+  },
+  "syncedNotificationsPrivate": {
+    "channel": "trunk",
     "extension_types": ["platform_app"]
   },
   "system.cpu": {

@@ -17,6 +17,7 @@
 #include "content/browser/compositor/resize_lock.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/common/gpu/client/gl_helper.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/host_shared_bitmap_manager.h"
 #include "content/common/input_messages.h"
@@ -168,9 +169,7 @@ class FakeRenderWidgetHostViewAura : public RenderWidgetHostViewAura {
   }
 
   virtual bool ShouldCreateResizeLock() OVERRIDE {
-    gfx::Size desired_size = window()->bounds().size();
-    return desired_size !=
-           GetDelegatedFrameHost()->CurrentFrameSizeInDIPForTesting();
+    return GetDelegatedFrameHost()->ShouldCreateResizeLockForTesting();
   }
 
   virtual void RequestCopyOfOutput(scoped_ptr<cc::CopyOutputRequest> request)
@@ -210,10 +209,11 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
       : browser_thread_for_ui_(BrowserThread::UI, &message_loop_) {}
 
   void SetUpEnvironment() {
+    ui::ContextFactory* context_factory = new ui::InProcessContextFactory;
     ImageTransportFactory::InitializeForUnitTests(
-        scoped_ptr<ui::ContextFactory>(new ui::InProcessContextFactory));
+        scoped_ptr<ui::ContextFactory>(context_factory));
     aura_test_helper_.reset(new aura::test::AuraTestHelper(&message_loop_));
-    aura_test_helper_->SetUp();
+    aura_test_helper_->SetUp(context_factory);
     new wm::DefaultActivationClient(aura_test_helper_->root_window());
 
     browser_context_.reset(new TestBrowserContext);
@@ -232,8 +232,6 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
     widget_host_ = new RenderWidgetHostImpl(
         &delegate_, process_host_, MSG_ROUTING_NONE, false);
     widget_host_->Init();
-    widget_host_->OnMessageReceived(
-        ViewHostMsg_DidActivateAcceleratedCompositing(0, true));
     view_ = new FakeRenderWidgetHostViewAura(widget_host_);
   }
 
@@ -955,6 +953,92 @@ TEST_F(RenderWidgetHostViewAuraTest, SwapNotifiesWindow) {
   view_->window_->RemoveObserver(&observer);
 }
 
+TEST_F(RenderWidgetHostViewAuraTest, Resize) {
+  gfx::Size size1(100, 100);
+  gfx::Size size2(200, 200);
+  gfx::Size size3(300, 300);
+
+  aura::Window* root_window = parent_view_->GetNativeView()->GetRootWindow();
+  view_->InitAsChild(NULL);
+  aura::client::ParentWindowWithContext(
+      view_->GetNativeView(), root_window, gfx::Rect(size1));
+  view_->WasShown();
+  view_->SetSize(size1);
+  view_->OnSwapCompositorFrame(
+      0, MakeDelegatedFrame(1.f, size1, gfx::Rect(size1)));
+  ui::DrawWaiterForTest::WaitForCommit(
+      root_window->GetHost()->compositor());
+  ViewHostMsg_UpdateRect_Params update_params;
+  update_params.view_size = size1;
+  update_params.scale_factor = 1.f;
+  update_params.flags = ViewHostMsg_UpdateRect_Flags::IS_RESIZE_ACK;
+  widget_host_->OnMessageReceived(
+      ViewHostMsg_UpdateRect(widget_host_->GetRoutingID(), update_params));
+  sink_->ClearMessages();
+  // Resize logic is idle (no pending resize, no pending commit).
+  EXPECT_EQ(size1.ToString(), view_->GetRequestedRendererSize().ToString());
+
+  // Resize renderer, should produce a Resize message
+  view_->SetSize(size2);
+  EXPECT_EQ(size2.ToString(), view_->GetRequestedRendererSize().ToString());
+  EXPECT_EQ(1u, sink_->message_count());
+  {
+    const IPC::Message* msg = sink_->GetMessageAt(0);
+    EXPECT_EQ(ViewMsg_Resize::ID, msg->type());
+    ViewMsg_Resize::Param params;
+    ViewMsg_Resize::Read(msg, &params);
+    EXPECT_EQ(size2.ToString(), params.a.new_size.ToString());
+  }
+  // Send resize ack to observe new Resize messages.
+  update_params.view_size = size2;
+  widget_host_->OnMessageReceived(
+      ViewHostMsg_UpdateRect(widget_host_->GetRoutingID(), update_params));
+  sink_->ClearMessages();
+
+  // Resize renderer again, before receiving a frame. Should not produce a
+  // Resize message.
+  view_->SetSize(size3);
+  EXPECT_EQ(size2.ToString(), view_->GetRequestedRendererSize().ToString());
+  EXPECT_EQ(0u, sink_->message_count());
+
+  // Receive a frame of the new size, should be skipped and not produce a Resize
+  // message.
+  view_->OnSwapCompositorFrame(
+      0, MakeDelegatedFrame(1.f, size3, gfx::Rect(size3)));
+  // Expect the frame ack;
+  EXPECT_EQ(1u, sink_->message_count());
+  EXPECT_EQ(ViewMsg_SwapCompositorFrameAck::ID, sink_->GetMessageAt(0)->type());
+  sink_->ClearMessages();
+  EXPECT_EQ(size2.ToString(), view_->GetRequestedRendererSize().ToString());
+
+  // Receive a frame of the correct size, should not be skipped and, and should
+  // produce a Resize message after the commit.
+  view_->OnSwapCompositorFrame(
+      0, MakeDelegatedFrame(1.f, size2, gfx::Rect(size2)));
+  // No frame ack yet.
+  EXPECT_EQ(0u, sink_->message_count());
+  EXPECT_EQ(size2.ToString(), view_->GetRequestedRendererSize().ToString());
+
+  // Wait for commit, then we should unlock the compositor and send a Resize
+  // message (and a frame ack)
+  ui::DrawWaiterForTest::WaitForCommit(
+      root_window->GetHost()->compositor());
+  EXPECT_EQ(size3.ToString(), view_->GetRequestedRendererSize().ToString());
+  EXPECT_EQ(2u, sink_->message_count());
+  EXPECT_EQ(ViewMsg_SwapCompositorFrameAck::ID, sink_->GetMessageAt(0)->type());
+  {
+    const IPC::Message* msg = sink_->GetMessageAt(1);
+    EXPECT_EQ(ViewMsg_Resize::ID, msg->type());
+    ViewMsg_Resize::Param params;
+    ViewMsg_Resize::Read(msg, &params);
+    EXPECT_EQ(size3.ToString(), params.a.new_size.ToString());
+  }
+  update_params.view_size = size3;
+  widget_host_->OnMessageReceived(
+      ViewHostMsg_UpdateRect(widget_host_->GetRoutingID(), update_params));
+  sink_->ClearMessages();
+}
+
 // Skipped frames should not drop their damage.
 TEST_F(RenderWidgetHostViewAuraTest, SkippedDelegatedFrames) {
   gfx::Rect view_rect(100, 100);
@@ -989,7 +1073,6 @@ TEST_F(RenderWidgetHostViewAuraTest, SkippedDelegatedFrames) {
   // Lock the compositor. Now we should drop frames.
   view_rect = gfx::Rect(150, 150);
   view_->SetSize(view_rect.size());
-  view_->GetDelegatedFrameHost()->MaybeCreateResizeLock();
 
   // This frame is dropped.
   gfx::Rect dropped_damage_rect_1(10, 20, 30, 40);
@@ -1025,6 +1108,21 @@ TEST_F(RenderWidgetHostViewAuraTest, SkippedDelegatedFrames) {
   testing::Mock::VerifyAndClearExpectations(&observer);
   view_->RunOnCompositingDidCommit();
 
+
+  // Resize to something empty.
+  view_rect = gfx::Rect(100, 0);
+  view_->SetSize(view_rect.size());
+
+  // We're never expecting empty frames, resize to something non-empty.
+  view_rect = gfx::Rect(100, 100);
+  view_->SetSize(view_rect.size());
+
+  // This frame should not be dropped.
+  EXPECT_CALL(observer, OnWindowPaintScheduled(view_->window_, view_rect));
+  view_->OnSwapCompositorFrame(
+      0, MakeDelegatedFrame(1.f, view_rect.size(), view_rect));
+  testing::Mock::VerifyAndClearExpectations(&observer);
+  view_->RunOnCompositingDidCommit();
 
   view_->window_->RemoveObserver(&observer);
 }
@@ -1092,8 +1190,6 @@ TEST_F(RenderWidgetHostViewAuraTest, DiscardDelegatedFrames) {
     hosts[i] = new RenderWidgetHostImpl(
         &delegate_, process_host_, MSG_ROUTING_NONE, false);
     hosts[i]->Init();
-    hosts[i]->OnMessageReceived(
-        ViewHostMsg_DidActivateAcceleratedCompositing(0, true));
     views[i] = new FakeRenderWidgetHostViewAura(hosts[i]);
     views[i]->InitAsChild(NULL);
     aura::client::ParentWindowWithContext(
@@ -1221,8 +1317,6 @@ TEST_F(RenderWidgetHostViewAuraTest, DiscardDelegatedFramesWithLocking) {
     hosts[i] = new RenderWidgetHostImpl(
         &delegate_, process_host_, MSG_ROUTING_NONE, false);
     hosts[i]->Init();
-    hosts[i]->OnMessageReceived(
-        ViewHostMsg_DidActivateAcceleratedCompositing(0, true));
     views[i] = new FakeRenderWidgetHostViewAura(hosts[i]);
     views[i]->InitAsChild(NULL);
     aura::client::ParentWindowWithContext(

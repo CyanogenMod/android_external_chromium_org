@@ -51,6 +51,11 @@ bool DeleteFile(const FilePath& path, bool recursive) {
   if (path.value().length() >= MAX_PATH)
     return false;
 
+  // On XP SHFileOperation will return ERROR_ACCESS_DENIED instead of
+  // ERROR_FILE_NOT_FOUND, so just shortcut this here.
+  if (path.empty())
+    return true;
+
   if (!recursive) {
     // If not recursing, then first check to see if |path| is a directory.
     // If it is, then remove it with RemoveDirectory.
@@ -89,8 +94,10 @@ bool DeleteFile(const FilePath& path, bool recursive) {
 
   // Some versions of Windows return ERROR_FILE_NOT_FOUND (0x2) when deleting
   // an empty directory and some return 0x402 when they should be returning
-  // ERROR_FILE_NOT_FOUND. MSDN says Vista and up won't return 0x402.
-  return (err == 0 || err == ERROR_FILE_NOT_FOUND || err == 0x402);
+  // ERROR_FILE_NOT_FOUND. MSDN says Vista and up won't return 0x402.  Windows 7
+  // can return DE_INVALIDFILES (0x7C) for nonexistent directories.
+  return (err == 0 || err == ERROR_FILE_NOT_FOUND || err == 0x402 ||
+          err == 0x7C);
 }
 
 bool DeleteFileAfterReboot(const FilePath& path) {
@@ -600,8 +607,8 @@ int WriteFile(const FilePath& filename, const char* data, int size) {
                                           0,
                                           NULL));
   if (!file) {
-    DLOG_GETLASTERROR(WARNING) << "CreateFile failed for path "
-                               << UTF16ToUTF8(filename.value());
+    DPLOG(WARNING) << "CreateFile failed for path "
+                   << UTF16ToUTF8(filename.value());
     return -1;
   }
 
@@ -612,8 +619,8 @@ int WriteFile(const FilePath& filename, const char* data, int size) {
 
   if (!result) {
     // WriteFile failed.
-    DLOG_GETLASTERROR(WARNING) << "writing file "
-                               << UTF16ToUTF8(filename.value()) << " failed";
+    DPLOG(WARNING) << "writing file " << UTF16ToUTF8(filename.value())
+                   << " failed";
   } else {
     // Didn't write all the bytes.
     DLOG(WARNING) << "wrote" << written << " bytes to "
@@ -632,8 +639,8 @@ int AppendToFile(const FilePath& filename, const char* data, int size) {
                                           0,
                                           NULL));
   if (!file) {
-    DLOG_GETLASTERROR(WARNING) << "CreateFile failed for path "
-                               << UTF16ToUTF8(filename.value());
+    DPLOG(WARNING) << "CreateFile failed for path "
+                   << UTF16ToUTF8(filename.value());
     return -1;
   }
 
@@ -644,9 +651,8 @@ int AppendToFile(const FilePath& filename, const char* data, int size) {
 
   if (!result) {
     // WriteFile failed.
-    DLOG_GETLASTERROR(WARNING) << "writing file "
-                               << UTF16ToUTF8(filename.value())
-                               << " failed";
+    DPLOG(WARNING) << "writing file " << UTF16ToUTF8(filename.value())
+                   << " failed";
   } else {
     // Didn't write all the bytes.
     DLOG(WARNING) << "wrote" << written << " bytes to "

@@ -281,7 +281,7 @@
         'config/gpu_util_unittest.cc',
       ],
       'conditions': [
-        ['OS == "android" and gtest_target_type == "shared_library"', {
+        ['OS == "android"', {
           'dependencies': [
             '../testing/android/native_test.gyp:native_test_native_code',
           ],
@@ -350,7 +350,7 @@
         'command_buffer/tests/occlusion_query_unittest.cc',
       ],
       'conditions': [
-        ['OS == "android" and gtest_target_type == "shared_library"', {
+        ['OS == "android"', {
           'dependencies': [
             '../testing/android/native_test.gyp:native_test_native_code',
           ],
@@ -591,7 +591,7 @@
         },
       ],
     }],
-    ['OS == "android" and gtest_target_type == "shared_library"', {
+    ['OS == "android"', {
       'targets': [
         {
           'target_name': 'gl_tests_apk',
@@ -605,6 +605,17 @@
           'includes': [
             '../build/apk_test.gypi',
           ],
+        },
+        {
+          'target_name': 'gpu_unittests_apk',
+          'type': 'none',
+          'dependencies': [
+            'gpu_unittests',
+          ],
+          'variables': {
+            'test_suite_name': 'gpu_unittests',
+          },
+          'includes': [ '../build/apk_test.gypi' ],
         },
       ],
     }],

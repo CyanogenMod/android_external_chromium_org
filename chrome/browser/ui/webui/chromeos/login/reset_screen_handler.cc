@@ -6,7 +6,13 @@
 
 #include <string>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/callback.h"
 #include "base/command_line.h"
+#include "base/file_util.h"
+#include "base/files/file_path.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/values.h"
@@ -14,13 +20,13 @@
 #include "chrome/browser/chromeos/login/help_app_launcher.h"
 #include "chrome/browser/chromeos/reset/metrics.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_manager_client.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/dbus/update_engine_client.h"
+#include "content/public/browser/browser_thread.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -34,6 +40,13 @@ const char kJsScreenPath[] = "login.ResetScreen";
 const char kResetScreen[] = "reset";
 
 const int kErrorUIStateRollback = 7;
+
+static const char kRollbackFlagFile[] = "/tmp/.enable_rollback_ui";
+
+void CheckRollbackFlagFileExists(bool *file_exists) {
+  DCHECK(content::BrowserThread::GetBlockingPool()->RunsTasksOnCurrentThread());
+  *file_exists = base::PathExists(base::FilePath(kRollbackFlagFile));
+}
 
 }  // namespace
 
@@ -95,6 +108,10 @@ void ResetScreenHandler::Show() {
     return;
   }
 
+  ChooseAndApplyShowScenario();
+}
+
+void ResetScreenHandler::ChooseAndApplyShowScenario() {
   PrefService* prefs = g_browser_process->local_state();
   restart_required_ = !CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kFirstExecAfterBoot);
@@ -102,8 +119,34 @@ void ResetScreenHandler::Show() {
   rollback_available_ = false;
   if (!restart_required_)  // First exec after boot.
     reboot_was_requested_ = prefs->GetBoolean(prefs::kFactoryResetRequested);
-  if (!restart_required_ && reboot_was_requested_) {
+
+  // Check Rollback flag-file.
+  scoped_ptr<bool> file_exists(new bool(false));
+  base::Closure checkfile_closure = base::Bind(
+      &CheckRollbackFlagFileExists,
+      base::Unretained(file_exists.get()));
+  base::Closure on_check_done = base::Bind(
+      &ResetScreenHandler::OnRollbackFlagFileCheckDone,
+      weak_ptr_factory_.GetWeakPtr(),
+      base::Passed(file_exists.Pass()));
+  if (!content::BrowserThread::PostBlockingPoolTaskAndReply(
+          FROM_HERE,
+          checkfile_closure,
+          on_check_done)) {
+    LOG(WARNING) << "Failed to check flag file for Rollback reset option";
+    on_check_done.Run();
+  }
+}
+
+void ResetScreenHandler::OnRollbackFlagFileCheckDone(
+    scoped_ptr<bool> file_exists) {
+  if (!(*file_exists) && !CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableRollbackOption)) {
+    rollback_available_ = false;
+    ShowWithParams();
+  } else if (!restart_required_ && reboot_was_requested_) {
     // First exec after boot.
+    PrefService* prefs = g_browser_process->local_state();
     rollback_available_ = prefs->GetBoolean(prefs::kRollbackRequested);
     ShowWithParams();
   } else {
@@ -126,6 +169,8 @@ void ResetScreenHandler::SetDelegate(Delegate* delegate) {
 void ResetScreenHandler::DeclareLocalizedValues(
     LocalizedValuesBuilder* builder) {
   builder->Add("resetScreenTitle", IDS_RESET_SCREEN_TITLE);
+  builder->Add("resetScreenAccessibleTitle", IDS_RESET_SCREEN_TITLE);
+  builder->Add("resetScreenIconTitle",IDS_RESET_SCREEN_ICON_TITLE);
   builder->Add("cancelButton", IDS_CANCEL);
 
   builder->Add("resetWarningDataDetails",
@@ -135,8 +180,8 @@ void ResetScreenHandler::DeclareLocalizedValues(
                 IDS_RESET_SCREEN_ROLLBACK_OPTION,
                 IDS_SHORT_PRODUCT_NAME);
   builder->AddF("resetRevertPromise",
-               IDS_RESET_SCREEN_PREPARING_REVERT_PROMISE,
-               IDS_SHORT_PRODUCT_NAME);
+                IDS_RESET_SCREEN_PREPARING_REVERT_PROMISE,
+                IDS_SHORT_PRODUCT_NAME);
   builder->AddF("resetRevertSpinnerMessage",
                 IDS_RESET_SCREEN_PREPARING_REVERT_SPINNER_MESSAGE,
                 IDS_SHORT_PRODUCT_NAME);
@@ -231,6 +276,7 @@ void ResetScreenHandler::HandleOnLearnMore() {
 
 void ResetScreenHandler::UpdateStatusChanged(
     const UpdateEngineClient::Status& status) {
+  VLOG(1) << "Update status change to " << status.status;
   if (status.status == UpdateEngineClient::UPDATE_STATUS_ERROR) {
     // Show error screen.
     base::DictionaryValue params;

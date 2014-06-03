@@ -332,7 +332,7 @@ void CreateApplicationShortcutView::InitControls() {
   }
 }
 
-gfx::Size CreateApplicationShortcutView::GetPreferredSize() {
+gfx::Size CreateApplicationShortcutView::GetPreferredSize() const {
   // TODO(evanm): should this use IDS_CREATE_SHORTCUTS_DIALOG_WIDTH_CHARS?
   static const int kDialogWidth = 360;
   int height = GetLayoutManager()->GetPreferredHeightForWidth(this,
@@ -495,8 +495,9 @@ void CreateUrlApplicationShortcutView::DidDownloadFavicon(
 
   if (!bitmaps.empty()) {
     std::vector<ui::ScaleFactor> scale_factors;
-    ui::ScaleFactor scale_factor = ui::GetScaleFactorForNativeView(
-        web_contents_->GetRenderViewHost()->GetView()->GetNativeView());
+    ui::ScaleFactor scale_factor = ui::GetSupportedScaleFactor(
+        ui::GetScaleFactorForNativeView(
+            web_contents_->GetRenderViewHost()->GetView()->GetNativeView()));
     scale_factors.push_back(scale_factor);
     std::vector<size_t> closest_indices;
     SelectFaviconFrameIndices(original_bitmap_sizes,

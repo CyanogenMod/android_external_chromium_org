@@ -5,12 +5,15 @@
 #include "content/browser/frame_host/navigation_controller_impl.h"
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"  // Temporary
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "cc/base/switches.h"
 #include "content/browser/browser_url_handler_impl.h"
 #include "content/browser/dom_storage/dom_storage_context_wrapper.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
@@ -34,11 +37,11 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_constants.h"
-#include "content/public/common/url_constants.h"
 #include "net/base/escape.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_util.h"
 #include "skia/ext/platform_canvas.h"
+#include "url/url_constants.h"
 
 namespace content {
 namespace {
@@ -335,9 +338,9 @@ void NavigationControllerImpl::ReloadInternal(bool check_for_repost,
     // instance, and should not be treated as a cross-site reload.
     SiteInstanceImpl* site_instance = entry->site_instance();
     // Permit reloading guests without further checks.
-    bool is_guest = site_instance && site_instance->HasProcess() &&
-                    site_instance->GetProcess()->IsGuest();
-    if (!is_guest && site_instance &&
+    bool is_isolated_guest = site_instance && site_instance->HasProcess() &&
+        site_instance->GetProcess()->IsIsolatedGuest();
+    if (!is_isolated_guest && site_instance &&
         site_instance->HasWrongProcessForURL(entry->GetURL())) {
       // Create a navigation entry that resembles the current one, but do not
       // copy page id, site instance, content state, or timestamp.
@@ -661,7 +664,7 @@ void NavigationControllerImpl::LoadURLWithParams(const LoadURLParams& params) {
       }
       break;
     case LOAD_TYPE_DATA:
-      if (!params.url.SchemeIs(kDataScheme)) {
+      if (!params.url.SchemeIs(url::kDataScheme)) {
         NOTREACHED() << "Data load must use data scheme.";
         return;
       }
@@ -823,6 +826,14 @@ bool NavigationControllerImpl::RendererDidNavigate(
   active_entry->SetHttpStatusCode(params.http_status_code);
   active_entry->SetPageState(params.page_state);
   active_entry->SetRedirectChain(params.redirects);
+
+  // Use histogram to track memory impact of redirect chain because it's now
+  // not cleared for committed entries.
+  size_t redirect_chain_size = 0;
+  for (size_t i = 0; i < params.redirects.size(); ++i) {
+    redirect_chain_size += params.redirects[i].spec().length();
+  }
+  UMA_HISTOGRAM_COUNTS("Navigation.RedirectChainSize", redirect_chain_size);
 
   // Once it is committed, we no longer need to track several pieces of state on
   // the entry.
@@ -1012,8 +1023,18 @@ void NavigationControllerImpl::RendererDidNavigateToNewPage(
     // update the virtual URL when replaceState is called after a pushState.
     GURL url = params.url;
     bool needs_update = false;
-    BrowserURLHandlerImpl::GetInstance()->RewriteURLIfNecessary(
-        &url, browser_context_, &needs_update);
+    // We call RewriteURLIfNecessary twice: once when page navigation
+    // begins in CreateNavigationEntry, and once here when it commits.
+    // With the kEnableGpuBenchmarking flag, the rewriting includes
+    // handling debug URLs which cause an action to occur, and thus we
+    // should not rewrite them a second time.
+    bool skip_rewrite =
+        IsDebugURL(url) && base::CommandLine::ForCurrentProcess()->HasSwitch(
+            cc::switches::kEnableGpuBenchmarking);
+    if (!skip_rewrite) {
+      BrowserURLHandlerImpl::GetInstance()->RewriteURLIfNecessary(
+          &url, browser_context_, &needs_update);
+    }
     new_entry->set_update_virtual_url_with_url(needs_update);
 
     // When navigating to a new page, give the browser URL handler a chance to

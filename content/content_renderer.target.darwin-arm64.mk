@@ -14,7 +14,7 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_V
 GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,content_content_resources_gyp,,,$(GYP_VAR_PREFIX))/content_resources.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_common_mojo_bindings_gyp,,,$(GYP_VAR_PREFIX))/content_content_common_mojo_bindings_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_shell_bindings_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_shell_bindings_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_service_provider_bindings_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_service_provider_bindings_gyp.a \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp,,,$(GYP_VAR_PREFIX))/skia.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp,,,$(GYP_VAR_PREFIX))/skia_skia_library_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp,,,$(GYP_VAR_PREFIX))/blink.stamp \
@@ -58,6 +58,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/android/email_detector.cc \
 	content/renderer/android/phone_number_detector.cc \
 	content/renderer/android/synchronous_compositor_factory.cc \
+	content/renderer/battery_status/battery_status_dispatcher.cc \
 	content/renderer/browser_plugin/browser_plugin.cc \
 	content/renderer/browser_plugin/browser_plugin_bindings.cc \
 	content/renderer/browser_plugin/browser_plugin_manager_impl.cc \
@@ -104,14 +105,15 @@ LOCAL_SRC_FILES := \
 	content/renderer/input/input_handler_proxy.cc \
 	content/renderer/input/input_handler_wrapper.cc \
 	content/renderer/internal_document_state_data.cc \
+	content/renderer/java/gin_java_bridge_dispatcher.cc \
+	content/renderer/java/gin_java_bridge_object.cc \
+	content/renderer/java/gin_java_bridge_value_converter.cc \
 	content/renderer/java/java_bridge_channel.cc \
 	content/renderer/java/java_bridge_dispatcher.cc \
-	content/renderer/load_progress_tracker.cc \
 	content/renderer/media/active_loader.cc \
 	content/renderer/media/android/audio_decoder_android.cc \
 	content/renderer/media/android/media_info_loader.cc \
 	content/renderer/media/android/media_source_delegate.cc \
-	content/renderer/media/android/proxy_media_keys.cc \
 	content/renderer/media/android/renderer_demuxer_android.cc \
 	content/renderer/media/android/renderer_media_player_manager.cc \
 	content/renderer/media/android/stream_texture_factory_impl.cc \
@@ -131,8 +133,11 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/crypto/key_systems_support_uma.cc \
 	content/renderer/media/crypto/pepper_cdm_wrapper_impl.cc \
 	content/renderer/media/crypto/proxy_decryptor.cc \
+	content/renderer/media/crypto/proxy_media_keys.cc \
+	content/renderer/media/crypto/renderer_cdm_manager.cc \
 	content/renderer/media/media_stream_audio_level_calculator.cc \
 	content/renderer/media/media_stream_audio_renderer.cc \
+	content/renderer/media/media_stream_constraints_util.cc \
 	content/renderer/media/media_stream_track.cc \
 	content/renderer/media/midi_dispatcher.cc \
 	content/renderer/media/midi_message_filter.cc \
@@ -159,8 +164,10 @@ LOCAL_SRC_FILES := \
 	content/renderer/menu_item_builder.cc \
 	content/renderer/mhtml_generator.cc \
 	content/renderer/mouse_lock_dispatcher.cc \
+	content/renderer/net_info_helper.cc \
 	content/renderer/push_messaging_dispatcher.cc \
 	content/renderer/render_frame_impl.cc \
+	content/renderer/render_frame_proxy.cc \
 	content/renderer/render_process_impl.cc \
 	content/renderer/render_thread_impl.cc \
 	content/renderer/render_view_impl.cc \
@@ -181,6 +188,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/resizing_mode_selector.cc \
 	content/renderer/sad_plugin.cc \
 	content/renderer/savable_resources.cc \
+	content/renderer/screen_orientation/mock_screen_orientation_controller.cc \
 	content/renderer/screen_orientation/screen_orientation_dispatcher.cc \
 	content/renderer/scoped_clipboard_writer_glue.cc \
 	content/renderer/service_worker/embedded_worker_context_client.cc \
@@ -217,10 +225,10 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/media_stream_audio_processor_options.cc \
 	content/renderer/media/media_stream_audio_sink_owner.cc \
 	content/renderer/media/media_stream_center.cc \
-	content/renderer/media/media_stream_dependency_factory.cc \
 	content/renderer/media/media_stream_dispatcher.cc \
 	content/renderer/media/media_stream_impl.cc \
 	content/renderer/media/media_stream_audio_source.cc \
+	content/renderer/media/media_stream_renderer_factory.cc \
 	content/renderer/media/media_stream_source.cc \
 	content/renderer/media/media_stream_video_capturer_source.cc \
 	content/renderer/media/media_stream_video_source.cc \
@@ -241,10 +249,12 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/rtc_video_renderer.cc \
 	content/renderer/media/video_frame_deliverer.cc \
 	content/renderer/media/video_source_handler.cc \
+	content/renderer/media/video_track_adapter.cc \
 	content/renderer/media/webaudio_capturer_source.cc \
 	content/renderer/media/webrtc/webrtc_video_track_adapter.cc \
 	content/renderer/media/webrtc/media_stream_remote_video_source.cc \
 	content/renderer/media/webrtc/media_stream_track_metrics.cc \
+	content/renderer/media/webrtc/peer_connection_dependency_factory.cc \
 	content/renderer/media/webrtc/webrtc_audio_sink_adapter.cc \
 	content/renderer/media/webrtc/webrtc_local_audio_track_adapter.cc \
 	content/renderer/media/webrtc/webrtc_media_stream_adapter.cc \
@@ -310,12 +320,17 @@ MY_DEFS_Debug := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
+	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
+	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
+	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DVIDEO_HOLE=1' \
 	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DLIBPEERCONNECTION_LIB=1' \
@@ -328,10 +343,12 @@ MY_DEFS_Debug := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
+	'-DSK_SUPPORT_LEGACY_ASIMAGEINFO' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
+	'-DSK_IGNORE_CORRECT_HIGH_QUALITY_IMAGE_SCALE' \
+	'-DSK_SUPPORT_LEGACY_INSTALLPIXELSPARAMS' \
+	'-DSK_SUPPORT_LEGACY_IMAGEGENERATORAPI' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
@@ -357,6 +374,7 @@ MY_DEFS_Debug := \
 	'-DWEBRTC_LINUX' \
 	'-DWEBRTC_ANDROID' \
 	'-DWEBRTC_ANDROID_OPENSLES' \
+	'-DWEBRTC_POSIX' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -406,6 +424,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(PWD)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/libjingle/overrides \
 	$(LOCAL_PATH)/third_party/libjingle/source \
+	$(LOCAL_PATH)/third_party/webrtc/overrides \
 	$(LOCAL_PATH)/testing/gtest/include \
 	$(LOCAL_PATH)/third_party \
 	$(LOCAL_PATH)/third_party/webrtc \
@@ -480,12 +499,17 @@ MY_DEFS_Release := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
+	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
+	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
+	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DVIDEO_HOLE=1' \
 	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DLIBPEERCONNECTION_LIB=1' \
@@ -498,10 +522,12 @@ MY_DEFS_Release := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
+	'-DSK_SUPPORT_LEGACY_ASIMAGEINFO' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
+	'-DSK_IGNORE_CORRECT_HIGH_QUALITY_IMAGE_SCALE' \
+	'-DSK_SUPPORT_LEGACY_INSTALLPIXELSPARAMS' \
+	'-DSK_SUPPORT_LEGACY_IMAGEGENERATORAPI' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
@@ -527,6 +553,7 @@ MY_DEFS_Release := \
 	'-DWEBRTC_LINUX' \
 	'-DWEBRTC_ANDROID' \
 	'-DWEBRTC_ANDROID_OPENSLES' \
+	'-DWEBRTC_POSIX' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -577,6 +604,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(PWD)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/libjingle/overrides \
 	$(LOCAL_PATH)/third_party/libjingle/source \
+	$(LOCAL_PATH)/third_party/webrtc/overrides \
 	$(LOCAL_PATH)/testing/gtest/include \
 	$(LOCAL_PATH)/third_party \
 	$(LOCAL_PATH)/third_party/webrtc \
@@ -648,7 +676,7 @@ LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 LOCAL_STATIC_LIBRARIES := \
 	cpufeatures \
 	content_content_common_mojo_bindings_gyp \
-	mojo_mojo_shell_bindings_gyp \
+	mojo_mojo_service_provider_bindings_gyp \
 	skia_skia_library_gyp \
 	ui_accessibility_accessibility_gyp \
 	ui_accessibility_ax_gen_gyp \

@@ -19,6 +19,7 @@
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/extension_system_provider.h"
 #include "extensions/browser/extensions_browser_client.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_icon_set.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
@@ -139,7 +140,7 @@ bool AppResult::RunExtensionEnableFlow() {
     return false;
 
   if (!extension_enable_flow_) {
-    controller_->OnShowExtensionPrompt();
+    controller_->OnShowChildDialog();
 
     extension_enable_flow_.reset(new ExtensionEnableFlow(
         profile_, app_id_, this));
@@ -171,7 +172,7 @@ void AppResult::ExecuteLaunchCommand(int event_flags) {
 
 void AppResult::ExtensionEnableFlowFinished() {
   extension_enable_flow_.reset();
-  controller_->OnCloseExtensionPrompt();
+  controller_->OnCloseChildDialog();
 
   // Automatically open app after enabling.
   Open(ui::EF_NONE);
@@ -179,7 +180,7 @@ void AppResult::ExtensionEnableFlowFinished() {
 
 void AppResult::ExtensionEnableFlowAborted(bool user_initiated) {
   extension_enable_flow_.reset();
-  controller_->OnCloseExtensionPrompt();
+  controller_->OnCloseChildDialog();
 }
 
 void AppResult::OnExtensionLoaded(const extensions::Extension* extension) {

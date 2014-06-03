@@ -23,6 +23,8 @@ using autofill::PasswordForm;
 using base::UTF8ToUTF16;
 using base::UTF16ToUTF8;
 using content::BrowserThread;
+using password_manager::PasswordStoreChange;
+using password_manager::PasswordStoreChangeList;
 
 namespace {
 
@@ -278,6 +280,33 @@ class MockGnomeKeyringLoader : public GnomeKeyringLoader {
   }
 };
 
+void CheckPasswordChanges(const PasswordStoreChangeList& expected_list,
+                          const PasswordStoreChangeList& actual_list) {
+  ASSERT_EQ(expected_list.size(), actual_list.size());
+  for (size_t i = 0; i < expected_list.size(); ++i) {
+    EXPECT_EQ(expected_list[i].type(), actual_list[i].type());
+    const PasswordForm& expected = expected_list[i].form();
+    const PasswordForm& actual = actual_list[i].form();
+
+    EXPECT_EQ(expected.origin, actual.origin);
+    EXPECT_EQ(expected.password_value, actual.password_value);
+    EXPECT_EQ(expected.action, actual.action);
+    EXPECT_EQ(expected.username_element, actual.username_element);
+    EXPECT_EQ(expected.username_value, actual.username_value);
+    EXPECT_EQ(expected.password_element, actual.password_element);
+    EXPECT_EQ(expected.submit_element, actual.submit_element);
+    EXPECT_EQ(expected.signon_realm, actual.signon_realm);
+    EXPECT_EQ(expected.ssl_valid, actual.ssl_valid);
+    EXPECT_EQ(expected.preferred, actual.preferred);
+    // We don't check the date created. It varies due to bug in the
+    // serialization. Integer seconds are saved instead of microseconds.
+    EXPECT_EQ(expected.blacklisted_by_user, actual.blacklisted_by_user);
+    EXPECT_EQ(expected.type, actual.type);
+    EXPECT_EQ(expected.times_used, actual.times_used);
+    EXPECT_EQ(expected.scheme, actual.scheme);
+  }
+}
+
 }  // anonymous namespace
 
 class NativeBackendGnomeTest : public testing::Test {
@@ -306,6 +335,7 @@ class NativeBackendGnomeTest : public testing::Test {
     form_google_.submit_element = UTF8ToUTF16("submit");
     form_google_.signon_realm = "http://www.google.com/";
     form_google_.type = PasswordForm::TYPE_GENERATED;
+    form_google_.date_created = base::Time::Now();
 
     form_facebook_.origin = GURL("http://www.facebook.com/");
     form_facebook_.action = GURL("http://www.facebook.com/login");
@@ -315,6 +345,7 @@ class NativeBackendGnomeTest : public testing::Test {
     form_facebook_.password_value = UTF8ToUTF16("b");
     form_facebook_.submit_element = UTF8ToUTF16("submit");
     form_facebook_.signon_realm = "http://www.facebook.com/";
+    form_facebook_.date_created = base::Time::Now();
 
     form_isc_.origin = GURL("http://www.isc.org/");
     form_isc_.action = GURL("http://www.isc.org/auth");
@@ -324,6 +355,13 @@ class NativeBackendGnomeTest : public testing::Test {
     form_isc_.password_value = UTF8ToUTF16("ihazabukkit");
     form_isc_.submit_element = UTF8ToUTF16("login");
     form_isc_.signon_realm = "http://www.isc.org/";
+    form_isc_.date_created = base::Time::Now();
+
+    other_auth_.origin = GURL("http://www.example.com/");
+    other_auth_.username_value = UTF8ToUTF16("username");
+    other_auth_.password_value = UTF8ToUTF16("pass");
+    other_auth_.signon_realm = "http://www.example.com/Realm";
+    other_auth_.date_created = base::Time::Now();
   }
 
   virtual void TearDown() {
@@ -401,12 +439,13 @@ class NativeBackendGnomeTest : public testing::Test {
     CheckStringAttribute(item, "application", app_string);
   }
 
-  // Saves |credentials| and then gets login for origin and realm |url|. Returns
-  // true when something is found, and in such case copies the result to
+  // Saves |credentials| and then gets logins matching |url| and |scheme|.
+  // Returns true when something is found, and in such case copies the result to
   // |result| when |result| is not NULL. (Note that there can be max. 1 result,
   // derived from |credentials|.)
   bool CheckCredentialAvailability(const PasswordForm& credentials,
                                    const GURL& url,
+                                   const PasswordForm::Scheme& scheme,
                                    PasswordForm* result) {
     NativeBackendGnome backend(321);
     backend.Init();
@@ -421,6 +460,13 @@ class NativeBackendGnomeTest : public testing::Test {
     PasswordForm target_form;
     target_form.origin = url;
     target_form.signon_realm = url.spec();
+    if (scheme != PasswordForm::SCHEME_HTML) {
+      // For non-HTML forms, the realm used for authentication
+      // (http://tools.ietf.org/html/rfc1945#section-10.2) is appended to the
+      // signon_realm. Just use a default value for now.
+      target_form.signon_realm.append("Realm");
+      target_form.scheme = scheme;
+    }
     std::vector<PasswordForm*> form_list;
     BrowserThread::PostTask(
         BrowserThread::DB,
@@ -435,6 +481,7 @@ class NativeBackendGnomeTest : public testing::Test {
     EXPECT_EQ(1u, mock_keyring_items.size());
     if (mock_keyring_items.size() > 0)
       CheckMockKeyringItem(&mock_keyring_items[0], credentials, "chrome-321");
+    mock_keyring_items.clear();
 
     if (form_list.empty())
       return false;
@@ -509,7 +556,8 @@ class NativeBackendGnomeTest : public testing::Test {
             FROM_HERE,
             base::Bind(base::IgnoreResult(&NativeBackendGnome::UpdateLogin),
                        base::Unretained(&backend),
-                       new_facebook));
+                       new_facebook,
+                       base::Owned(new PasswordStoreChangeList)));
         break;
       case UPDATE_BY_ADDLOGIN:
         BrowserThread::PostTask(
@@ -564,6 +612,24 @@ class NativeBackendGnomeTest : public testing::Test {
     STLDeleteElements(&form_list);
   }
 
+  void CheckMatchingWithScheme(const PasswordForm::Scheme& scheme) {
+    other_auth_.scheme = scheme;
+
+    // Don't match a non-HTML form with an HTML form.
+    EXPECT_FALSE(CheckCredentialAvailability(
+        other_auth_, GURL("http://www.example.com"),
+        PasswordForm::SCHEME_HTML, NULL));
+    // Don't match an HTML form with non-HTML auth form.
+    EXPECT_FALSE(CheckCredentialAvailability(
+        form_google_, GURL("http://www.google.com/"), scheme, NULL));
+    // Don't match two different non-HTML auth forms with different origin.
+    EXPECT_FALSE(CheckCredentialAvailability(
+        other_auth_, GURL("http://first.example.com"), scheme, NULL));
+    // Do match non-HTML forms from the same origin.
+    EXPECT_TRUE(CheckCredentialAvailability(
+        other_auth_, GURL("http://www.example.com/"), scheme, NULL));
+  }
+
   base::MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread db_thread_;
@@ -572,6 +638,7 @@ class NativeBackendGnomeTest : public testing::Test {
   PasswordForm form_google_;
   PasswordForm form_facebook_;
   PasswordForm form_isc_;
+  PasswordForm other_auth_;
 };
 
 TEST_F(NativeBackendGnomeTest, BasicAddLogin) {
@@ -623,7 +690,8 @@ TEST_F(NativeBackendGnomeTest, PSLMatchingPositive) {
   const GURL kMobileURL("http://m.facebook.com/");
   password_manager::PSLMatchingHelper helper;
   ASSERT_TRUE(helper.IsMatchingEnabled());
-  EXPECT_TRUE(CheckCredentialAvailability(form_facebook_, kMobileURL, &result));
+  EXPECT_TRUE(CheckCredentialAvailability(
+      form_facebook_, kMobileURL, PasswordForm::SCHEME_HTML, &result));
   EXPECT_EQ(kMobileURL, result.origin);
   EXPECT_EQ(kMobileURL.spec(), result.signon_realm);
 }
@@ -634,7 +702,8 @@ TEST_F(NativeBackendGnomeTest, PSLMatchingNegativeDomainMismatch) {
   password_manager::PSLMatchingHelper helper;
   ASSERT_TRUE(helper.IsMatchingEnabled());
   EXPECT_FALSE(CheckCredentialAvailability(
-      form_facebook_, GURL("http://m-facebook.com/"), NULL));
+      form_facebook_, GURL("http://m-facebook.com/"),
+      PasswordForm::SCHEME_HTML, NULL));
 }
 
 // Test PSL matching is off for domains excluded from it.
@@ -642,7 +711,19 @@ TEST_F(NativeBackendGnomeTest, PSLMatchingDisabledDomains) {
   password_manager::PSLMatchingHelper helper;
   ASSERT_TRUE(helper.IsMatchingEnabled());
   EXPECT_FALSE(CheckCredentialAvailability(
-      form_google_, GURL("http://one.google.com/"), NULL));
+      form_google_, GURL("http://one.google.com/"),
+      PasswordForm::SCHEME_HTML, NULL));
+}
+
+// Make sure PSL matches aren't available for non-HTML forms.
+TEST_F(NativeBackendGnomeTest, PSLMatchingDisabledForNonHTMLForms) {
+  password_manager::PSLMatchingHelper helper;
+  ASSERT_TRUE(helper.IsMatchingEnabled());
+
+  CheckMatchingWithScheme(PasswordForm::SCHEME_BASIC);
+  CheckMatchingWithScheme(PasswordForm::SCHEME_DIGEST);
+  CheckMatchingWithScheme(PasswordForm::SCHEME_OTHER);
+
 }
 
 TEST_F(NativeBackendGnomeTest, PSLUpdatingStrictUpdateLogin) {
@@ -676,13 +757,19 @@ TEST_F(NativeBackendGnomeTest, BasicUpdateLogin) {
     CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome-42");
 
   // Update login
+  PasswordStoreChangeList changes;
   BrowserThread::PostTask(
       BrowserThread::DB, FROM_HERE,
       base::Bind(base::IgnoreResult(&NativeBackendGnome::UpdateLogin),
-                 base::Unretained(&backend), new_form_google));
+                 base::Unretained(&backend),
+                 new_form_google,
+                 base::Unretained(&changes)));
 
   RunBothThreads();
 
+  ASSERT_EQ(1u, changes.size());
+  EXPECT_EQ(PasswordStoreChange::UPDATE, changes.front().type());
+  EXPECT_EQ(new_form_google, changes.front().form());
   EXPECT_EQ(1u, mock_keyring_items.size());
   if (mock_keyring_items.size() > 0)
     CheckMockKeyringItem(&mock_keyring_items[0], new_form_google, "chrome-42");
@@ -754,18 +841,64 @@ TEST_F(NativeBackendGnomeTest, RemoveNonexistentLogin) {
     CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome-42");
 }
 
+TEST_F(NativeBackendGnomeTest, UpdateNonexistentLogin) {
+  NativeBackendGnome backend(42);
+  backend.Init();
+
+  // First add an unrelated login.
+  BrowserThread::PostTask(
+      BrowserThread::DB, FROM_HERE,
+      base::Bind(base::IgnoreResult(&NativeBackendGnome::AddLogin),
+                 base::Unretained(&backend), form_google_));
+
+  RunBothThreads();
+
+  EXPECT_EQ(1u, mock_keyring_items.size());
+  if (mock_keyring_items.size() > 0)
+    CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome-42");
+
+  // Attempt to update a login that doesn't exist.
+  PasswordStoreChangeList changes;
+  BrowserThread::PostTask(
+      BrowserThread::DB, FROM_HERE,
+      base::Bind(base::IgnoreResult(&NativeBackendGnome::UpdateLogin),
+                 base::Unretained(&backend),
+                 form_isc_,
+                 base::Unretained(&changes)));
+
+  RunBothThreads();
+
+  EXPECT_EQ(PasswordStoreChangeList(), changes);
+  EXPECT_EQ(1u, mock_keyring_items.size());
+  if (mock_keyring_items.size() > 0)
+    CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome-42");
+}
+
 TEST_F(NativeBackendGnomeTest, AddDuplicateLogin) {
   NativeBackendGnome backend(42);
   backend.Init();
 
-  BrowserThread::PostTask(
+  PasswordStoreChangeList changes;
+  changes.push_back(PasswordStoreChange(PasswordStoreChange::ADD,
+                                        form_google_));
+  BrowserThread::PostTaskAndReplyWithResult(
       BrowserThread::DB, FROM_HERE,
-      base::Bind(base::IgnoreResult(&NativeBackendGnome::AddLogin),
-                 base::Unretained(&backend), form_google_));
-  BrowserThread::PostTask(
+      base::Bind(&NativeBackendGnome::AddLogin,
+                 base::Unretained(&backend), form_google_),
+      base::Bind(&CheckPasswordChanges, changes));
+
+  changes.clear();
+  changes.push_back(PasswordStoreChange(PasswordStoreChange::REMOVE,
+                                        form_google_));
+  form_google_.times_used++;
+  changes.push_back(PasswordStoreChange(PasswordStoreChange::ADD,
+                                        form_google_));
+
+  BrowserThread::PostTaskAndReplyWithResult(
       BrowserThread::DB, FROM_HERE,
-      base::Bind(base::IgnoreResult(&NativeBackendGnome::AddLogin),
-                 base::Unretained(&backend), form_google_));
+      base::Bind(&NativeBackendGnome::AddLogin,
+                 base::Unretained(&backend), form_google_),
+      base::Bind(&CheckPasswordChanges, changes));
 
   RunBothThreads();
 

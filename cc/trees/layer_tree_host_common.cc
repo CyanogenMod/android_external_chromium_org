@@ -16,7 +16,6 @@
 #include "cc/layers/render_surface_impl.h"
 #include "cc/trees/layer_sorter.h"
 #include "cc/trees/layer_tree_impl.h"
-#include "ui/gfx/point_conversions.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/transform.h"
 
@@ -432,10 +431,10 @@ static bool LayerShouldBeSkipped(LayerType* layer, bool layer_is_drawn) {
   // Layers can be skipped if any of these conditions are met.
   //   - is not drawn due to it or one of its ancestors being hidden (or having
   //     no copy requests).
+  //   - does not draw content.
+  //   - is transparent.
   //   - has empty bounds
   //   - the layer is not double-sided, but its back face is visible.
-  //   - is transparent
-  //   - does not draw content and does not participate in hit testing.
   //
   // Some additional conditions need to be computed at a later point after the
   // recursion is finished.
@@ -449,7 +448,7 @@ static bool LayerShouldBeSkipped(LayerType* layer, bool layer_is_drawn) {
   if (!layer_is_drawn)
     return true;
 
-  if (layer->bounds().IsEmpty())
+  if (!layer->DrawsContent() || layer->bounds().IsEmpty())
     return true;
 
   LayerType* backface_test_layer = layer;
@@ -464,13 +463,6 @@ static bool LayerShouldBeSkipped(LayerType* layer, bool layer_is_drawn) {
   if (!backface_test_layer->double_sided() &&
       TransformToScreenIsKnown(backface_test_layer) &&
       IsLayerBackFaceVisible(backface_test_layer))
-    return true;
-
-  // The layer is visible to events.  If it's subject to hit testing, then
-  // we can't skip it.
-  bool can_accept_input = !layer->touch_event_handler_region().IsEmpty() ||
-      layer->have_wheel_event_handlers();
-  if (!layer->DrawsContent() && !can_accept_input)
     return true;
 
   return false;
@@ -508,7 +500,6 @@ static inline bool SubtreeShouldBeSkipped(LayerImpl* layer,
   // The opacity of a layer always applies to its children (either implicitly
   // via a render surface or explicitly if the parent preserves 3D), so the
   // entire subtree can be skipped if this layer is fully transparent.
-  // TODO(sad): Don't skip layers used for hit testing crbug.com/295295.
   return !layer->opacity();
 }
 
@@ -532,7 +523,6 @@ static inline bool SubtreeShouldBeSkipped(Layer* layer, bool layer_is_drawn) {
   // In particular, it should not cause the subtree to be skipped.
   // Similarly, for layers that might animate opacity using an impl-only
   // animation, their subtree should also not be skipped.
-  // TODO(sad): Don't skip layers used for hit testing crbug.com/295295.
   return !layer->opacity() && !layer->OpacityIsAnimating() &&
          !layer->OpacityCanAnimateOnImplThread();
 }
@@ -2427,220 +2417,4 @@ void LayerTreeHostCommon::CalculateDrawProperties(
   DCHECK(inputs->root_layer->render_surface());
 }
 
-static bool PointHitsRect(
-    const gfx::PointF& screen_space_point,
-    const gfx::Transform& local_space_to_screen_space_transform,
-    const gfx::RectF& local_space_rect) {
-  // If the transform is not invertible, then assume that this point doesn't hit
-  // this rect.
-  gfx::Transform inverse_local_space_to_screen_space(
-      gfx::Transform::kSkipInitialization);
-  if (!local_space_to_screen_space_transform.GetInverse(
-          &inverse_local_space_to_screen_space))
-    return false;
-
-  // Transform the hit test point from screen space to the local space of the
-  // given rect.
-  bool clipped = false;
-  gfx::PointF hit_test_point_in_local_space = MathUtil::ProjectPoint(
-      inverse_local_space_to_screen_space, screen_space_point, &clipped);
-
-  // If ProjectPoint could not project to a valid value, then we assume that
-  // this point doesn't hit this rect.
-  if (clipped)
-    return false;
-
-  return local_space_rect.Contains(hit_test_point_in_local_space);
-}
-
-static bool PointHitsRegion(const gfx::PointF& screen_space_point,
-                            const gfx::Transform& screen_space_transform,
-                            const Region& layer_space_region,
-                            float layer_content_scale_x,
-                            float layer_content_scale_y) {
-  // If the transform is not invertible, then assume that this point doesn't hit
-  // this region.
-  gfx::Transform inverse_screen_space_transform(
-      gfx::Transform::kSkipInitialization);
-  if (!screen_space_transform.GetInverse(&inverse_screen_space_transform))
-    return false;
-
-  // Transform the hit test point from screen space to the local space of the
-  // given region.
-  bool clipped = false;
-  gfx::PointF hit_test_point_in_content_space = MathUtil::ProjectPoint(
-      inverse_screen_space_transform, screen_space_point, &clipped);
-  gfx::PointF hit_test_point_in_layer_space =
-      gfx::ScalePoint(hit_test_point_in_content_space,
-                      1.f / layer_content_scale_x,
-                      1.f / layer_content_scale_y);
-
-  // If ProjectPoint could not project to a valid value, then we assume that
-  // this point doesn't hit this region.
-  if (clipped)
-    return false;
-
-  return layer_space_region.Contains(
-      gfx::ToRoundedPoint(hit_test_point_in_layer_space));
-}
-
-static bool PointIsClippedBySurfaceOrClipRect(
-    const gfx::PointF& screen_space_point,
-    LayerImpl* layer) {
-  LayerImpl* current_layer = layer;
-
-  // Walk up the layer tree and hit-test any render_surfaces and any layer
-  // clip rects that are active.
-  while (current_layer) {
-    if (current_layer->render_surface() &&
-        !PointHitsRect(
-            screen_space_point,
-            current_layer->render_surface()->screen_space_transform(),
-            current_layer->render_surface()->content_rect()))
-      return true;
-
-    // Note that drawable content rects are actually in target surface space, so
-    // the transform we have to provide is the target surface's
-    // screen_space_transform.
-    LayerImpl* render_target = current_layer->render_target();
-    if (LayerClipsSubtree(current_layer) &&
-        !PointHitsRect(
-            screen_space_point,
-            render_target->render_surface()->screen_space_transform(),
-            current_layer->drawable_content_rect()))
-      return true;
-
-    current_layer = current_layer->parent();
-  }
-
-  // If we have finished walking all ancestors without having already exited,
-  // then the point is not clipped by any ancestors.
-  return false;
-}
-
-static bool PointHitsLayer(LayerImpl* layer,
-                           const gfx::PointF& screen_space_point) {
-  gfx::RectF content_rect(layer->content_bounds());
-  if (!PointHitsRect(
-          screen_space_point, layer->screen_space_transform(), content_rect))
-    return false;
-
-  // At this point, we think the point does hit the layer, but we need to walk
-  // up the parents to ensure that the layer was not clipped in such a way
-  // that the hit point actually should not hit the layer.
-  if (PointIsClippedBySurfaceOrClipRect(screen_space_point, layer))
-    return false;
-
-  // Skip the HUD layer.
-  if (layer == layer->layer_tree_impl()->hud_layer())
-    return false;
-
-  return true;
-}
-
-LayerImpl* LayerTreeHostCommon::FindFirstScrollingLayerThatIsHitByPoint(
-    const gfx::PointF& screen_space_point,
-    const LayerImplList& render_surface_layer_list) {
-  typedef LayerIterator<LayerImpl> LayerIteratorType;
-  LayerIteratorType end = LayerIteratorType::End(&render_surface_layer_list);
-  for (LayerIteratorType it =
-           LayerIteratorType::Begin(&render_surface_layer_list);
-       it != end;
-       ++it) {
-    // We don't want to consider render_surfaces for hit testing.
-    if (!it.represents_itself())
-      continue;
-
-    LayerImpl* current_layer = (*it);
-    if (!PointHitsLayer(current_layer, screen_space_point))
-      continue;
-
-    if (current_layer->scrollable())
-      return current_layer;
-  }
-
-  return NULL;
-}
-
-LayerImpl* LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-    const gfx::PointF& screen_space_point,
-    const LayerImplList& render_surface_layer_list) {
-  LayerImpl* found_layer = NULL;
-
-  typedef LayerIterator<LayerImpl> LayerIteratorType;
-  LayerIteratorType end = LayerIteratorType::End(&render_surface_layer_list);
-  for (LayerIteratorType
-           it = LayerIteratorType::Begin(&render_surface_layer_list);
-       it != end;
-       ++it) {
-    // We don't want to consider render_surfaces for hit testing.
-    if (!it.represents_itself())
-      continue;
-
-    LayerImpl* current_layer = (*it);
-    if (!PointHitsLayer(current_layer, screen_space_point))
-      continue;
-
-    found_layer = current_layer;
-    break;
-  }
-
-  // This can potentially return NULL, which means the screen_space_point did
-  // not successfully hit test any layers, not even the root layer.
-  return found_layer;
-}
-
-LayerImpl* LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-    const gfx::PointF& screen_space_point,
-    const LayerImplList& render_surface_layer_list) {
-  typedef LayerIterator<LayerImpl> LayerIteratorType;
-  LayerIteratorType end = LayerIteratorType::End(&render_surface_layer_list);
-  for (LayerIteratorType it =
-           LayerIteratorType::Begin(&render_surface_layer_list);
-       it != end;
-       ++it) {
-    // We don't want to consider render_surfaces for hit testing.
-    if (!it.represents_itself())
-      continue;
-
-    LayerImpl* current_layer = (*it);
-    if (!PointHitsLayer(current_layer, screen_space_point))
-      continue;
-
-    if (LayerTreeHostCommon::LayerHasTouchEventHandlersAt(screen_space_point,
-                                                          current_layer))
-      return current_layer;
-
-    // Note that we could stop searching if we hit a layer we know to be
-    // opaque to hit-testing, but knowing that reliably is tricky (eg. due to
-    // CSS pointer-events: none).  Also blink has an optimization for the
-    // common case of an entire document having handlers where it doesn't
-    // report any rects for child layers (since it knows they can't exceed
-    // the document bounds).
-  }
-  return NULL;
-}
-
-bool LayerTreeHostCommon::LayerHasTouchEventHandlersAt(
-    const gfx::PointF& screen_space_point,
-    LayerImpl* layer_impl) {
-  if (layer_impl->touch_event_handler_region().IsEmpty())
-    return false;
-
-  if (!PointHitsRegion(screen_space_point,
-                       layer_impl->screen_space_transform(),
-                       layer_impl->touch_event_handler_region(),
-                       layer_impl->contents_scale_x(),
-                       layer_impl->contents_scale_y()))
-    return false;
-
-  // At this point, we think the point does hit the touch event handler region
-  // on the layer, but we need to walk up the parents to ensure that the layer
-  // was not clipped in such a way that the hit point actually should not hit
-  // the layer.
-  if (PointIsClippedBySurfaceOrClipRect(screen_space_point, layer_impl))
-    return false;
-
-  return true;
-}
 }  // namespace cc

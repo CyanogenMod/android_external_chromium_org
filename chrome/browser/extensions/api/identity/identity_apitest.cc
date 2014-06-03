@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <set>
+#include <string>
+#include <vector>
+
 #include "base/command_line.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -13,15 +17,18 @@
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/guest_view/guest_view_base.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/api/identity.h"
 #include "chrome/common/extensions/api/identity/oauth2_manifest_handler.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/test/test_utils.h"
@@ -231,7 +238,8 @@ class WaitForGURLAndCloseWindow : public content::WindowedNotificationObserver {
       // It is safe to keep the pointer here, because we know in a test, that
       // the WebContents won't go away before CloseEmbedderWebContents is
       // called. Don't copy this code to production.
-      embedder_web_contents_ = web_contents->GetEmbedderWebContents();
+      GuestViewBase* guest = GuestViewBase::FromWebContents(web_contents);
+      embedder_web_contents_ = guest->embedder_web_contents();
       // Condtionally invoke parent class so that Wait will not exit
       // until the target URL arrives.
       content::WindowedNotificationObserver::Observe(type, source, details);
@@ -343,6 +351,145 @@ class MockQueuedMintRequest : public IdentityMintRequestQueue::Request {
  public:
   MOCK_METHOD1(StartMintToken, void(IdentityMintRequestQueue::MintType));
 };
+
+class IdentityGetAccountsFunctionTest : public ExtensionBrowserTest {
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    command_line->AppendSwitch(switches::kExtensionsMultiAccount);
+  }
+
+ protected:
+  void SetAccountState(AccountIds ids, bool is_signed_in) {
+    IdentityAPI::GetFactoryInstance()->Get(profile())->SetAccountStateForTest(
+        ids, is_signed_in);
+  }
+
+  AccountIds CreateIds(std::string email, std::string obfid) {
+    AccountIds ids;
+    ids.account_key = email;
+    ids.email = email;
+    ids.gaia = obfid;
+    return ids;
+  }
+
+  testing::AssertionResult ExpectGetAccounts(
+      const std::vector<std::string>& accounts) {
+    scoped_refptr<IdentityGetAccountsFunction> func(
+        new IdentityGetAccountsFunction);
+    func->set_extension(utils::CreateEmptyExtension(kExtensionId).get());
+    if (!utils::RunFunction(
+            func.get(), std::string("[]"), browser(), utils::NONE)) {
+      return GenerateFailureResult(accounts, NULL)
+             << "getAccounts did not return a result.";
+    }
+    const base::ListValue* callback_arguments = func->GetResultList();
+    if (!callback_arguments)
+      return GenerateFailureResult(accounts, NULL) << "NULL result";
+
+    if (callback_arguments->GetSize() != 1) {
+      return GenerateFailureResult(accounts, NULL)
+             << "Expected 1 argument but got " << callback_arguments->GetSize();
+    }
+
+    const base::ListValue* results;
+    if (!callback_arguments->GetList(0, &results))
+      GenerateFailureResult(accounts, NULL) << "Result was not an array";
+
+    std::set<std::string> result_ids;
+    for (base::ListValue::const_iterator it = results->begin();
+         it != results->end();
+         ++it) {
+      scoped_ptr<api::identity::AccountInfo> info =
+          api::identity::AccountInfo::FromValue(**it);
+      if (info.get())
+        result_ids.insert(info->id);
+      else
+        return GenerateFailureResult(accounts, results);
+    }
+
+    for (std::vector<std::string>::const_iterator it = accounts.begin();
+         it != accounts.end();
+         ++it) {
+      if (result_ids.find(*it) == result_ids.end())
+        return GenerateFailureResult(accounts, results);
+    }
+
+    return testing::AssertionResult(true);
+  }
+
+  testing::AssertionResult GenerateFailureResult(
+      const ::std::vector<std::string>& accounts,
+      const base::ListValue* results) {
+    testing::Message msg("Expected: ");
+    for (std::vector<std::string>::const_iterator it = accounts.begin();
+         it != accounts.end();
+         ++it) {
+      msg << *it << " ";
+    }
+    msg << "Actual: ";
+    if (!results) {
+      msg << "NULL";
+    } else {
+      for (base::ListValue::const_iterator it = results->begin();
+           it != results->end();
+           ++it) {
+        scoped_ptr<api::identity::AccountInfo> info =
+            api::identity::AccountInfo::FromValue(**it);
+        if (info.get())
+          msg << info->id << " ";
+        else
+          msg << *it << "<-" << (*it)->GetType() << " ";
+      }
+    }
+
+    return testing::AssertionFailure(msg);
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(IdentityGetAccountsFunctionTest, MultiAccountOn) {
+  EXPECT_TRUE(switches::IsExtensionsMultiAccount());
+}
+
+IN_PROC_BROWSER_TEST_F(IdentityGetAccountsFunctionTest, NoneSignedIn) {
+  EXPECT_TRUE(ExpectGetAccounts(std::vector<std::string>()));
+}
+
+IN_PROC_BROWSER_TEST_F(IdentityGetAccountsFunctionTest,
+                       PrimaryAccountSignedIn) {
+  SetAccountState(CreateIds("primary@example.com", "1"), true);
+  std::vector<std::string> primary;
+  primary.push_back("1");
+  EXPECT_TRUE(ExpectGetAccounts(primary));
+}
+
+IN_PROC_BROWSER_TEST_F(IdentityGetAccountsFunctionTest, TwoAccountsSignedIn) {
+  SetAccountState(CreateIds("primary@example.com", "1"), true);
+  SetAccountState(CreateIds("secondary@example.com", "2"), true);
+  std::vector<std::string> two_accounts;
+  two_accounts.push_back("1");
+  two_accounts.push_back("2");
+  EXPECT_TRUE(ExpectGetAccounts(two_accounts));
+}
+
+class IdentityOldProfilesGetAccountsFunctionTest
+    : public IdentityGetAccountsFunctionTest {
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    // Don't add the multi-account switch that parent class would have.
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(IdentityOldProfilesGetAccountsFunctionTest,
+                       MultiAccountOff) {
+  EXPECT_FALSE(switches::IsExtensionsMultiAccount());
+}
+
+IN_PROC_BROWSER_TEST_F(IdentityOldProfilesGetAccountsFunctionTest,
+                       TwoAccountsSignedIn) {
+  SetAccountState(CreateIds("primary@example.com", "1"), true);
+  SetAccountState(CreateIds("secondary@example.com", "2"), true);
+  std::vector<std::string> only_primary;
+  only_primary.push_back("1");
+  EXPECT_TRUE(ExpectGetAccounts(only_primary));
+}
 
 class GetAuthTokenFunctionTest : public AsyncExtensionBrowserTest {
  protected:
@@ -1301,8 +1448,8 @@ IN_PROC_BROWSER_TEST_F(
             url);
 }
 
-IN_PROC_BROWSER_TEST_F(
-    LaunchWebAuthFlowFunctionTest, InteractiveSecondNavigationSuccess) {
+IN_PROC_BROWSER_TEST_F(LaunchWebAuthFlowFunctionTest,
+                       DISABLED_InteractiveSecondNavigationSuccess) {
   net::SpawnedTestServer https_server(
       net::SpawnedTestServer::TYPE_HTTPS,
       net::SpawnedTestServer::kLocalhost,

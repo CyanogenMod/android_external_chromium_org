@@ -51,9 +51,7 @@ class CC_EXPORT PictureLayerTiling {
     TilingRasterTileIterator(PictureLayerTiling* tiling, WhichTree tree);
     ~TilingRasterTileIterator();
 
-    operator bool() const {
-      return current_tile_ && TileNeedsRaster(current_tile_);
-    }
+    operator bool() const { return !!current_tile_; }
     Tile* operator*() { return current_tile_; }
     TilePriority::PriorityBin get_type() const { return type_; }
 
@@ -74,7 +72,7 @@ class CC_EXPORT PictureLayerTiling {
     bool TileNeedsRaster(Tile* tile) const {
       RasterMode mode = tile->DetermineRasterModeForTree(tree_);
       return tile->NeedsRasterForMode(mode);
-    };
+    }
 
     PictureLayerTiling* tiling_;
 
@@ -207,8 +205,6 @@ class CC_EXPORT PictureLayerTiling {
 
     friend class PictureLayerTiling;
   };
-
-  Region OpaqueRegionInContentRect(const gfx::Rect& content_rect) const;
 
   void Reset();
 

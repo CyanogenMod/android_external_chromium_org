@@ -4,6 +4,7 @@
 
 #include "android_webview/native/aw_contents_statics.h"
 
+#include "android_webview/browser/aw_browser_context.h"
 #include "base/android/jni_string.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/callback.h"
@@ -49,7 +50,17 @@ void ClearClientCertPreferences(JNIEnv* env, jclass, jobject callback) {
 
 // static
 void SetDataReductionProxyKey(JNIEnv* env, jclass, jstring key) {
-    DataReductionProxySettings::SetKey(ConvertJavaStringToUTF8(env, key));
+  AwBrowserContext* browser_context = AwBrowserContext::GetDefault();
+  DCHECK(browser_context);
+  DataReductionProxySettings* drp_settings =
+      browser_context->GetDataReductionProxySettings();
+  DCHECK(drp_settings);
+  drp_settings->set_key(ConvertJavaStringToUTF8(env, key));
+}
+
+// static
+void SetDataReductionProxyEnabled(JNIEnv* env, jclass, jboolean enabled) {
+  AwBrowserContext::SetDataReductionProxyEnabled(enabled);
 }
 
 bool RegisterAwContentsStatics(JNIEnv* env) {

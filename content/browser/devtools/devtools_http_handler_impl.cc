@@ -234,7 +234,12 @@ static std::string GetMimeType(const std::string& filename) {
     return "image/png";
   } else if (EndsWith(filename, ".gif", false)) {
     return "image/gif";
+  } else if (EndsWith(filename, ".json", false)) {
+    return "application/json";
   }
+  LOG(ERROR) << "GetMimeType doesn't know mime type for: "
+             << filename
+             << " text/plain will be returned";
   NOTREACHED();
   return "text/plain";
 }
@@ -322,7 +327,7 @@ void DevToolsHttpHandlerImpl::OnWebSocketRequest(
     browser_target_ = new DevToolsBrowserTarget(server_.get(), connection_id);
     browser_target_->RegisterDomainHandler(
         devtools::Tracing::kName,
-        new DevToolsTracingHandler(),
+        new DevToolsTracingHandler(DevToolsTracingHandler::Browser),
         true /* handle on UI thread */);
     browser_target_->RegisterDomainHandler(
         TetheringHandler::kDomain,

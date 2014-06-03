@@ -34,7 +34,7 @@ MessagePipeDispatcher::MessagePipeDispatcher()
 
 void MessagePipeDispatcher::Init(scoped_refptr<MessagePipe> message_pipe,
                                  unsigned port) {
-  DCHECK(message_pipe.get());
+  DCHECK(message_pipe);
   DCHECK(port == 0 || port == 1);
 
   message_pipe_ = message_pipe;
@@ -104,7 +104,7 @@ scoped_refptr<MessagePipeDispatcher> MessagePipeDispatcher::Deserialize(
 
 MessagePipeDispatcher::~MessagePipeDispatcher() {
   // |Close()|/|CloseImplNoLock()| should have taken care of the pipe.
-  DCHECK(!message_pipe_.get());
+  DCHECK(!message_pipe_);
 }
 
 MessagePipe* MessagePipeDispatcher::GetMessagePipeNoLock() const {
@@ -203,7 +203,7 @@ bool MessagePipeDispatcher::EndSerializeAndCloseImplNoLock(
     Channel* channel,
     void* destination,
     size_t* actual_size,
-    std::vector<embedder::PlatformHandle>* platform_handles) {
+    embedder::PlatformHandleVector* /*platform_handles*/) {
   DCHECK(HasOneRef());  // Only one ref => no need to take the lock.
 
   // Convert the local endpoint to a proxy endpoint (moving the message queue).

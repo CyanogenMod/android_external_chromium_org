@@ -63,17 +63,17 @@ do
   shift
 done
 
-ubuntu_versions="12\.04|12\.10|13\.04|13\.10"
-ubuntu_codenames="precise|quantal|raring|saucy"
-ubuntu_issue="Ubuntu ($ubuntu_versions|$ubuntu_codenames)"
-# GCEL is an Ubuntu-derived VM image used on Google Compute Engine; /etc/issue
-# doesn't contain a version number so just trust that the user knows what
-# they're doing.
-gcel_issue="^GCEL"
+# Check for lsb_release command in $PATH
+if ! which lsb_release > /dev/null; then
+  echo "ERROR: lsb_release not found in \$PATH" >&2
+  exit 1;
+fi
 
+lsb_release=$(lsb_release --codename --short)
+ubuntu_codenames="(precise|quantal|raring|saucy|trusty)"
 if [ 0 -eq "${do_unsupported-0}" ] && [ 0 -eq "${do_quick_check-0}" ] ; then
-  if ! egrep -q "($ubuntu_issue|$gcel_issue)" /etc/issue; then
-    echo "ERROR: Only Ubuntu 12.04 (precise) through 13.10 (saucy) are"\
+  if [[ ! $lsb_release =~ $ubuntu_codenames ]]; then
+    echo "ERROR: Only Ubuntu 12.04 (precise) through 14.04 (trusty) are"\
         "currently supported" >&2
     exit 1
   fi
@@ -99,15 +99,15 @@ dev_list="apache2.2-bin bison curl dpkg-dev elfutils devscripts fakeroot flex
           language-pack-he language-pack-zh-hant libapache2-mod-php5
           libasound2-dev libbrlapi-dev libbz2-dev libcairo2-dev libcap-dev
           libcups2-dev libcurl4-gnutls-dev libdrm-dev libelf-dev libexif-dev
-          libgconf2-dev libgl1-mesa-dev libglib2.0-dev libglu1-mesa-dev
-          libgnome-keyring-dev libgtk2.0-dev libkrb5-dev libnspr4-dev
-          libnss3-dev libpam0g-dev libpci-dev libpulse-dev libsctp-dev
-          libspeechd-dev libsqlite3-dev libssl-dev libudev-dev libwww-perl
-          libxslt1-dev libxss-dev libxt-dev libxtst-dev mesa-common-dev openbox
-          patch perl php5-cgi pkg-config python python-cherrypy3 python-dev
-          python-psutil rpm ruby subversion ttf-dejavu-core ttf-indic-fonts
-          ttf-kochi-gothic ttf-kochi-mincho wdiff xfonts-mathml zip
-          $chromeos_dev_list"
+          libgbm-dev libgconf2-dev libgl1-mesa-dev libglib2.0-dev
+          libglu1-mesa-dev libgnome-keyring-dev libgtk2.0-dev libkrb5-dev
+          libnspr4-dev libnss3-dev libpam0g-dev libpci-dev libpulse-dev
+          libsctp-dev libspeechd-dev libsqlite3-dev libssl-dev libudev-dev
+          libwww-perl libxslt1-dev libxss-dev libxt-dev libxtst-dev
+          mesa-common-dev openbox patch perl php5-cgi pkg-config python
+          python-cherrypy3 python-dev python-psutil rpm ruby subversion
+          ttf-dejavu-core ttf-indic-fonts ttf-kochi-gothic ttf-kochi-mincho
+          wdiff xfonts-mathml zip $chromeos_dev_list"
 
 # 64-bit systems need a minimum set of 32-bit compat packages for the pre-built
 # NaCl binaries. These are always needed, regardless of whether or not we want
@@ -138,23 +138,9 @@ dbg_list="libatk1.0-dbg libc6-dbg libcairo2-dbg libfontconfig1-dbg
           libstdc++6-4.6-dbg"
 
 # arm cross toolchain packages needed to build chrome on armhf
-arm_list="libc6-armhf-cross libc6-dev-armhf-cross libgcc1-armhf-cross
-          libgomp1-armhf-cross linux-libc-dev-armhf-cross
-          libgcc1-dbg-armhf-cross libgomp1-dbg-armhf-cross
-          binutils-arm-linux-gnueabihf cpp-arm-linux-gnueabihf
-          gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
-          libmudflap0-dbg-armhf-cross"
-
-# Old armel cross toolchain packages
-armel_list="libc6-armel-cross libc6-dev-armel-cross libgcc1-armel-cross
-            libgomp1-armel-cross linux-libc-dev-armel-cross
-            libgcc1-dbg-armel-cross libgomp1-dbg-armel-cross
-            binutils-arm-linux-gnueabi cpp-arm-linux-gnueabi
-            gcc-arm-linux-gnueabi g++-arm-linux-gnueabi
-            libmudflap0-dbg-armel-cross"
-
-# TODO(sbc): remove armel once the armhf transition is complete
-arm_list="$arm_list $armel_list"
+arm_list="libc6-dev-armhf-cross
+          linux-libc-dev-armhf-cross
+          g++-arm-linux-gnueabihf"
 
 # Packages to build standalone NaCl and all its toolchains.
 nacl_list="g++-mingw-w64-i686 libtinfo-dev:i386"
@@ -257,7 +243,13 @@ fi
 # that are part of v8 need to be compiled with -m32 which means
 # that basic multilib support is needed.
 if file /sbin/init | grep -q 'ELF 64-bit'; then
-  arm_list="$arm_list g++-multilib"
+  if [ "$lsb_release" = "trusty" ]; then
+    # gcc-multilib conflicts with the arm cross compiler in trusty but
+    # g++-4.8-multilib gives us the 32-bit support that we need.
+    arm_list="$arm_list g++-4.8-multilib"
+  else
+    arm_list="$arm_list g++-multilib"
+  fi
 fi
 
 if test "$do_inst_arm" = "1" ; then

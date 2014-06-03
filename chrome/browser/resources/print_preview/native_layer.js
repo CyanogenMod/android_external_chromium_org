@@ -44,7 +44,7 @@ cr.define('print_preview', function() {
     global['autoCancelForTesting'] = this.autoCancelForTesting_.bind(this);
     global['onPrivetPrinterChanged'] = this.onPrivetPrinterChanged_.bind(this);
     global['onPrivetCapabilitiesSet'] =
-      this.onPrivetCapabilitiesSet_.bind(this);
+        this.onPrivetCapabilitiesSet_.bind(this);
     global['onPrivetPrintFailed'] = this.onPrivetPrintFailed_.bind(this);
   };
 
@@ -188,6 +188,7 @@ cr.define('print_preview', function() {
 
       var ticket = {
         'pageRange': printTicketStore.pageRange.getDocumentPageRanges(),
+        'mediaSize': printTicketStore.mediaSize.getValue(),
         'landscape': printTicketStore.landscape.getValue(),
         'color': printTicketStore.color.getValue() ?
             NativeLayer.ColorMode_.COLOR : NativeLayer.ColorMode_.GRAY,

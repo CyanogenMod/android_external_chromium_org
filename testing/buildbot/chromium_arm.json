@@ -1,0 +1,8 @@
+{
+  "compile_targets": [
+    "browser_tests_run"
+  ],
+  "gtest_tests": [
+    "browser_tests"
+  ]
+}

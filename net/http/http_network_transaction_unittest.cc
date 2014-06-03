@@ -46,7 +46,7 @@
 #include "net/http/http_server_properties_impl.h"
 #include "net/http/http_stream.h"
 #include "net/http/http_stream_factory.h"
-#include "net/http/http_transaction_unittest.h"
+#include "net/http/http_transaction_test_util.h"
 #include "net/proxy/proxy_config_service_fixed.h"
 #include "net/proxy/proxy_info.h"
 #include "net/proxy/proxy_resolver.h"
@@ -265,8 +265,6 @@ class HttpNetworkTransactionTest
     PlatformTest::TearDown();
     NetworkChangeNotifier::NotifyObserversOfIPAddressChangeForTests();
     base::MessageLoop::current()->RunUntilIdle();
-    HttpStreamFactory::set_use_alternate_protocols(false);
-    HttpStreamFactory::SetNextProtos(std::vector<NextProto>());
   }
 
   // This is the expected return from a current server advertising SPDY.
@@ -745,7 +743,6 @@ TEST_P(HttpNetworkTransactionTest, StopsReading204) {
 }
 
 // A simple request using chunked encoding with some extra data after.
-// (Like might be seen in a pipelined response.)
 TEST_P(HttpNetworkTransactionTest, ChunkedEncoding) {
   std::string final_chunk = "0\r\n\r\n";
   std::string extra_data = "HTTP/1.1 200 OK\r\n";
@@ -1388,8 +1385,7 @@ void HttpNetworkTransactionTest::PreconnectErrorResendRequestTest(
   // Preconnect a socket.
   net::SSLConfig ssl_config;
   session->ssl_config_service()->GetSSLConfig(&ssl_config);
-  if (session->http_stream_factory()->has_next_protos())
-    ssl_config.next_protos = session->http_stream_factory()->next_protos();
+  session->GetNextProtos(&ssl_config.next_protos);
   session->http_stream_factory()->PreconnectStreams(
       1, request, DEFAULT_PRIORITY, ssl_config, ssl_config);
   // Wait for the preconnect to complete.
@@ -7479,7 +7475,7 @@ TEST_P(HttpNetworkTransactionTest, GroupNameForDirectConnections) {
     },
   };
 
-  HttpStreamFactory::set_use_alternate_protocols(true);
+  session_deps_.use_alternate_protocols = true;
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
     session_deps_.proxy_service.reset(
@@ -7543,7 +7539,7 @@ TEST_P(HttpNetworkTransactionTest, GroupNameForHTTPProxyConnections) {
     },
   };
 
-  HttpStreamFactory::set_use_alternate_protocols(true);
+  session_deps_.use_alternate_protocols = true;
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
     session_deps_.proxy_service.reset(
@@ -7614,7 +7610,7 @@ TEST_P(HttpNetworkTransactionTest, GroupNameForSOCKSConnections) {
     },
   };
 
-  HttpStreamFactory::set_use_alternate_protocols(true);
+  session_deps_.use_alternate_protocols = true;
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
     session_deps_.proxy_service.reset(
@@ -8280,8 +8276,8 @@ TEST_P(HttpNetworkTransactionTest, ChangeAuthRealms) {
 }
 
 TEST_P(HttpNetworkTransactionTest, HonorAlternateProtocolHeader) {
-  HttpStreamFactory::SetNextProtos(SpdyNextProtos());
-  HttpStreamFactory::set_use_alternate_protocols(true);
+  session_deps_.next_protos = SpdyNextProtos();
+  session_deps_.use_alternate_protocols = true;
 
   std::string alternate_protocol_http_header =
       GetAlternateProtocolHttpHeader();
@@ -8341,7 +8337,7 @@ TEST_P(HttpNetworkTransactionTest, HonorAlternateProtocolHeader) {
 
 TEST_P(HttpNetworkTransactionTest,
        MarkBrokenAlternateProtocolAndFallback) {
-  HttpStreamFactory::set_use_alternate_protocols(true);
+  session_deps_.use_alternate_protocols = true;
 
   HttpRequestInfo request;
   request.method = "GET";
@@ -8404,7 +8400,7 @@ TEST_P(HttpNetworkTransactionTest,
   // protocol to an unrestricted (port >= 1024) when the original traffic was
   // on a restricted port (port < 1024).  Ensure that we can redirect in all
   // other cases.
-  HttpStreamFactory::set_use_alternate_protocols(true);
+  session_deps_.use_alternate_protocols = true;
 
   HttpRequestInfo restricted_port_request;
   restricted_port_request.method = "GET";
@@ -8454,7 +8450,7 @@ TEST_P(HttpNetworkTransactionTest,
   // on a restricted port (port < 1024) if we set
   // enable_user_alternate_protocol_ports.
 
-  HttpStreamFactory::set_use_alternate_protocols(true);
+  session_deps_.use_alternate_protocols = true;
   session_deps_.enable_user_alternate_protocol_ports = true;
 
   HttpRequestInfo restricted_port_request;
@@ -8503,7 +8499,7 @@ TEST_P(HttpNetworkTransactionTest,
   // protocol to an unrestricted (port >= 1024) when the original traffic was
   // on a restricted port (port < 1024).  Ensure that we can redirect in all
   // other cases.
-  HttpStreamFactory::set_use_alternate_protocols(true);
+  session_deps_.use_alternate_protocols = true;
 
   HttpRequestInfo restricted_port_request;
   restricted_port_request.method = "GET";
@@ -8552,7 +8548,7 @@ TEST_P(HttpNetworkTransactionTest,
   // protocol to an unrestricted (port >= 1024) when the original traffic was
   // on a restricted port (port < 1024).  Ensure that we can redirect in all
   // other cases.
-  HttpStreamFactory::set_use_alternate_protocols(true);
+  session_deps_.use_alternate_protocols = true;
 
   HttpRequestInfo unrestricted_port_request;
   unrestricted_port_request.method = "GET";
@@ -8600,7 +8596,7 @@ TEST_P(HttpNetworkTransactionTest,
   // protocol to an unrestricted (port >= 1024) when the original traffic was
   // on a restricted port (port < 1024).  Ensure that we can redirect in all
   // other cases.
-  HttpStreamFactory::set_use_alternate_protocols(true);
+  session_deps_.use_alternate_protocols = true;
 
   HttpRequestInfo unrestricted_port_request;
   unrestricted_port_request.method = "GET";
@@ -8642,12 +8638,11 @@ TEST_P(HttpNetworkTransactionTest,
   EXPECT_EQ(OK, callback.WaitForResult());
 }
 
-TEST_P(HttpNetworkTransactionTest,
-       AlternateProtocolUnsafeBlocked) {
+TEST_P(HttpNetworkTransactionTest, AlternateProtocolUnsafeBlocked) {
   // Ensure that we're not allowed to redirect traffic via an alternate
   // protocol to an unsafe port, and that we resume the second
   // HttpStreamFactoryImpl::Job once the alternate protocol request fails.
-  HttpStreamFactory::set_use_alternate_protocols(true);
+  session_deps_.use_alternate_protocols = true;
 
   HttpRequestInfo request;
   request.method = "GET";
@@ -8685,7 +8680,7 @@ TEST_P(HttpNetworkTransactionTest,
   EXPECT_EQ(OK, callback.WaitForResult());
 
   // Disable alternate protocol before the asserts.
-  HttpStreamFactory::set_use_alternate_protocols(false);
+ // HttpStreamFactory::set_use_alternate_protocols(false);
 
   const HttpResponseInfo* response = trans->GetResponseInfo();
   ASSERT_TRUE(response != NULL);
@@ -8698,8 +8693,8 @@ TEST_P(HttpNetworkTransactionTest,
 }
 
 TEST_P(HttpNetworkTransactionTest, UseAlternateProtocolForNpnSpdy) {
-  HttpStreamFactory::set_use_alternate_protocols(true);
-  HttpStreamFactory::SetNextProtos(SpdyNextProtos());
+  session_deps_.use_alternate_protocols = true;
+  session_deps_.next_protos = SpdyNextProtos();
 
   HttpRequestInfo request;
   request.method = "GET";
@@ -8788,8 +8783,8 @@ TEST_P(HttpNetworkTransactionTest, UseAlternateProtocolForNpnSpdy) {
 }
 
 TEST_P(HttpNetworkTransactionTest, AlternateProtocolWithSpdyLateBinding) {
-  HttpStreamFactory::set_use_alternate_protocols(true);
-  HttpStreamFactory::SetNextProtos(SpdyNextProtos());
+  session_deps_.use_alternate_protocols = true;
+  session_deps_.next_protos = SpdyNextProtos();
 
   HttpRequestInfo request;
   request.method = "GET";
@@ -8905,8 +8900,8 @@ TEST_P(HttpNetworkTransactionTest, AlternateProtocolWithSpdyLateBinding) {
 }
 
 TEST_P(HttpNetworkTransactionTest, StallAlternateProtocolForNpnSpdy) {
-  HttpStreamFactory::set_use_alternate_protocols(true);
-  HttpStreamFactory::SetNextProtos(SpdyNextProtos());
+  session_deps_.use_alternate_protocols = true;
+  session_deps_.next_protos = SpdyNextProtos();
 
   HttpRequestInfo request;
   request.method = "GET";
@@ -9024,8 +9019,8 @@ class CapturingProxyResolver : public ProxyResolver {
 
 TEST_P(HttpNetworkTransactionTest,
        UseAlternateProtocolForTunneledNpnSpdy) {
-  HttpStreamFactory::set_use_alternate_protocols(true);
-  HttpStreamFactory::SetNextProtos(SpdyNextProtos());
+  session_deps_.use_alternate_protocols = true;
+  session_deps_.next_protos = SpdyNextProtos();
 
   ProxyConfig proxy_config;
   proxy_config.set_auto_detect(true);
@@ -9146,8 +9141,8 @@ TEST_P(HttpNetworkTransactionTest,
 
 TEST_P(HttpNetworkTransactionTest,
        UseAlternateProtocolForNpnSpdyWithExistingSpdySession) {
-  HttpStreamFactory::set_use_alternate_protocols(true);
-  HttpStreamFactory::SetNextProtos(SpdyNextProtos());
+  session_deps_.use_alternate_protocols = true;
+  session_deps_.next_protos = SpdyNextProtos();
 
   HttpRequestInfo request;
   request.method = "GET";
@@ -9837,10 +9832,11 @@ TEST_P(HttpNetworkTransactionTest, MultiRoundAuth) {
 // This tests the case that a request is issued via http instead of spdy after
 // npn is negotiated.
 TEST_P(HttpNetworkTransactionTest, NpnWithHttpOverSSL) {
-  HttpStreamFactory::set_use_alternate_protocols(true);
-  std::vector<NextProto> next_protos;
+  session_deps_.use_alternate_protocols = true;
+  NextProtoVector next_protos;
   next_protos.push_back(kProtoHTTP11);
-  HttpStreamFactory::SetNextProtos(next_protos);
+  session_deps_.next_protos = next_protos;
+
   HttpRequestInfo request;
   request.method = "GET";
   request.url = GURL("https://www.google.com/");
@@ -9901,8 +9897,8 @@ TEST_P(HttpNetworkTransactionTest, SpdyPostNPNServerHangup) {
   // Simulate the SSL handshake completing with an NPN negotiation
   // followed by an immediate server closing of the socket.
   // Fix crash:  http://crbug.com/46369
-  HttpStreamFactory::set_use_alternate_protocols(true);
-  HttpStreamFactory::SetNextProtos(SpdyNextProtos());
+  session_deps_.use_alternate_protocols = true;
+  session_deps_.next_protos = SpdyNextProtos();
 
   HttpRequestInfo request;
   request.method = "GET";
@@ -9964,8 +9960,8 @@ class UrlRecordingHttpAuthHandlerMock : public HttpAuthHandlerMock {
 TEST_P(HttpNetworkTransactionTest, SpdyAlternateProtocolThroughProxy) {
   // This test ensures that the URL passed into the proxy is upgraded
   // to https when doing an Alternate Protocol upgrade.
-  HttpStreamFactory::set_use_alternate_protocols(true);
-  HttpStreamFactory::SetNextProtos(SpdyNextProtos());
+  session_deps_.use_alternate_protocols = true;
+  session_deps_.next_protos = SpdyNextProtos();
 
   session_deps_.proxy_service.reset(
       ProxyService::CreateFixedFromPacResult("PROXY myproxy:70"));
@@ -10157,6 +10153,56 @@ TEST_P(HttpNetworkTransactionTest, SimpleCancel) {
   trans.reset();  // Cancel the transaction here.
 
   base::MessageLoop::current()->RunUntilIdle();
+}
+
+// Test that if a transaction is cancelled after receiving the headers, the
+// stream is drained properly and added back to the socket pool.  The main
+// purpose of this test is to make sure that an HttpStreamParser can be read
+// from after the HttpNetworkTransaction and the objects it owns have been
+// deleted.
+// See http://crbug.com/368418
+TEST_P(HttpNetworkTransactionTest, CancelAfterHeaders) {
+  MockRead data_reads[] = {
+    MockRead(ASYNC, "HTTP/1.1 200 OK\r\n"),
+    MockRead(ASYNC, "Content-Length: 2\r\n"),
+    MockRead(ASYNC, "Connection: Keep-Alive\r\n\r\n"),
+    MockRead(ASYNC, "1"),
+    // 2 async reads are necessary to trigger a ReadResponseBody call after the
+    // HttpNetworkTransaction has been deleted.
+    MockRead(ASYNC, "2"),
+    MockRead(SYNCHRONOUS, ERR_IO_PENDING),  // Should never read this.
+  };
+  StaticSocketDataProvider data(data_reads, arraysize(data_reads), NULL, 0);
+  session_deps_.socket_factory->AddSocketDataProvider(&data);
+
+  scoped_refptr<HttpNetworkSession> session(CreateSession(&session_deps_));
+
+  {
+    HttpRequestInfo request;
+    request.method = "GET";
+    request.url = GURL("http://www.google.com/");
+    request.load_flags = 0;
+
+    HttpNetworkTransaction trans(DEFAULT_PRIORITY, session);
+    TestCompletionCallback callback;
+
+    int rv = trans.Start(&request, callback.callback(), BoundNetLog());
+    EXPECT_EQ(ERR_IO_PENDING, rv);
+    callback.WaitForResult();
+
+    const HttpResponseInfo* response = trans.GetResponseInfo();
+    ASSERT_TRUE(response != NULL);
+    EXPECT_TRUE(response->headers.get() != NULL);
+    EXPECT_EQ("HTTP/1.1 200 OK", response->headers->GetStatusLine());
+
+    // The transaction and HttpRequestInfo are deleted.
+  }
+
+  // Let the HttpResponseBodyDrainer drain the socket.
+  base::MessageLoop::current()->RunUntilIdle();
+
+  // Socket should now be idle, waiting to be reused.
+  EXPECT_EQ(1, GetIdleSocketCountInTransportSocketPool(session));
 }
 
 // Test a basic GET request through a proxy.
@@ -10784,8 +10830,8 @@ TEST_P(HttpNetworkTransactionTest, ClientAuthCertCache_Proxy_Fail) {
 #define MAYBE_UseIPConnectionPooling UseIPConnectionPooling
 #endif
 WRAPPED_TEST_P(HttpNetworkTransactionTest, MAYBE_UseIPConnectionPooling) {
-  HttpStreamFactory::set_use_alternate_protocols(true);
-  HttpStreamFactory::SetNextProtos(SpdyNextProtos());
+  session_deps_.use_alternate_protocols = true;
+  session_deps_.next_protos = SpdyNextProtos();
 
   // Set up a special HttpNetworkSession with a MockCachingHostResolver.
   session_deps_.host_resolver.reset(new MockCachingHostResolver());
@@ -10887,8 +10933,8 @@ WRAPPED_TEST_P(HttpNetworkTransactionTest, MAYBE_UseIPConnectionPooling) {
 #undef MAYBE_UseIPConnectionPooling
 
 TEST_P(HttpNetworkTransactionTest, UseIPConnectionPoolingAfterResolution) {
-  HttpStreamFactory::set_use_alternate_protocols(true);
-  HttpStreamFactory::SetNextProtos(SpdyNextProtos());
+  session_deps_.use_alternate_protocols = true;
+  session_deps_.next_protos = SpdyNextProtos();
 
   // Set up a special HttpNetworkSession with a MockCachingHostResolver.
   session_deps_.host_resolver.reset(new MockCachingHostResolver());
@@ -11030,8 +11076,8 @@ WRAPPED_TEST_P(HttpNetworkTransactionTest,
 #if defined(OS_WIN)
   return;
 #else
-  HttpStreamFactory::set_use_alternate_protocols(true);
-  HttpStreamFactory::SetNextProtos(SpdyNextProtos());
+  session_deps_.use_alternate_protocols = true;
+  session_deps_.next_protos = SpdyNextProtos();
 
   // Set up a special HttpNetworkSession with a OneTimeCachingHostResolver.
   OneTimeCachingHostResolver host_resolver(HostPortPair("www.gmail.com", 443));
@@ -11134,53 +11180,6 @@ WRAPPED_TEST_P(HttpNetworkTransactionTest,
 #endif
 }
 #undef MAYBE_UseIPConnectionPoolingWithHostCacheExpiration
-
-TEST_P(HttpNetworkTransactionTest, ReadPipelineEvictionFallback) {
-  MockRead data_reads1[] = {
-    MockRead(SYNCHRONOUS, ERR_PIPELINE_EVICTION),
-  };
-  MockRead data_reads2[] = {
-    MockRead("HTTP/1.0 200 OK\r\n\r\n"),
-    MockRead("hello world"),
-    MockRead(SYNCHRONOUS, OK),
-  };
-  StaticSocketDataProvider data1(data_reads1, arraysize(data_reads1), NULL, 0);
-  StaticSocketDataProvider data2(data_reads2, arraysize(data_reads2), NULL, 0);
-  StaticSocketDataProvider* data[] = { &data1, &data2 };
-
-  SimpleGetHelperResult out = SimpleGetHelperForData(data, arraysize(data));
-
-  EXPECT_EQ(OK, out.rv);
-  EXPECT_EQ("HTTP/1.0 200 OK", out.status_line);
-  EXPECT_EQ("hello world", out.response_data);
-}
-
-TEST_P(HttpNetworkTransactionTest, SendPipelineEvictionFallback) {
-  MockWrite data_writes1[] = {
-    MockWrite(SYNCHRONOUS, ERR_PIPELINE_EVICTION),
-  };
-  MockWrite data_writes2[] = {
-    MockWrite("GET / HTTP/1.1\r\n"
-              "Host: www.google.com\r\n"
-              "Connection: keep-alive\r\n\r\n"),
-  };
-  MockRead data_reads2[] = {
-    MockRead("HTTP/1.0 200 OK\r\n\r\n"),
-    MockRead("hello world"),
-    MockRead(SYNCHRONOUS, OK),
-  };
-  StaticSocketDataProvider data1(NULL, 0,
-                                 data_writes1, arraysize(data_writes1));
-  StaticSocketDataProvider data2(data_reads2, arraysize(data_reads2),
-                                 data_writes2, arraysize(data_writes2));
-  StaticSocketDataProvider* data[] = { &data1, &data2 };
-
-  SimpleGetHelperResult out = SimpleGetHelperForData(data, arraysize(data));
-
-  EXPECT_EQ(OK, out.rv);
-  EXPECT_EQ("HTTP/1.0 200 OK", out.status_line);
-  EXPECT_EQ("hello world", out.response_data);
-}
 
 TEST_P(HttpNetworkTransactionTest, DoNotUseSpdySessionForHttp) {
   const std::string https_url = "https://www.google.com/";
@@ -11378,7 +11377,7 @@ TEST_P(HttpNetworkTransactionTest, DoNotUseSpdySessionForHttpOverTunnel) {
 }
 
 TEST_P(HttpNetworkTransactionTest, UseSpdySessionForHttpWhenForced) {
-  HttpStreamFactory::set_force_spdy_always(true);
+  session_deps_.force_spdy_always = true;
   const std::string https_url = "https://www.google.com/";
   const std::string http_url = "http://www.google.com:443/";
 
@@ -11653,7 +11652,7 @@ TEST_P(HttpNetworkTransactionTest, ErrorSocketNotConnected) {
 }
 
 TEST_P(HttpNetworkTransactionTest, CloseIdleSpdySessionToOpenNewOne) {
-  HttpStreamFactory::SetNextProtos(SpdyNextProtos());
+  session_deps_.next_protos = SpdyNextProtos();
   ClientSocketPoolManager::set_max_sockets_per_group(
       HttpNetworkSession::NORMAL_SOCKET_POOL, 1);
   ClientSocketPoolManager::set_max_sockets_per_pool(
@@ -12099,11 +12098,6 @@ class FakeStream : public HttpStreamBase,
     return ERR_UNEXPECTED;
   }
 
-  virtual const HttpResponseInfo* GetResponseInfo() const OVERRIDE {
-    ADD_FAILURE();
-    return NULL;
-  }
-
   virtual int ReadResponseBody(IOBuffer* buf, int buf_len,
                                const CompletionCallback& callback) OVERRIDE {
     ADD_FAILURE();
@@ -12291,11 +12285,6 @@ class FakeStreamFactory : public HttpStreamFactory {
                                  const SSLConfig& server_ssl_config,
                                  const SSLConfig& proxy_ssl_config) OVERRIDE {
     ADD_FAILURE();
-  }
-
-  virtual base::Value* PipelineInfoToValue() const OVERRIDE {
-    ADD_FAILURE();
-    return NULL;
   }
 
   virtual const HostMappingRules* GetHostMappingRules() const OVERRIDE {

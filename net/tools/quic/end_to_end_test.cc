@@ -24,10 +24,12 @@
 #include "net/quic/quic_sent_packet_manager.h"
 #include "net/quic/quic_server_id.h"
 #include "net/quic/test_tools/quic_connection_peer.h"
+#include "net/quic/test_tools/quic_packet_creator_peer.h"
 #include "net/quic/test_tools/quic_session_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
 #include "net/quic/test_tools/reliable_quic_stream_peer.h"
 #include "net/test/gtest_util.h"
+#include "net/tools/epoll_server/epoll_server.h"
 #include "net/tools/quic/quic_epoll_connection_helper.h"
 #include "net/tools/quic/quic_in_memory_cache.h"
 #include "net/tools/quic/quic_packet_writer_wrapper.h"
@@ -46,10 +48,13 @@
 
 using base::StringPiece;
 using base::WaitableEvent;
+using net::EpollServer;
 using net::test::GenerateBody;
 using net::test::QuicConnectionPeer;
+using net::test::QuicPacketCreatorPeer;
 using net::test::QuicSessionPeer;
 using net::test::ReliableQuicStreamPeer;
+using net::test::kClientDataStreamId1;
 using net::tools::test::PacketDroppingTestWriter;
 using net::tools::test::QuicDispatcherPeer;
 using net::tools::test::QuicServerPeer;
@@ -481,7 +486,7 @@ TEST_P(EndToEndTest, DISABLED_LargePostNoPacketLoss) {
 
   client_->client()->WaitForCryptoHandshakeConfirmed();
 
-  // 1 Mb body.
+  // 1 MB body.
   string body;
   GenerateBody(&body, 1024 * 1024);
 
@@ -499,7 +504,7 @@ TEST_P(EndToEndTest, LargePostNoPacketLoss1sRTT) {
 
   client_->client()->WaitForCryptoHandshakeConfirmed();
 
-  // 1 Mb body.
+  // 100 KB body.
   string body;
   GenerateBody(&body, 100 * 1024);
 
@@ -521,28 +526,9 @@ TEST_P(EndToEndTest, LargePostWithPacketLoss) {
   client_->client()->WaitForCryptoHandshakeConfirmed();
   SetPacketLossPercentage(30);
 
-  // 10 Kb body.
+  // 10 KB body.
   string body;
   GenerateBody(&body, 1024 * 10);
-
-  HTTPMessage request(HttpConstants::HTTP_1_1,
-                      HttpConstants::POST, "/foo");
-  request.AddBody(body, true);
-
-  EXPECT_EQ(kFooResponseBody, client_->SendCustomSynchronousRequest(request));
-}
-
-TEST_P(EndToEndTest, LargePostNoPacketLossWithDelayAndReordering) {
-  ASSERT_TRUE(Initialize());
-
-  client_->client()->WaitForCryptoHandshakeConfirmed();
-  // Both of these must be called when the writer is not actively used.
-  SetPacketSendDelay(QuicTime::Delta::FromMilliseconds(2));
-  SetReorderPercentage(30);
-
-  // 1 Mb body.
-  string body;
-  GenerateBody(&body, 1024 * 1024);
 
   HTTPMessage request(HttpConstants::HTTP_1_1,
                       HttpConstants::POST, "/foo");
@@ -563,9 +549,28 @@ TEST_P(EndToEndTest, LargePostWithPacketLossAndBlockedSocket) {
   SetPacketLossPercentage(10);
   client_writer_->set_fake_blocked_socket_percentage(10);
 
-  // 10 Kb body.
+  // 10 KB body.
   string body;
   GenerateBody(&body, 1024 * 10);
+
+  HTTPMessage request(HttpConstants::HTTP_1_1,
+                      HttpConstants::POST, "/foo");
+  request.AddBody(body, true);
+
+  EXPECT_EQ(kFooResponseBody, client_->SendCustomSynchronousRequest(request));
+}
+
+TEST_P(EndToEndTest, LargePostNoPacketLossWithDelayAndReordering) {
+  ASSERT_TRUE(Initialize());
+
+  client_->client()->WaitForCryptoHandshakeConfirmed();
+  // Both of these must be called when the writer is not actively used.
+  SetPacketSendDelay(QuicTime::Delta::FromMilliseconds(2));
+  SetReorderPercentage(30);
+
+  // 1 MB body.
+  string body;
+  GenerateBody(&body, 1024 * 1024);
 
   HTTPMessage request(HttpConstants::HTTP_1_1,
                       HttpConstants::POST, "/foo");
@@ -642,7 +647,10 @@ TEST_P(EndToEndTest, LargePostFEC) {
   client_->client()->WaitForCryptoHandshakeConfirmed();
   SetPacketLossPercentage(30);
 
-  client_->options()->max_packets_per_fec_group = 6;
+  // Turn on FEC protection.
+  QuicPacketCreator* creator = QuicConnectionPeer::GetPacketCreator(
+      client_->client()->session()->connection());
+  EXPECT_TRUE(QuicPacketCreatorPeer::SwitchFecProtectionOn(creator, 6));
 
   string body;
   GenerateBody(&body, 10240);
@@ -655,19 +663,17 @@ TEST_P(EndToEndTest, LargePostFEC) {
   VerifyCleanConnection(true);
 }
 
-// TODO(rtenneti): DISABLED_LargePostLargeBuffer seems to be flaky.
-// http://crbug.com/370087.
-TEST_P(EndToEndTest, DISABLED_LargePostLargeBuffer) {
+TEST_P(EndToEndTest, LargePostSmallBandwidthLargeBuffer) {
   ASSERT_TRUE(Initialize());
   SetPacketSendDelay(QuicTime::Delta::FromMicroseconds(1));
-  // 1Mbit per second with a 128k buffer from server to client.  Wireless
+  // 256KB per second with a 256KB buffer from server to client.  Wireless
   // clients commonly have larger buffers, but our max CWND is 200.
   server_writer_->set_max_bandwidth_and_buffer_size(
-      QuicBandwidth::FromBytesPerSecond(256 * 1024), 128 * 1024);
+      QuicBandwidth::FromBytesPerSecond(256 * 1024), 256 * 1024);
 
   client_->client()->WaitForCryptoHandshakeConfirmed();
 
-  // 1 Mb body.
+  // 1 MB body.
   string body;
   GenerateBody(&body, 1024 * 1024);
 
@@ -676,6 +682,8 @@ TEST_P(EndToEndTest, DISABLED_LargePostLargeBuffer) {
   request.AddBody(body, true);
 
   EXPECT_EQ(kFooResponseBody, client_->SendCustomSynchronousRequest(request));
+  // This connection will not drop packets, because the buffer size is larger
+  // than the default receive window.
   VerifyCleanConnection(false);
 }
 
@@ -790,7 +798,7 @@ TEST_P(EndToEndTest, DISABLED_LimitCongestionWindowAndRTT) {
   // Now use the negotiated limits with packet loss.
   SetPacketLossPercentage(30);
 
-  // 10 Kb body.
+  // 10 KB body.
   string body;
   GenerateBody(&body, 1024 * 10);
 
@@ -916,7 +924,7 @@ TEST_P(EndToEndTest, StreamCancelErrorTest) {
   client_->client()->WaitForEvents();
   // Transmit the cancel, and ensure the connection is torn down properly.
   SetPacketLossPercentage(0);
-  QuicStreamId stream_id = 5;
+  QuicStreamId stream_id = kClientDataStreamId1;
   session->SendRstStream(stream_id, QUIC_STREAM_CANCELLED, 0);
 
   // WaitForEvents waits 50ms and returns true if there are outstanding
@@ -953,7 +961,10 @@ class WrongAddressWriter : public QuicPacketWriterWrapper {
   IPEndPoint self_address_;
 };
 
-TEST_P(EndToEndTest, ConnectionMigration) {
+TEST_P(EndToEndTest, ConnectionMigrationClientIPChanged) {
+  // Tests that the client's IP can not change during an established QUIC
+  // connection. If it changes, the connection is closed by the server as we do
+  // not yet support IP migration.
   ASSERT_TRUE(Initialize());
 
   EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
@@ -969,6 +980,59 @@ TEST_P(EndToEndTest, ConnectionMigration) {
 
   EXPECT_EQ(QUIC_STREAM_CONNECTION_ERROR, client_->stream_error());
   EXPECT_EQ(QUIC_ERROR_MIGRATING_ADDRESS, client_->connection_error());
+}
+
+TEST_P(EndToEndTest, ConnectionMigrationClientPortChanged) {
+  // Tests that the client's port can change during an established QUIC
+  // connection, and that doing so does not result in the connection being
+  // closed by the server.
+  FLAGS_quic_allow_port_migration = true;
+
+  ASSERT_TRUE(Initialize());
+
+  EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
+  EXPECT_EQ(200u, client_->response_headers()->parsed_response_code());
+
+  // Store the client address which was used to send the first request.
+  IPEndPoint old_address = client_->client()->client_address();
+
+  // Stop listening on the old FD.
+  EpollServer* eps = client_->client()->epoll_server();
+  int old_fd = client_->client()->fd();
+  eps->UnregisterFD(old_fd);
+  // Create a new socket before closing the old one, which will result in a new
+  // ephemeral port.
+  QuicClientPeer::CreateUDPSocket(client_->client());
+  close(old_fd);
+
+  // The packet writer needs to be updated to use the new FD.
+  client_->client()->CreateQuicPacketWriter();
+
+  // Change the internal state of the client and connection to use the new port,
+  // this is done because in a real NAT rebinding the client wouldn't see any
+  // port change, and so expects no change to incoming port.
+  // This is kind of ugly, but needed as we are simply swapping out the client
+  // FD rather than any more complex NAT rebinding simulation.
+  int new_port = client_->client()->client_address().port();
+  QuicClientPeer::SetClientPort(client_->client(), new_port);
+  QuicConnectionPeer::SetSelfAddress(
+      client_->client()->session()->connection(),
+      IPEndPoint(
+          client_->client()->session()->connection()->self_address().address(),
+          new_port));
+
+  // Register the new FD for epoll events.
+  int new_fd = client_->client()->fd();
+  eps->RegisterFD(new_fd, client_->client(), EPOLLIN | EPOLLOUT | EPOLLET);
+
+  // Send a second request, using the new FD.
+  EXPECT_EQ(kBarResponseBody, client_->SendSynchronousRequest("/bar"));
+  EXPECT_EQ(200u, client_->response_headers()->parsed_response_code());
+
+  // Verify that the client's ephemeral port is different.
+  IPEndPoint new_address = client_->client()->client_address();
+  EXPECT_EQ(old_address.address(), new_address.address());
+  EXPECT_NE(old_address.port(), new_address.port());
 }
 
 TEST_P(EndToEndTest, DifferentFlowControlWindows) {

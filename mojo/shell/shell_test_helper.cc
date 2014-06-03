@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "mojo/service_manager/service_loader.h"
 #include "mojo/shell/context.h"
 #include "mojo/shell/init.h"
 
@@ -19,7 +20,7 @@ namespace shell {
 struct ShellTestHelper::State {
   scoped_ptr<Context> context;
   scoped_ptr<ServiceManager::TestAPI> test_api;
-  ScopedMessagePipeHandle shell_handle;
+  ScopedMessagePipeHandle service_provider_handle;
 };
 
 namespace {
@@ -28,30 +29,36 @@ void StartShellOnShellThread(ShellTestHelper::State* state) {
   state->context.reset(new Context);
   state->test_api.reset(
       new ServiceManager::TestAPI(state->context->service_manager()));
-  state->shell_handle = state->test_api->GetShellHandle();
+  state->service_provider_handle = state->test_api->GetServiceProviderHandle();
+}
+
+void SetLoaderForURLOnShellThread(ShellTestHelper::State* state,
+                                  scoped_ptr<ServiceLoader> loader,
+                                  const GURL& url) {
+  state->context->service_manager()->SetLoaderForURL(loader.Pass(), url);
 }
 
 }  // namespace
 
-class ShellTestHelper::TestShellClient : public ShellClient {
+class ShellTestHelper::TestServiceProvider : public ServiceProvider {
  public:
-  TestShellClient() {}
-  virtual ~TestShellClient() {}
+  TestServiceProvider() {}
+  virtual ~TestServiceProvider() {}
 
-  // ShellClient:
-  virtual void AcceptConnection(
+  // ServiceProvider:
+  virtual void ConnectToService(
       const mojo::String& url,
       ScopedMessagePipeHandle client_handle) OVERRIDE {
   }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(TestShellClient);
+  DISALLOW_COPY_AND_ASSIGN(TestServiceProvider);
 };
 
 ShellTestHelper::ShellTestHelper()
-    : shell_thread_("shell_test_helper"),
+    : service_provider_thread_("shell_test_helper"),
       state_(NULL) {
-  CommandLine::Init(0, NULL);
+  base::CommandLine::Init(0, NULL);
   mojo::shell::InitializeLogging();
 }
 
@@ -59,7 +66,7 @@ ShellTestHelper::~ShellTestHelper() {
   if (state_) {
     // |state_| contains data created on the background thread. Destroy it
     // there so that there aren't any race conditions.
-    shell_thread_.message_loop()->DeleteSoon(FROM_HERE, state_);
+    service_provider_thread_.message_loop()->DeleteSoon(FROM_HERE, state_);
     state_ = NULL;
   }
 }
@@ -67,20 +74,31 @@ ShellTestHelper::~ShellTestHelper() {
 void ShellTestHelper::Init() {
   DCHECK(!state_);
   state_ = new State;
-  shell_thread_.Start();
-  shell_thread_.message_loop()->message_loop_proxy()->PostTaskAndReply(
+  service_provider_thread_.Start();
+  base::MessageLoopProxy* message_loop_proxy =
+      service_provider_thread_.message_loop()->message_loop_proxy();
+  message_loop_proxy->PostTaskAndReply(
       FROM_HERE,
       base::Bind(&StartShellOnShellThread, state_),
-      base::Bind(&ShellTestHelper::OnShellStarted, base::Unretained(this)));
+      base::Bind(&ShellTestHelper::OnServiceProviderStarted,
+                 base::Unretained(this)));
   run_loop_.reset(new base::RunLoop);
   run_loop_->Run();
 }
 
-void ShellTestHelper::OnShellStarted() {
+void ShellTestHelper::SetLoaderForURL(scoped_ptr<ServiceLoader> loader,
+                                      const GURL& url) {
+  service_provider_thread_.message_loop()->message_loop_proxy()->PostTask(
+      FROM_HERE,
+      base::Bind(&SetLoaderForURLOnShellThread, state_, base::Passed(&loader),
+                 url));
+}
+
+void ShellTestHelper::OnServiceProviderStarted() {
   DCHECK(state_);
-  shell_client_.reset(new TestShellClient);
-  shell_.Bind(state_->shell_handle.Pass());
-  shell_->SetClient(shell_client_.get());
+  local_service_provider_.reset(new TestServiceProvider);
+  service_provider_.Bind(state_->service_provider_handle.Pass());
+  service_provider_.set_client(local_service_provider_.get());
   run_loop_->Quit();
 }
 

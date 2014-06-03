@@ -15,6 +15,7 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Picture;
 import android.graphics.Rect;
+import android.net.Uri;
 import android.net.http.SslCertificate;
 import android.os.AsyncTask;
 import android.os.Build;
@@ -164,6 +165,7 @@ public class AwContents {
     private long mNativeAwContents;
     private final AwBrowserContext mBrowserContext;
     private final ViewGroup mContainerView;
+    private final Context mContext;
     private ContentViewCore mContentViewCore;
     private final AwContentsClient mContentsClient;
     private final AwContentViewClient mContentViewClient;
@@ -286,6 +288,11 @@ public class AwContents {
         @Override
         public boolean shouldBlockNetworkLoads() {
             return mSettings.getBlockNetworkLoads();
+        }
+
+        @Override
+        public boolean shouldAcceptThirdPartyCookies() {
+            return mSettings.getAcceptThirdPartyCookies();
         }
 
         @Override
@@ -458,17 +465,18 @@ public class AwContents {
     /**
      * @param browserContext the browsing context to associate this view contents with.
      * @param containerView the view-hierarchy item this object will be bound to.
+     * @param context the context to use, usually containerView.getContext().
      * @param internalAccessAdapter to access private methods on containerView.
      * @param contentsClient will receive API callbacks from this WebView Contents.
      * @param awSettings AwSettings instance used to configure the AwContents.
      *
      * This constructor uses the default view sizing policy.
      */
-    public AwContents(AwBrowserContext browserContext, ViewGroup containerView,
+    public AwContents(AwBrowserContext browserContext, ViewGroup containerView, Context context,
             InternalAccessDelegate internalAccessAdapter, AwContentsClient contentsClient,
             AwSettings awSettings) {
-        this(browserContext, containerView, internalAccessAdapter, contentsClient, awSettings,
-                new DependencyFactory());
+        this(browserContext, containerView, context, internalAccessAdapter, contentsClient,
+                awSettings, new DependencyFactory());
     }
 
     /**
@@ -478,17 +486,18 @@ public class AwContents {
      * This version of the constructor is used in test code to inject test versions of the above
      * documented classes.
      */
-    public AwContents(AwBrowserContext browserContext, ViewGroup containerView,
+    public AwContents(AwBrowserContext browserContext, ViewGroup containerView, Context context,
             InternalAccessDelegate internalAccessAdapter, AwContentsClient contentsClient,
             AwSettings settings, DependencyFactory dependencyFactory) {
         mBrowserContext = browserContext;
         mContainerView = containerView;
+        mContext = context;
         mInternalAccessAdapter = internalAccessAdapter;
         mContentsClient = contentsClient;
         mContentViewClient = new AwContentViewClient(contentsClient, settings);
         mLayoutSizer = dependencyFactory.createLayoutSizer();
         mSettings = settings;
-        mDIPScale = DeviceDisplayInfo.create(mContainerView.getContext()).getDIPScale();
+        mDIPScale = DeviceDisplayInfo.create(mContext).getDIPScale();
         mLayoutSizer.setDelegate(new AwLayoutSizerDelegate());
         mLayoutSizer.setDIPScale(mDIPScale);
         mWebContentsDelegate = new AwWebContentsDelegateAdapter(contentsClient, mContainerView);
@@ -514,7 +523,7 @@ public class AwContents {
                 mDefaultVideoPosterRequestHandler.getDefaultVideoPosterURL());
         mSettings.setDIPScale(mDIPScale);
         mScrollOffsetManager = dependencyFactory.createScrollOffsetManager(
-                new AwScrollOffsetManagerDelegate(), new OverScroller(mContainerView.getContext()));
+                new AwScrollOffsetManagerDelegate(), new OverScroller(mContext));
         mScrollAccessibilityHelper = new ScrollAccessibilityHelper(mContainerView);
 
         setOverScrollMode(mContainerView.getOverScrollMode());
@@ -528,11 +537,10 @@ public class AwContents {
     }
 
     private static ContentViewCore createAndInitializeContentViewCore(ViewGroup containerView,
-            InternalAccessDelegate internalDispatcher, long nativeWebContents,
+            Context context, InternalAccessDelegate internalDispatcher, long nativeWebContents,
             GestureStateListener gestureStateListener,
             ContentViewClient contentViewClient,
             ContentViewCore.ZoomControlsDelegate zoomControlsDelegate) {
-        Context context = containerView.getContext();
         ContentViewCore contentViewCore = new ContentViewCore(context);
         contentViewCore.initialize(containerView, internalDispatcher, nativeWebContents,
                 context instanceof Activity ?
@@ -570,7 +578,7 @@ public class AwContents {
 
         long nativeWebContents = nativeGetWebContents(mNativeAwContents);
         mContentViewCore = createAndInitializeContentViewCore(
-                mContainerView, mInternalAccessAdapter, nativeWebContents,
+                mContainerView, mContext, mInternalAccessAdapter, nativeWebContents,
                 new AwGestureStateListener(), mContentViewClient, mZoomControls);
         nativeSetJavaPeers(mNativeAwContents, this, mWebContentsDelegate, mContentsClientBridge,
                 mIoThreadClient, mInterceptNavigationDelegate);
@@ -618,16 +626,17 @@ public class AwContents {
         if (wasWindowFocused) onWindowFocusChanged(false);
         if (wasViewVisible) setViewVisibilityInternal(false);
         if (wasWindowVisible) setWindowVisibilityInternal(false);
+        if (wasAttached) onDetachedFromWindow();
         if (!wasPaused) onPause();
-        // Not calling onDetachedFromWindow here because native code requires GL context to release
-        // GL resources. This case is properly handled when destroy is called while still attached
-        // to window.
 
         setNewAwContents(popupNativeAwContents);
 
         // Finally refresh all view state for mContentViewCore and mNativeAwContents.
         if (!wasPaused) onResume();
-        if (wasAttached) onAttachedToWindow();
+        if (wasAttached) {
+            onAttachedToWindow();
+            postInvalidateOnAnimation();
+        }
         onSizeChanged(mContainerView.getWidth(), mContainerView.getHeight(), 0, 0);
         if (wasWindowVisible) setWindowVisibilityInternal(true);
         if (wasViewVisible) setViewVisibilityInternal(true);
@@ -1000,7 +1009,7 @@ public class AwContents {
      */
     public void setOverScrollMode(int mode) {
         if (mode != View.OVER_SCROLL_NEVER) {
-            mOverScrollGlow = new OverScrollGlow(mContainerView);
+            mOverScrollGlow = new OverScrollGlow(mContext, mContainerView);
         } else {
             mOverScrollGlow = null;
         }
@@ -1337,13 +1346,13 @@ public class AwContents {
     }
 
     public String[] getHttpAuthUsernamePassword(String host, String realm) {
-        return mBrowserContext.getHttpAuthDatabase(mContentViewCore.getContext())
+        return mBrowserContext.getHttpAuthDatabase(mContext)
                 .getHttpAuthUsernamePassword(host, realm);
     }
 
     public void setHttpAuthUsernamePassword(String host, String realm, String username,
             String password) {
-        mBrowserContext.getHttpAuthDatabase(mContentViewCore.getContext())
+        mBrowserContext.getHttpAuthDatabase(mContext)
                 .setHttpAuthUsernamePassword(host, realm, username, password);
     }
 
@@ -1497,6 +1506,14 @@ public class AwContents {
     }
 
     /**
+     * @see android.webkit.WebView#preauthorizePermission(Uri, long)
+     */
+    public void preauthorizePermission(Uri origin, long resources) {
+        if (mNativeAwContents == 0) return;
+        nativePreauthorizePermission(mNativeAwContents, origin.toString(), resources);
+    }
+
+    /**
      * @see ContentViewCore.evaluateJavaScript(String, ContentViewCore.JavaScriptCallback)
      */
     public void evaluateJavaScript(String script, final ValueCallback<String> callback) {
@@ -1595,7 +1612,7 @@ public class AwContents {
 
         if (mComponentCallbacks != null) return;
         mComponentCallbacks = new AwComponentCallbacks();
-        mContainerView.getContext().registerComponentCallbacks(mComponentCallbacks);
+        mContext.registerComponentCallbacks(mComponentCallbacks);
     }
 
     /**
@@ -1617,7 +1634,7 @@ public class AwContents {
         updateHardwareAcceleratedFeaturesToggle();
 
         if (mComponentCallbacks != null) {
-            mContainerView.getContext().unregisterComponentCallbacks(mComponentCallbacks);
+            mContext.unregisterComponentCallbacks(mComponentCallbacks);
             mComponentCallbacks = null;
         }
 
@@ -1940,11 +1957,6 @@ public class AwContents {
     }
 
     @CalledByNative
-    private void setMaxContainerViewScrollOffset(int maxX, int maxY) {
-        mScrollOffsetManager.setMaxScrollOffset(maxX, maxY);
-    }
-
-    @CalledByNative
     private void scrollContainerViewTo(int x, int y) {
         mScrollOffsetManager.scrollContainerViewTo(x, y);
     }
@@ -1955,31 +1967,14 @@ public class AwContents {
     }
 
     @CalledByNative
-    private void setContentsSize(int widthDip, int heightDip) {
-        mContentWidthDip = widthDip;
-        mContentHeightDip = heightDip;
-    }
-
-    @CalledByNative
-    private void setPageScaleFactorAndLimits(
+    private void updateScrollState(int maxContainerViewScrollOffsetX,
+            int maxContainerViewScrollOffsetY, int contentWidthDip, int contentHeightDip,
             float pageScaleFactor, float minPageScaleFactor, float maxPageScaleFactor) {
-        if (mPageScaleFactor == pageScaleFactor &&
-                mMinPageScaleFactor == minPageScaleFactor &&
-                mMaxPageScaleFactor == maxPageScaleFactor) {
-            return;
-        }
-        mMinPageScaleFactor = minPageScaleFactor;
-        mMaxPageScaleFactor = maxPageScaleFactor;
-        if (mPageScaleFactor != pageScaleFactor) {
-          float oldPageScaleFactor = mPageScaleFactor;
-          mPageScaleFactor = pageScaleFactor;
-          // NOTE: if this ever needs to become synchronous then we need to make sure the scroll
-          // bounds are correctly updated before calling the method, otherwise embedder code that
-          // attempts to scroll on scale change might cause weird results.
-          mContentsClient.getCallbackHelper().postOnScaleChangedScaled(
-                  (float)(oldPageScaleFactor * mDIPScale),
-                  (float)(mPageScaleFactor * mDIPScale));
-        }
+        mContentWidthDip = contentWidthDip;
+        mContentHeightDip = contentHeightDip;
+        mScrollOffsetManager.setMaxScrollOffset(maxContainerViewScrollOffsetX,
+            maxContainerViewScrollOffsetY);
+        setPageScaleFactorAndLimits(pageScaleFactor, minPageScaleFactor, maxPageScaleFactor);
     }
 
     @CalledByNative
@@ -2004,6 +1999,27 @@ public class AwContents {
     // -------------------------------------------------------------------------------------------
     // Helper methods
     // -------------------------------------------------------------------------------------------
+
+    private void setPageScaleFactorAndLimits(
+            float pageScaleFactor, float minPageScaleFactor, float maxPageScaleFactor) {
+        if (mPageScaleFactor == pageScaleFactor &&
+                mMinPageScaleFactor == minPageScaleFactor &&
+                mMaxPageScaleFactor == maxPageScaleFactor) {
+            return;
+        }
+        mMinPageScaleFactor = minPageScaleFactor;
+        mMaxPageScaleFactor = maxPageScaleFactor;
+        if (mPageScaleFactor != pageScaleFactor) {
+            float oldPageScaleFactor = mPageScaleFactor;
+            mPageScaleFactor = pageScaleFactor;
+            // NOTE: if this ever needs to become synchronous then we need to make sure the scroll
+            // bounds are correctly updated before calling the method, otherwise embedder code that
+            // attempts to scroll on scale change might cause weird results.
+            mContentsClient.getCallbackHelper().postOnScaleChangedScaled(
+                    (float)(oldPageScaleFactor * mDIPScale),
+                    (float)(mPageScaleFactor * mDIPScale));
+        }
+    }
 
     private void saveWebArchiveInternal(String path, final ValueCallback<String> callback) {
         if (path == null || mNativeAwContents == 0) {
@@ -2134,4 +2150,7 @@ public class AwContents {
     private native void nativeTrimMemory(long nativeAwContents, int level, boolean visible);
 
     private native void nativeCreatePdfExporter(long nativeAwContents, AwPdfExporter awPdfExporter);
+
+    private native void nativePreauthorizePermission(long nativeAwContents, String origin,
+            long resources);
 }

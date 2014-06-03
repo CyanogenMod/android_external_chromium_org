@@ -23,6 +23,7 @@
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/timer/hi_res_timer_manager.h"
+#include "content/browser/battery_status/battery_status_service.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/device_sensors/device_inertial_sensor_service.h"
 #include "content/browser/download/save_file_manager.h"
@@ -67,6 +68,7 @@
 #endif
 
 #if defined(USE_AURA)
+#include "content/public/browser/context_factory.h"
 #include "ui/aura/env.h"
 #endif
 
@@ -122,11 +124,6 @@
 #include "ui/gfx/x/x11_types.h"
 #endif
 
-#if defined(USE_OZONE)
-#include "ui/ozone/ozone_platform.h"
-#include "ui/events/ozone/event_factory_ozone.h"
-#endif
-
 // One of the linux specific headers defines this as a macro.
 #ifdef DestroyAll
 #undef DestroyAll
@@ -164,7 +161,7 @@ void SetupSandbox(const CommandLine& parsed_command_line) {
   }
 
   // Tickle the sandbox host and zygote host so they fork now.
-  RenderSandboxHostLinux::GetInstance()->Init(sandbox_binary.value());
+  RenderSandboxHostLinux::GetInstance()->Init();
   ZygoteHostImpl::GetInstance()->Init(sandbox_binary.value());
 }
 #endif
@@ -372,6 +369,12 @@ void BrowserMainLoop::EarlyInitialization() {
 
   if (parts_)
     parts_->PreEarlyInitialization();
+
+#if defined(OS_MACOSX)
+  // We use quite a few file descriptors for our IPC, and the default limit on
+  // the Mac is low (256), so bump it up.
+  base::SetFdLimit(1024);
+#endif
 
 #if defined(OS_WIN)
   net::EnsureWinsockInit();
@@ -754,8 +757,8 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
     resource_dispatcher_host_.get()->Shutdown();
   }
 
-#if defined(USE_AURA)
-  {
+#if defined(USE_AURA) || defined(OS_MACOSX)
+  if (ShouldInitializeBrowserGpuChannelAndTransportSurface()) {
     TRACE_EVENT0("shutdown",
                  "BrowserMainLoop::Subsystem:ImageTransportFactory");
     ImageTransportFactory::Terminate();
@@ -883,6 +886,10 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
     DeviceInertialSensorService::GetInstance()->Shutdown();
   }
   {
+    TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:BatteryStatusService");
+    BatteryStatusService::GetInstance()->Shutdown();
+  }
+  {
     TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:DeleteDataSources");
     URLDataManager::DeleteDataSources();
   }
@@ -947,6 +954,12 @@ int BrowserMainLoop::BrowserThreadsStarted() {
     }
     BrowserGpuChannelHostFactory::Initialize(established_gpu_channel);
     ImageTransportFactory::Initialize();
+#if defined(USE_AURA)
+    if (aura::Env::GetInstance()) {
+      aura::Env::GetInstance()->set_context_factory(
+          content::GetContextFactory());
+    }
+#endif
   }
 #elif defined(OS_ANDROID)
   established_gpu_channel = true;
@@ -957,12 +970,6 @@ int BrowserMainLoop::BrowserThreadsStarted() {
   device_monitor_linux_.reset(new DeviceMonitorLinux());
 #elif defined(OS_MACOSX)
   device_monitor_mac_.reset(new DeviceMonitorMac());
-#endif
-
-#if defined(USE_OZONE)
-  ui::OzonePlatform::Initialize();
-  ui::EventFactoryOzone::GetInstance()->SetFileTaskRunner(
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE));
 #endif
 
   // RDH needs the IO thread to be created
@@ -1058,7 +1065,7 @@ bool BrowserMainLoop::InitializeToolkit() {
   config.dwSize = sizeof(config);
   config.dwICC = ICC_WIN95_CLASSES;
   if (!InitCommonControlsEx(&config))
-    LOG_GETLASTERROR(FATAL);
+    PLOG(FATAL);
 #endif
 
 #if defined(USE_AURA)

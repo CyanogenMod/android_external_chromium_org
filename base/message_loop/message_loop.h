@@ -207,6 +207,18 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   // live until the next run of the MessageLoop, or if the object needs to be
   // released on a particular thread.
   //
+  // A common pattern is to manually increment the object's reference count
+  // (AddRef), clear the pointer, then issue a ReleaseSoon.  The reference count
+  // is incremented manually to ensure clearing the pointer does not trigger a
+  // delete and to account for the upcoming decrement (ReleaseSoon).  For
+  // example:
+  //
+  // scoped_refptr<Foo> foo = ...
+  // foo->AddRef();
+  // Foo* raw_foo = foo.get();
+  // foo = NULL;
+  // message_loop->ReleaseSoon(raw_foo);
+  //
   // NOTE: This method may be called on any thread.  The object will be
   // released (and thus possibly deleted) on the thread that executes
   // MessageLoop::Run().  If this is not the same as the thread that calls

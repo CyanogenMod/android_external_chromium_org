@@ -12,7 +12,6 @@ from telemetry.core import exceptions
 from telemetry.core import platform
 from telemetry.core import util
 from telemetry.core.platform import proc_supporting_platform_backend
-from telemetry.core.platform import factory
 from telemetry.core.platform.power_monitor import android_ds2784_power_monitor
 from telemetry.core.platform.power_monitor import android_dumpsys_power_monitor
 from telemetry.core.platform.power_monitor import android_temperature_monitor
@@ -49,7 +48,6 @@ class AndroidPlatformBackend(
     self._thermal_throttle = thermal_throttle.ThermalThrottle(self._device)
     self._no_performance_mode = no_performance_mode
     self._raw_display_frame_rate_measurements = []
-    self._host_platform_backend = factory.GetPlatformBackendForCurrentOS()
     self._can_access_protected_file_contents = \
         self._device.old_interface.CanAccessProtectedFileContents()
     power_controller = power_monitor_controller.PowerMonitorController([
@@ -109,21 +107,6 @@ class AndroidPlatformBackend(
   def HasBeenThermallyThrottled(self):
     return self._thermal_throttle.HasBeenThrottled()
 
-  def GetSystemCommitCharge(self):
-    for line in self._device.old_interface.RunShellCommand(
-        'dumpsys meminfo', log_result=False):
-      if line.startswith('Total PSS: '):
-        return int(line.split()[2]) * 1024
-    return 0
-
-  @decorators.Cache
-  def GetSystemTotalPhysicalMemory(self):
-    for line in self._device.old_interface.RunShellCommand(
-        'dumpsys meminfo', log_result=False):
-      if line.startswith('Total RAM: '):
-        return int(line.split()[2]) * 1024
-    return 0
-
   def GetCpuStats(self, pid):
     if not self._can_access_protected_file_contents:
       logging.warning('CPU stats cannot be retrieved on non-rooted device.')
@@ -144,14 +127,14 @@ class AndroidPlatformBackend(
     if not android_prebuilt_profiler_helper.InstallOnDevice(
         self._device, 'purge_ashmem'):
       raise Exception('Error installing purge_ashmem.')
-    if self._device.old_interface.RunShellCommand(
+    (status, output) = self._device.old_interface.GetAndroidToolStatusAndOutput(
         android_prebuilt_profiler_helper.GetDevicePath('purge_ashmem'),
-        log_result=True):
-      return
-    raise Exception('Error while purging ashmem.')
+        log_result=True)
+    if status != 0:
+      raise Exception('Error while purging ashmem: ' + '\n'.join(output))
 
   def GetMemoryStats(self, pid):
-    memory_usage = self._device.old_interface.GetMemoryUsageForPid(pid)[0]
+    memory_usage = self._device.old_interface.GetMemoryUsageForPid(pid)
     return {'ProportionalSetSize': memory_usage['Pss'] * 1024,
             'SharedDirty': memory_usage['Shared_Dirty'] * 1024,
             'PrivateDirty': memory_usage['Private_Dirty'] * 1024,
@@ -172,12 +155,12 @@ class AndroidPlatformBackend(
         break
     return child_pids
 
+  @decorators.Cache
   def GetCommandLine(self, pid):
-    ps = self._GetPsOutput(['pid', 'name'])
-    for curr_pid, curr_name in ps:
-      if int(curr_pid) == pid:
-        return curr_name
-    raise exceptions.ProcessGoneException()
+    ps = self._GetPsOutput(['pid', 'name'], pid)
+    if not ps:
+      raise exceptions.ProcessGoneException()
+    return ps[0][1]
 
   def GetOSName(self):
     return 'android'
@@ -203,7 +186,7 @@ class AndroidPlatformBackend(
   def LaunchApplication(
       self, application, parameters=None, elevate_privilege=False):
     if application in _HOST_APPLICATIONS:
-      self._host_platform_backend.LaunchApplication(
+      platform.GetHostPlatform().LaunchApplication(
           application, parameters, elevate_privilege=elevate_privilege)
       return
     if elevate_privilege:
@@ -215,17 +198,17 @@ class AndroidPlatformBackend(
 
   def IsApplicationRunning(self, application):
     if application in _HOST_APPLICATIONS:
-      return self._host_platform_backend.IsApplicationRunning(application)
+      return platform.GetHostPlatform().IsApplicationRunning(application)
     return len(self._device.old_interface.ExtractPid(application)) > 0
 
   def CanLaunchApplication(self, application):
     if application in _HOST_APPLICATIONS:
-      return self._host_platform_backend.CanLaunchApplication(application)
+      return platform.GetHostPlatform().CanLaunchApplication(application)
     return True
 
   def InstallApplication(self, application):
     if application in _HOST_APPLICATIONS:
-      self._host_platform_backend.InstallApplication(application)
+      platform.GetHostPlatform().InstallApplication(application)
       return
     raise NotImplementedError(
         'Please teach Telemetry how to install ' + application)

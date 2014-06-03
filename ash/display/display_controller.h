@@ -38,6 +38,7 @@ class Insets;
 
 namespace ash {
 class AshWindowTreeHost;
+struct AshWindowTreeHostInitParams;
 class CursorWindowController;
 class DisplayInfo;
 class DisplayManager;
@@ -92,8 +93,9 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver,
     return virtual_keyboard_window_controller_.get();
   }
 
-  // Create a WindowTreeHost for the primary display.
-  void CreatePrimaryHost();
+  // Create a WindowTreeHost for the primary display. This replaces
+  // |initial_bounds| in |init_params|.
+  void CreatePrimaryHost(const AshWindowTreeHostInitParams& init_params);
 
   // Initializes all displays.
   void InitDisplays();
@@ -145,11 +147,11 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver,
   // Sets the work area's |insets| to the display assigned to |window|.
   bool UpdateWorkAreaOfDisplayNearestWindow(const aura::Window* window,
                                             const gfx::Insets& insets);
-  // aura::DisplayObserver overrides:
-  virtual void OnDisplayBoundsChanged(
-      const gfx::Display& display) OVERRIDE;
+  // gfx::DisplayObserver overrides:
   virtual void OnDisplayAdded(const gfx::Display& display) OVERRIDE;
   virtual void OnDisplayRemoved(const gfx::Display& display) OVERRIDE;
+  virtual void OnDisplayMetricsChanged(const gfx::Display& display,
+                                       uint32_t metrics) OVERRIDE;
 
   // aura::WindowTreeHostObserver overrides:
   virtual void OnHostResized(const aura::WindowTreeHost* host) OVERRIDE;
@@ -169,7 +171,9 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver,
 
   // Creates a WindowTreeHost for |display| and stores it in the
   // |window_tree_hosts_| map.
-  AshWindowTreeHost* AddWindowTreeHostForDisplay(const gfx::Display& display);
+  AshWindowTreeHost* AddWindowTreeHostForDisplay(
+      const gfx::Display& display,
+      const AshWindowTreeHostInitParams& params);
 
   void OnFadeOutForSwapDisplayFinished();
 

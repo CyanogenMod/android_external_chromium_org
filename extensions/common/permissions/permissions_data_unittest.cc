@@ -14,7 +14,9 @@
 #include "content/public/common/socket_permission_request.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_builder.h"
 #include "extensions/common/id_util.h"
+#include "extensions/common/manifest.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/permissions/api_permission.h"
 #include "extensions/common/permissions/permission_set.h"
@@ -22,7 +24,9 @@
 #include "extensions/common/permissions/socket_permission.h"
 #include "extensions/common/switches.h"
 #include "extensions/common/url_pattern_set.h"
+#include "extensions/common/value_builder.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 using base::UTF16ToUTF8;
 using content::SocketPermissionRequest;
@@ -34,6 +38,8 @@ namespace extensions {
 
 namespace {
 
+const char kAllHostsPermission[] = "*://*/*";
+
 bool CheckSocketPermission(
     scoped_refptr<Extension> extension,
     SocketPermissionRequest::OperationType type,
@@ -42,6 +48,43 @@ bool CheckSocketPermission(
   SocketPermission::CheckParam param(type, host, port);
   return PermissionsData::CheckAPIPermissionWithParam(
       extension.get(), APIPermission::kSocket, &param);
+}
+
+// Creates and returns an extension with the given |id|, |host_permissions|, and
+// manifest |location|.
+scoped_refptr<const Extension> GetExtensionWithHostPermission(
+    const std::string& id,
+    const std::string& host_permissions,
+    Manifest::Location location) {
+  ListBuilder permissions;
+  if (!host_permissions.empty())
+    permissions.Append(host_permissions);
+
+  return ExtensionBuilder()
+      .SetManifest(
+          DictionaryBuilder()
+              .Set("name", id)
+              .Set("description", "an extension")
+              .Set("manifest_version", 2)
+              .Set("version", "1.0.0")
+              .Set("permissions", permissions.Pass())
+              .Build())
+      .SetLocation(location)
+      .SetID(id)
+      .Build();
+}
+
+bool RequiresActionForScriptExecution(const std::string& extension_id,
+                                      const std::string& host_permissions,
+                                      Manifest::Location location) {
+  scoped_refptr<const Extension> extension =
+      GetExtensionWithHostPermission(extension_id,
+                                     host_permissions,
+                                     location);
+  return PermissionsData::RequiresActionForScriptExecution(
+      extension,
+      -1,  // Ignore tab id for these.
+      GURL::EmptyGURL());
 }
 
 }  // namespace
@@ -153,6 +196,46 @@ TEST(ExtensionPermissionsTest, SocketPermissions) {
         "239.255.255.250", 1900));
 }
 
+TEST(ExtensionPermissionsTest, RequiresActionForScriptExecution) {
+  // Extensions with all_hosts should require action.
+  EXPECT_TRUE(RequiresActionForScriptExecution(
+      "all_hosts_permissions", kAllHostsPermission, Manifest::INTERNAL));
+  // Extensions with nearly all hosts are treated the same way.
+  EXPECT_TRUE(RequiresActionForScriptExecution(
+      "pseudo_all_hosts_permissions", "*://*.com/*", Manifest::INTERNAL));
+  // Extensions with explicit permissions shouldn't require action.
+  EXPECT_FALSE(RequiresActionForScriptExecution(
+      "explicit_permissions", "https://www.google.com/*", Manifest::INTERNAL));
+  // Policy extensions are exempt...
+  EXPECT_FALSE(RequiresActionForScriptExecution(
+      "policy", kAllHostsPermission, Manifest::EXTERNAL_POLICY));
+  // ... as are component extensions.
+  EXPECT_FALSE(RequiresActionForScriptExecution(
+      "component", kAllHostsPermission, Manifest::COMPONENT));
+  // Throw in an external pref extension to make sure that it's not just working
+  // for everything non-internal.
+  EXPECT_TRUE(RequiresActionForScriptExecution(
+      "external_pref", kAllHostsPermission, Manifest::EXTERNAL_PREF));
+
+  // If we grant an extension tab permissions, then it should no longer require
+  // action.
+  scoped_refptr<const Extension> extension =
+      GetExtensionWithHostPermission("all_hosts_permissions",
+                                     kAllHostsPermission,
+                                     Manifest::INTERNAL);
+  URLPatternSet allowed_hosts;
+  allowed_hosts.AddPattern(
+      URLPattern(URLPattern::SCHEME_HTTPS, "https://www.google.com/*"));
+  scoped_refptr<PermissionSet> tab_permissions(
+      new PermissionSet(APIPermissionSet(),
+                        ManifestPermissionSet(),
+                        allowed_hosts,
+                        URLPatternSet()));
+  PermissionsData::UpdateTabSpecificPermissions(extension, 0, tab_permissions);
+  EXPECT_FALSE(PermissionsData::RequiresActionForScriptExecution(
+      extension, 0, GURL("https://www.google.com/")));
+}
+
 TEST(ExtensionPermissionsTest, GetPermissionMessages_ManyAPIPermissions) {
   scoped_refptr<Extension> extension;
   extension = LoadManifest("permissions", "many-apis.json");
@@ -160,7 +243,7 @@ TEST(ExtensionPermissionsTest, GetPermissionMessages_ManyAPIPermissions) {
       PermissionsData::GetPermissionMessageStrings(extension.get());
   // Warning for "tabs" is suppressed by "history" permission.
   ASSERT_EQ(5u, warnings.size());
-  EXPECT_EQ("Access your data on api.flickr.com",
+  EXPECT_EQ("Read and modify your data on api.flickr.com",
             UTF16ToUTF8(warnings[0]));
   EXPECT_EQ("Read and modify your bookmarks", UTF16ToUTF8(warnings[1]));
   EXPECT_EQ("Detect your physical location", UTF16ToUTF8(warnings[2]));
@@ -178,7 +261,8 @@ TEST(ExtensionPermissionsTest, GetPermissionMessages_ManyHostsPermissions) {
       PermissionsData::GetPermissionMessageDetailsStrings(extension.get());
   ASSERT_EQ(1u, warnings.size());
   ASSERT_EQ(1u, warnings_details.size());
-  EXPECT_EQ("Access your data on 5 websites", UTF16ToUTF8(warnings[0]));
+  EXPECT_EQ("Read and modify your data on 5 websites",
+            UTF16ToUTF8(warnings[0]));
   EXPECT_EQ("- www.a.com\n- www.b.com\n- www.c.com\n- www.d.com\n- www.e.com",
             UTF16ToUTF8(warnings_details[0]));
 }
@@ -201,8 +285,9 @@ TEST(ExtensionPermissionsTest, GetPermissionMessages_ManyHosts) {
   std::vector<base::string16> warnings =
       PermissionsData::GetPermissionMessageStrings(extension.get());
   ASSERT_EQ(1u, warnings.size());
-  EXPECT_EQ("Access your data on encrypted.google.com and www.google.com",
-            UTF16ToUTF8(warnings[0]));
+  EXPECT_EQ(
+      "Read and modify your data on encrypted.google.com and www.google.com",
+      UTF16ToUTF8(warnings[0]));
 }
 
 TEST(ExtensionPermissionsTest, GetPermissionMessages_Plugins) {
@@ -216,8 +301,10 @@ TEST(ExtensionPermissionsTest, GetPermissionMessages_Plugins) {
   ASSERT_EQ(0u, warnings.size());
 #else
   ASSERT_EQ(1u, warnings.size());
-  EXPECT_EQ("Access all data on your computer and the websites you visit",
-            UTF16ToUTF8(warnings[0]));
+  EXPECT_EQ(
+      "Read and modify all your data on your computer and the websites you "
+      "visit",
+      UTF16ToUTF8(warnings[0]));
 #endif
 }
 

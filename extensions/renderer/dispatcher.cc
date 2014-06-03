@@ -73,7 +73,6 @@
 #include "extensions/renderer/user_script_slave.h"
 #include "extensions/renderer/utils_native_handler.h"
 #include "extensions/renderer/v8_context_native_handler.h"
-#include "grit/common_resources.h"
 #include "grit/renderer_resources.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
@@ -760,9 +759,24 @@ void Dispatcher::OnUpdateTabSpecificPermissions(
       this, page_id, tab_id, extension_id, origin_set);
 }
 
-void Dispatcher::OnUpdateUserScripts(base::SharedMemoryHandle scripts) {
-  DCHECK(base::SharedMemory::IsHandleValid(scripts)) << "Bad scripts handle";
-  user_script_slave_->UpdateScripts(scripts);
+void Dispatcher::OnUpdateUserScripts(
+    base::SharedMemoryHandle scripts,
+    const std::set<std::string>& extension_ids) {
+  if (!base::SharedMemory::IsHandleValid(scripts)) {
+    NOTREACHED() << "Bad scripts handle";
+    return;
+  }
+
+  for (std::set<std::string>::const_iterator iter = extension_ids.begin();
+       iter != extension_ids.end();
+       ++iter) {
+    if (!Extension::IdIsValid(*iter)) {
+      NOTREACHED() << "Invalid extension id: " << *iter;
+      return;
+    }
+  }
+
+  user_script_slave_->UpdateScripts(scripts, extension_ids);
   UpdateActiveExtensions();
 }
 
@@ -796,9 +810,9 @@ void Dispatcher::UpdateOriginPermissions(
     const char* schemes[] = {
         url::kHttpScheme,
         url::kHttpsScheme,
-        content::kFileScheme,
+        url::kFileScheme,
         content::kChromeUIScheme,
-        content::kFtpScheme,
+        url::kFtpScheme,
     };
     for (size_t j = 0; j < arraysize(schemes); ++j) {
       if (i->MatchesScheme(schemes[j])) {
@@ -867,7 +881,8 @@ void Dispatcher::UpdateBindingsForContext(ScriptContext* context) {
     case Feature::CONTENT_SCRIPT_CONTEXT: {
       // Extension context; iterate through all the APIs and bind the available
       // ones.
-      FeatureProvider* api_feature_provider = FeatureProvider::GetAPIFeatures();
+      const FeatureProvider* api_feature_provider =
+          FeatureProvider::GetAPIFeatures();
       const std::vector<std::string>& apis =
           api_feature_provider->GetAllFeatureNames();
       for (std::vector<std::string>::const_iterator it = apis.begin();
@@ -1187,7 +1202,8 @@ v8::Handle<v8::Object> Dispatcher::GetOrCreateBindObjectIfAvailable(
   //  If app is available and app.window is not, just install app.
   //  If app.window is available and app is not, delete app and install
   //  app.window on a new object so app does not have to be loaded.
-  FeatureProvider* api_feature_provider = FeatureProvider::GetAPIFeatures();
+  const FeatureProvider* api_feature_provider =
+      FeatureProvider::GetAPIFeatures();
   std::string ancestor_name;
   bool only_ancestor_available = false;
 

@@ -50,7 +50,7 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   virtual gfx::NativeView GetNativeView() const OVERRIDE;
   virtual gfx::NativeViewId GetNativeViewId() const OVERRIDE;
   virtual gfx::NativeViewAccessible GetNativeViewAccessible() OVERRIDE;
-  virtual void SetBackground(const SkBitmap& background) OVERRIDE;
+  virtual void SetBackgroundOpaque(bool opaque) OVERRIDE;
   virtual gfx::Size GetPhysicalBackingSize() const OVERRIDE;
 
   // RenderWidgetHostViewBase implementation.
@@ -94,7 +94,6 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
       const scoped_refptr<media::VideoFrame>& target,
       const base::Callback<void(bool)>& callback) OVERRIDE;
   virtual bool CanCopyToVideoFrame() const OVERRIDE;
-  virtual void OnAcceleratedCompositingStateChange() OVERRIDE;
   virtual void AcceleratedSurfaceInitialized(int host_id,
                                              int route_id) OVERRIDE;
   virtual void AcceleratedSurfaceBuffersSwapped(
@@ -141,7 +140,6 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
 
 #if defined(OS_ANDROID)
   // RenderWidgetHostViewBase implementation.
-  virtual void SelectionRootBoundsChanged(const gfx::Rect& bounds) OVERRIDE;
   virtual void ShowDisambiguationPopup(
       const gfx::Rect& target_rect,
       const SkBitmap& zoomed_bitmap) OVERRIDE;

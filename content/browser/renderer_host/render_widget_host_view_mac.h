@@ -16,6 +16,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
+#include "content/browser/compositor/delegated_frame_host.h"
+#include "content/browser/renderer_host/compositing_iosurface_layer_mac.h"
 #include "content/browser/renderer_host/display_link_mac.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/renderer_host/software_frame_manager.h"
@@ -35,9 +37,16 @@ class RenderWidgetHostViewMacEditCommandHelper;
 class WebContents;
 }
 
+namespace ui {
+class Compositor;
+class Layer;
+}
+
+@class BrowserCompositorViewMac;
 @class CompositingIOSurfaceLayer;
 @class FullscreenWindowManager;
 @protocol RenderWidgetHostViewMacDelegate;
+@class SoftwareLayer;
 @class ToolTip;
 
 @protocol RenderWidgetHostViewMacOwner
@@ -180,19 +189,6 @@ class WebContents;
                              actualRange:(NSRangePointer)actualRange;
 @end
 
-@interface SoftwareLayer : CALayer {
- @private
-  content::RenderWidgetHostViewMac* renderWidgetHostView_;
-}
-
-- (id)initWithRenderWidgetHostViewMac:(content::RenderWidgetHostViewMac*)r;
-
-// Invalidate the RenderWidgetHostViewMac because it may be going away. If
-// displayed again, it will draw white.
-- (void)disableRendering;
-
-@end
-
 namespace content {
 class RenderWidgetHostImpl;
 
@@ -214,8 +210,10 @@ class RenderWidgetHostImpl;
 // RenderWidgetHostView class hierarchy described in render_widget_host_view.h.
 class CONTENT_EXPORT RenderWidgetHostViewMac
     : public RenderWidgetHostViewBase,
+      public DelegatedFrameHostClient,
       public IPC::Sender,
-      public SoftwareFrameManagerClient {
+      public SoftwareFrameManagerClient,
+      public CompositingIOSurfaceLayerClient {
  public:
   // The view will associate itself with the given widget. The native view must
   // be hooked up immediately to the view hierarchy, or else when it is
@@ -257,7 +255,7 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   virtual void SpeakSelection() OVERRIDE;
   virtual bool IsSpeaking() const OVERRIDE;
   virtual void StopSpeaking() OVERRIDE;
-  virtual void SetBackground(const SkBitmap& background) OVERRIDE;
+  virtual void SetBackgroundOpaque(bool opaque) OVERRIDE;
 
   // Implementation of RenderWidgetHostViewBase.
   virtual void InitAsPopup(RenderWidgetHostView* parent_host_view,
@@ -305,7 +303,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   virtual void EndFrameSubscription() OVERRIDE;
   virtual void OnSwapCompositorFrame(
       uint32 output_surface_id, scoped_ptr<cc::CompositorFrame> frame) OVERRIDE;
-  virtual void OnAcceleratedCompositingStateChange() OVERRIDE;
   virtual void AcceleratedSurfaceInitialized(int host_id,
                                              int route_id) OVERRIDE;
   virtual void CreateBrowserAccessibilityManagerIfNeeded() OVERRIDE;
@@ -345,6 +342,10 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   virtual void ReleaseReferencesToSoftwareFrame() OVERRIDE;
 
   virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
+
+  // CompositingIOSurfaceLayerClient implementation.
+  virtual void AcceleratedLayerDidDrawFrame(bool succeeded) OVERRIDE;
+  virtual bool AcceleratedLayerHasNotAckedPendingFrame() const OVERRIDE;
 
   // Forwards the mouse event to the renderer.
   void ForwardMouseEvent(const blink::WebMouseEvent& event);
@@ -440,13 +441,13 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // Accelerated compositing structures. These may be dynamically created and
   // destroyed together in Create/DestroyCompositedIOSurfaceAndLayer.
   base::scoped_nsobject<CompositingIOSurfaceLayer> compositing_iosurface_layer_;
-  scoped_ptr<CompositingIOSurfaceMac> compositing_iosurface_;
+  scoped_refptr<CompositingIOSurfaceMac> compositing_iosurface_;
   scoped_refptr<CompositingIOSurfaceContext> compositing_iosurface_context_;
 
-  // Timer used to dynamically transition the compositing layer in and out of
-  // asynchronous mode.
-  base::DelayTimer<RenderWidgetHostViewMac>
-      compositing_iosurface_layer_async_timer_;
+  // Delegated frame management and compositior.
+  base::scoped_nsobject<BrowserCompositorViewMac> browser_compositor_view_;
+  scoped_ptr<DelegatedFrameHost> delegated_frame_host_;
+  scoped_ptr<ui::Layer> root_layer_;
 
   // This holds the current software compositing framebuffer, if any.
   scoped_ptr<SoftwareFrameManager> software_frame_manager_;
@@ -512,7 +513,19 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // update the scale factor of the layers.
   void LayoutLayers();
 
-  bool HasPendingSwapAck() const { return pending_swap_ack_; }
+  // DelegatedFrameHostClient implementation.
+  virtual ui::Compositor* GetCompositor() const OVERRIDE;
+  virtual ui::Layer* GetLayer() OVERRIDE;
+  virtual RenderWidgetHostImpl* GetHost() OVERRIDE;
+  virtual void SchedulePaintInRect(
+      const gfx::Rect& damage_rect_in_dip) OVERRIDE;
+  virtual bool IsVisible() OVERRIDE;
+  virtual scoped_ptr<ResizeLock> CreateResizeLock(
+      bool defer_compositor_lock) OVERRIDE;
+  virtual gfx::Size DesiredFrameSize() OVERRIDE;
+  virtual float CurrentDeviceScaleFactor() OVERRIDE;
+  virtual gfx::Size ConvertViewSizeToPixel(const gfx::Size& size) OVERRIDE;
+  virtual DelegatedFrameHost* GetDelegatedFrameHost() const OVERRIDE;
 
  private:
   friend class RenderWidgetHostViewMacTest;
@@ -564,10 +577,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
 
   // Called when a software DIB is received.
   void GotSoftwareFrame();
-
-  // Called if it has been a quarter-second since a GPU SwapBuffers has been
-  // received. In this case, switch from polling for frames to pushing them.
-  void TimerSinceGotAcceleratedFrameFired();
 
   // IPC message handlers.
   void OnPluginFocusChanged(bool focused, int plugin_id);

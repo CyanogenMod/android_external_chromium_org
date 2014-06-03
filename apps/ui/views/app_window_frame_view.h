@@ -77,16 +77,23 @@ class AppWindowFrameView : public views::NonClientFrameView,
   virtual void UpdateWindowTitle() OVERRIDE {}
 
   // views::View implementation.
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
-  virtual gfx::Size GetMinimumSize() OVERRIDE;
-  virtual gfx::Size GetMaximumSize() OVERRIDE;
+  virtual gfx::Size GetMinimumSize() const OVERRIDE;
+  virtual gfx::Size GetMaximumSize() const OVERRIDE;
 
   // views::ButtonListener implementation.
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE;
+
+  // Some button images we use depend on the color of the frame. This
+  // will set these images based on the color of the frame.
+  void SetButtonImagesForFrame();
+
+  // Return the current frame color based on the active state of the window.
+  SkColor CurrentFrameColor();
 
   views::Widget* widget_;
   NativeAppWindow* window_;

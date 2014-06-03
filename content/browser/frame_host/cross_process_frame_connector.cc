@@ -29,9 +29,8 @@ CrossProcessFrameConnector::~CrossProcessFrameConnector() {
 
 bool CrossProcessFrameConnector::OnMessageReceived(const IPC::Message& msg) {
   bool handled = true;
-  bool msg_is_ok = true;
 
-  IPC_BEGIN_MESSAGE_MAP_EX(CrossProcessFrameConnector, msg, msg_is_ok)
+  IPC_BEGIN_MESSAGE_MAP(CrossProcessFrameConnector, msg)
     IPC_MESSAGE_HANDLER(FrameHostMsg_BuffersSwappedACK, OnBuffersSwappedACK)
     IPC_MESSAGE_HANDLER(FrameHostMsg_CompositorFrameSwappedACK,
                         OnCompositorFrameSwappedACK)
@@ -41,7 +40,7 @@ bool CrossProcessFrameConnector::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(FrameHostMsg_InitializeChildFrame,
                         OnInitializeChildFrame)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
 
   return handled;
 }
@@ -54,9 +53,12 @@ void CrossProcessFrameConnector::set_view(
 
   view_ = view;
 
-  // Attach ourselves to the new view.
-  if (view_)
+  // Attach ourselves to the new view and size it appropriately.
+  if (view_) {
     view_->set_cross_process_frame_connector(this);
+    SetDeviceScaleFactor(device_scale_factor_);
+    SetSize(child_frame_rect_);
+  }
 }
 
 void CrossProcessFrameConnector::RenderProcessGone() {
@@ -124,20 +126,11 @@ void CrossProcessFrameConnector::OnReclaimCompositorResources(
 
 void CrossProcessFrameConnector::OnInitializeChildFrame(gfx::Rect frame_rect,
                                                         float scale_factor) {
-  if (scale_factor != device_scale_factor_) {
-    device_scale_factor_ = scale_factor;
-    if (view_) {
-      RenderWidgetHostImpl* child_widget =
-          RenderWidgetHostImpl::From(view_->GetRenderWidgetHost());
-      child_widget->NotifyScreenInfoChanged();
-    }
-  }
+  if (scale_factor != device_scale_factor_)
+    SetDeviceScaleFactor(scale_factor);
 
-  if (!frame_rect.size().IsEmpty()) {
-    child_frame_rect_ = frame_rect;
-    if (view_)
-      view_->SetSize(frame_rect.size());
-  }
+  if (!frame_rect.size().IsEmpty())
+    SetSize(frame_rect);
 }
 
 gfx::Rect CrossProcessFrameConnector::ChildFrameRect() {
@@ -174,6 +167,21 @@ void CrossProcessFrameConnector::OnForwardInputEvent(
         *static_cast<const blink::WebMouseWheelEvent*>(event));
     return;
   }
+}
+
+void CrossProcessFrameConnector::SetDeviceScaleFactor(float scale_factor) {
+  device_scale_factor_ = scale_factor;
+  if (view_) {
+    RenderWidgetHostImpl* child_widget =
+        RenderWidgetHostImpl::From(view_->GetRenderWidgetHost());
+    child_widget->NotifyScreenInfoChanged();
+  }
+}
+
+void CrossProcessFrameConnector::SetSize(gfx::Rect frame_rect) {
+  child_frame_rect_ = frame_rect;
+  if (view_)
+    view_->SetSize(frame_rect.size());
 }
 
 }  // namespace content

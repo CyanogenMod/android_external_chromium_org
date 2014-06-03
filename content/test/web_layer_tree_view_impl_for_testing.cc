@@ -68,6 +68,11 @@ void WebLayerTreeViewImplForTesting::setViewportSize(
   layer_tree_host_->SetViewportSize(device_viewport_size);
 }
 
+void WebLayerTreeViewImplForTesting::setViewportSize(
+    const WebSize& device_viewport_size) {
+  layer_tree_host_->SetViewportSize(device_viewport_size);
+}
+
 WebSize WebLayerTreeViewImplForTesting::layoutViewportSize() const {
   return layer_tree_host_->device_viewport_size();
 }
@@ -121,12 +126,6 @@ bool WebLayerTreeViewImplForTesting::commitRequested() const {
 }
 
 void WebLayerTreeViewImplForTesting::didStopFlinging() {}
-
-bool WebLayerTreeViewImplForTesting::compositeAndReadback(
-    void* pixels, const WebRect& rect_in_device_viewport) {
-  return layer_tree_host_->CompositeAndReadback(pixels,
-                                                rect_in_device_viewport);
-}
 
 void WebLayerTreeViewImplForTesting::finishAllRendering() {
   layer_tree_host_->FinishAllRendering();

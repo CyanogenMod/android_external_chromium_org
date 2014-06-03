@@ -26,7 +26,6 @@ var WEB_VIEW_ATTRIBUTE_MINWIDTH = 'minwidth';
 var WEB_VIEW_ATTRIBUTES = [
     'allowtransparency',
     'autosize',
-    'name',
     'partition',
     WEB_VIEW_ATTRIBUTE_MINHEIGHT,
     WEB_VIEW_ATTRIBUTE_MINWIDTH,
@@ -53,6 +52,9 @@ var CreateEvent = function(name) {
 //     behavior can be canceled. If the default action associated with the event
 //     is prevented, then its dispatch function will return false in its event
 //     handler. The event must have a custom handler for this to be meaningful.
+
+var FrameNameChangedEvent = CreateEvent('webview.onFrameNameChanged');
+
 var WEB_VIEW_EVENTS = {
   'close': {
     evt: CreateEvent('webview.onClose'),
@@ -387,6 +389,16 @@ WebViewInternal.prototype.setupWebviewNodeProperties = function() {
     enumerable: true
   });
 
+  Object.defineProperty(this.webviewNode, 'name', {
+    get: function() {
+      return self.name;
+    },
+    set: function(value) {
+      self.webviewNode.setAttribute('name', value);
+    },
+    enumerable: true
+  });
+
   // We cannot use {writable: true} property descriptor because we want a
   // dynamic getter value.
   Object.defineProperty(this.webviewNode, 'contentWindow', {
@@ -446,7 +458,22 @@ WebViewInternal.prototype.handleWebviewAttributeMutation =
   // a BrowserPlugin property will update the corresponding BrowserPlugin
   // attribute, if necessary. See BrowserPlugin::UpdateDOMAttribute for more
   // details.
-  if (name == 'src') {
+  if (name == 'name') {
+    // We treat null attribute (attribute removed) and the empty string as
+    // one case.
+    oldValue = oldValue || '';
+    newValue = newValue || '';
+
+    if (oldValue === newValue) {
+      return;
+    }
+    this.name = newValue;
+    if (!this.instanceId) {
+      return;
+    }
+    WebView.setName(this.instanceId, newValue);
+    return;
+  } else if (name == 'src') {
     // We treat null attribute (attribute removed) and the empty string as
     // one case.
     oldValue = oldValue || '';
@@ -595,6 +622,21 @@ WebViewInternal.prototype.setupWebviewNodeEvents = function() {
 /**
  * @private
  */
+WebViewInternal.prototype.setupNameAttribute = function() {
+  var self = this;
+  FrameNameChangedEvent.addListener(function(event) {
+    self.name = event.name || '';
+    if (self.name === '') {
+      self.webviewNode.removeAttribute('name');
+    } else {
+      self.webviewNode.setAttribute('name', self.name);
+    }
+  }, {instanceId: self.instanceId});
+};
+
+/**
+ * @private
+ */
 WebViewInternal.prototype.setupEvent = function(eventName, eventInfo) {
   var self = this;
   var webviewNode = this.webviewNode;
@@ -664,9 +706,7 @@ WebViewInternal.prototype.handleDialogEvent =
   };
 
   var self = this;
-  var browserPluginNode = this.browserPluginNode;
   var webviewNode = this.webviewNode;
-
   var requestId = event.requestId;
   var actionTaken = false;
 
@@ -781,7 +821,6 @@ WebViewInternal.prototype.handleNewWindowEvent =
   };
 
   var self = this;
-  var browserPluginNode = this.browserPluginNode;
   var webviewNode = this.webviewNode;
 
   var requestId = event.requestId;
@@ -887,9 +926,7 @@ WebViewInternal.prototype.handlePermissionEvent =
     return;
   }
 
-  var browserPluginNode = this.browserPluginNode;
   var webviewNode = this.webviewNode;
-
   var decisionMade = false;
 
   var validateCall = function() {
@@ -944,6 +981,28 @@ WebViewInternal.prototype.handlePermissionEvent =
   }
 };
 
+var WebRequestMessageEvent = CreateEvent('webview.onMessage');
+
+function DeclarativeWebRequestEvent(opt_eventName,
+                                    opt_argSchemas,
+                                    opt_eventOptions,
+                                    opt_webViewInstanceId) {
+  var subEventName = opt_eventName + '/' + IdGenerator.GetNextId();
+  EventBindings.Event.call(this, subEventName, opt_argSchemas, opt_eventOptions,
+      opt_webViewInstanceId);
+
+  var self = this;
+  // TODO(lazyboy): When do we dispose this listener?
+  WebRequestMessageEvent.addListener(function() {
+    // Re-dispatch to subEvent's listeners.
+    $Function.apply(self.dispatch, self, $Array.slice(arguments));
+  }, {instanceId: opt_webViewInstanceId || 0});
+}
+
+DeclarativeWebRequestEvent.prototype = {
+  __proto__: EventBindings.Event.prototype
+};
+
 /**
  * @private
  */
@@ -964,12 +1023,36 @@ WebViewInternal.prototype.setupWebRequestEvents = function() {
     };
   };
 
+  var createDeclarativeWebRequestEvent = function(webRequestEvent) {
+    return function() {
+      if (!self[webRequestEvent.name]) {
+        // The onMessage event gets a special event type because we want
+        // the listener to fire only for messages targeted for this particular
+        // <webview>.
+        var EventClass = webRequestEvent.name === 'onMessage' ?
+            DeclarativeWebRequestEvent : EventBindings.Event;
+        self[webRequestEvent.name] =
+            new EventClass(
+                'webview.' + webRequestEvent.name,
+                webRequestEvent.parameters,
+                webRequestEvent.options,
+                self.viewInstanceId);
+      }
+      return self[webRequestEvent.name];
+    };
+  };
+
   for (var i = 0; i < DeclarativeWebRequestSchema.events.length; ++i) {
     var eventSchema = DeclarativeWebRequestSchema.events[i];
-    var webRequestEvent = createWebRequestEvent(eventSchema);
-    this.maybeAttachWebRequestEventToObject(request,
-                                            eventSchema.name,
-                                            webRequestEvent);
+    var webRequestEvent = createDeclarativeWebRequestEvent(eventSchema);
+    Object.defineProperty(
+        request,
+        eventSchema.name,
+        {
+          get: webRequestEvent,
+          enumerable: true
+        }
+    );
   }
 
   // Populate the WebRequest events from the API definition.
@@ -983,9 +1066,6 @@ WebViewInternal.prototype.setupWebRequestEvents = function() {
           enumerable: true
         }
     );
-    this.maybeAttachWebRequestEventToObject(this.webviewNode,
-                                            WebRequestSchema.events[i].name,
-                                            webRequestEvent);
   }
   Object.defineProperty(
       this.webviewNode,
@@ -1024,18 +1104,19 @@ WebViewInternal.prototype.attachWindowAndSetUpEvents = function(instanceId) {
   this.instanceId = instanceId;
   var params = {
     'api': 'webview',
-    'instanceId': this.viewInstanceId
+    'instanceId': this.viewInstanceId,
+    'name': this.name
   };
   if (this.userAgentOverride) {
     params['userAgentOverride'] = this.userAgentOverride;
   }
-  this.browserPluginNode['-internal-attach'](this.instanceId, params);
-
+  this.setupNameAttribute();
   var events = this.getEvents();
   for (var eventName in events) {
     this.setupEvent(eventName, events[eventName]);
   }
-  return true;
+
+  return this.browserPluginNode['-internal-attach'](this.instanceId, params);
 };
 
 // Registers browser plugin <object> custom element.
@@ -1178,12 +1259,6 @@ window.addEventListener('readystatechange', function listener(event) {
  * @private
  */
 WebViewInternal.prototype.maybeGetExperimentalEvents = function() {};
-
-/**
- * Implemented when the experimental API is available.
- * @private
- */
-WebViewInternal.prototype.maybeAttachWebRequestEventToObject = function() {};
 
 /**
  * Implemented when the experimental API is available.

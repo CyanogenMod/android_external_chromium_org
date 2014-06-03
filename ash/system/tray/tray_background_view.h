@@ -41,7 +41,7 @@ class ASH_EXPORT TrayBackgroundView : public ActionableView,
     void set_size(const gfx::Size& size) { size_ = size; }
 
     // views::View:
-    virtual gfx::Size GetPreferredSize() OVERRIDE;
+    virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
    protected:
     // views::View:

@@ -186,7 +186,7 @@ void SetDefaultsFromValue(const base::DictionaryValue* dict,
       if (icon_value->GetString(kIconSizes[i].size_string, &str_value) &&
           StringToSkBitmap(str_value, &bitmap)) {
         CHECK(!bitmap.isNull());
-        float scale = ui::GetImageScale(kIconSizes[i].scale);
+        float scale = ui::GetScaleForScaleFactor(kIconSizes[i].scale);
         icon.AddRepresentation(gfx::ImageSkiaRep(bitmap, scale));
       }
     }
@@ -216,7 +216,7 @@ scoped_ptr<base::DictionaryValue> DefaultsToValue(ExtensionAction* action) {
   if (!icon.isNull()) {
     base::DictionaryValue* icon_value = new base::DictionaryValue();
     for (size_t i = 0; i < arraysize(kIconSizes); i++) {
-      float scale = ui::GetImageScale(kIconSizes[i].scale);
+      float scale = ui::GetScaleForScaleFactor(kIconSizes[i].scale);
       if (icon.HasRepresentation(scale)) {
         icon_value->SetString(
             kIconSizes[i].size_string,
@@ -445,7 +445,7 @@ void ExtensionActionStorageManager::OnExtensionLoaded(
                    AsWeakPtr(),
                    extension->id()));
   }
-};
+}
 
 void ExtensionActionStorageManager::Observe(
     int type,
@@ -632,8 +632,7 @@ void ExtensionActionFunction::NotifyBrowserActionChange() {
 }
 
 void ExtensionActionFunction::NotifyLocationBarChange() {
-  TabHelper::FromWebContents(contents_)->
-      location_bar_controller()->NotifyChange();
+  LocationBarController::NotifyChange(contents_);
 }
 
 void ExtensionActionFunction::NotifySystemIndicatorChange() {
@@ -682,7 +681,7 @@ bool ExtensionActionSetIconFunction::RunExtensionAction() {
         SkBitmap bitmap;
         EXTENSION_FUNCTION_VALIDATE(IPC::ReadParam(&pickle, &iter, &bitmap));
         CHECK(!bitmap.isNull());
-        float scale = ui::GetImageScale(kIconSizes[i].scale);
+        float scale = ui::GetScaleForScaleFactor(kIconSizes[i].scale);
         icon.AddRepresentation(gfx::ImageSkiaRep(bitmap, scale));
       }
     }
@@ -909,8 +908,7 @@ bool PageActionsFunction::SetPageActionEnabled(bool enable) {
   // Set visibility and broadcast notifications that the UI should be updated.
   page_action->SetIsVisible(tab_id, enable);
   page_action->SetTitle(tab_id, title);
-  extensions::TabHelper::FromWebContents(contents)->
-      location_bar_controller()->NotifyChange();
+  extensions::LocationBarController::NotifyChange(contents);
 
   return true;
 }

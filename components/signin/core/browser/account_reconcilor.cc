@@ -15,7 +15,9 @@
 #include "base/time/time.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_client.h"
+#include "components/signin/core/browser/signin_metrics.h"
 #include "components/signin/core/browser/signin_oauth_helper.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "google_apis/gaia/gaia_auth_fetcher.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "google_apis/gaia/gaia_constants.h"
@@ -198,6 +200,7 @@ AccountReconcilor::AccountReconcilor(ProfileOAuth2TokenService* token_service,
                             this),
       registered_with_token_service_(false),
       is_reconcile_started_(false),
+      first_execution_(true),
       are_gaia_accounts_set_(false),
       requests_(NULL) {
   VLOG(1) << "AccountReconcilor::AccountReconcilor";
@@ -235,6 +238,7 @@ void AccountReconcilor::Shutdown() {
   merge_session_helper_.CancelAll();
   merge_session_helper_.RemoveObserver(this);
   gaia_fetcher_.reset();
+  get_gaia_accounts_callbacks_.clear();
   DeleteFetchers();
   UnregisterWithSigninManager();
   UnregisterWithTokenService();
@@ -313,15 +317,14 @@ void AccountReconcilor::OnCookieChanged(const net::CanonicalCookie* cookie) {
       cookie->Domain() == GaiaUrls::GetInstance()->gaia_url().host() &&
       cookie->IsSecure() && cookie->IsHttpOnly()) {
     VLOG(1) << "AccountReconcilor::OnCookieChanged: LSID changed";
-#ifdef OS_CHROMEOS
-    // On Chrome OS it is possible that O2RT is not available at this moment
-    // because profile data transfer is still in progress.
+
+    // It is possible that O2RT is not available at this moment.
     if (!token_service_->GetAccounts().size()) {
       VLOG(1) << "AccountReconcilor::OnCookieChanged: cookie change is ingored"
-                 "because profile data transfer is in progress.";
+                 "because O2RT is not available yet.";
       return;
     }
-#endif
+
     StartReconcile();
   }
 }
@@ -333,7 +336,7 @@ void AccountReconcilor::OnRefreshTokenAvailable(const std::string& account_id) {
 
 void AccountReconcilor::OnRefreshTokenRevoked(const std::string& account_id) {
   VLOG(1) << "AccountReconcilor::OnRefreshTokenRevoked: " << account_id;
-  StartRemoveAction(account_id);
+  PerformStartRemoveAction(account_id);
 }
 
 void AccountReconcilor::OnRefreshTokensLoaded() {}
@@ -347,27 +350,37 @@ void AccountReconcilor::GoogleSigninSucceeded(const std::string& username,
 
 void AccountReconcilor::GoogleSignedOut(const std::string& username) {
   VLOG(1) << "AccountReconcilor::GoogleSignedOut: signed out";
+  gaia_fetcher_.reset();
+  get_gaia_accounts_callbacks_.clear();
+  AbortReconcile();
   UnregisterWithTokenService();
   UnregisterForCookieChanges();
+  PerformLogoutAllAccountsAction();
 }
 
 void AccountReconcilor::PerformMergeAction(const std::string& account_id) {
+  if (!switches::IsNewProfileManagement())
+    return;
   VLOG(1) << "AccountReconcilor::PerformMergeAction: " << account_id;
   merge_session_helper_.LogIn(account_id);
 }
 
-void AccountReconcilor::StartRemoveAction(const std::string& account_id) {
-  VLOG(1) << "AccountReconcilor::StartRemoveAction: " << account_id;
-  GetAccountsFromCookie(base::Bind(&AccountReconcilor::FinishRemoveAction,
-                                   base::Unretained(this),
-                                   account_id));
+void AccountReconcilor::PerformStartRemoveAction(
+    const std::string& account_id) {
+  VLOG(1) << "AccountReconcilor::PerformStartRemoveAction: " << account_id;
+  GetAccountsFromCookie(base::Bind(
+      &AccountReconcilor::PerformFinishRemoveAction,
+      base::Unretained(this),
+      account_id));
 }
 
-void AccountReconcilor::FinishRemoveAction(
+void AccountReconcilor::PerformFinishRemoveAction(
     const std::string& account_id,
     const GoogleServiceAuthError& error,
     const std::vector<std::pair<std::string, bool> >& accounts) {
-  VLOG(1) << "AccountReconcilor::FinishRemoveAction:"
+  if (!switches::IsNewProfileManagement())
+    return;
+  VLOG(1) << "AccountReconcilor::PerformFinishRemoveAction:"
           << " account=" << account_id << " error=" << error.ToString();
   if (error.state() == GoogleServiceAuthError::NONE) {
     AbortReconcile();
@@ -385,6 +398,8 @@ void AccountReconcilor::FinishRemoveAction(
 
 void AccountReconcilor::PerformAddToChromeAction(const std::string& account_id,
                                                  int session_index) {
+  if (!switches::IsNewProfileManagement())
+    return;
   VLOG(1) << "AccountReconcilor::PerformAddToChromeAction:"
           << " account=" << account_id << " session_index=" << session_index;
 
@@ -395,6 +410,8 @@ void AccountReconcilor::PerformAddToChromeAction(const std::string& account_id,
 }
 
 void AccountReconcilor::PerformLogoutAllAccountsAction() {
+  if (!switches::IsNewProfileManagement())
+    return;
   VLOG(1) << "AccountReconcilor::PerformLogoutAllAccountsAction";
   merge_session_helper_.LogOutAllAccounts();
 }
@@ -609,6 +626,7 @@ void AccountReconcilor::FinishReconcile() {
   // completed otherwise.  Make a copy of |add_to_cookie_| since calls to
   // SignalComplete() will change the array.
   std::vector<std::string> add_to_cookie_copy = add_to_cookie_;
+  int added_to_cookie = 0;
   for (size_t i = 0; i < add_to_cookie_copy.size(); ++i) {
     if (gaia_accounts_.end() !=
             std::find_if(gaia_accounts_.begin(),
@@ -621,6 +639,7 @@ void AccountReconcilor::FinishReconcile() {
           GoogleServiceAuthError::AuthErrorNone());
     } else {
       PerformMergeAction(add_to_cookie_copy[i]);
+      added_to_cookie++;
     }
   }
 
@@ -633,6 +652,12 @@ void AccountReconcilor::FinishReconcile() {
     PerformAddToChromeAction(i->first, i->second);
   }
 
+  signin_metrics::LogSigninAccountReconciliation(valid_chrome_accounts_.size(),
+                                                 added_to_cookie,
+                                                 add_to_chrome_.size(),
+                                                 are_primaries_equal,
+                                                 first_execution_);
+  first_execution_ = false;
   CalculateIfReconcileIsDone();
   ScheduleStartReconcileIfChromeAccountsChanged();
 }
@@ -700,13 +725,22 @@ void AccountReconcilor::HandleFailedAccountIdCheck(
   FinishReconcile();
 }
 
+void AccountReconcilor::PerformAddAccountToTokenService(
+    const std::string& account_id,
+    const std::string& refresh_token) {
+  // The flow should never get to this method if new_profile_management is
+  // false, but better safe than sorry.
+  if (!switches::IsNewProfileManagement())
+    return;
+  token_service_->UpdateCredentials(account_id, refresh_token);
+}
+
 void AccountReconcilor::HandleRefreshTokenFetched(
     const std::string& account_id,
     const std::string& refresh_token) {
   if (!refresh_token.empty()) {
-    token_service_->UpdateCredentials(account_id, refresh_token);
+    PerformAddAccountToTokenService(account_id, refresh_token);
   }
-
   // Remove the account from the list that is being updated.
   for (std::vector<std::pair<std::string, int> >::iterator i =
            add_to_chrome_.begin();

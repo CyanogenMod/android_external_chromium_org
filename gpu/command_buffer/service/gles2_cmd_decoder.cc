@@ -948,6 +948,8 @@ class GLES2DecoderImpl : public GLES2Decoder,
 
   void DoDrawBuffersEXT(GLsizei count, const GLenum* bufs);
 
+  void DoLoseContextCHROMIUM(GLenum current, GLenum other);
+
   // Creates a Program for the given program.
   Program* CreateProgram(
       GLuint client_id, GLuint service_id) {
@@ -1461,7 +1463,7 @@ class GLES2DecoderImpl : public GLES2Decoder,
   // simulated.
   bool SimulateAttrib0(
       const char* function_name, GLuint max_vertex_accessed, bool* simulated);
-  void RestoreStateForAttrib(GLuint attrib);
+  void RestoreStateForAttrib(GLuint attrib, bool restore_array_binding);
 
   // If an image is bound to texture, this will call Will/DidUseTexImage
   // if needed.
@@ -1716,7 +1718,9 @@ class GLES2DecoderImpl : public GLES2Decoder,
   // Backbuffer attachments that are currently undefined.
   uint32 backbuffer_needs_clear_bits_;
 
-  // The current decoder error.
+  // The current decoder error communicates the decoder error through command
+  // processing functions that do not return the error value. Should be set only
+  // if not returning an error.
   error::Error current_decoder_error_;
 
   bool use_shader_translator_;
@@ -4116,13 +4120,6 @@ void GLES2DecoderImpl::DoDisableVertexAttribArray(GLuint index) {
 void GLES2DecoderImpl::DoDiscardFramebufferEXT(GLenum target,
                                                GLsizei numAttachments,
                                                const GLenum* attachments) {
-  if (!features().ext_discard_framebuffer) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
-                       "glDiscardFramebufferEXT",
-                       "function not available");
-    return;
-  }
-
   Framebuffer* framebuffer =
       GetFramebufferInfoForTarget(GL_FRAMEBUFFER);
 
@@ -5100,12 +5097,6 @@ void GLES2DecoderImpl::DoFramebufferTexture2D(
 void GLES2DecoderImpl::DoFramebufferTexture2DMultisample(
     GLenum target, GLenum attachment, GLenum textarget,
     GLuint client_texture_id, GLint level, GLsizei samples) {
-  if (!features().multisampled_render_to_texture) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_OPERATION,
-        "glFramebufferTexture2DMultisample", "function not available");
-    return;
-  }
   DoFramebufferTexture2DCommon(
     "glFramebufferTexture2DMultisample", target, attachment,
     textarget, client_texture_id, level, samples);
@@ -5238,12 +5229,6 @@ void GLES2DecoderImpl::DoBlitFramebufferCHROMIUM(
     GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1,
     GLbitfield mask, GLenum filter) {
   DCHECK(!ShouldDeferReads() && !ShouldDeferDraws());
-  if (!features().chromium_framebuffer_multisample) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_OPERATION,
-        "glBlitFramebufferCHROMIUM", "function not available");
-    return;
-  }
 
   if (!CheckBoundFramebuffersValid("glBlitFramebufferCHROMIUM")) {
     return;
@@ -5343,13 +5328,6 @@ bool GLES2DecoderImpl::ValidateRenderbufferStorageMultisample(
 void GLES2DecoderImpl::DoRenderbufferStorageMultisampleCHROMIUM(
     GLenum target, GLsizei samples, GLenum internalformat,
     GLsizei width, GLsizei height) {
-  if (!features().chromium_framebuffer_multisample) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
-                       "glRenderbufferStorageMultisampleCHROMIUM",
-                       "function not available");
-    return;
-  }
-
   Renderbuffer* renderbuffer = GetRenderbufferInfoForTarget(GL_RENDERBUFFER);
   if (!renderbuffer) {
     LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
@@ -5396,13 +5374,6 @@ void GLES2DecoderImpl::DoRenderbufferStorageMultisampleCHROMIUM(
 void GLES2DecoderImpl::DoRenderbufferStorageMultisampleEXT(
     GLenum target, GLsizei samples, GLenum internalformat,
     GLsizei width, GLsizei height) {
-  if (!features().multisampled_render_to_texture) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_OPERATION,
-        "glRenderbufferStorageMultisampleEXT", "function not available");
-    return;
-  }
-
   Renderbuffer* renderbuffer = GetRenderbufferInfoForTarget(GL_RENDERBUFFER);
   if (!renderbuffer) {
     LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
@@ -6267,21 +6238,23 @@ bool GLES2DecoderImpl::SimulateAttrib0(
   return true;
 }
 
-void GLES2DecoderImpl::RestoreStateForAttrib(GLuint attrib_index) {
+void GLES2DecoderImpl::RestoreStateForAttrib(
+    GLuint attrib_index, bool restore_array_binding) {
   const VertexAttrib* attrib =
       state_.vertex_attrib_manager->GetVertexAttrib(attrib_index);
-  const void* ptr = reinterpret_cast<const void*>(attrib->offset());
-  Buffer* buffer = attrib->buffer();
-  glBindBuffer(GL_ARRAY_BUFFER, buffer ? buffer->service_id() : 0);
-  glVertexAttribPointer(
-      attrib_index, attrib->size(), attrib->type(), attrib->normalized(),
-      attrib->gl_stride(), ptr);
+  if (restore_array_binding) {
+    const void* ptr = reinterpret_cast<const void*>(attrib->offset());
+    Buffer* buffer = attrib->buffer();
+    glBindBuffer(GL_ARRAY_BUFFER, buffer ? buffer->service_id() : 0);
+    glVertexAttribPointer(
+        attrib_index, attrib->size(), attrib->type(), attrib->normalized(),
+        attrib->gl_stride(), ptr);
+  }
   if (attrib->divisor())
     glVertexAttribDivisorANGLE(attrib_index, attrib->divisor());
   glBindBuffer(
-      GL_ARRAY_BUFFER,
-      state_.bound_array_buffer.get() ? state_.bound_array_buffer->service_id()
-                                      : 0);
+      GL_ARRAY_BUFFER, state_.bound_array_buffer.get() ?
+          state_.bound_array_buffer->service_id() : 0);
 
   // Never touch vertex attribute 0's state (in particular, never
   // disable it) when running on desktop GL because it will never be
@@ -6485,7 +6458,11 @@ error::Error GLES2DecoderImpl::DoDrawArrays(
       }
     }
     if (simulated_attrib_0) {
-      RestoreStateForAttrib(0);
+      // We don't have to restore attrib 0 generic data at the end of this
+      // function even if it is simulated. This is because we will simulate
+      // it in each draw call, and attrib 0 generic data queries use cached
+      // values instead of passing down to the underlying driver.
+      RestoreStateForAttrib(0, false);
     }
   }
   return error::kNoError;
@@ -6621,7 +6598,11 @@ error::Error GLES2DecoderImpl::DoDrawElements(
       }
     }
     if (simulated_attrib_0) {
-      RestoreStateForAttrib(0);
+      // We don't have to restore attrib 0 generic data at the end of this
+      // function even if it is simulated. This is because we will simulate
+      // it in each draw call, and attrib 0 generic data queries use cached
+      // values instead of passing down to the underlying driver.
+      RestoreStateForAttrib(0, false);
     }
   }
   return error::kNoError;
@@ -7197,6 +7178,7 @@ error::Error GLES2DecoderImpl::HandleVertexAttribDivisorANGLE(
     LOCAL_SET_GL_ERROR(
         GL_INVALID_OPERATION,
         "glVertexAttribDivisorANGLE", "function not available");
+    return error::kNoError;
   }
   GLuint index = c.index;
   GLuint divisor = c.divisor;
@@ -8287,7 +8269,8 @@ error::Error GLES2DecoderImpl::HandleCompressedTexSubImage2DBucket(
 
 error::Error GLES2DecoderImpl::HandleTexImage2D(
     uint32 immediate_data_size, const cmds::TexImage2D& c) {
-  TRACE_EVENT0("gpu", "GLES2DecoderImpl::HandleTexImage2D");
+  TRACE_EVENT2("gpu", "GLES2DecoderImpl::HandleTexImage2D",
+      "width", c.width, "height", c.height);
   // Set as failed for now, but if it successed, this will be set to not failed.
   texture_state_.tex_image_2d_failed = true;
   GLenum target = static_cast<GLenum>(c.target);
@@ -8421,6 +8404,7 @@ void GLES2DecoderImpl::DoCopyTexImage2D(
   if (texture->IsImmutable()) {
     LOCAL_SET_GL_ERROR(
         GL_INVALID_OPERATION, "glCopyTexImage2D", "texture is immutable");
+    return;
   }
   if (!texture_manager()->ValidForTarget(target, level, width, height, 1) ||
       border != 0) {
@@ -8761,7 +8745,8 @@ error::Error GLES2DecoderImpl::DoTexSubImage2D(
 
 error::Error GLES2DecoderImpl::HandleTexSubImage2D(
     uint32 immediate_data_size, const cmds::TexSubImage2D& c) {
-  TRACE_EVENT0("gpu", "GLES2DecoderImpl::HandleTexSubImage2D");
+  TRACE_EVENT2("gpu", "GLES2DecoderImpl::HandleTexSubImage2D",
+      "width", c.width, "height", c.height);
   GLboolean internal = static_cast<GLboolean>(c.internal);
   if (internal == GL_TRUE && texture_state_.tex_image_2d_failed)
     return error::kNoError;
@@ -9095,7 +9080,7 @@ error::Error GLES2DecoderImpl::HandleShaderBinary(
   if (shaders == NULL || binary == NULL) {
     return error::kOutOfBounds;
   }
-  scoped_array<GLuint> service_ids(new GLuint[n]);
+  scoped_ptr<GLuint[]> service_ids(new GLuint[n]);
   for (GLsizei ii = 0; ii < n; ++ii) {
     Shader* shader = GetShader(shaders[ii]);
     if (!shader) {
@@ -9473,23 +9458,6 @@ void GLES2DecoderImpl::LoseContext(uint32 reset_status) {
   current_decoder_error_ = error::kLostContext;
 }
 
-error::Error GLES2DecoderImpl::HandleLoseContextCHROMIUM(
-    uint32 immediate_data_size, const cmds::LoseContextCHROMIUM& c) {
-  GLenum current = static_cast<GLenum>(c.current);
-  GLenum other = static_cast<GLenum>(c.other);
-  if (!validators_->reset_status.IsValid(current)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glLoseContextCHROMIUM", current, "current");
-  }
-  if (!validators_->reset_status.IsValid(other)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM("glLoseContextCHROMIUM", other, "other");
-  }
-  group_->LoseContexts(other);
-  reset_status_ = current;
-  current_decoder_error_ = error::kLostContext;
-  return error::kLostContext;
-}
-
 error::Error GLES2DecoderImpl::HandleInsertSyncPointCHROMIUM(
     uint32 immediate_data_size, const cmds::InsertSyncPointCHROMIUM& c) {
   return error::kUnknownCommand;
@@ -9758,7 +9726,7 @@ void GLES2DecoderImpl::DoBindVertexArrayOES(GLuint client_id) {
 void GLES2DecoderImpl::EmulateVertexArrayState() {
   // Setup the Vertex attribute state
   for (uint32 vv = 0; vv < group_->max_vertex_attribs(); ++vv) {
-    RestoreStateForAttrib(vv);
+    RestoreStateForAttrib(vv, true);
   }
 
   // Setup the element buffer
@@ -10133,7 +10101,8 @@ void GLES2DecoderImpl::DoTexStorage2DEXT(
     GLenum internal_format,
     GLsizei width,
     GLsizei height) {
-  TRACE_EVENT0("gpu", "GLES2DecoderImpl::DoTexStorage2DEXT");
+  TRACE_EVENT2("gpu", "GLES2DecoderImpl::DoTexStorage2DEXT",
+      "width", width, "height", height);
   if (!texture_manager()->ValidForTarget(target, 0, width, height, 1) ||
       TextureManager::ComputeMipMapCount(target, width, height, 1) < levels) {
     LOCAL_SET_GL_ERROR(
@@ -10484,6 +10453,12 @@ void GLES2DecoderImpl::DoDrawBuffersEXT(
     glDrawBuffersARB(count, &mapped_buf);
     group_->set_draw_buffer(bufs[0]);
   }
+}
+
+void GLES2DecoderImpl::DoLoseContextCHROMIUM(GLenum current, GLenum other) {
+  group_->LoseContexts(other);
+  reset_status_ = current;
+  current_decoder_error_ = error::kLostContext;
 }
 
 bool GLES2DecoderImpl::ValidateAsyncTransfer(

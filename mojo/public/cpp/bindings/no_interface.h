@@ -8,6 +8,7 @@
 #include <assert.h>
 
 #include "mojo/public/cpp/bindings/message.h"
+#include "mojo/public/cpp/bindings/message_filter.h"
 #include "mojo/public/cpp/system/core.h"
 
 namespace mojo {
@@ -22,9 +23,10 @@ class NoInterface {
  public:
   typedef NoInterfaceProxy Proxy_;
   typedef NoInterfaceStub Stub_;
-  typedef NoInterface Client_;
+  typedef PassThroughFilter RequestValidator_;
+  typedef PassThroughFilter ResponseValidator_;
+  typedef NoInterface Client;
   virtual ~NoInterface() {}
-  virtual void SetClient(NoInterface* client) {}
 };
 
 class NoInterfaceProxy : public NoInterface {
@@ -32,10 +34,11 @@ class NoInterfaceProxy : public NoInterface {
   explicit NoInterfaceProxy(MessageReceiver* receiver) {}
 };
 
-class NoInterfaceStub : public MessageReceiver {
+class NoInterfaceStub : public MessageReceiverWithResponder {
  public:
   NoInterfaceStub() {}
   void set_sink(NoInterface* sink) {}
+  NoInterface* sink() { return NULL; }
   virtual bool Accept(Message* message) MOJO_OVERRIDE;
   virtual bool AcceptWithResponder(Message* message, MessageReceiver* responder)
       MOJO_OVERRIDE;

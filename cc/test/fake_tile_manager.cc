@@ -5,7 +5,6 @@
 #include "cc/test/fake_tile_manager.h"
 
 #include <deque>
-#include <limits>
 
 #include "base/lazy_instance.h"
 #include "cc/resources/rasterizer.h"
@@ -64,43 +63,17 @@ base::LazyInstance<FakeRasterizerImpl> g_fake_rasterizer =
 
 FakeTileManager::FakeTileManager(TileManagerClient* client)
     : TileManager(client,
+                  base::MessageLoopProxy::current(),
                   NULL,
                   g_fake_rasterizer.Pointer(),
-                  g_fake_rasterizer.Pointer(),
-                  std::numeric_limits<unsigned>::max(),
-                  true,
                   NULL) {}
 
 FakeTileManager::FakeTileManager(TileManagerClient* client,
                                  ResourcePool* resource_pool)
     : TileManager(client,
+                  base::MessageLoopProxy::current(),
                   resource_pool,
                   g_fake_rasterizer.Pointer(),
-                  g_fake_rasterizer.Pointer(),
-                  std::numeric_limits<unsigned>::max(),
-                  true,
-                  NULL) {}
-
-FakeTileManager::FakeTileManager(TileManagerClient* client,
-                                 ResourcePool* resource_pool,
-                                 bool allow_on_demand_raster)
-    : TileManager(client,
-                  resource_pool,
-                  g_fake_rasterizer.Pointer(),
-                  g_fake_rasterizer.Pointer(),
-                  std::numeric_limits<unsigned>::max(),
-                  allow_on_demand_raster,
-                  NULL) {}
-
-FakeTileManager::FakeTileManager(TileManagerClient* client,
-                                 ResourcePool* resource_pool,
-                                 size_t raster_task_limit_bytes)
-    : TileManager(client,
-                  resource_pool,
-                  g_fake_rasterizer.Pointer(),
-                  g_fake_rasterizer.Pointer(),
-                  raster_task_limit_bytes,
-                  true,
                   NULL) {}
 
 FakeTileManager::~FakeTileManager() {}

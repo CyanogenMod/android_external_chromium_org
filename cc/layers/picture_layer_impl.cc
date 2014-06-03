@@ -31,7 +31,7 @@ const float kMaxScaleRatioDuringPinch = 2.0f;
 
 // When creating a new tiling during pinch, snap to an existing
 // tiling's scale if the desired scale is within this ratio.
-const float kSnapToExistingTilingRatio = 0.2f;
+const float kSnapToExistingTilingRatio = 1.2f;
 
 // Estimate skewport 60 frames ahead for pre-rasterization on the CPU.
 const float kCpuSkewportTargetTimeInFrames = 60.0f;
@@ -39,6 +39,9 @@ const float kCpuSkewportTargetTimeInFrames = 60.0f;
 // Don't pre-rasterize on the GPU (except for kBackflingGuardDistancePixels in
 // TileManager::BinFromTilePriority).
 const float kGpuSkewportTargetTimeInFrames = 0.0f;
+
+// Minimum width/height of a layer that would require analysis for tiles.
+const int kMinDimensionsForAnalysis = 256;
 }  // namespace
 
 namespace cc {
@@ -62,8 +65,6 @@ PictureLayerImpl::PictureLayerImpl(LayerTreeImpl* tree_impl, int id)
       is_using_lcd_text_(tree_impl->settings().can_use_lcd_text),
       needs_post_commit_initialization_(true),
       should_update_tile_priorities_(false),
-      should_use_low_res_tiling_(tree_impl->settings().create_low_res_tiling),
-      use_gpu_rasterization_(false),
       layer_needs_to_register_itself_(true) {
 }
 
@@ -105,7 +106,6 @@ void PictureLayerImpl::PushPropertiesTo(LayerImpl* base_layer) {
 
   layer_impl->SetIsMask(is_mask_);
   layer_impl->pile_ = pile_;
-  layer_impl->use_gpu_rasterization_ = use_gpu_rasterization_;
 
   // Tilings would be expensive to push, so we swap.
   layer_impl->tilings_.swap(tilings_);
@@ -143,7 +143,6 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
                                    AppendQuadsData* append_quads_data) {
   DCHECK(!needs_post_commit_initialization_);
   gfx::Rect rect(visible_content_rect());
-  gfx::Rect content_rect(content_bounds());
 
   SharedQuadState* shared_quad_state = quad_sink->CreateSharedQuadState();
   PopulateSharedQuadState(shared_quad_state);
@@ -237,6 +236,8 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
   // unused can be considered for removal.
   std::vector<PictureLayerTiling*> seen_tilings;
 
+  size_t missing_tile_count = 0u;
+  size_t on_demand_missing_tile_count = 0u;
   for (PictureLayerTilingSet::CoverageIterator iter(
       tilings_.get(), contents_scale_x(), rect, ideal_contents_scale_);
        iter;
@@ -250,7 +251,75 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
     append_quads_data->visible_content_area +=
         visible_geometry_rect.width() * visible_geometry_rect.height();
 
-    if (!*iter || !iter->IsReadyToDraw()) {
+    scoped_ptr<DrawQuad> draw_quad;
+    if (*iter && iter->IsReadyToDraw()) {
+      const ManagedTileState::TileVersion& tile_version =
+          iter->GetTileVersionForDrawing();
+      switch (tile_version.mode()) {
+        case ManagedTileState::TileVersion::RESOURCE_MODE: {
+          gfx::RectF texture_rect = iter.texture_rect();
+          gfx::Rect opaque_rect = iter->opaque_rect();
+          opaque_rect.Intersect(geometry_rect);
+
+          if (iter->contents_scale() != ideal_contents_scale_)
+            append_quads_data->had_incomplete_tile = true;
+
+          scoped_ptr<TileDrawQuad> quad = TileDrawQuad::Create();
+          quad->SetNew(shared_quad_state,
+                       geometry_rect,
+                       opaque_rect,
+                       visible_geometry_rect,
+                       tile_version.get_resource_id(),
+                       texture_rect,
+                       iter.texture_size(),
+                       tile_version.contents_swizzled());
+          draw_quad = quad.PassAs<DrawQuad>();
+          break;
+        }
+        case ManagedTileState::TileVersion::PICTURE_PILE_MODE: {
+          if (!layer_tree_impl()
+                   ->GetRendererCapabilities()
+                   .allow_rasterize_on_demand) {
+            ++on_demand_missing_tile_count;
+            break;
+          }
+
+          gfx::RectF texture_rect = iter.texture_rect();
+          gfx::Rect opaque_rect = iter->opaque_rect();
+          opaque_rect.Intersect(geometry_rect);
+
+          ResourceProvider* resource_provider =
+              layer_tree_impl()->resource_provider();
+          ResourceFormat format =
+              resource_provider->memory_efficient_texture_format();
+          scoped_ptr<PictureDrawQuad> quad = PictureDrawQuad::Create();
+          quad->SetNew(shared_quad_state,
+                       geometry_rect,
+                       opaque_rect,
+                       visible_geometry_rect,
+                       texture_rect,
+                       iter.texture_size(),
+                       format,
+                       iter->content_rect(),
+                       iter->contents_scale(),
+                       pile_);
+          draw_quad = quad.PassAs<DrawQuad>();
+          break;
+        }
+        case ManagedTileState::TileVersion::SOLID_COLOR_MODE: {
+          scoped_ptr<SolidColorDrawQuad> quad = SolidColorDrawQuad::Create();
+          quad->SetNew(shared_quad_state,
+                       geometry_rect,
+                       visible_geometry_rect,
+                       tile_version.get_solid_color(),
+                       false);
+          draw_quad = quad.PassAs<DrawQuad>();
+          break;
+        }
+      }
+    }
+
+    if (!draw_quad) {
       if (draw_checkerboard_for_missing_tiles()) {
         scoped_ptr<CheckerboardDrawQuad> quad = CheckerboardDrawQuad::Create();
         SkColor color = DebugColors::DefaultCheckerboardColor();
@@ -272,69 +341,10 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
       append_quads_data->had_incomplete_tile = true;
       append_quads_data->approximated_visible_content_area +=
           visible_geometry_rect.width() * visible_geometry_rect.height();
+      ++missing_tile_count;
       continue;
     }
 
-    const ManagedTileState::TileVersion& tile_version =
-        iter->GetTileVersionForDrawing();
-    scoped_ptr<DrawQuad> draw_quad;
-    switch (tile_version.mode()) {
-      case ManagedTileState::TileVersion::RESOURCE_MODE: {
-        gfx::RectF texture_rect = iter.texture_rect();
-        gfx::Rect opaque_rect = iter->opaque_rect();
-        opaque_rect.Intersect(geometry_rect);
-
-        if (iter->contents_scale() != ideal_contents_scale_)
-          append_quads_data->had_incomplete_tile = true;
-
-        scoped_ptr<TileDrawQuad> quad = TileDrawQuad::Create();
-        quad->SetNew(shared_quad_state,
-                     geometry_rect,
-                     opaque_rect,
-                     visible_geometry_rect,
-                     tile_version.get_resource_id(),
-                     texture_rect,
-                     iter.texture_size(),
-                     tile_version.contents_swizzled());
-        draw_quad = quad.PassAs<DrawQuad>();
-        break;
-      }
-      case ManagedTileState::TileVersion::PICTURE_PILE_MODE: {
-        gfx::RectF texture_rect = iter.texture_rect();
-        gfx::Rect opaque_rect = iter->opaque_rect();
-        opaque_rect.Intersect(geometry_rect);
-
-        ResourceProvider* resource_provider =
-            layer_tree_impl()->resource_provider();
-        ResourceFormat format =
-            resource_provider->memory_efficient_texture_format();
-        scoped_ptr<PictureDrawQuad> quad = PictureDrawQuad::Create();
-        quad->SetNew(shared_quad_state,
-                     geometry_rect,
-                     opaque_rect,
-                     visible_geometry_rect,
-                     texture_rect,
-                     iter.texture_size(),
-                     format,
-                     iter->content_rect(),
-                     iter->contents_scale(),
-                     pile_);
-        draw_quad = quad.PassAs<DrawQuad>();
-        break;
-      }
-      case ManagedTileState::TileVersion::SOLID_COLOR_MODE: {
-        scoped_ptr<SolidColorDrawQuad> quad = SolidColorDrawQuad::Create();
-        quad->SetNew(shared_quad_state,
-                     geometry_rect,
-                     visible_geometry_rect,
-                     tile_version.get_solid_color(),
-                     false);
-        draw_quad = quad.PassAs<DrawQuad>();
-        break;
-      }
-    }
-
-    DCHECK(draw_quad);
     quad_sink->Append(draw_quad.Pass());
 
     if (iter->priority(ACTIVE_TREE).resolution != HIGH_RESOLUTION) {
@@ -346,6 +356,16 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
       seen_tilings.push_back(iter.CurrentTiling());
   }
 
+  if (missing_tile_count) {
+    TRACE_EVENT_INSTANT2("cc",
+                         "PictureLayerImpl::AppendQuads checkerboard",
+                         TRACE_EVENT_SCOPE_THREAD,
+                         "missing_tile_count",
+                         missing_tile_count,
+                         "on_demand_missing_tile_count",
+                         on_demand_missing_tile_count);
+  }
+
   // Aggressively remove any tilings that are not seen to save memory. Note
   // that this is at the expense of doing cause more frequent re-painting. A
   // better scheme would be to maintain a tighter visible_content_rect for the
@@ -354,10 +374,14 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
 }
 
 void PictureLayerImpl::DidUnregisterLayer() {
+  TRACE_EVENT0("cc", "PictureLayerImpl::DidUnregisterLayer");
+
   layer_needs_to_register_itself_ = true;
 }
 
 void PictureLayerImpl::UpdateTilePriorities() {
+  TRACE_EVENT0("cc", "PictureLayerImpl::UpdateTilePriorities");
+
   DCHECK(!needs_post_commit_initialization_);
   CHECK(should_update_tile_priorities_);
 
@@ -421,7 +445,7 @@ void PictureLayerImpl::UpdateTilePriorities() {
   layer_tree_impl()->DidModifyTilePriorities();
 }
 
-void PictureLayerImpl::NotifyTileInitialized(const Tile* tile) {
+void PictureLayerImpl::NotifyTileStateChanged(const Tile* tile) {
   if (layer_tree_impl()->IsActiveTree()) {
     gfx::RectF layer_damage_rect =
         gfx::ScaleRect(tile->content_rect(), 1.f / tile->contents_scale());
@@ -523,14 +547,6 @@ skia::RefPtr<SkPicture> PictureLayerImpl::GetPicture() {
   return pile_->GetFlattenedPicture();
 }
 
-void PictureLayerImpl::SetUseGpuRasterization(bool use_gpu) {
-  if (use_gpu_rasterization_ == use_gpu)
-    return;
-
-  use_gpu_rasterization_ = use_gpu;
-  RemoveAllTilings();
-}
-
 scoped_refptr<Tile> PictureLayerImpl::CreateTile(PictureLayerTiling* tiling,
                                                const gfx::Rect& content_rect) {
   if (!pile_->CanRaster(tiling->contents_scale(), content_rect))
@@ -539,8 +555,26 @@ scoped_refptr<Tile> PictureLayerImpl::CreateTile(PictureLayerTiling* tiling,
   int flags = 0;
   if (is_using_lcd_text_)
     flags |= Tile::USE_LCD_TEXT;
-  if (ShouldUseGpuRasterization())
-    flags |= Tile::USE_GPU_RASTERIZATION;
+
+  // We analyze picture before rasterization to detect solid-color tiles.
+  // If the tile is detected as such there is no need to raster or upload.
+  // It is drawn directly as a solid-color quad saving memory, raster and upload
+  // cost. The analysis step is however expensive and may not be justified when
+  // doing gpu rasterization which runs on the compositor thread and where there
+  // is no upload.
+  // TODO(alokp): Revisit the decision to avoid analysis for gpu rasterization
+  // becuase it too can potentially benefit from memory savings.
+  if (!layer_tree_impl()->use_gpu_rasterization()) {
+    // Additionally, we do not want to do the analysis if the layer is too
+    // narrow, since more likely than not the tile would not be solid. Note that
+    // this last optimization is a heuristic that ensures that we don't spend
+    // too much time analyzing tiles on a multitude of small layers, as it is
+    // likely that these layers have some non-solid content.
+    int min_dimension = std::min(bounds().width(), bounds().height());
+    if (min_dimension >= kMinDimensionsForAnalysis)
+      flags |= Tile::USE_PICTURE_ANALYSIS;
+  }
+
   return layer_tree_impl()->tile_manager()->CreateTile(
       pile_.get(),
       content_rect.size(),
@@ -562,9 +596,7 @@ const Region* PictureLayerImpl::GetInvalidation() {
 
 const PictureLayerTiling* PictureLayerImpl::GetTwinTiling(
     const PictureLayerTiling* tiling) const {
-
-  if (!twin_layer_ ||
-      twin_layer_->ShouldUseGpuRasterization() != ShouldUseGpuRasterization())
+  if (!twin_layer_)
     return NULL;
   for (size_t i = 0; i < twin_layer_->tilings_->num_tilings(); ++i)
     if (twin_layer_->tilings_->tiling_at(i)->contents_scale() ==
@@ -578,9 +610,10 @@ size_t PictureLayerImpl::GetMaxTilesForInterestArea() const {
 }
 
 float PictureLayerImpl::GetSkewportTargetTimeInSeconds() const {
-  float skewport_target_time_in_frames = ShouldUseGpuRasterization()
-                                             ? kGpuSkewportTargetTimeInFrames
-                                             : kCpuSkewportTargetTimeInFrames;
+  float skewport_target_time_in_frames =
+      layer_tree_impl()->use_gpu_rasterization()
+          ? kGpuSkewportTargetTimeInFrames
+          : kCpuSkewportTargetTimeInFrames;
   return skewport_target_time_in_frames *
          layer_tree_impl()->begin_impl_frame_interval().InSecondsF() *
          layer_tree_impl()->settings().skewport_target_time_multiplier;
@@ -605,7 +638,7 @@ gfx::Size PictureLayerImpl::CalculateTileSize(
       layer_tree_impl()->resource_provider()->max_texture_size();
 
   gfx::Size default_tile_size = layer_tree_impl()->settings().default_tile_size;
-  if (ShouldUseGpuRasterization()) {
+  if (layer_tree_impl()->use_gpu_rasterization()) {
     // TODO(ernstm) crbug.com/365877: We need a unified way to override the
     // default-tile-size.
     default_tile_size =
@@ -692,14 +725,25 @@ void PictureLayerImpl::SyncFromActiveLayer(const PictureLayerImpl* other) {
   difference_region.Subtract(gfx::Rect(other->bounds()));
   invalidation_.Union(difference_region);
 
+  bool synced_high_res_tiling = false;
   if (CanHaveTilings()) {
-    tilings_->SyncTilings(
+    synced_high_res_tiling = tilings_->SyncTilings(
         *other->tilings_, bounds(), invalidation_, MinimumContentsScale());
   } else {
     RemoveAllTilings();
   }
 
-  SanityCheckTilingState();
+  // If our MinimumContentsScale has changed to prevent the twin's high res
+  // tiling from being synced, we should reset the raster scale and let it be
+  // recalculated (1) again. This can happen if our bounds shrink to the point
+  // where min contents scale grows.
+  // (1) - TODO(vmpstr) Instead of hoping that this will be recalculated, we
+  // should refactor this code a little bit and actually recalculate this.
+  // However, this is a larger undertaking, so this will work for now.
+  if (!synced_high_res_tiling)
+    ResetRasterScale();
+  else
+    SanityCheckTilingState();
 }
 
 void PictureLayerImpl::SyncTiling(
@@ -818,25 +862,28 @@ void PictureLayerImpl::MarkVisibleResourcesAsRequired() const {
   const PictureLayerTiling* twin_high_res = NULL;
   const PictureLayerTiling* twin_low_res = NULL;
 
-  // As a simplification, only allow activating to skip twin tiles that the
-  // active layer is also missing when both this layer and its twin have 2
-  // tilings (high and low).  This avoids having to iterate/track coverage of
-  // non-ideal tilings during the last draw call on the active layer.
-  if (high_res && low_res && tilings_->num_tilings() == 2 &&
-      twin_layer_ && twin_layer_->tilings_->num_tilings() == 2) {
-    twin_low_res = GetTwinTiling(low_res);
-    if (twin_low_res)
-      twin_high_res = GetTwinTiling(high_res);
-  }
-  // If this layer and its twin have different transforms, then don't compare
-  // them and only allow activating to high res tiles, since tiles on each layer
-  // will be in different places on screen.
-  if (!twin_high_res || !twin_low_res ||
-      twin_layer_->layer_tree_impl()->RequiresHighResToDraw() ||
-      draw_properties().screen_space_transform !=
-          twin_layer_->draw_properties().screen_space_transform) {
-    twin_high_res = NULL;
-    twin_low_res = NULL;
+  if (twin_layer_) {
+    // As a simplification, only allow activating to skip twin tiles that the
+    // active layer is also missing when both this layer and its twin have
+    // "simple" sets of tilings: only 2 tilings (high and low) or only 1 high
+    // res tiling. This avoids having to iterate/track coverage of non-ideal
+    // tilings during the last draw call on the active layer.
+    if (tilings_->num_tilings() <= 2 &&
+        twin_layer_->tilings_->num_tilings() <= tilings_->num_tilings()) {
+      twin_low_res = low_res ? GetTwinTiling(low_res) : NULL;
+      twin_high_res = high_res ? GetTwinTiling(high_res) : NULL;
+    }
+
+    // If this layer and its twin have different transforms, then don't compare
+    // them and only allow activating to high res tiles, since tiles on each
+    // layer will be in different places on screen.
+    if (twin_layer_->layer_tree_impl()->RequiresHighResToDraw() ||
+        bounds() != twin_layer_->bounds() ||
+        draw_properties().screen_space_transform !=
+            twin_layer_->draw_properties().screen_space_transform) {
+      twin_high_res = NULL;
+      twin_low_res = NULL;
+    }
   }
 
   // As a second pass, mark as required any visible high res tiles not filled in
@@ -846,9 +893,11 @@ void PictureLayerImpl::MarkVisibleResourcesAsRequired() const {
     // As an optional third pass, if a high res tile was skipped because its
     // twin was also missing, then fall back to mark low res tiles as required
     // in case the active twin is substituting those for missing high res
-    // content.
-    MarkVisibleTilesAsRequired(
-        low_res, twin_low_res, contents_scale_x(), rect, missing_region);
+    // content. Only suitable, when low res is enabled.
+    if (low_res) {
+      MarkVisibleTilesAsRequired(
+          low_res, twin_low_res, contents_scale_x(), rect, missing_region);
+    }
   }
 }
 
@@ -920,8 +969,7 @@ PictureLayerTiling* PictureLayerImpl::AddTiling(float contents_scale) {
 
   DCHECK(pile_->HasRecordings());
 
-  if (twin_layer_ &&
-      twin_layer_->ShouldUseGpuRasterization() == ShouldUseGpuRasterization())
+  if (twin_layer_)
     twin_layer_->SyncTiling(tiling);
 
   return tiling;
@@ -1016,9 +1064,8 @@ void PictureLayerImpl::ManageTilings(bool animating_transform_to_screen,
   // prevents wastefully creating a paired low res tiling for every new high res
   // tiling during a pinch or a CSS animation.
   bool is_pinching = layer_tree_impl()->PinchGestureActive();
-  if (ShouldHaveLowResTiling() && !is_pinching &&
-      !animating_transform_to_screen &&
-      !low_res && low_res != high_res)
+  if (layer_tree_impl()->create_low_res_tiling() && !is_pinching &&
+      !animating_transform_to_screen && !low_res && low_res != high_res)
     low_res = AddTiling(low_res_raster_contents_scale_);
 
   // Set low-res if we have one.
@@ -1036,11 +1083,6 @@ void PictureLayerImpl::ManageTilings(bool animating_transform_to_screen,
 bool PictureLayerImpl::ShouldAdjustRasterScale(
     bool animating_transform_to_screen) const {
   if (was_animating_transform_to_screen_ != animating_transform_to_screen)
-    return true;
-
-  if (animating_transform_to_screen &&
-      raster_contents_scale_ != ideal_contents_scale_ &&
-      ShouldUseGpuRasterization())
     return true;
 
   bool is_pinching = layer_tree_impl()->PinchGestureActive();
@@ -1137,10 +1179,10 @@ void PictureLayerImpl::RecalculateRasterScales(
   raster_contents_scale_ =
       std::max(raster_contents_scale_, MinimumContentsScale());
 
-  // If we're not re-rasterizing during animation, rasterize at the maximum
+  // Since we're not re-rasterizing during animation, rasterize at the maximum
   // scale that will occur during the animation, if the maximum scale is
   // known.
-  if (animating_transform_to_screen && !ShouldUseGpuRasterization()) {
+  if (animating_transform_to_screen) {
     if (maximum_animation_contents_scale > 0.f) {
       raster_contents_scale_ =
           std::max(raster_contents_scale_, maximum_animation_contents_scale);
@@ -1201,7 +1243,8 @@ void PictureLayerImpl::CleanUpTilingsOnActiveLayer(
       continue;
 
     // Keep low resolution tilings, if the layer should have them.
-    if (tiling->resolution() == LOW_RESOLUTION && ShouldHaveLowResTiling())
+    if (tiling->resolution() == LOW_RESOLUTION &&
+        layer_tree_impl()->create_low_res_tiling())
       continue;
 
     // Don't remove tilings that are being used (and thus would cause a flash.)
@@ -1330,7 +1373,6 @@ void PictureLayerImpl::AsValueInto(base::DictionaryValue* state) const {
   }
   state->Set("coverage_tiles", coverage_tiles.release());
   state->SetBoolean("is_using_lcd_text", is_using_lcd_text_);
-  state->SetBoolean("using_gpu_rasterization", ShouldUseGpuRasterization());
 }
 
 size_t PictureLayerImpl::GPUMemoryUsageInBytes() const {
@@ -1348,6 +1390,37 @@ WhichTree PictureLayerImpl::GetTree() const {
 
 bool PictureLayerImpl::IsOnActiveOrPendingTree() const {
   return !layer_tree_impl()->IsRecycleTree();
+}
+
+bool PictureLayerImpl::AllTilesRequiredForActivationAreReadyToDraw() const {
+  if (!layer_tree_impl()->IsPendingTree())
+    return true;
+
+  if (!tilings_)
+    return true;
+
+  for (size_t i = 0; i < tilings_->num_tilings(); ++i) {
+    PictureLayerTiling* tiling = tilings_->tiling_at(i);
+    if (tiling->resolution() != HIGH_RESOLUTION &&
+        tiling->resolution() != LOW_RESOLUTION)
+      continue;
+
+    gfx::Rect rect(visible_content_rect());
+    for (PictureLayerTiling::CoverageIterator iter(
+             tiling, contents_scale_x(), rect);
+         iter;
+         ++iter) {
+      const Tile* tile = *iter;
+      // A null tile (i.e. missing recording) can just be skipped.
+      if (!tile)
+        continue;
+
+      if (tile->required_for_activation() && !tile->IsReadyToDraw())
+        return false;
+    }
+  }
+
+  return true;
 }
 
 PictureLayerImpl::LayerRasterTileIterator::LayerRasterTileIterator()

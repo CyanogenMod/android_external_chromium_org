@@ -21,8 +21,8 @@
 #include "chrome/browser/sync/profile_sync_service_mock.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/profile_mock.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/test/bookmark_test_helpers.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "components/keyed_service/content/refcounted_browser_context_keyed_service.h"
 #include "components/sync_driver/change_processor_mock.h"
 #include "components/sync_driver/data_type_controller_mock.h"
@@ -51,7 +51,8 @@ namespace {
 
 class HistoryMock : public HistoryService {
  public:
-  explicit HistoryMock(Profile* profile) : HistoryService(profile) {}
+  explicit HistoryMock(history::HistoryClient* client, Profile* profile)
+      : HistoryService(client, profile) {}
   MOCK_METHOD0(BackendLoaded, bool(void));
 
  protected:
@@ -81,7 +82,7 @@ KeyedService* BuildBookmarkModelWithoutLoading(
 }
 
 KeyedService* BuildHistoryService(content::BrowserContext* profile) {
-  return new HistoryMock(static_cast<Profile*>(profile));
+  return new HistoryMock(NULL, static_cast<Profile*>(profile));
 }
 
 }  // namespace

@@ -109,8 +109,7 @@ class CONTENT_EXPORT AudioInputRendererHost
   // BrowserMessageFilter implementation.
   virtual void OnChannelClosing() OVERRIDE;
   virtual void OnDestruct() const OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // AudioInputController::EventHandler implementation.
   virtual void OnCreated(media::AudioInputController* controller) OVERRIDE;
@@ -120,6 +119,8 @@ class CONTENT_EXPORT AudioInputRendererHost
   virtual void OnData(media::AudioInputController* controller,
                       const uint8* data,
                       uint32 size) OVERRIDE;
+  virtual void OnLog(media::AudioInputController* controller,
+                     const std::string& message) OVERRIDE;
 
  private:
   // TODO(henrika): extend test suite (compare AudioRenderHost)
@@ -166,6 +167,10 @@ class CONTENT_EXPORT AudioInputRendererHost
   // Handle error coming from audio stream.
   void DoHandleError(media::AudioInputController* controller,
       media::AudioInputController::ErrorCode error_code);
+
+  // Log audio level of captured audio stream.
+  void DoLog(media::AudioInputController* controller,
+             const std::string& message);
 
   // Send an error message to the renderer.
   void SendErrorMessage(int stream_id, ErrorCode error_code);

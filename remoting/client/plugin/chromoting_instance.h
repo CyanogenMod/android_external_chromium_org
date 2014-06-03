@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// TODO(ajwong): We need to come up with a better description of the
-// responsibilities for each thread.
-
 #ifndef REMOTING_CLIENT_PLUGIN_CHROMOTING_INSTANCE_H_
 #define REMOTING_CLIENT_PLUGIN_CHROMOTING_INSTANCE_H_
 
@@ -13,6 +10,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/thread_task_runner_handle.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_rect.h"
 #include "ppapi/c/pp_resource.h"
@@ -22,7 +20,6 @@
 #include "remoting/client/client_user_interface.h"
 #include "remoting/client/key_event_mapper.h"
 #include "remoting/client/plugin/media_source_video_renderer.h"
-#include "remoting/client/plugin/normalizing_input_filter.h"
 #include "remoting/client/plugin/pepper_input_handler.h"
 #include "remoting/client/plugin/pepper_plugin_thread_delegate.h"
 #include "remoting/proto/event.pb.h"
@@ -44,6 +41,10 @@ class InputEvent;
 class Module;
 class VarDictionary;
 }  // namespace pp
+
+namespace jingle_glue {
+class JingleThreadWrapper;
+}  // namespace jingle_glue
 
 namespace webrtc {
 class DesktopRegion;
@@ -208,6 +209,7 @@ class ChromotingInstance :
   void HandleExtensionMessage(const base::DictionaryValue& data);
   void HandleAllowMouseLockMessage();
   void HandleEnableMediaSourceRendering();
+  void HandleSendMouseInputWhenUnfocused();
 
   // Helper method called from Connect() to connect with parsed config.
   void ConnectWithConfig(const ClientConfig& config,
@@ -259,6 +261,8 @@ class ChromotingInstance :
 
   PepperPluginThreadDelegate plugin_thread_delegate_;
   scoped_refptr<PluginThreadTaskRunner> plugin_task_runner_;
+  scoped_ptr<base::ThreadTaskRunnerHandle> thread_task_runner_handle_;
+  scoped_ptr<jingle_glue::JingleThreadWrapper> thread_wrapper_;
   ClientContext context_;
   scoped_ptr<VideoRenderer> video_renderer_;
   scoped_ptr<PepperView> view_;

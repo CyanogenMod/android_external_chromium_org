@@ -902,7 +902,7 @@ void PanelView::Layout() {
     web_view_->SetBounds(0, 0, width(), height());
 }
 
-gfx::Size PanelView::GetMinimumSize() {
+gfx::Size PanelView::GetMinimumSize() const {
   // If the panel is minimized, it can be rendered to very small size, like
   // 4-pixel lines when it is docked. Otherwise, its size should not be less
   // than its minimum size.
@@ -910,7 +910,7 @@ gfx::Size PanelView::GetMinimumSize() {
       gfx::Size(panel::kPanelMinWidth, panel::kPanelMinHeight);
 }
 
-gfx::Size PanelView::GetMaximumSize() {
+gfx::Size PanelView::GetMaximumSize() const {
   // If the user is resizing a stacked panel by its bottom edge, make sure its
   // height cannot grow more than what the panel below it could offer. This is
   // because growing a stacked panel by y amount will shrink the panel below it

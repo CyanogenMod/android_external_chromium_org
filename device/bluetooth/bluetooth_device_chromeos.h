@@ -75,11 +75,7 @@ class BluetoothDeviceChromeOS
       const device::BluetoothUUID& uuid,
       const ConnectToServiceCallback& callback,
       const ConnectToServiceErrorCallback& error_callback) OVERRIDE;
-  virtual void SetOutOfBandPairingData(
-      const device::BluetoothOutOfBandPairingData& data,
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual void ClearOutOfBandPairingData(
+  virtual void StartConnectionMonitor(
       const base::Closure& callback,
       const ErrorCallback& error_callback) OVERRIDE;
 
@@ -95,6 +91,9 @@ class BluetoothDeviceChromeOS
 
   // Returns the current pairing object or NULL if no pairing is in progress.
   BluetoothPairingChromeOS* GetPairing() const;
+
+  // Returns the object path of the device.
+  const dbus::ObjectPath& object_path() const { return object_path_; }
 
  protected:
    // BluetoothDevice override
@@ -160,18 +159,12 @@ class BluetoothDeviceChromeOS
                      const std::string& error_name,
                      const std::string& error_message);
 
-  // Called by dbus:: on completion of the D-Bus method call to
-  // connect a peofile.
-  void OnConnectProfile(device::BluetoothProfile* profile,
-                        const base::Closure& callback);
-  void OnConnectProfileError(
-      device::BluetoothProfile* profile,
-      const ConnectToProfileErrorCallback& error_callback,
-      const std::string& error_name,
-      const std::string& error_message);
-
-  // Returns the object path of the device; used by BluetoothAdapterChromeOS
-  const dbus::ObjectPath& object_path() const { return object_path_; }
+  // Called by dbus:: on completion of the D-Bus method call to start the
+  // connection monitor.
+  void OnStartConnectionMonitor(const base::Closure& callback);
+  void OnStartConnectionMonitorError(const ErrorCallback& error_callback,
+                                     const std::string& error_name,
+                                     const std::string& error_message);
 
   // The adapter that owns this device instance.
   BluetoothAdapterChromeOS* adapter_;
@@ -184,6 +177,10 @@ class BluetoothDeviceChromeOS
 
   // Number of ongoing calls to Connect().
   int num_connecting_calls_;
+
+  // True if the connection monitor has been started, tracking the connection
+  // RSSI and TX power.
+  bool connection_monitor_started_;
 
   // UI thread task runner and socket thread object used to create sockets.
   scoped_refptr<base::SequencedTaskRunner> ui_task_runner_;

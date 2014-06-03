@@ -12,6 +12,7 @@ import sys
 
 from telemetry import decorators
 from telemetry.core import browser
+from telemetry.core import platform
 from telemetry.core import possible_browser
 from telemetry.core import util
 from telemetry.core.backends import adb_commands
@@ -101,7 +102,8 @@ class PossibleAndroidBrowser(possible_browser.PossibleBrowser):
 
   def Create(self):
     use_rndis_forwarder = (self.finder_options.android_rndis or
-                           self.finder_options.browser_options.netsim)
+                           self.finder_options.browser_options.netsim or
+                           platform.GetHostPlatform().GetOSName() != 'linux')
     backend = android_browser_backend.AndroidBrowserBackend(
         self.finder_options.browser_options, self._backend_settings,
         use_rndis_forwarder,
@@ -199,6 +201,10 @@ def FindAllAvailableBrowsers(finder_options, logging=real_logging):
   device = devices[0]
 
   adb = adb_commands.AdbCommands(device=device)
+  # Trying to root the device, if possible.
+  if not adb.IsRootEnabled():
+    # Ignore result.
+    adb.EnableAdbRoot()
 
   if sys.platform.startswith('linux'):
     # Host side workaround for crbug.com/268450 (adb instability)

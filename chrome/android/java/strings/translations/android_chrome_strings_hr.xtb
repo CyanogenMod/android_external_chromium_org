@@ -8,10 +8,13 @@
 <translation id="7644305409888602715">Prevođenje stranice na <ph name="SOURCE_LANGUAGE"/>...</translation>
 <translation id="7015922086425404465">Preuzmite aplikaciju iz trgovine Google Play: <ph name="APP_ACTION"/></translation>
 <translation id="1491151370853475546">Ponovo učitaj ovu stranicu</translation>
+<translation id="5233638681132016545">Nova kartica</translation>
 <translation id="641643625718530986">Ispis…</translation>
+<translation id="5210365745912300556">Zatvori karticu</translation>
 <translation id="7658239707568436148">Odustani</translation>
 <translation id="6458785801851713928">Sinkronizacija nije dostupna za vašu domenu.</translation>
 <translation id="2731700343119398978">Pričekajte...</translation>
+<translation id="6846298663435243399">Učitavanje…</translation>
 <translation id="7378627244592794276">Ne</translation>
 <translation id="3358663646935160692">Ovim računom upravlja domena <ph name="DOMAIN_NAME"/>.
 
@@ -29,7 +32,9 @@ Prijavljujete se svojim upravljanim računom i njenom administratoru dajete nadz
 <translation id="552553974213252141">Je li tekst ispravno izdvojen?</translation>
 <translation id="8730621377337864115">Gotovo</translation>
 <translation id="4170011742729630528">Usluga nije dostupna, pokušajte ponovo kasnije.</translation>
+<translation id="473775607612524610">Ažuriraj</translation>
 <translation id="8627706565932943526">Pogreška sinkronizacije</translation>
+<translation id="8374821112118309944">Morate ažurirati TalkBack na najnoviju verziju.</translation>
 <translation id="4043215103217793252">Uređivanje oznake stranice</translation>
 <translation id="656628257199996201">Uvijek prevodi <ph name="SOURCE_LANGUAGE"/></translation>
 <translation id="9137013805542155359">Prikaži original</translation>

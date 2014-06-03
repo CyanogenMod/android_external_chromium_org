@@ -32,8 +32,8 @@ ServiceWorkerProviderHost::ServiceWorkerProviderHost(
 ServiceWorkerProviderHost::~ServiceWorkerProviderHost() {
   if (active_version_)
     active_version_->RemoveControllee(this);
-  if (pending_version_)
-    pending_version_->RemovePendingControllee(this);
+  if (waiting_version_)
+    waiting_version_->RemoveWaitingControllee(this);
 }
 
 void ServiceWorkerProviderHost::SetActiveVersion(
@@ -63,16 +63,16 @@ void ServiceWorkerProviderHost::SetActiveVersion(
           kDocumentMainThreadId, provider_id(), info));
 }
 
-void ServiceWorkerProviderHost::SetPendingVersion(
+void ServiceWorkerProviderHost::SetWaitingVersion(
     ServiceWorkerVersion* version) {
-  if (version == pending_version_)
+  if (version == waiting_version_)
     return;
-  scoped_refptr<ServiceWorkerVersion> previous_version = pending_version_;
-  pending_version_ = version;
+  scoped_refptr<ServiceWorkerVersion> previous_version = waiting_version_;
+  waiting_version_ = version;
   if (version)
-    version->AddPendingControllee(this);
+    version->AddWaitingControllee(this);
   if (previous_version)
-    previous_version->RemovePendingControllee(this);
+    previous_version->RemoveWaitingControllee(this);
 
   if (!dispatcher_host_)
     return;  // Could be NULL in some tests.
@@ -104,17 +104,18 @@ bool ServiceWorkerProviderHost::SetHostedVersionId(int64 version_id) {
 
 scoped_ptr<ServiceWorkerRequestHandler>
 ServiceWorkerProviderHost::CreateRequestHandler(
-    ResourceType::Type resource_type) {
+    ResourceType::Type resource_type,
+    base::WeakPtr<webkit_blob::BlobStorageContext> blob_storage_context) {
   if (IsHostToRunningServiceWorker()) {
     return scoped_ptr<ServiceWorkerRequestHandler>(
         new ServiceWorkerContextRequestHandler(
-            context_, AsWeakPtr(), resource_type));
+            context_, AsWeakPtr(), blob_storage_context, resource_type));
   }
   if (ServiceWorkerUtils::IsMainResourceType(resource_type) ||
       active_version()) {
     return scoped_ptr<ServiceWorkerRequestHandler>(
         new ServiceWorkerControlleeRequestHandler(
-            context_, AsWeakPtr(), resource_type));
+            context_, AsWeakPtr(), blob_storage_context, resource_type));
   }
   return scoped_ptr<ServiceWorkerRequestHandler>();
 }

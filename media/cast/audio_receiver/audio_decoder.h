@@ -27,11 +27,11 @@ class AudioDecoder {
                               bool is_continuous)> DecodeFrameCallback;
 
   AudioDecoder(const scoped_refptr<CastEnvironment>& cast_environment,
-               const AudioReceiverConfig& audio_config);
+               const FrameReceiverConfig& audio_config);
   virtual ~AudioDecoder();
 
   // Returns STATUS_AUDIO_INITIALIZED if the decoder was successfully
-  // constructed from the given AudioReceiverConfig.  If this method returns any
+  // constructed from the given FrameReceiverConfig.  If this method returns any
   // other value, calls to DecodeFrame() will not succeed.
   CastInitializationStatus InitializationResult() const;
 
@@ -42,7 +42,7 @@ class AudioDecoder {
   // monotonically-increasing by 1 for each successive call to this method.
   // When it is not, the decoder will assume one or more frames have been
   // dropped (e.g., due to packet loss), and will perform recovery actions.
-  void DecodeFrame(scoped_ptr<transport::EncodedAudioFrame> encoded_frame,
+  void DecodeFrame(scoped_ptr<transport::EncodedFrame> encoded_frame,
                    const DecodeFrameCallback& callback);
 
  private:

@@ -9,6 +9,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread_checker.h"
 
+class ChromeMetricsServiceClient;
 class MetricsService;
 class PrefService;
 
@@ -25,8 +26,8 @@ class VariationsService;
 }
 
 // MetricsServicesManager is a helper class that has ownership over the various
-// metrics-related services in Chrome: MetricsService, RapporService and
-// VariationsService.
+// metrics-related services in Chrome: MetricsService (via its client),
+// RapporService and VariationsService.
 class MetricsServicesManager {
  public:
   // Creates the MetricsServicesManager with the |local_state| prefs service.
@@ -45,6 +46,9 @@ class MetricsServicesManager {
  private:
   metrics::MetricsStateManager* GetMetricsStateManager();
 
+  // Returns true iff metrics reporting is enabled.
+  bool IsMetricsReportingEnabled() const;
+
   // Ensures that all functions are called from the same thread.
   base::ThreadChecker thread_checker_;
 
@@ -54,8 +58,9 @@ class MetricsServicesManager {
   // MetricsStateManager which is passed as a parameter to service constructors.
   scoped_ptr<metrics::MetricsStateManager> metrics_state_manager_;
 
-  // The MetricsService, used for UMA report uploads.
-  scoped_ptr<MetricsService> metrics_service_;
+  // Chrome embedder implementation of the MetricsServiceClient. Owns the
+  // MetricsService.
+  scoped_ptr<ChromeMetricsServiceClient> metrics_service_client_;
 
   // The RapporService, for RAPPOR metric uploads.
   scoped_ptr<rappor::RapporService> rappor_service_;

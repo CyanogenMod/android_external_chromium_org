@@ -166,6 +166,7 @@ bool ShouldAbortPrerenderBeforeSwap(FinalStatus status) {
     case FINAL_STATUS_PAGE_BEING_CAPTURED:
     case FINAL_STATUS_NAVIGATION_UNCOMMITTED:
     case FINAL_STATUS_WOULD_HAVE_BEEN_USED:
+    case FINAL_STATUS_NON_EMPTY_BROWSING_INSTANCE:
       return false;
     default:
       return true;
@@ -221,8 +222,7 @@ class ChannelDestructionWatcher {
                      base::Unretained(watcher_)));
     }
 
-    virtual bool OnMessageReceived(const IPC::Message& message,
-                                   bool* message_was_ok) OVERRIDE {
+    virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
       return false;
     }
 
@@ -1124,6 +1124,12 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
     return scoped_ptr<TestPrerender>(prerenders[0]);
   }
 
+  // Navigates to a URL, unrelated to prerendering
+  void NavigateStraightToURL(const std::string dest_html_file) {
+    ui_test_utils::NavigateToURL(current_browser(),
+                                 test_server()->GetURL(dest_html_file));
+  }
+
   void NavigateToDestURL() const {
     NavigateToDestURLWithDisposition(CURRENT_TAB, true);
   }
@@ -1200,7 +1206,11 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
   }
 
   void OpenDestURLViaWindowOpen() const {
-    OpenURLWithJSImpl("WindowOpen", dest_url_, GURL(), true);
+    OpenURLViaWindowOpen(dest_url_);
+  }
+
+  void OpenURLViaWindowOpen(const GURL& url) const {
+    OpenURLWithJSImpl("WindowOpen", url, GURL(), true);
   }
 
   void RemoveLinkElement(int i) const {
@@ -1482,6 +1492,22 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
   base::string16 MatchTaskManagerPrerender(const char* page_title) {
     return l10n_util::GetStringFUTF16(IDS_TASK_MANAGER_PRERENDER_PREFIX,
                                       base::ASCIIToUTF16(page_title));
+  }
+
+  void RunJSReturningString(const char* js, std::string* result) {
+    ASSERT_TRUE(
+        content::ExecuteScriptAndExtractString(
+            GetActiveWebContents(),
+            base::StringPrintf("window.domAutomationController.send(%s)",
+                               js).c_str(),
+            result));
+  }
+
+  void RunJS(const char* js) {
+    ASSERT_TRUE(content::ExecuteScript(
+        GetActiveWebContents(),
+        base::StringPrintf("window.domAutomationController.send(%s)",
+                           js).c_str()));
   }
 
  protected:
@@ -2855,24 +2881,34 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderPrint) {
 
 // Checks that if a page is opened in a new window by javascript and both the
 // pages are in the same domain, the prerendered page is not used, due to
-// window.opener.
+// there being other tabs in the same browsing instance.
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
                        PrerenderSameDomainWindowOpenerWindowOpen) {
   PrerenderTestURL("files/prerender/prerender_page.html",
-                   FINAL_STATUS_WINDOW_OPENER,
+                   FINAL_STATUS_NON_EMPTY_BROWSING_INSTANCE,
                    1);
   OpenDestURLViaWindowOpen();
 }
 
 // Checks that if a page is opened due to click on a href with target="_blank"
 // and both pages are in the same domain the prerendered page is not used, due
-// to window.opener.
+// there being other tabs in the same browsing instance.
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
                        PrerenderSameDomainWindowOpenerClickTarget) {
   PrerenderTestURL("files/prerender/prerender_page.html",
-                   FINAL_STATUS_WINDOW_OPENER,
+                   FINAL_STATUS_NON_EMPTY_BROWSING_INSTANCE,
                    1);
   OpenDestURLViaClickTarget();
+}
+
+// Checks that prerenders do not get swapped into target pages that have opened
+// a popup, even if the target page itself does not have an opener.
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderTargetHasPopup) {
+  PrerenderTestURL("files/prerender/prerender_page.html",
+                   FINAL_STATUS_NON_EMPTY_BROWSING_INSTANCE,
+                   1);
+  OpenURLViaWindowOpen(GURL(content::kAboutBlankURL));
+  NavigateToDestURLWithDisposition(CURRENT_TAB, false);
 }
 
 class TestClientCertStore : public net::ClientCertStore {
@@ -3232,7 +3268,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderClickNewWindow) {
   // Prerender currently doesn't interpose on this navigation.
   // http://crbug.com/345474.
   PrerenderTestURL("files/prerender/prerender_page_with_link.html",
-                   FINAL_STATUS_APP_TERMINATING,
+                   FINAL_STATUS_USED,
                    1);
   OpenDestURLViaClickNewWindow();
 }
@@ -3241,7 +3277,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderClickNewForegroundTab) {
   // Prerender currently doesn't interpose on this navigation.
   // http://crbug.com/345474.
   PrerenderTestURL("files/prerender/prerender_page_with_link.html",
-                   FINAL_STATUS_APP_TERMINATING,
+                   FINAL_STATUS_USED,
                    1);
   OpenDestURLViaClickNewForegroundTab();
 }
@@ -3251,7 +3287,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderClickNewBackgroundTab) {
   // http://crbug.com/345474.
   scoped_ptr<TestPrerender> prerender =
       PrerenderTestURL("files/prerender/prerender_page_with_link.html",
-                       FINAL_STATUS_APP_TERMINATING,
+                       FINAL_STATUS_USED,
                        1);
   ASSERT_TRUE(prerender->contents());
   prerender->contents()->set_should_be_shown(false);
@@ -4153,6 +4189,103 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderPPLTNormalNavigation) {
   histograms.ExpectTotalCount("Prerender.none_PerceivedPLTMatchedComplete", 0);
 }
 
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
+                       PrerenderCookieChangeConflictTest) {
+  NavigateStraightToURL(
+      "files/prerender/prerender_cookie.html?set=1&key=c&value=1");
+
+  GURL url = test_server()->GetURL(
+      "files/prerender/prerender_cookie.html?set=1&key=c&value=2");
+
+  scoped_ptr<TestPrerender> prerender =
+      ExpectPrerender(FINAL_STATUS_COOKIE_CONFLICT);
+  AddPrerender(url, 1);
+  prerender->WaitForStart();
+  prerender->WaitForLoads(1);
+  // Ensure that in the prerendered page, querying the cookie again
+  // via javascript yields the same value that was set during load.
+  EXPECT_TRUE(DidPrerenderPass(prerender->contents()->prerender_contents()));
+
+  // The prerender has loaded. Ensure that the change is not visible
+  // to visible tabs.
+  std::string value;
+  RunJSReturningString("GetCookie('c')", &value);
+  ASSERT_EQ(value, "1");
+
+  // Make a conflicting cookie change, which should cancel the prerender.
+  RunJS("SetCookie('c', '3')");
+  prerender->WaitForStop();
+}
+
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderCookieChangeUseTest) {
+  // Permit 2 concurrent prerenders.
+  GetPrerenderManager()->mutable_config().max_link_concurrency = 2;
+  GetPrerenderManager()->mutable_config().max_link_concurrency_per_launcher = 2;
+
+  // Go to a first URL setting the cookie to value "1".
+  NavigateStraightToURL(
+      "files/prerender/prerender_cookie.html?set=1&key=c&value=1");
+
+  // Prerender a URL setting the cookie to value "2".
+  GURL url = test_server()->GetURL(
+      "files/prerender/prerender_cookie.html?set=1&key=c&value=2");
+
+  scoped_ptr<TestPrerender> prerender1 = ExpectPrerender(FINAL_STATUS_USED);
+  AddPrerender(url, 1);
+  prerender1->WaitForStart();
+  prerender1->WaitForLoads(1);
+
+  // Launch a second prerender, setting the cookie to value "3".
+  scoped_ptr<TestPrerender> prerender2 =
+      ExpectPrerender(FINAL_STATUS_COOKIE_CONFLICT);
+  AddPrerender(test_server()->GetURL(
+      "files/prerender/prerender_cookie.html?set=1&key=c&value=3"), 1);
+  prerender2->WaitForStart();
+  prerender2->WaitForLoads(1);
+
+  // Both prerenders have loaded. Ensure that the visible tab is still
+  // unchanged and cannot see their changes.
+  // to visible tabs.
+  std::string value;
+  RunJSReturningString("GetCookie('c')", &value);
+  ASSERT_EQ(value, "1");
+
+  // Navigate to the prerendered URL. The first prerender should be swapped in,
+  // and the changes should now be visible. The second prerender should
+  // be cancelled due to the conflict.
+  ui_test_utils::NavigateToURLWithDisposition(
+      current_browser(),
+      url,
+      CURRENT_TAB,
+      ui_test_utils::BROWSER_TEST_NONE);
+  RunJSReturningString("GetCookie('c')", &value);
+  ASSERT_EQ(value, "2");
+  prerender2->WaitForStop();
+}
+
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
+                       PrerenderCookieChangeConflictHTTPHeaderTest) {
+  NavigateStraightToURL(
+      "files/prerender/prerender_cookie.html?set=1&key=c&value=1");
+
+  GURL url = test_server()->GetURL("set-cookie?c=2");
+  scoped_ptr<TestPrerender> prerender =
+      ExpectPrerender(FINAL_STATUS_COOKIE_CONFLICT);
+  AddPrerender(url, 1);
+  prerender->WaitForStart();
+  prerender->WaitForLoads(1);
+
+  // The prerender has loaded. Ensure that the change is not visible
+  // to visible tabs.
+  std::string value;
+  RunJSReturningString("GetCookie('c')", &value);
+  ASSERT_EQ(value, "1");
+
+  // Make a conflicting cookie change, which should cancel the prerender.
+  RunJS("SetCookie('c', '3')");
+  prerender->WaitForStop();
+}
+
 // Checks that a prerender which calls window.close() on itself is aborted.
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderWindowClose) {
   DisableLoadEventCheck();
@@ -4230,6 +4363,14 @@ class PrerenderOmniboxBrowserTest : public PrerenderBrowserTest {
 
 // Checks that closing the omnibox popup cancels an omnibox prerender.
 IN_PROC_BROWSER_TEST_F(PrerenderOmniboxBrowserTest, PrerenderOmniboxCancel) {
+  // Ensure the cookie store has been loaded.
+  if (!GetPrerenderManager()->cookie_store_loaded()) {
+    base::RunLoop loop;
+    GetPrerenderManager()->set_on_cookie_store_loaded_cb_for_testing(
+        loop.QuitClosure());
+    loop.Run();
+  }
+
   // Fake an omnibox prerender.
   scoped_ptr<TestPrerender> prerender = StartOmniboxPrerender(
       test_server()->GetURL("files/empty.html"),
@@ -4246,6 +4387,14 @@ IN_PROC_BROWSER_TEST_F(PrerenderOmniboxBrowserTest, PrerenderOmniboxAbandon) {
   // flakiness if the prerender times out before the test completes.
   GetPrerenderManager()->mutable_config().abandon_time_to_live =
       base::TimeDelta::FromDays(999);
+
+  // Ensure the cookie store has been loaded.
+  if (!GetPrerenderManager()->cookie_store_loaded()) {
+    base::RunLoop loop;
+    GetPrerenderManager()->set_on_cookie_store_loaded_cb_for_testing(
+        loop.QuitClosure());
+    loop.Run();
+  }
 
   // Enter a URL into the Omnibox.
   OmniboxView* omnibox_view = GetOmniboxView();

@@ -27,6 +27,7 @@
 #include "net/base/filename_util.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
+#include "ui/base/layout.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/switches.h"
@@ -52,16 +53,6 @@ namespace {
         << ("Blindly passing this test: This platform does not support "  \
             "forced compositing (or forced-disabled compositing) mode.");  \
     return;  \
-  }
-
-// Convenience macro: Short-circuit a pass for platforms where setting up
-// high-DPI fails.
-#define PASS_TEST_IF_SCALE_FACTOR_NOT_SUPPORTED(factor) \
-  if (ui::GetScaleForScaleFactor( \
-          GetScaleFactorForView(GetRenderWidgetHostView())) != factor) {  \
-    LOG(WARNING) << "Blindly passing this test: failed to set up "  \
-                    "scale factor: " << factor;  \
-    return false;  \
   }
 
 // Common base class for browser tests.  This is subclassed twice: Once to test
@@ -246,13 +237,7 @@ class CompositingRenderWidgetHostViewBrowserTest
       }
     }
 
-#if !defined(USE_AURA)
-    if (!GetRenderWidgetHost()->is_accelerated_compositing_active())
-      return false;  // Renderer did not turn on accelerated compositing.
-#endif
-
-    // Using accelerated compositing, but a compositing surface might not be
-    // available yet.  So, wait for it.
+    // A frame might not be available yet. So, wait for it.
     WaitForCopySourceReady();
     return true;
   }
@@ -816,7 +801,13 @@ class CompositingRenderWidgetHostViewTabCaptureHighDPI
 
  private:
   virtual bool ShouldContinueAfterTestURLLoad() OVERRIDE {
-    PASS_TEST_IF_SCALE_FACTOR_NOT_SUPPORTED(scale());
+    // Short-circuit a pass for platforms where setting up high-DPI fails.
+    if (ui::GetScaleForScaleFactor(ui::GetSupportedScaleFactor(
+            GetScaleFactorForView(GetRenderWidgetHostView()))) != scale()) {
+      LOG(WARNING) << "Blindly passing this test: failed to set up "
+          "scale factor: " << scale();
+      return false;
+    }
     return true;
   }
 

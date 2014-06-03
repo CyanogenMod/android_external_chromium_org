@@ -9,6 +9,7 @@
 #include "base/callback.h"
 #include "base/files/file_path.h"
 #include "ui/app_list/app_list_model.h"
+#include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/app_list_view_delegate_observer.h"
 #include "ui/app_list/signin_delegate.h"
 #include "ui/app_list/test/app_list_test_model.h"
@@ -51,6 +52,7 @@ class TestSigninDelegate : public SigninDelegate {
 
 AppListTestViewDelegate::AppListTestViewDelegate()
     : dismiss_count_(0),
+      toggle_speech_recognition_count_(0),
       open_search_result_count_(0),
       test_signin_delegate_(new TestSigninDelegate),
       model_(new AppListTestModel),
@@ -64,6 +66,12 @@ void AppListTestViewDelegate::SetSignedIn(bool signed_in) {
   FOR_EACH_OBSERVER(AppListViewDelegateObserver,
                     observers_,
                     OnProfilesChanged());
+}
+
+int AppListTestViewDelegate::GetToggleSpeechRecognitionCountAndReset() {
+  int count = toggle_speech_recognition_count_;
+  toggle_speech_recognition_count_ = 0;
+  return count;
 }
 
 bool AppListTestViewDelegate::ForceNativeDesktop() const {
@@ -113,6 +121,10 @@ void AppListTestViewDelegate::Dismiss() {
   ++dismiss_count_;
 }
 
+void AppListTestViewDelegate::ToggleSpeechRecognition() {
+  ++toggle_speech_recognition_count_;
+}
+
 gfx::ImageSkia AppListTestViewDelegate::GetWindowIcon() {
   return gfx::ImageSkia();
 }
@@ -130,7 +142,7 @@ const AppListViewDelegate::Users& AppListTestViewDelegate::GetUsers() const {
 }
 
 bool AppListTestViewDelegate::ShouldCenterWindow() const {
-  return false;
+  return app_list::switches::IsCenteredAppListEnabled();
 }
 
 void AppListTestViewDelegate::ReplaceTestModel(int item_count) {

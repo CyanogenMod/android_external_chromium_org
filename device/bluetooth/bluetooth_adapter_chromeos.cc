@@ -22,11 +22,15 @@
 #include "device/bluetooth/bluetooth_device.h"
 #include "device/bluetooth/bluetooth_device_chromeos.h"
 #include "device/bluetooth/bluetooth_pairing_chromeos.h"
+#include "device/bluetooth/bluetooth_socket_chromeos.h"
 #include "device/bluetooth/bluetooth_socket_thread.h"
+#include "device/bluetooth/bluetooth_uuid.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
 using device::BluetoothAdapter;
 using device::BluetoothDevice;
+using device::BluetoothSocket;
+using device::BluetoothUUID;
 
 namespace {
 
@@ -124,7 +128,7 @@ std::string BluetoothAdapterChromeOS::GetAddress() const {
           GetProperties(object_path_);
   DCHECK(properties);
 
-  return properties->address.value();
+  return BluetoothDevice::CanonicalizeAddress(properties->address.value());
 }
 
 std::string BluetoothAdapterChromeOS::GetName() const {
@@ -227,10 +231,49 @@ bool BluetoothAdapterChromeOS::IsDiscovering() const {
   return properties->discovering.value();
 }
 
-void BluetoothAdapterChromeOS::ReadLocalOutOfBandPairingData(
-    const BluetoothAdapter::BluetoothOutOfBandPairingDataCallback& callback,
-    const ErrorCallback& error_callback) {
-  error_callback.Run();
+void BluetoothAdapterChromeOS::CreateRfcommService(
+    const BluetoothUUID& uuid,
+    int channel,
+    bool insecure,
+    const CreateServiceCallback& callback,
+    const CreateServiceErrorCallback& error_callback) {
+  VLOG(1) << object_path_.value() << ": Creating RFCOMM service: "
+          << uuid.canonical_value();
+  scoped_refptr<BluetoothSocketChromeOS> socket =
+      BluetoothSocketChromeOS::CreateBluetoothSocket(
+          ui_task_runner_,
+          socket_thread_,
+          NULL,
+          net::NetLog::Source());
+  socket->Listen(this,
+                 BluetoothSocketChromeOS::kRfcomm,
+                 uuid,
+                 channel,
+                 insecure,
+                 base::Bind(callback, socket),
+                 error_callback);
+}
+
+void BluetoothAdapterChromeOS::CreateL2capService(
+    const BluetoothUUID& uuid,
+    int psm,
+    const CreateServiceCallback& callback,
+    const CreateServiceErrorCallback& error_callback) {
+  VLOG(1) << object_path_.value() << ": Creating L2CAP service: "
+          << uuid.canonical_value();
+  scoped_refptr<BluetoothSocketChromeOS> socket =
+      BluetoothSocketChromeOS::CreateBluetoothSocket(
+          ui_task_runner_,
+          socket_thread_,
+          NULL,
+          net::NetLog::Source());
+  socket->Listen(this,
+                 BluetoothSocketChromeOS::kL2cap,
+                 uuid,
+                 psm,
+                 false,
+                 base::Bind(callback, socket),
+                 error_callback);
 }
 
 void BluetoothAdapterChromeOS::RemovePairingDelegateInternal(
@@ -335,17 +378,27 @@ void BluetoothAdapterChromeOS::DevicePropertyChanged(
       property_name == properties->paired.name() ||
       property_name == properties->trusted.name() ||
       property_name == properties->connected.name() ||
-      property_name == properties->uuids.name())
+      property_name == properties->uuids.name() ||
+      property_name == properties->rssi.name() ||
+      property_name == properties->connection_rssi.name() ||
+      property_name == properties->connection_tx_power.name())
     NotifyDeviceChanged(device_chromeos);
 
   // When a device becomes paired, mark it as trusted so that the user does
   // not need to approve every incoming connection
   if (property_name == properties->paired.name() &&
-      properties->paired.value())
+      properties->paired.value() && !properties->trusted.value())
     device_chromeos->SetTrusted();
 
   // UMA connection counting
   if (property_name == properties->connected.name()) {
+    // PlayStation joystick tries to reconnect after disconnection from USB.
+    // If it is still not trusted, set it, so it becomes available on the
+    // list of known devices.
+    if (properties->connected.value() && device_chromeos->IsTrustable() &&
+        !properties->trusted.value())
+      device_chromeos->SetTrusted();
+
     int count = 0;
 
     for (DevicesMap::iterator iter = devices_.begin();

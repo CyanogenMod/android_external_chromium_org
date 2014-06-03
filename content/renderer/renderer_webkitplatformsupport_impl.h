@@ -7,7 +7,6 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/platform_file.h"
 #include "content/child/blink_platform_impl.h"
 #include "content/common/content_export.h"
 #include "content/renderer/webpublicsuffixlist_impl.h"
@@ -36,6 +35,7 @@ class WebScreenOrientationListener;
 }
 
 namespace content {
+class BatteryStatusDispatcher;
 class DeviceMotionEventPump;
 class DeviceOrientationEventPump;
 class QuotaMessageFilter;
@@ -117,8 +117,8 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
       createMIDIAccessor(blink::WebMIDIAccessorClient* client);
 
   virtual blink::WebBlobRegistry* blobRegistry();
-  virtual void sampleGamepads(blink::WebGamepads&) OVERRIDE;
-  virtual void setGamepadListener(blink::WebGamepadListener*) OVERRIDE;
+  virtual void sampleGamepads(blink::WebGamepads&);
+  virtual void setGamepadListener(blink::WebGamepadListener*);
   virtual blink::WebRTCPeerConnectionHandler* createRTCPeerConnectionHandler(
       blink::WebRTCPeerConnectionHandlerClient* client);
   virtual blink::WebMediaStreamCenter* createMediaStreamCenter(
@@ -136,19 +136,21 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   virtual blink::WebString convertIDNToUnicode(
       const blink::WebString& host, const blink::WebString& languages);
   virtual void setDeviceMotionListener(
-      blink::WebDeviceMotionListener* listener) OVERRIDE;
+      blink::WebDeviceMotionListener* listener);
   virtual void setDeviceOrientationListener(
-      blink::WebDeviceOrientationListener* listener) OVERRIDE;
+      blink::WebDeviceOrientationListener* listener);
   virtual void queryStorageUsageAndQuota(
       const blink::WebURL& storage_partition,
       blink::WebStorageQuotaType,
-      blink::WebStorageQuotaCallbacks) OVERRIDE;
+      blink::WebStorageQuotaCallbacks);
   virtual void vibrate(unsigned int milliseconds);
   virtual void cancelVibration();
   virtual void setScreenOrientationListener(
-    blink::WebScreenOrientationListener*) OVERRIDE;
-  virtual void lockOrientation(blink::WebScreenOrientationLockType) OVERRIDE;
-  virtual void unlockOrientation() OVERRIDE;
+      blink::WebScreenOrientationListener*);
+  virtual void lockOrientation(blink::WebScreenOrientationLockType);
+  virtual void unlockOrientation();
+  virtual void setBatteryStatusListener(
+      blink::WebBatteryStatusListener* listener);
 
   // Disables the WebSandboxSupport implementation for testing.
   // Tests that do not set up a full sandbox environment should call
@@ -180,6 +182,8 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   // Forces the screen orientation for testing purposes.
   static void SetMockScreenOrientationForTesting(
       blink::WebScreenOrientationType);
+  // Resets the mock screen orientation data used for testing.
+  static void ResetMockScreenOrientationForTesting();
 
   WebDatabaseObserverImpl* web_database_observer_impl() {
     return web_database_observer_impl_.get();
@@ -230,6 +234,8 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   scoped_ptr<ScreenOrientationDispatcher> screen_orientation_dispatcher_;
 
   scoped_ptr<blink::WebScrollbarBehavior> web_scrollbar_behavior_;
+
+  scoped_ptr<BatteryStatusDispatcher> battery_status_dispatcher_;
 
   DISALLOW_COPY_AND_ASSIGN(RendererWebKitPlatformSupportImpl);
 };

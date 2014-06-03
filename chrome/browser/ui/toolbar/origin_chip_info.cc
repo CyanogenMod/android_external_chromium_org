@@ -22,7 +22,7 @@
 #include "extensions/common/constants.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
 #include "grit/chromium_strings.h"
-#include "grit/component_strings.h"
+#include "grit/components_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "net/base/net_util.h"
@@ -111,35 +111,40 @@ bool OriginChipInfo::Update(const content::WebContents* web_contents,
                                         label_);
   }
 
-  if (displayed_url_.SchemeIs(extensions::kExtensionScheme)) {
-    icon_ = IDR_EXTENSIONS_FAVICON;
 
+  if (displayed_url_.SchemeIs(extensions::kExtensionScheme)) {
     const extensions::Extension* extension =
         extensions::ExtensionSystem::Get(profile_)->extension_service()->
             extensions()->GetExtensionOrAppByURL(displayed_url_);
-    extension_icon_image_.reset(
-        new extensions::IconImage(profile_,
-                                  extension,
-                                  extensions::IconsInfo::GetIcons(extension),
-                                  extension_misc::EXTENSION_ICON_BITTY,
-                                  extensions::util::GetDefaultAppIcon(),
-                                  owner_));
 
-    // Forces load of the image.
-    extension_icon_image_->image_skia().GetRepresentation(1.0f);
-    if (!extension_icon_image_->image_skia().image_reps().empty())
-      owner_->OnExtensionIconImageChanged(extension_icon_image_.get());
-  } else {
-    if (extension_icon_image_) {
-      extension_icon_image_.reset();
-      owner_->OnExtensionIconImageChanged(NULL);
+    if (extension) {
+      icon_ = IDR_EXTENSIONS_FAVICON;
+      extension_icon_image_.reset(
+          new extensions::IconImage(profile_,
+                                    extension,
+                                    extensions::IconsInfo::GetIcons(extension),
+                                    extension_misc::EXTENSION_ICON_BITTY,
+                                    extensions::util::GetDefaultAppIcon(),
+                                    owner_));
+
+      // Forces load of the image.
+      extension_icon_image_->image_skia().GetRepresentation(1.0f);
+      if (!extension_icon_image_->image_skia().image_reps().empty())
+        owner_->OnExtensionIconImageChanged(extension_icon_image_.get());
+
+      return true;
     }
-
-    icon_ = (displayed_url_.is_empty() ||
-             displayed_url_.SchemeIs(content::kChromeUIScheme)) ?
-        IDR_PRODUCT_LOGO_16 :
-        toolbar_model->GetIconForSecurityLevel(security_level_);
   }
+
+  if (extension_icon_image_) {
+    extension_icon_image_.reset();
+    owner_->OnExtensionIconImageChanged(NULL);
+  }
+
+  icon_ = (displayed_url_.is_empty() ||
+           displayed_url_.SchemeIs(content::kChromeUIScheme)) ?
+      IDR_PRODUCT_LOGO_16 :
+      toolbar_model->GetIconForSecurityLevel(security_level_);
 
   return true;
 }
@@ -192,7 +197,7 @@ base::string16 OriginChip::LabelFromURLForProfile(const GURL& provided_url,
         base::UTF8ToUTF16(extension->name()) : base::UTF8ToUTF16(url.host());
   }
 
-  if (url.SchemeIsHTTPOrHTTPS() || url.SchemeIs(content::kFtpScheme)) {
+  if (url.SchemeIsHTTPOrHTTPS() || url.SchemeIs(url::kFtpScheme)) {
     // See ToolbarModelImpl::GetText(). Does not pay attention to any user
     // edits, and uses GetURL/net::FormatUrl -- We don't really care about
     // length or the autocomplete parser.
@@ -225,14 +230,14 @@ base::string16 OriginChip::LabelFromURLForProfile(const GURL& provided_url,
   // to see. In these cases, the site chip will display the first
   // part of the full URL.
   if (url.SchemeIs(chrome::kChromeNativeScheme) ||
-      url.SchemeIs(content::kBlobScheme) ||
+      url.SchemeIs(url::kBlobScheme) ||
       url.SchemeIs(content::kChromeDevToolsScheme) ||
-      url.SchemeIs(content::kDataScheme) ||
-      url.SchemeIs(content::kFileScheme) ||
-      url.SchemeIs(content::kFileSystemScheme) ||
+      url.SchemeIs(url::kDataScheme) ||
+      url.SchemeIs(url::kFileScheme) ||
+      url.SchemeIs(url::kFileSystemScheme) ||
       url.SchemeIs(content::kGuestScheme) ||
-      url.SchemeIs(content::kJavaScriptScheme) ||
-      url.SchemeIs(content::kMailToScheme) ||
+      url.SchemeIs(url::kJavaScriptScheme) ||
+      url.SchemeIs(url::kMailToScheme) ||
       url.SchemeIs(content::kMetadataScheme) ||
       url.SchemeIs(content::kSwappedOutScheme)) {
     std::string truncated_url;

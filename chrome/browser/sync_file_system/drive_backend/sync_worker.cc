@@ -85,22 +85,24 @@ void QueryAppStatusOnUIThread(
 
 }  // namespace
 
-scoped_ptr<SyncWorker> SyncWorker::CreateOnWorker(
+SyncWorker::SyncWorker(
     const base::FilePath& base_dir,
-    Observer* observer,
     const base::WeakPtr<ExtensionServiceInterface>& extension_service,
     scoped_ptr<SyncEngineContext> sync_engine_context,
-    leveldb::Env* env_override) {
-  scoped_ptr<SyncWorker> sync_worker(
-      new SyncWorker(base_dir,
-                     extension_service,
-                     sync_engine_context.Pass(),
-                     env_override));
-  sync_worker->AddObserver(observer);
-  sync_worker->Initialize();
-
-  return sync_worker.Pass();
-}
+    leveldb::Env* env_override)
+    : base_dir_(base_dir),
+      env_override_(env_override),
+      service_state_(REMOTE_SERVICE_TEMPORARY_UNAVAILABLE),
+      should_check_conflict_(true),
+      should_check_remote_change_(true),
+      listing_remote_changes_(false),
+      sync_enabled_(false),
+      default_conflict_resolution_policy_(
+          CONFLICT_RESOLUTION_POLICY_LAST_WRITE_WIN),
+      network_available_(false),
+      extension_service_(extension_service),
+      context_(sync_engine_context.Pass()),
+      weak_ptr_factory_(this) {}
 
 SyncWorker::~SyncWorker() {}
 
@@ -133,7 +135,6 @@ void SyncWorker::RegisterOrigin(
     return;
   }
 
-  // TODO(peria): Forward |callback| to UI thread.
   task_manager_->ScheduleSyncTask(
       FROM_HERE,
       task.PassAs<SyncTask>(),
@@ -144,7 +145,6 @@ void SyncWorker::RegisterOrigin(
 void SyncWorker::EnableOrigin(
     const GURL& origin,
     const SyncStatusCallback& callback) {
-  // TODO(peria): Forward |callback| to UI thread.
   task_manager_->ScheduleTask(
       FROM_HERE,
       base::Bind(&SyncWorker::DoEnableApp,
@@ -157,7 +157,6 @@ void SyncWorker::EnableOrigin(
 void SyncWorker::DisableOrigin(
     const GURL& origin,
     const SyncStatusCallback& callback) {
-  // TODO(peria): Forward |callback| to UI thread.
   task_manager_->ScheduleTask(
       FROM_HERE,
       base::Bind(&SyncWorker::DoDisableApp,
@@ -171,7 +170,6 @@ void SyncWorker::UninstallOrigin(
     const GURL& origin,
     RemoteFileSyncService::UninstallFlag flag,
     const SyncStatusCallback& callback) {
-  // TODO(peria): Forward |callback| to UI thread.
   task_manager_->ScheduleSyncTask(
       FROM_HERE,
       scoped_ptr<SyncTask>(
@@ -189,7 +187,8 @@ void SyncWorker::ProcessRemoteChange(
       SyncTaskManager::PRIORITY_MED,
       base::Bind(&SyncWorker::DidProcessRemoteChange,
                  weak_ptr_factory_.GetWeakPtr(),
-                 syncer, callback));
+                 syncer,
+                 callback));
 }
 
 void SyncWorker::SetRemoteChangeProcessor(
@@ -204,24 +203,24 @@ RemoteServiceState SyncWorker::GetCurrentState() const {
 }
 
 void SyncWorker::GetOriginStatusMap(
-    RemoteFileSyncService::OriginStatusMap* status_map) {
-  DCHECK(status_map);
-
+    const RemoteFileSyncService::StatusMapCallback& callback) {
   if (!GetMetadataDatabase())
     return;
 
   std::vector<std::string> app_ids;
   GetMetadataDatabase()->GetRegisteredAppIDs(&app_ids);
 
+  scoped_ptr<RemoteFileSyncService::OriginStatusMap>
+      status_map(new RemoteFileSyncService::OriginStatusMap);
   for (std::vector<std::string>::const_iterator itr = app_ids.begin();
        itr != app_ids.end(); ++itr) {
     const std::string& app_id = *itr;
-    GURL origin =
-        extensions::Extension::GetBaseURLFromExtensionId(app_id);
+    GURL origin = extensions::Extension::GetBaseURLFromExtensionId(app_id);
     (*status_map)[origin] =
-        GetMetadataDatabase()->IsAppEnabled(app_id) ?
-        "Enabled" : "Disabled";
+        GetMetadataDatabase()->IsAppEnabled(app_id) ? "Enabled" : "Disabled";
   }
+
+  callback.Run(status_map.Pass());
 }
 
 scoped_ptr<base::ListValue> SyncWorker::DumpFiles(const GURL& origin) {
@@ -291,7 +290,8 @@ void SyncWorker::ApplyLocalChange(
       SyncTaskManager::PRIORITY_MED,
       base::Bind(&SyncWorker::DidApplyLocalChange,
                  weak_ptr_factory_.GetWeakPtr(),
-                 syncer, callback));
+                 syncer,
+                 callback));
 }
 
 void SyncWorker::MaybeScheduleNextTask() {
@@ -315,6 +315,14 @@ void SyncWorker::NotifyLastOperationStatus(
         Observer, observers_,
         OnPendingFileListUpdated(GetMetadataDatabase()->CountDirtyTracker()));
   }
+}
+
+void SyncWorker::RecordTaskLog(scoped_ptr<TaskLogger::TaskLog> task_log) {
+  context_->GetUITaskRunner()->PostTask(
+      FROM_HERE,
+      base::Bind(&TaskLogger::RecordLog,
+                 context_->GetTaskLogger(),
+                 base::Passed(&task_log)));
 }
 
 void SyncWorker::OnNotificationReceived() {
@@ -381,25 +389,6 @@ void SyncWorker::AddObserver(Observer* observer) {
   observers_.AddObserver(observer);
 }
 
-SyncWorker::SyncWorker(
-    const base::FilePath& base_dir,
-    const base::WeakPtr<ExtensionServiceInterface>& extension_service,
-    scoped_ptr<SyncEngineContext> sync_engine_context,
-    leveldb::Env* env_override)
-    : base_dir_(base_dir),
-      env_override_(env_override),
-      service_state_(REMOTE_SERVICE_TEMPORARY_UNAVAILABLE),
-      should_check_conflict_(true),
-      should_check_remote_change_(true),
-      listing_remote_changes_(false),
-      sync_enabled_(false),
-      default_conflict_resolution_policy_(
-          CONFLICT_RESOLUTION_POLICY_LAST_WRITE_WIN),
-      network_available_(false),
-      extension_service_(extension_service),
-      context_(sync_engine_context.Pass()),
-      weak_ptr_factory_(this) {}
-
 void SyncWorker::DoDisableApp(const std::string& app_id,
                               const SyncStatusCallback& callback) {
   if (GetMetadataDatabase()) {
@@ -427,7 +416,6 @@ void SyncWorker::PostInitializeTask() {
   // already initialized when it runs.
   SyncEngineInitializer* initializer =
       new SyncEngineInitializer(context_.get(),
-                                context_->GetFileTaskRunner(),
                                 base_dir_.Append(kDatabaseName),
                                 env_override_);
   task_manager_->ScheduleSyncTask(

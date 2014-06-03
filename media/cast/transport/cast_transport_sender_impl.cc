@@ -100,28 +100,41 @@ void CastTransportSenderImpl::SetPacketReceiver(
 }
 
 void CastTransportSenderImpl::InsertCodedAudioFrame(
-    const EncodedAudioFrame* audio_frame,
-    const base::TimeTicks& recorded_time) {
+    const EncodedFrame& audio_frame) {
   DCHECK(audio_sender_) << "Audio sender uninitialized";
-  audio_sender_->InsertCodedAudioFrame(audio_frame, recorded_time);
+  audio_sender_->SendFrame(audio_frame);
 }
 
 void CastTransportSenderImpl::InsertCodedVideoFrame(
-    const EncodedVideoFrame* video_frame,
-    const base::TimeTicks& capture_time) {
+    const EncodedFrame& video_frame) {
   DCHECK(video_sender_) << "Video sender uninitialized";
-  video_sender_->InsertCodedVideoFrame(video_frame, capture_time);
+  video_sender_->SendFrame(video_frame);
 }
 
 void CastTransportSenderImpl::SendRtcpFromRtpSender(
     uint32 packet_type_flags,
-    const RtcpSenderInfo& sender_info,
+    uint32 ntp_seconds,
+    uint32 ntp_fraction,
+    uint32 rtp_timestamp,
     const RtcpDlrrReportBlock& dlrr,
-    const RtcpSenderLogMessage& sender_log,
     uint32 sending_ssrc,
     const std::string& c_name) {
+  RtcpSenderInfo sender_info;
+  sender_info.ntp_seconds = ntp_seconds;
+  sender_info.ntp_fraction = ntp_fraction;
+  sender_info.rtp_timestamp = rtp_timestamp;
+  if (audio_sender_ && audio_sender_->ssrc() == sending_ssrc) {
+    sender_info.send_packet_count = audio_sender_->send_packet_count();
+    sender_info.send_octet_count = audio_sender_->send_octet_count();
+  } else if (video_sender_ && video_sender_->ssrc() == sending_ssrc) {
+    sender_info.send_packet_count = video_sender_->send_packet_count();
+    sender_info.send_octet_count = video_sender_->send_octet_count();
+  } else {
+    LOG(ERROR) << "Sending RTCP with an invalid SSRC.";
+    return;
+  }
   rtcp_builder_.SendRtcpFromRtpSender(
-      packet_type_flags, sender_info, dlrr, sender_log, sending_ssrc, c_name);
+      packet_type_flags, sender_info, dlrr, sending_ssrc, c_name);
 }
 
 void CastTransportSenderImpl::ResendPackets(
@@ -134,18 +147,6 @@ void CastTransportSenderImpl::ResendPackets(
     DCHECK(video_sender_) << "Video sender uninitialized";
     video_sender_->ResendPackets(missing_packets);
   }
-}
-
-void CastTransportSenderImpl::SubscribeAudioRtpStatsCallback(
-    const CastTransportRtpStatistics& callback) {
-  DCHECK(audio_sender_) << "Audio sender uninitialized";
-  audio_sender_->SubscribeAudioRtpStatsCallback(callback);
-}
-
-void CastTransportSenderImpl::SubscribeVideoRtpStatsCallback(
-    const CastTransportRtpStatistics& callback) {
-  DCHECK(video_sender_) << "Video sender uninitialized";
-  video_sender_->SubscribeVideoRtpStatsCallback(callback);
 }
 
 void CastTransportSenderImpl::SendRawEvents() {

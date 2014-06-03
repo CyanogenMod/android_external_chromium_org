@@ -17,12 +17,13 @@
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/image_loader.h"
+#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/url_constants.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -87,7 +88,7 @@ void UnregisterAndReplaceOverrideForWebContents(const std::string& page,
 // Run favicon callbck with image result. If no favicon was available then
 // |image| will be empty.
 void RunFaviconCallbackAsync(
-    const FaviconService::FaviconResultsCallback& callback,
+    const favicon_base::FaviconResultsCallback& callback,
     const gfx::Image& image) {
   std::vector<favicon_base::FaviconBitmapResult>* favicon_bitmap_results =
       new std::vector<favicon_base::FaviconBitmapResult>();
@@ -405,7 +406,7 @@ void ExtensionWebUI::UnregisterChromeURLOverrides(
 void ExtensionWebUI::GetFaviconForURL(
     Profile* profile,
     const GURL& page_url,
-    const FaviconService::FaviconResultsCallback& callback) {
+    const favicon_base::FaviconResultsCallback& callback) {
   // Even when the extensions service is enabled by default, it's still
   // disabled in incognito mode.
   ExtensionService* service = profile->GetExtensionService();
@@ -427,7 +428,7 @@ void ExtensionWebUI::GetFaviconForURL(
       FaviconUtil::GetFaviconScaleFactors();
   std::vector<extensions::ImageLoader::ImageRepresentation> info_list;
   for (size_t i = 0; i < scale_factors.size(); ++i) {
-    float scale = ui::GetImageScale(scale_factors[i]);
+    float scale = ui::GetScaleForScaleFactor(scale_factors[i]);
     int pixel_size = static_cast<int>(gfx::kFaviconSize * scale);
     extensions::ExtensionResource icon_resource =
         extensions::IconsInfo::GetIconResource(extension,

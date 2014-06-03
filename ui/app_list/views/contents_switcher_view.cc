@@ -27,8 +27,7 @@ ContentsSwitcherView::ContentsSwitcherView(ContentsView* contents_view)
 
   buttons_->SetLayoutManager(new views::BoxLayout(
       views::BoxLayout::kHorizontal, 0, 0, kButtonSpacing));
-  AddSwitcherButton(IDR_APP_LIST_SEARCH_ICON,
-                    ContentsView::SHOW_SEARCH_RESULTS);
+  AddSwitcherButton(IDR_APP_LIST_SEARCH_ICON, ContentsView::SHOW_START_PAGE);
   AddSwitcherButton(IDR_APP_LIST_APPS_ICON, ContentsView::SHOW_APPS);
 }
 
@@ -43,7 +42,7 @@ void ContentsSwitcherView::AddSwitcherButton(int resource_id, int tag) {
   buttons_->AddChildView(button);
 }
 
-gfx::Size ContentsSwitcherView::GetPreferredSize() {
+gfx::Size ContentsSwitcherView::GetPreferredSize() const {
   return gfx::Size(buttons_->GetPreferredSize().width(), kPreferredHeight);
 }
 

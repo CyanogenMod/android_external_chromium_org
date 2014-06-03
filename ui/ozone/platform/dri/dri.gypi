@@ -8,7 +8,7 @@
       'ozone_platform_dri',
     ],
     'internal_ozone_platforms': [
-      'dri'
+      'dri',
     ],
   },
   'targets': [
@@ -19,9 +19,11 @@
         '../../base/base.gyp:base',
         '../../build/linux/system.gyp:dridrm',
         '../../skia/skia.gyp:skia',
+        '../base/ui_base.gyp:ui_base',
         '../display/display.gyp:display_types',
         '../display/display.gyp:display_util',
         '../events/events.gyp:events',
+        '../events/ozone/events_ozone.gyp:events_ozone_evdev',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
       ],
@@ -53,6 +55,9 @@
         'hardware_display_controller.h',
         'ozone_platform_dri.cc',
         'ozone_platform_dri.h',
+        'screen_manager.cc',
+        'screen_manager.h',
+        'scanout_surface.h',
       ],
     },
   ],

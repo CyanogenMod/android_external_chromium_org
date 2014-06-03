@@ -37,7 +37,7 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/importer/imported_favicon_usage.h"
 #include "chrome/common/url_constants.h"
-#include "components/bookmarks/core/browser/bookmark_service.h"
+#include "components/bookmarks/browser/bookmark_service.h"
 #include "components/favicon_base/select_favicon_frames.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -407,7 +407,7 @@ void HistoryBackend::AddPage(const HistoryAddPageArgs& request) {
         request.redirects[0] : request.url);
     if (origin_url.SchemeIs(url::kHttpScheme) ||
         origin_url.SchemeIs(url::kHttpsScheme) ||
-        origin_url.SchemeIs(content::kFtpScheme)) {
+        origin_url.SchemeIs(url::kFtpScheme)) {
       std::string host(origin_url.host());
       size_t registry_length =
           net::registry_controlled_domains::GetRegistryLength(
@@ -782,6 +782,7 @@ std::pair<URLID, VisitID> HistoryBackend::AddPageVisit(
     scoped_ptr<URLVisitedDetails> details(new URLVisitedDetails);
     details->transition = transition;
     details->row = url_info;
+    details->visit_time = time;
     // TODO(meelapshah) Disabled due to potential PageCycler regression.
     // Re-enable this.
     // GetMostRecentRedirectsTo(url, &details->redirects);

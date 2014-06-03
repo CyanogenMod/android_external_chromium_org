@@ -19,6 +19,7 @@
 #include "chromeos/network/managed_state.h"
 #include "chromeos/network/network_handler.h"
 #include "chromeos/network/network_handler_callbacks.h"
+#include "chromeos/network/network_type_pattern.h"
 #include "chromeos/network/shill_property_handler.h"
 
 namespace base {
@@ -37,7 +38,6 @@ class DeviceState;
 class NetworkState;
 class NetworkStateHandlerObserver;
 class NetworkStateHandlerTest;
-class NetworkTypePattern;
 
 // Class for tracking the list of visible networks and their properties.
 //
@@ -49,6 +49,21 @@ class NetworkTypePattern;
 // keep properties up to date by managing the appropriate Shill observers.
 // It will invoke its own more specific observer methods when the specified
 // changes occur.
+//
+// Some notes about NetworkState, FavoriteState, and GUIDs:
+// * A FavoriteState exists for all network services stored in a profile, and
+//   all "visible" networks (physically connected networks like ethernet and
+//   cellular or in-range wifi networks). If the network is stored in a profile,
+//   FavoriteState.IsInProfile() will return true.
+// * A NetworkState exists for "visible" networks only. There will always be a
+//   corresponding FavoriteState with the same service_path() property.
+// * All networks saved to a profile will have a saved GUID that is persistent
+//   across sessions.
+// * Networks that are not saved to a profile will have a GUID assigned when
+//   the initial properties are received. The GUID will be consistent for
+//   the duration of a session, even if the network drops out and returns.
+// * Both FavoriteState and NetworkState store the GUID. It will always be the
+//   same for the same network (i.e. entries with the same service_path()).
 
 class CHROMEOS_EXPORT NetworkStateHandler
     : public internal::ShillPropertyHandler::Listener {
@@ -168,12 +183,27 @@ class CHROMEOS_EXPORT NetworkStateHandler
   // favorite is visible and retrieve the complete properties (and vice-versa).
   void GetFavoriteList(FavoriteStateList* list) const;
 
-  // Like GetFavoriteList() but only returns favorites with matching |type|.
+  // Like GetFavoriteList() but only returns favorites with matching |type| and
+  // the following properties:
+  // |configured_only| - if true only include networks where IsInProfile is true
+  // |visible_only| - if true only include networks in the visible Services list
+  // |limit| - if > 0 limits the number of results.
   void GetFavoriteListByType(const NetworkTypePattern& type,
+                             bool configured_only,
+                             bool visible_only,
+                             int limit,
                              FavoriteStateList* list) const;
 
-  // Finds and returns a favorite state by |service_path| or NULL if not found.
-  const FavoriteState* GetFavoriteState(const std::string& service_path) const;
+  // Finds and returns the FavoriteState associated with |service_path| or NULL
+  // if not found. If |configured_only| is true, only returns saved entries
+  // (IsInProfile is true).
+  const FavoriteState* GetFavoriteStateFromServicePath(
+      const std::string& service_path,
+      bool configured_only) const;
+
+  // Finds and returns the FavoriteState associated with |guid| or NULL if not
+  // found. This returns all entries (IsInProfile() may be true or false).
+  const FavoriteState* GetFavoriteStateFromGuid(const std::string& guid) const;
 
   // Requests a network scan. This may trigger updates to the network
   // list, which will trigger the appropriate observer calls.
@@ -288,6 +318,7 @@ class CHROMEOS_EXPORT NetworkStateHandler
  private:
   typedef std::list<base::Closure> ScanCallbackList;
   typedef std::map<std::string, ScanCallbackList> ScanCompleteCallbackMap;
+  typedef std::map<std::string, std::string> SpecifierGuidMap;
   friend class NetworkStateHandlerTest;
   FRIEND_TEST_ALL_PREFIXES(NetworkStateHandlerTest, NetworkStateHandlerStub);
 
@@ -295,6 +326,10 @@ class CHROMEOS_EXPORT NetworkStateHandler
   // notifies observers.
   void UpdateNetworkStateProperties(NetworkState* network,
                                     const base::DictionaryValue& properties);
+
+  // Ensure a valid GUID for FavoriteState and update the NetworkState GUID from
+  // the corresponding FavoriteState if necessary.
+  void UpdateGuid(ManagedState* managed);
 
   // Sends DeviceListChanged() to observers and logs an event.
   void NotifyDeviceListChanged();
@@ -304,6 +339,8 @@ class CHROMEOS_EXPORT NetworkStateHandler
   // pointers.
   DeviceState* GetModifiableDeviceState(const std::string& device_path) const;
   NetworkState* GetModifiableNetworkState(
+      const std::string& service_path) const;
+  FavoriteState* GetModifiableFavoriteState(
       const std::string& service_path) const;
   ManagedState* GetModifiableManagedState(const ManagedStateList* managed_list,
                                           const std::string& path) const;
@@ -356,6 +393,10 @@ class CHROMEOS_EXPORT NetworkStateHandler
 
   // Callbacks to run when a scan for the technology type completes.
   ScanCompleteCallbackMap scan_complete_callbacks_;
+
+  // Map of network specifiers to guids. Contains an entry for each
+  // FavoriteState that is not saved in a profile.
+  SpecifierGuidMap specifier_guid_map_;
 
   DISALLOW_COPY_AND_ASSIGN(NetworkStateHandler);
 };

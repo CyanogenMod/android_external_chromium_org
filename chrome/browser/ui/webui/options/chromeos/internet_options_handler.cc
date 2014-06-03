@@ -21,8 +21,8 @@
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/mobile_config.h"
 #include "chrome/browser/chromeos/net/onc_utils.h"
 #include "chrome/browser/chromeos/options/network_config_view.h"
@@ -49,7 +49,6 @@
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/network_ui_data.h"
 #include "chromeos/network/network_util.h"
-#include "chromeos/network/shill_property_util.h"
 #include "components/onc/onc_constants.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
@@ -303,8 +302,10 @@ bool HasPolicyForFavorite(const FavoriteState* favorite,
 bool HasPolicyForNetwork(const NetworkState* network,
                          const PrefService* profile_prefs) {
   const FavoriteState* favorite =
-      NetworkHandler::Get()->network_state_handler()->GetFavoriteState(
-          network->path());
+      NetworkHandler::Get()
+          ->network_state_handler()
+          ->GetFavoriteStateFromServicePath(network->path(),
+                                            true /* configured_only */);
   if (!favorite)
     return false;
   return HasPolicyForFavorite(favorite, profile_prefs);
@@ -312,10 +313,10 @@ bool HasPolicyForNetwork(const NetworkState* network,
 
 void SetCommonNetworkInfo(const ManagedState* state,
                           const gfx::ImageSkia& icon,
-                          ui::ScaleFactor icon_scale_factor,
+                          float icon_scale_factor,
                           base::DictionaryValue* network_info) {
   gfx::ImageSkiaRep image_rep =
-      icon.GetRepresentation(ui::GetImageScale(icon_scale_factor));
+      icon.GetRepresentation(icon_scale_factor);
   std::string icon_url =
       icon.isNull() ? "" : webui::GetBitmapDataUrl(image_rep.sk_bitmap());
   network_info->SetString(kNetworkInfoKeyIconURL, icon_url);
@@ -335,7 +336,7 @@ void SetCommonNetworkInfo(const ManagedState* state,
 // transferred to the caller.
 base::DictionaryValue* BuildNetworkDictionary(
     const NetworkState* network,
-    ui::ScaleFactor icon_scale_factor,
+    float icon_scale_factor,
     const PrefService* profile_prefs) {
   scoped_ptr<base::DictionaryValue> network_info(new base::DictionaryValue());
   network_info->SetBoolean(kNetworkInfoKeyConnectable, network->connectable());
@@ -354,7 +355,7 @@ base::DictionaryValue* BuildNetworkDictionary(
 
 base::DictionaryValue* BuildFavoriteDictionary(
     const FavoriteState* favorite,
-    ui::ScaleFactor icon_scale_factor,
+    float icon_scale_factor,
     const PrefService* profile_prefs) {
   scoped_ptr<base::DictionaryValue> network_info(new base::DictionaryValue());
   network_info->SetBoolean(kNetworkInfoKeyConnectable, false);
@@ -1260,7 +1261,7 @@ std::string InternetOptionsHandler::GetIconDataUrl(int resource_id) const {
   gfx::ImageSkia* icon =
       ResourceBundle::GetSharedInstance().GetImageSkiaNamed(resource_id);
   gfx::ImageSkiaRep image_rep = icon->GetRepresentation(
-      ui::GetImageScale(web_ui()->GetDeviceScaleFactor()));
+      web_ui()->GetDeviceScaleFactor());
   return webui::GetBitmapDataUrl(image_rep.sk_bitmap());
 }
 
@@ -1522,8 +1523,11 @@ void InternetOptionsHandler::PopulateDictionaryDetailsCallback(
   // Device hardware address
   const DeviceState* device = NetworkHandler::Get()->network_state_handler()->
       GetDeviceState(network->device_path());
-  if (device)
-    dictionary.SetString(kTagHardwareAddress, device->GetFormattedMacAddress());
+  if (device) {
+    dictionary.SetString(
+        kTagHardwareAddress,
+        network_util::FormattedMacAddress(device->mac_address()));
+  }
 
   // IP config
   scoped_ptr<base::DictionaryValue> ipconfig_dhcp(new base::DictionaryValue);

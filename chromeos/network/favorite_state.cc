@@ -63,6 +63,8 @@ bool FavoriteState::PropertyChanged(const std::string& key,
       NET_LOG_ERROR("Failed to parse " + key, path());
     }
     return true;
+  } else if (key == shill::kSecurityProperty) {
+    return GetStringValue(key, value, &security_);
   }
   return false;
 }
@@ -72,15 +74,35 @@ void FavoriteState::GetStateProperties(
   ManagedState::GetStateProperties(dictionary);
 
   dictionary->SetStringWithoutPathExpansion(shill::kGuidProperty, guid());
+  dictionary->SetStringWithoutPathExpansion(shill::kSecurityProperty,
+                                            security_);
+
+  // Note: The following are added for debugging, but do not translate to ONC.
   dictionary->SetStringWithoutPathExpansion(shill::kProfileProperty,
                                             profile_path());
-  // Add ONCSource for debugging.
   dictionary->SetStringWithoutPathExpansion(NetworkUIData::kKeyONCSource,
                                             ui_data_.GetONCSourceAsString());
 }
 
-bool FavoriteState::IsFavorite() const {
-  // kTypeEthernetEap is always a favorite. We need this check because it does
+std::string FavoriteState::GetSpecifier() const {
+  if (!update_received()) {
+    NET_LOG_ERROR("GetSpecifier called before update", path());
+    return std::string();
+  }
+  if (type() == shill::kTypeWifi)
+    return name() + "_" + security_;
+  if (!name().empty())
+    return name();
+  return type();  // For unnamed networks such as ethernet.
+}
+
+void FavoriteState::SetGuid(const std::string& guid) {
+  DCHECK(guid_.empty());
+  guid_ = guid;
+}
+
+bool FavoriteState::IsInProfile() const {
+  // kTypeEthernetEap is always saved. We need this check because it does
   // not show up in the visible list, but its properties may not be available
   // when it first shows up in ServiceCompleteList. See crbug.com/355117.
   return !profile_path_.empty() || type() == shill::kTypeEthernetEap;

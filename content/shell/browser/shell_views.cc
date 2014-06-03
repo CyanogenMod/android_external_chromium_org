@@ -6,6 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/public/browser/context_factory.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/context_menu_params.h"
@@ -354,7 +355,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
   virtual View* GetContentsView() OVERRIDE { return this; }
 
   // Overridden from View
-  virtual gfx::Size GetMinimumSize() OVERRIDE {
+  virtual gfx::Size GetMinimumSize() const OVERRIDE {
     // We want to be able to make the window smaller than its initial
     // (preferred) size.
     return gfx::Size();
@@ -424,7 +425,8 @@ void Shell::PlatformInitialize(const gfx::Size& default_window_size) {
   chromeos::DBusThreadManager::Initialize();
   gfx::Screen::SetScreenInstance(
       gfx::SCREEN_TYPE_NATIVE, aura::TestScreen::Create());
-  wm_test_helper_ = new wm::WMTestHelper(default_window_size);
+  wm_test_helper_ = new wm::WMTestHelper(default_window_size,
+                                         GetContextFactory());
 #else
   gfx::Screen::SetScreenInstance(
       gfx::SCREEN_TYPE_NATIVE, views::CreateDesktopScreen());
@@ -496,7 +498,6 @@ void Shell::PlatformCreateWindow(int width, int height) {
   views::Widget::InitParams params;
   params.bounds = gfx::Rect(0, 0, width, height);
   params.delegate = new ShellWindowDelegateView(this);
-  params.top_level = true;
   params.remove_standard_frame = true;
   window_widget_->Init(params);
 #endif

@@ -28,11 +28,12 @@
 #include "chrome/browser/chromeos/customization_document.h"
 #include "chrome/browser/chromeos/first_run/first_run.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
+#include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/helper.h"
-#include "chrome/browser/chromeos/login/login_display_host.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
@@ -353,12 +354,12 @@ void ExistingUserController::CompleteLoginInternal(
     // complete enrollment, or opt-out of it. So this controller shouldn't force
     // enrollment again if it is reused for another sign-in.
     do_auto_enrollment_ = false;
-    auto_enrollment_username_ = user_context.username;
+    auto_enrollment_username_ = user_context.GetUserID();
     resume_login_callback_ = base::Bind(
         &ExistingUserController::PerformLogin,
         weak_factory_.GetWeakPtr(),
         user_context, LoginPerformer::AUTH_MODE_EXTENSION);
-    ShowEnrollmentScreen(true, user_context.username);
+    ShowEnrollmentScreen(true, user_context.GetUserID());
     // Enable UI for the enrollment screen. SetUIEnabled(true) will post a
     // request to show the sign-in screen again when invoked at the sign-in
     // screen; invoke SetUIEnabled() after navigating to the enrollment screen.
@@ -377,8 +378,7 @@ bool ExistingUserController::IsSigninInProgress() const {
 }
 
 void ExistingUserController::Login(const UserContext& user_context) {
-  if ((user_context.username.empty() || user_context.password.empty()) &&
-      user_context.auth_code.empty())
+  if (!user_context.HasCredentials())
     return;
 
   // Stop the auto-login timer when attempting login.
@@ -387,10 +387,8 @@ void ExistingUserController::Login(const UserContext& user_context) {
   // Disable clicking on other windows.
   login_display_->SetUIEnabled(false);
 
-  BootTimesLoader::Get()->RecordLoginAttempted();
-
-  if (last_login_attempt_username_ != user_context.username) {
-    last_login_attempt_username_ = user_context.username;
+  if (last_login_attempt_username_ != user_context.GetUserID()) {
+    last_login_attempt_username_ = user_context.GetUserID();
     num_login_attempts_ = 0;
     // Also reset state variables, which are used to determine password change.
     offline_failed_ = false;
@@ -405,6 +403,8 @@ void ExistingUserController::PerformLogin(
     LoginPerformer::AuthorizationMode auth_mode) {
   UserManager::Get()->GetUserFlow(last_login_attempt_username_)->
       set_host(host_);
+
+  BootTimesLoader::Get()->RecordLoginAttempted();
 
   // Disable UI while loading user profile.
   login_display_->SetUIEnabled(false);
@@ -421,12 +421,9 @@ void ExistingUserController::PerformLogin(
   }
 
   is_login_in_progress_ = true;
-  if (gaia::ExtractDomainName(user_context.username) ==
+  if (gaia::ExtractDomainName(user_context.GetUserID()) ==
           UserManager::kLocallyManagedUserDomain) {
-    login_performer_->LoginAsLocallyManagedUser(
-        UserContext(user_context.username,
-                    user_context.password,
-                    std::string()));  // auth_code
+    login_performer_->LoginAsLocallyManagedUser(user_context);
   } else {
     login_performer_->PerformLogin(user_context, auth_mode);
   }
@@ -612,7 +609,6 @@ void ExistingUserController::SetDisplayEmail(const std::string& email) {
 void ExistingUserController::ShowWrongHWIDScreen() {
   scoped_ptr<base::DictionaryValue> params;
   host_->StartWizard(WizardController::kWrongHWIDScreenName, params.Pass());
-  login_display_->OnFadeOut();
 }
 
 void ExistingUserController::Signout() {
@@ -657,26 +653,22 @@ void ExistingUserController::ShowEnrollmentScreen(bool is_auto_enrollment,
   }
   host_->StartWizard(WizardController::kEnrollmentScreenName,
                      params.Pass());
-  login_display_->OnFadeOut();
 }
 
 void ExistingUserController::ShowResetScreen() {
   scoped_ptr<base::DictionaryValue> params;
   host_->StartWizard(WizardController::kResetScreenName, params.Pass());
-  login_display_->OnFadeOut();
 }
 
 void ExistingUserController::ShowKioskEnableScreen() {
   scoped_ptr<base::DictionaryValue> params;
   host_->StartWizard(WizardController::kKioskEnableScreenName, params.Pass());
-  login_display_->OnFadeOut();
 }
 
 void ExistingUserController::ShowKioskAutolaunchScreen() {
   scoped_ptr<base::DictionaryValue> params;
   host_->StartWizard(WizardController::kKioskAutolaunchScreenName,
                      params.Pass());
-  login_display_->OnFadeOut();
 }
 
 void ExistingUserController::ShowTPMError() {
@@ -758,14 +750,14 @@ void ExistingUserController::OnLoginSuccess(const UserContext& user_context) {
   offline_failed_ = false;
   login_display_->set_signin_completed(true);
 
-  UserManager::Get()->GetUserFlow(user_context.username)->HandleLoginSuccess(
-      user_context);
+  UserManager::Get()->GetUserFlow(user_context.GetUserID())->
+      HandleLoginSuccess(user_context);
 
   StopPublicSessionAutoLoginTimer();
 
-  bool has_cookies =
+  const bool has_cookies =
       login_performer_->auth_mode() == LoginPerformer::AUTH_MODE_EXTENSION &&
-      user_context.auth_code.empty();
+      user_context.GetAuthCode().empty();
 
   // Login performer will be gone so cache this value to use
   // once profile is loaded.
@@ -787,9 +779,6 @@ void ExistingUserController::OnLoginSuccess(const UserContext& user_context) {
                                     this);
 
   display_email_.clear();
-
-  // Notify LoginDisplay to allow it provide visual feedback to user.
-  login_display_->OnLoginSuccess(user_context.username);
 }
 
 void ExistingUserController::OnProfilePrepared(Profile* profile) {
@@ -814,7 +803,7 @@ void ExistingUserController::OnProfilePrepared(Profile* profile) {
     // Mark the device as registered., i.e. the second part of OOBE as
     // completed.
     if (!StartupUtils::IsDeviceRegistered())
-      StartupUtils::MarkDeviceRegistered();
+      StartupUtils::MarkDeviceRegistered(base::Closure());
 
     if (CommandLine::ForCurrentProcess()->HasSwitch(
           chromeos::switches::kOobeSkipPostLogin)) {
@@ -830,7 +819,6 @@ void ExistingUserController::OnProfilePrepared(Profile* profile) {
   // Inform |login_status_consumer_| about successful login.
   if (login_status_consumer_)
     login_status_consumer_->OnLoginSuccess(UserContext());
-  login_display_->OnFadeOut();
 }
 
 void ExistingUserController::OnOffTheRecordLoginSuccess() {
@@ -839,7 +827,7 @@ void ExistingUserController::OnOffTheRecordLoginSuccess() {
 
   // Mark the device as registered., i.e. the second part of OOBE as completed.
   if (!StartupUtils::IsDeviceRegistered())
-    StartupUtils::MarkDeviceRegistered();
+    StartupUtils::MarkDeviceRegistered(base::Closure());
 
   LoginUtils::Get()->CompleteOffTheRecordLogin(guest_mode_url_);
 

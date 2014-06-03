@@ -16,8 +16,8 @@ namespace ui {
 
 class CursorFactoryOzone;
 class EventFactoryOzone;
-class InputMethodContextFactoryOzone;
 class NativeDisplayDelegate;
+class TouchscreenDeviceManager;
 
 // Base class for Ozone platform implementations.
 //
@@ -38,9 +38,12 @@ class OZONE_EXPORT OzonePlatform {
   OzonePlatform();
   virtual ~OzonePlatform();
 
-  // Initialize the platform. Once complete, SurfaceFactoryOzone &
-  // EventFactoryOzone will be set.
-  static void Initialize();
+  // Initializes the subsystems/resources necessary for the UI process (e.g.
+  // events, surface, etc.)
+  static void InitializeForUI();
+
+  // Initializes the subsystems/resources necessary for the GPU process.
+  static void InitializeForGPU();
 
   static OzonePlatform* GetInstance();
 
@@ -49,15 +52,20 @@ class OZONE_EXPORT OzonePlatform {
   // inject these objects themselves. Ownership is retained by OzonePlatform.
   virtual gfx::SurfaceFactoryOzone* GetSurfaceFactoryOzone() = 0;
   virtual ui::EventFactoryOzone* GetEventFactoryOzone() = 0;
-  virtual ui::InputMethodContextFactoryOzone*
-      GetInputMethodContextFactoryOzone() = 0;
   virtual ui::CursorFactoryOzone* GetCursorFactoryOzone() = 0;
 #if defined(OS_CHROMEOS)
   virtual scoped_ptr<ui::NativeDisplayDelegate>
       CreateNativeDisplayDelegate() = 0;
+  virtual scoped_ptr<ui::TouchscreenDeviceManager>
+      CreateTouchscreenDeviceManager() = 0;
 #endif
 
  private:
+  virtual void InitializeUI() = 0;
+  virtual void InitializeGPU() = 0;
+
+  static void CreateInstance();
+
   static OzonePlatform* instance_;
 
   DISALLOW_COPY_AND_ASSIGN(OzonePlatform);

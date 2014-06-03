@@ -278,7 +278,8 @@ void InfoBarView::ViewHierarchyChanged(
   SetBarTargetHeight(height);
 }
 
-void InfoBarView::PaintChildren(gfx::Canvas* canvas) {
+void InfoBarView::PaintChildren(gfx::Canvas* canvas,
+                                const views::CullSet& cull_set) {
   canvas->Save();
 
   // TODO(scr): This really should be the |fill_path_|, but the clipPath seems
@@ -289,7 +290,7 @@ void InfoBarView::PaintChildren(gfx::Canvas* canvas) {
   DCHECK_EQ(total_height(), height())
       << "Infobar piecewise heights do not match overall height";
   canvas->ClipRect(gfx::Rect(0, arrow_height(), width(), bar_height()));
-  views::View::PaintChildren(canvas);
+  views::View::PaintChildren(canvas, cull_set);
   canvas->Restore();
 }
 
@@ -303,7 +304,7 @@ void InfoBarView::ButtonPressed(views::Button* sender,
   }
 }
 
-int InfoBarView::ContentMinimumWidth() {
+int InfoBarView::ContentMinimumWidth() const {
   return 0;
 }
 
@@ -402,7 +403,7 @@ void InfoBarView::GetAccessibleState(ui::AXViewState* state) {
   state->keyboard_shortcut = base::ASCIIToUTF16("Alt+Shift+A");
 }
 
-gfx::Size InfoBarView::GetPreferredSize() {
+gfx::Size InfoBarView::GetPreferredSize() const {
   return gfx::Size(
       kEdgeItemPadding + (icon_ ? (icon_->width() + kIconToLabelSpacing) : 0) +
           ContentMinimumWidth() + kBeforeCloseButtonSpacing +

@@ -8,7 +8,7 @@
 #include "chrome/browser/translate/options_menu_model.h"
 #include "chrome/browser/translate/translate_infobar_delegate.h"
 #include "chrome/browser/ui/views/infobars/translate_language_menu_model.h"
-#include "grit/generated_resources.h"
+#include "grit/components_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/button/menu_button.h"
@@ -139,7 +139,7 @@ void BeforeTranslateInfoBar::ViewHierarchyChanged(
       delegate->language_name_at(delegate->original_language_index()));
 }
 
-int BeforeTranslateInfoBar::ContentMinimumWidth() {
+int BeforeTranslateInfoBar::ContentMinimumWidth() const {
   return label_1_->GetMinimumSize().width() +
       label_2_->GetMinimumSize().width() + NonLabelWidth();
 }

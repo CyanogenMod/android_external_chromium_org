@@ -31,12 +31,12 @@ class SmoothnessController(object):
     if tab.browser.platform.IsRawDisplayFrameRateSupported():
       tab.browser.platform.StartRawDisplayFrameRateMeasurement()
     # Start the smooth marker for all smooth actions.
-    runner = action_runner.ActionRunner(None, tab)
+    runner = action_runner.ActionRunner(tab)
     runner.BeginInteraction(RUN_SMOOTH_ACTIONS, [tir_module.IS_SMOOTH])
 
   def Stop(self, tab):
     # End the smooth marker for all smooth actions.
-    runner = action_runner.ActionRunner(None, tab)
+    runner = action_runner.ActionRunner(tab)
     runner.EndInteraction(RUN_SMOOTH_ACTIONS, [tir_module.IS_SMOOTH])
     # Stop tracing for smoothness metric.
     if tab.browser.platform.IsRawDisplayFrameRateSupported():
@@ -56,7 +56,7 @@ class SmoothnessController(object):
     for event in renderer_thread.async_slices:
       if not tir_module.IsTimelineInteractionRecord(event.name):
         continue
-      r = tir_module.TimelineInteractionRecord.FromEvent(event)
+      r = tir_module.TimelineInteractionRecord.FromAsyncEvent(event)
       if r.logical_name == RUN_SMOOTH_ACTIONS:
         assert run_smooth_actions_record is None, (
           'SmoothnessController cannot issue more than 1 %s record' %

@@ -6,13 +6,13 @@
 
 #include "mojo/services/public/cpp/view_manager/lib/view_manager_synchronizer.h"
 #include "mojo/services/public/cpp/view_manager/lib/view_tree_node_private.h"
+#include "mojo/services/public/cpp/view_manager/view.h"
 
 namespace mojo {
-namespace services {
 namespace view_manager {
 
-ViewManager::ViewManager(Shell* shell)
-    : shell_(shell) {}
+ViewManager::ViewManager(ServiceProvider* service_provider)
+    : service_provider_(service_provider) {}
 
 ViewManager::~ViewManager() {
   while (!nodes_.empty()) {
@@ -21,6 +21,13 @@ ViewManager::~ViewManager() {
       it->second->Destroy();
     else
       nodes_.erase(it);
+  }
+  while (!views_.empty()) {
+    IdToViewMap::iterator it = views_.begin();
+    if (synchronizer_->OwnsView(it->second->id()))
+      it->second->Destroy();
+    else
+      views_.erase(it);
   }
 }
 
@@ -33,6 +40,10 @@ ViewTreeNode* ViewManager::GetNodeById(TransportNodeId id) {
   return it != nodes_.end() ? it->second : NULL;
 }
 
+View* ViewManager::GetViewById(TransportViewId id) {
+  IdToViewMap::const_iterator it = views_.find(id);
+  return it != views_.end() ? it->second : NULL;
+}
+
 }  // namespace view_manager
-}  // namespace services
 }  // namespace mojo

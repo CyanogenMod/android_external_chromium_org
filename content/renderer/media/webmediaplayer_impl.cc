@@ -511,16 +511,13 @@ WebMediaPlayer::ReadyState WebMediaPlayerImpl::readyState() const {
   return ready_state_;
 }
 
-const blink::WebTimeRanges& WebMediaPlayerImpl::buffered() {
+blink::WebTimeRanges WebMediaPlayerImpl::buffered() const {
   DCHECK(main_loop_->BelongsToCurrentThread());
   media::Ranges<base::TimeDelta> buffered_time_ranges =
       pipeline_.GetBufferedTimeRanges();
   buffered_data_source_host_.AddBufferedTimeRanges(
       &buffered_time_ranges, pipeline_.GetMediaDuration());
-  blink::WebTimeRanges buffered_web_time_ranges(
-      ConvertToWebTimeRanges(buffered_time_ranges));
-  buffered_web_time_ranges_.swap(buffered_web_time_ranges);
-  return buffered_web_time_ranges_;
+  return ConvertToWebTimeRanges(buffered_time_ranges);
 }
 
 double WebMediaPlayerImpl::maxTimeSeekable() const {
@@ -537,7 +534,7 @@ double WebMediaPlayerImpl::maxTimeSeekable() const {
   return duration();
 }
 
-bool WebMediaPlayerImpl::didLoadingProgress() const {
+bool WebMediaPlayerImpl::didLoadingProgress() {
   DCHECK(main_loop_->BelongsToCurrentThread());
   bool pipeline_progress = pipeline_.DidLoadingProgress();
   bool data_progress = buffered_data_source_host_.DidLoadingProgress();

@@ -16,6 +16,7 @@
 #include "chrome/common/extensions/update_manifest.h"
 #include "chrome/common/media_galleries/iphoto_library.h"
 #include "chrome/common/media_galleries/itunes_library.h"
+#include "chrome/common/media_galleries/metadata_types.h"
 #include "chrome/common/media_galleries/picasa_types.h"
 #include "chrome/common/safe_browsing/zip_analyzer.h"
 #include "ipc/ipc_message_macros.h"
@@ -147,6 +148,13 @@ IPC_STRUCT_TRAITS_BEGIN(picasa::FolderINIContents)
 IPC_STRUCT_TRAITS_END()
 #endif  // defined(OS_WIN) || defined(OS_MACOSX)
 
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
+IPC_STRUCT_TRAITS_BEGIN(metadata::AttachedImage)
+  IPC_STRUCT_TRAITS_MEMBER(type)
+  IPC_STRUCT_TRAITS_MEMBER(data)
+IPC_STRUCT_TRAITS_END()
+#endif  // !defined(OS_ANDROID) && !defined(OS_IOS)
+
 //------------------------------------------------------------------------------
 // Utility process messages:
 // These are messages from the browser to the utility process.
@@ -178,10 +186,11 @@ IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_DecodeImageBase64,
                      std::string)  // base64 encoded image contents
 
 // Tell the utility process to render the given PDF into a metafile.
-// TODO(vitalybuka): switch to IPC::PlatformFileForTransit.
-IPC_MESSAGE_CONTROL4(ChromeUtilityMsg_RenderPDFPagesToMetafile,
-                     base::PlatformFile,       // PDF file
-                     base::FilePath,           // Location for output metafile
+// The metafile path will have ".%d" inserted where the %d is the page number.
+// If no page range is specified, all pages will be converted.
+IPC_MESSAGE_CONTROL4(ChromeUtilityMsg_RenderPDFPagesToMetafiles,
+                     IPC::PlatformFileForTransit,  // PDF file
+                     base::FilePath,  // Base location for output metafile
                      printing::PdfRenderSettings,  // PDF render settings
                      std::vector<printing::PageRange>)
 
@@ -291,9 +300,10 @@ IPC_MESSAGE_CONTROL2(ChromeUtilityMsg_CheckMediaFile,
                      int64 /* milliseconds_of_decoding */,
                      IPC::PlatformFileForTransit /* Media file to parse */)
 
-IPC_MESSAGE_CONTROL2(ChromeUtilityMsg_ParseMediaMetadata,
+IPC_MESSAGE_CONTROL3(ChromeUtilityMsg_ParseMediaMetadata,
                      std::string /* mime_type */,
-                     int64 /* total_size */)
+                     int64 /* total_size */,
+                     bool /* get_attached_images */)
 
 IPC_MESSAGE_CONTROL2(ChromeUtilityMsg_RequestBlobBytes_Finished,
                      int64 /* request_id */,
@@ -365,9 +375,9 @@ IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_DecodeImage_Succeeded,
 IPC_MESSAGE_CONTROL0(ChromeUtilityHostMsg_DecodeImage_Failed)
 
 // Reply when the utility process has succeeded in rendering the PDF.
-IPC_MESSAGE_CONTROL2(ChromeUtilityHostMsg_RenderPDFPagesToMetafile_Succeeded,
-                     int,          // Highest rendered page number
-                     double)       // Scale factor
+IPC_MESSAGE_CONTROL2(ChromeUtilityHostMsg_RenderPDFPagesToMetafiles_Succeeded,
+                     std::vector<printing::PageRange>,  // Pages rendered
+                     double)                            // Scale factor
 
 // Reply when an error occurred rendering the PDF.
 IPC_MESSAGE_CONTROL0(ChromeUtilityHostMsg_RenderPDFPagesToMetafile_Failed)
@@ -481,9 +491,11 @@ IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_IndexPicasaAlbumsContents_Finished,
 IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_CheckMediaFile_Finished,
                      bool /* passed_checks */)
 
-IPC_MESSAGE_CONTROL2(ChromeUtilityHostMsg_ParseMediaMetadata_Finished,
-                     bool /* parse_success */,
-                     base::DictionaryValue /* metadata */)
+IPC_MESSAGE_CONTROL3(
+    ChromeUtilityHostMsg_ParseMediaMetadata_Finished,
+    bool /* parse_success */,
+    base::DictionaryValue /* metadata */,
+    std::vector<metadata::AttachedImage> /* attached_images */)
 
 IPC_MESSAGE_CONTROL3(ChromeUtilityHostMsg_RequestBlobBytes,
                      int64 /* request_id */,

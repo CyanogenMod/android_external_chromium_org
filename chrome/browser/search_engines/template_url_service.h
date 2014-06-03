@@ -16,6 +16,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/prefs/pref_change_registrar.h"
+#include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/search_engines/default_search_manager.h"
 #include "chrome/browser/search_engines/template_url_id.h"
 #include "chrome/browser/webdata/web_data_service.h"
@@ -431,6 +432,7 @@ class TemplateURLService : public WebDataServiceConsumer,
   FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceSyncTest, PreSyncDeletes);
   FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceSyncTest, MergeInSyncTemplateURL);
 
+  friend class InstantUnitTestBase;
   friend class TemplateURLServiceTestUtilBase;
 
   typedef std::map<base::string16, TemplateURL*> KeywordToTemplateMap;
@@ -486,15 +488,23 @@ class TemplateURLService : public WebDataServiceConsumer,
   // Transitions to the loaded state.
   void ChangeToLoadedState();
 
+  // Callback that is called when the Google URL is updated.
+  void OnGoogleURLUpdated(GURL old_url, GURL new_url);
+
   // Called by DefaultSearchManager when the effective default search engine has
   // changed.
   void OnDefaultSearchChange(const TemplateURLData* new_dse_data,
                              DefaultSearchManager::Source source);
 
-  // Applies a DSE change. May be called at startup or after transitioning to
-  // the loaded state.
+  // Applies a DSE change and reports metrics if appropriate.
   void ApplyDefaultSearchChange(const TemplateURLData* new_dse_data,
                                 DefaultSearchManager::Source source);
+
+
+  // Applies a DSE change. May be called at startup or after transitioning to
+  // the loaded state. Returns true if a change actually occurred.
+  bool ApplyDefaultSearchChangeNoMetrics(const TemplateURLData* new_dse_data,
+                                         DefaultSearchManager::Source source);
 
   // Returns true if there is no TemplateURL that has a search url with the
   // specified host, or the only TemplateURLs matching the specified host can
@@ -771,6 +781,8 @@ class TemplateURLService : public WebDataServiceConsumer,
 
   // Helper class to manage the default search engine.
   DefaultSearchManager default_search_manager_;
+
+  scoped_ptr<GoogleURLTracker::Subscription> google_url_updated_subscription_;
 
   // Used to disable the prepopulated search engines in tests.
   static bool g_fallback_search_engines_disabled;

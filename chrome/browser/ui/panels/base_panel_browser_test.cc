@@ -38,10 +38,6 @@
 #include "ui/base/x/x11_util.h"
 #endif
 
-#if defined(OS_LINUX) && !defined(USE_AURA)
-#include "ui/base/x/active_window_watcher_x.h"
-#endif
-
 #if defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
 #include "chrome/browser/ui/cocoa/run_loop_testing.h"
@@ -573,6 +569,7 @@ scoped_refptr<Extension> BasePanelBrowserTest::CreateExtension(
                            syncer::StringOrdinal(),
                            false /* no requirement errors */,
                            extensions::NOT_BLACKLISTED,
+                           false /* not ephemeral */,
                            false /* don't wait for idle */);
   return extension;
 }
@@ -622,9 +619,5 @@ std::string BasePanelBrowserTest::MakePanelName(int index) {
 }
 
 bool BasePanelBrowserTest::WmSupportWindowActivation() {
-#if defined(OS_LINUX) && !defined(USE_AURA)
-  return ui::ActiveWindowWatcherX::WMSupportsActivation();
-#else
   return true;
-#endif
 }

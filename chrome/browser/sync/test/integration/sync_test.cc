@@ -24,7 +24,6 @@
 #include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/invalidation/invalidation_service_factory.h"
-#include "chrome/browser/invalidation/p2p_invalidation_service.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -50,7 +49,9 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/bookmarks/core/test/bookmark_test_helpers.h"
+#include "components/bookmarks/test/bookmark_test_helpers.h"
+#include "components/invalidation/invalidation_switches.h"
+#include "components/invalidation/p2p_invalidation_service.h"
 #include "components/os_crypt/os_crypt.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/web_contents.h"
@@ -74,6 +75,10 @@
 #include "sync/test/fake_server/fake_server.h"
 #include "sync/test/fake_server/fake_server_network_resources.h"
 #include "url/gurl.h"
+
+#if defined(OS_CHROMEOS)
+#include "chromeos/chromeos_switches.h"
+#endif
 
 using content::BrowserThread;
 using invalidation::InvalidationServiceFactory;
@@ -242,6 +247,10 @@ void SyncTest::TearDown() {
 void SyncTest::SetUpCommandLine(base::CommandLine* cl) {
   AddTestSwitches(cl);
   AddOptionalTypesToCommandLine(cl);
+
+#if defined(OS_CHROMEOS)
+  cl->AppendSwitch(chromeos::switches::kIgnoreUserProfileMappingForTests);
+#endif
 }
 
 void SyncTest::AddTestSwitches(base::CommandLine* cl) {
@@ -396,6 +405,11 @@ void SyncTest::InitializeInvalidations(int index) {
                 GetProfile(index),
                 fake_server::FakeServerInvalidationService::Build));
     fake_server_->AddObserver(invalidation_service);
+    if (TestUsesSelfNotifications()) {
+      invalidation_service->EnableSelfNotifications();
+    } else {
+      invalidation_service->DisableSelfNotifications();
+    }
     fake_server_invalidation_services_[index] = invalidation_service;
   } else {
     invalidation::P2PInvalidationService* p2p_invalidation_service =
@@ -594,8 +608,15 @@ void SyncTest::DecideServerType() {
       // one that makes sense for most developers. FakeServer is the
       // current solution but some scenarios are only supported by the
       // legacy python server.
-        server_type_ = test_type_ == SINGLE_CLIENT || test_type_ == TWO_CLIENT ?
-              IN_PROCESS_FAKE_SERVER : LOCAL_PYTHON_SERVER;
+      switch (test_type_) {
+        case SINGLE_CLIENT:
+        case TWO_CLIENT:
+        case MULTIPLE_CLIENT:
+          server_type_ = IN_PROCESS_FAKE_SERVER;
+          break;
+        default:
+          server_type_ = LOCAL_PYTHON_SERVER;
+      }
     } else if (cl->HasSwitch(switches::kSyncServiceURL) &&
                cl->HasSwitch(switches::kSyncServerCommandLine)) {
       // If a sync server URL and a sync server command line are provided,
@@ -665,11 +686,11 @@ bool SyncTest::SetUpLocalPythonTestServer() {
   xmpp_host_port_pair.set_port(xmpp_port);
   xmpp_port_.reset(new net::ScopedPortException(xmpp_port));
 
-  if (!cl->HasSwitch(switches::kSyncNotificationHostPort)) {
-    cl->AppendSwitchASCII(switches::kSyncNotificationHostPort,
+  if (!cl->HasSwitch(invalidation::switches::kSyncNotificationHostPort)) {
+    cl->AppendSwitchASCII(invalidation::switches::kSyncNotificationHostPort,
                           xmpp_host_port_pair.ToString());
     // The local XMPP server only supports insecure connections.
-    cl->AppendSwitch(switches::kSyncAllowInsecureXmppConnection);
+    cl->AppendSwitch(invalidation::switches::kSyncAllowInsecureXmppConnection);
   }
   DVLOG(1) << "Started local python XMPP server at "
            << xmpp_host_port_pair.ToString();
@@ -976,6 +997,7 @@ sync_pb::SyncEnums::Action GetClientToServerResponseAction(
       return sync_pb::SyncEnums::DISABLE_SYNC_ON_CLIENT;
     case syncer::STOP_SYNC_FOR_DISABLED_ACCOUNT:
     case syncer::DISABLE_SYNC_AND_ROLLBACK:
+    case syncer::ROLLBACK_DONE:
       NOTREACHED();   // No corresponding proto action for these. Shouldn't
                       // test.
       return sync_pb::SyncEnums::UNKNOWN_ACTION;

@@ -5,7 +5,11 @@
 #include "chrome/browser/shell_integration_linux.h"
 
 #include <fcntl.h>
+
+#if defined(USE_GLIB)
 #include <glib.h>
+#endif
+
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -319,17 +323,13 @@ const char kAppListDesktopName[] = "chrome-app-list";
 const char kAppListDesktopName[] = "chromium-app-list";
 #endif
 
-}  // namespace
-
-namespace {
-
 // Utility function to get the path to the version of a script shipped with
 // Chrome. |script| gives the name of the script. |chrome_version| returns the
 // path to the Chrome version of the script, and the return value of the
 // function is true if the function is successful and the Chrome version is
 // not the script found on the PATH.
 bool GetChromeVersionOfScript(const std::string& script,
-                               std::string* chrome_version) {
+                              std::string* chrome_version) {
   // Get the path to the Chrome version.
   base::FilePath chrome_dir;
   if (!PathService::Get(base::DIR_EXE, &chrome_dir))
@@ -382,7 +382,7 @@ bool SetDefaultWebClient(const std::string& protocol) {
     argv.push_back(kXdgSettingsDefaultSchemeHandler);
     argv.push_back(protocol);
   }
-  argv.push_back(ShellIntegrationLinux::GetDesktopName(env.get()));
+  argv.push_back(shell_integration_linux::GetDesktopName(env.get()));
 
   int exit_code;
   bool ran_ok = LaunchXdgUtility(argv, &exit_code);
@@ -417,7 +417,7 @@ ShellIntegration::DefaultWebClientState GetIsDefaultWebClient(
     argv.push_back(kXdgSettingsDefaultSchemeHandler);
     argv.push_back(protocol);
   }
-  argv.push_back(ShellIntegrationLinux::GetDesktopName(env.get()));
+  argv.push_back(shell_integration_linux::GetDesktopName(env.get()));
 
   std::string reply;
   int success_code;
@@ -444,6 +444,7 @@ ShellIntegration::DefaultWebClientState GetIsDefaultWebClient(
 // Get the value of NoDisplay from the [Desktop Entry] section of a .desktop
 // file, given in |shortcut_contents|. If the key is not found, returns false.
 bool GetNoDisplayFromDesktopFile(const std::string& shortcut_contents) {
+#if defined(USE_GLIB)
   // An empty file causes a crash with glib <= 2.32, so special case here.
   if (shortcut_contents.empty())
     return false;
@@ -472,6 +473,10 @@ bool GetNoDisplayFromDesktopFile(const std::string& shortcut_contents) {
 
   g_key_file_free(key_file);
   return nodisplay;
+#else
+  NOTIMPLEMENTED();
+  return false;
+#endif
 }
 
 // Gets the path to the Chrome executable or wrapper script.
@@ -490,11 +495,11 @@ base::FilePath GetChromeExePath() {
   return chrome_exe_path;
 }
 
-} // namespace
+}  // namespace
 
 // static
 ShellIntegration::DefaultWebClientSetPermission
-    ShellIntegration::CanSetAsDefaultBrowser() {
+ShellIntegration::CanSetAsDefaultBrowser() {
   return SET_DEFAULT_UNATTENDED;
 }
 
@@ -504,12 +509,14 @@ bool ShellIntegration::SetAsDefaultBrowser() {
 }
 
 // static
-bool ShellIntegration::SetAsDefaultProtocolClient(const std::string& protocol) {
+bool ShellIntegration::SetAsDefaultProtocolClient(
+    const std::string& protocol) {
   return SetDefaultWebClient(protocol);
 }
 
 // static
-ShellIntegration::DefaultWebClientState ShellIntegration::GetDefaultBrowser() {
+ShellIntegration::DefaultWebClientState
+ShellIntegration::GetDefaultBrowser() {
   return GetIsDefaultWebClient(std::string());
 }
 
@@ -538,7 +545,7 @@ bool ShellIntegration::IsFirefoxDefaultBrowser() {
   return browser.find("irefox") != std::string::npos;
 }
 
-namespace ShellIntegrationLinux {
+namespace shell_integration_linux {
 
 bool GetDataWriteLocation(base::Environment* env, base::FilePath* search_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
@@ -778,6 +785,7 @@ std::string GetDesktopFileContentsForCommand(
     const std::string& icon_name,
     const std::string& categories,
     bool no_display) {
+#if defined(USE_GLIB)
   // Although not required by the spec, Nautilus on Ubuntu Karmic creates its
   // launchers with an xdg-open shebang. Follow that convention.
   std::string output_buffer = std::string(kXdgOpenShebang) + "\n";
@@ -844,10 +852,15 @@ std::string GetDesktopFileContentsForCommand(
 
   g_key_file_free(key_file);
   return output_buffer;
+#else
+  NOTIMPLEMENTED();
+  return std::string();
+#endif
 }
 
 std::string GetDirectoryFileContents(const base::string16& title,
                                      const std::string& icon_name) {
+#if defined(USE_GLIB)
   // See http://standards.freedesktop.org/desktop-entry-spec/latest/
   GKeyFile* key_file = g_key_file_new();
 
@@ -879,6 +892,10 @@ std::string GetDirectoryFileContents(const base::string16& title,
 
   g_key_file_free(key_file);
   return output_buffer;
+#else
+  NOTIMPLEMENTED();
+  return std::string();
+#endif
 }
 
 bool CreateDesktopShortcut(
@@ -921,7 +938,7 @@ bool CreateDesktopShortcut(
   }
 
   if (creation_locations.on_desktop) {
-    std::string contents = ShellIntegrationLinux::GetDesktopFileContents(
+    std::string contents = GetDesktopFileContents(
         chrome_exe_path,
         app_name,
         shortcut_info.url,
@@ -945,7 +962,7 @@ bool CreateDesktopShortcut(
         break;
       case web_app::APP_MENU_LOCATION_SUBDIR_CHROMEAPPS:
         directory_filename = base::FilePath(kDirectoryFilename);
-        directory_contents = ShellIntegrationLinux::GetDirectoryFileContents(
+        directory_contents = GetDirectoryFileContents(
             ShellIntegration::GetAppShortcutsSubdirName(), "");
         break;
       default:
@@ -954,7 +971,7 @@ bool CreateDesktopShortcut(
     }
     // Set NoDisplay=true if hidden but not in the applications menu. This will
     // hide the application from user-facing menus.
-    std::string contents = ShellIntegrationLinux::GetDesktopFileContents(
+    std::string contents = GetDesktopFileContents(
         chrome_exe_path,
         app_name,
         shortcut_info.url,
@@ -1062,4 +1079,4 @@ void DeleteAllDesktopShortcuts(const base::FilePath& profile_path) {
   }
 }
 
-}  // namespace ShellIntegrationLinux
+}  // namespace shell_integration_linux

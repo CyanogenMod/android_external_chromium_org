@@ -11,6 +11,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "device/bluetooth/bluetooth_adapter_factory.h"
 #include "device/bluetooth/bluetooth_gatt_characteristic.h"
+#include "device/bluetooth/bluetooth_gatt_descriptor.h"
 #include "extensions/browser/event_router.h"
 
 using content::BrowserThread;
@@ -19,6 +20,7 @@ using device::BluetoothAdapter;
 using device::BluetoothAdapterFactory;
 using device::BluetoothDevice;
 using device::BluetoothGattCharacteristic;
+using device::BluetoothGattDescriptor;
 using device::BluetoothGattService;
 
 namespace apibtle = extensions::api::bluetooth_low_energy;
@@ -93,6 +95,23 @@ void PopulateCharacteristic(const BluetoothGattCharacteristic* characteristic,
                                    &out->properties);
 
   const std::vector<uint8>& value = characteristic->GetValue();
+  if (value.empty())
+    return;
+
+  out->value.reset(new std::string(value.begin(), value.end()));
+}
+
+void PopulateDescriptor(const BluetoothGattDescriptor* descriptor,
+                        apibtle::Descriptor* out) {
+  DCHECK(out);
+
+  out->uuid = descriptor->GetUUID().canonical_value();
+  out->is_local = descriptor->IsLocal();
+  out->instance_id.reset(new std::string(descriptor->GetIdentifier()));
+
+  PopulateCharacteristic(descriptor->GetCharacteristic(), &out->characteristic);
+
+  const std::vector<uint8>& value = descriptor->GetValue();
   if (value.empty())
     return;
 
@@ -301,6 +320,7 @@ bool BluetoothLowEnergyEventRouter::GetCharacteristic(
     const std::string& instance_id,
     apibtle::Characteristic* out_characteristic) const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(out_characteristic);
   if (!adapter_) {
     VLOG(1) << "BluetoothAdapter not ready.";
     return false;
@@ -314,6 +334,62 @@ bool BluetoothLowEnergyEventRouter::GetCharacteristic(
   }
 
   PopulateCharacteristic(characteristic, out_characteristic);
+  return true;
+}
+
+bool BluetoothLowEnergyEventRouter::GetDescriptors(
+    const std::string& instance_id,
+    DescriptorList* out_descriptors) const {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(out_descriptors);
+  if (!adapter_) {
+    VLOG(1) << "BlutoothAdapter not ready.";
+    return false;
+  }
+
+  BluetoothGattCharacteristic* characteristic =
+      FindCharacteristicById(instance_id);
+  if (!characteristic) {
+    VLOG(1) << "Characteristic not found: " << instance_id;
+    return false;
+  }
+
+  out_descriptors->clear();
+
+  const std::vector<BluetoothGattDescriptor*>& descriptors =
+      characteristic->GetDescriptors();
+  for (std::vector<BluetoothGattDescriptor*>::const_iterator iter =
+           descriptors.begin();
+       iter != descriptors.end();
+       ++iter) {
+    // Populate an API descriptor and add it to the return value.
+    const BluetoothGattDescriptor* descriptor = *iter;
+    linked_ptr<apibtle::Descriptor> api_descriptor(new apibtle::Descriptor());
+    PopulateDescriptor(descriptor, api_descriptor.get());
+
+    out_descriptors->push_back(api_descriptor);
+  }
+
+  return true;
+}
+
+bool BluetoothLowEnergyEventRouter::GetDescriptor(
+    const std::string& instance_id,
+    api::bluetooth_low_energy::Descriptor* out_descriptor) const {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(out_descriptor);
+  if (!adapter_) {
+    VLOG(1) << "BluetoothAdapter not ready.";
+    return false;
+  }
+
+  BluetoothGattDescriptor* descriptor = FindDescriptorById(instance_id);
+  if (!descriptor) {
+    VLOG(1) << "Descriptor not found: " << instance_id;
+    return false;
+  }
+
+  PopulateDescriptor(descriptor, out_descriptor);
   return true;
 }
 
@@ -340,6 +416,73 @@ bool BluetoothLowEnergyEventRouter::ReadCharacteristicValue(
                  callback),
       error_callback);
 
+  return true;
+}
+
+bool BluetoothLowEnergyEventRouter::WriteCharacteristicValue(
+    const std::string& instance_id,
+    const std::vector<uint8>& value,
+    const base::Closure& callback,
+    const base::Closure& error_callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (!adapter_) {
+    VLOG(1) << "BluetoothAdapter not ready.";
+    return false;
+  }
+
+  BluetoothGattCharacteristic* characteristic =
+      FindCharacteristicById(instance_id);
+  if (!characteristic) {
+    VLOG(1) << "Characteristic not found: " << instance_id;
+    return false;
+  }
+
+  characteristic->WriteRemoteCharacteristic(value, callback, error_callback);
+  return true;
+}
+
+bool BluetoothLowEnergyEventRouter::ReadDescriptorValue(
+    const std::string& instance_id,
+    const base::Closure& callback,
+    const base::Closure& error_callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (!adapter_) {
+    VLOG(1) << "BluetoothAdapter not ready.";
+    return false;
+  }
+
+  BluetoothGattDescriptor* descriptor = FindDescriptorById(instance_id);
+  if (!descriptor) {
+    VLOG(1) << "Descriptor not found: " << instance_id;
+    return false;
+  }
+
+  descriptor->ReadRemoteDescriptor(
+      base::Bind(&BluetoothLowEnergyEventRouter::ValueCallback,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 callback),
+      error_callback);
+  return true;
+}
+
+bool BluetoothLowEnergyEventRouter::WriteDescriptorValue(
+    const std::string& instance_id,
+    const std::vector<uint8>& value,
+    const base::Closure& callback,
+    const base::Closure& error_callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (!adapter_) {
+    VLOG(1) << "BluetoothAdapter not ready.";
+    return false;
+  }
+
+  BluetoothGattDescriptor* descriptor = FindDescriptorById(instance_id);
+  if (!descriptor) {
+    VLOG(1) << "Descriptor not found: " << instance_id;
+    return false;
+  }
+
+  descriptor->WriteRemoteDescriptor(value, callback, error_callback);
   return true;
 }
 
@@ -453,6 +596,8 @@ void BluetoothLowEnergyEventRouter::GattCharacteristicAdded(
 
   DCHECK(chrc_id_to_service_id_.find(characteristic->GetIdentifier()) ==
          chrc_id_to_service_id_.end());
+  DCHECK(service_id_to_device_address_.find(service->GetIdentifier()) !=
+         service_id_to_device_address_.end());
 
   chrc_id_to_service_id_[characteristic->GetIdentifier()] =
       service->GetIdentifier();
@@ -472,12 +617,42 @@ void BluetoothLowEnergyEventRouter::GattCharacteristicRemoved(
   chrc_id_to_service_id_.erase(characteristic->GetIdentifier());
 }
 
+void BluetoothLowEnergyEventRouter::GattDescriptorAdded(
+    BluetoothGattCharacteristic* characteristic,
+    BluetoothGattDescriptor* descriptor) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  VLOG(2) << "GATT descriptor added: " << descriptor->GetIdentifier();
+
+  DCHECK(desc_id_to_chrc_id_.find(descriptor->GetIdentifier()) ==
+         desc_id_to_chrc_id_.end());
+  DCHECK(chrc_id_to_service_id_.find(characteristic->GetIdentifier()) !=
+         chrc_id_to_service_id_.end());
+
+  desc_id_to_chrc_id_[descriptor->GetIdentifier()] =
+      characteristic->GetIdentifier();
+}
+
+void BluetoothLowEnergyEventRouter::GattDescriptorRemoved(
+    BluetoothGattCharacteristic* characteristic,
+    BluetoothGattDescriptor* descriptor) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  VLOG(2) << "GATT descriptor removed: " << descriptor->GetIdentifier();
+
+  DCHECK(desc_id_to_chrc_id_.find(descriptor->GetIdentifier()) !=
+         desc_id_to_chrc_id_.end());
+  DCHECK(characteristic->GetIdentifier() ==
+         desc_id_to_chrc_id_[descriptor->GetIdentifier()]);
+
+  desc_id_to_chrc_id_.erase(descriptor->GetIdentifier());
+}
+
 void BluetoothLowEnergyEventRouter::GattCharacteristicValueChanged(
     BluetoothGattService* service,
     BluetoothGattCharacteristic* characteristic,
     const std::vector<uint8>& value) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  VLOG(2) << "GATT characteristic value changed: " << service->GetIdentifier();
+  VLOG(2) << "GATT characteristic value changed: "
+          << characteristic->GetIdentifier();
 
   DCHECK(observed_gatt_services_.find(service->GetIdentifier()) !=
          observed_gatt_services_.end());
@@ -499,6 +674,32 @@ void BluetoothLowEnergyEventRouter::GattCharacteristicValueChanged(
   args->Append(apibtle::CharacteristicToValue(&api_characteristic).release());
   scoped_ptr<Event> event(new Event(
       apibtle::OnCharacteristicValueChanged::kEventName, args.Pass()));
+  EventRouter::Get(browser_context_)->BroadcastEvent(event.Pass());
+}
+
+void BluetoothLowEnergyEventRouter::GattDescriptorValueChanged(
+    BluetoothGattCharacteristic* characteristic,
+    BluetoothGattDescriptor* descriptor,
+    const std::vector<uint8>& value) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  VLOG(2) << "GATT descriptor value changed: " << descriptor->GetIdentifier();
+
+  DCHECK(desc_id_to_chrc_id_.find(descriptor->GetIdentifier()) !=
+         desc_id_to_chrc_id_.end());
+  DCHECK(characteristic->GetIdentifier() ==
+         desc_id_to_chrc_id_[descriptor->GetIdentifier()]);
+
+  // Signal API event.
+  apibtle::Descriptor api_descriptor;
+  PopulateDescriptor(descriptor, &api_descriptor);
+
+  // Manually construct the arguments, instead of using
+  // apibtle::OnDescriptorValueChanged::Create, as it doesn't convert lists of
+  // enums correctly.
+  scoped_ptr<base::ListValue> args(new base::ListValue());
+  args->Append(apibtle::DescriptorToValue(&api_descriptor).release());
+  scoped_ptr<Event> event(
+      new Event(apibtle::OnDescriptorValueChanged::kEventName, args.Pass()));
   EventRouter::Get(browser_context_)->BroadcastEvent(event.Pass());
 }
 
@@ -544,9 +745,9 @@ void BluetoothLowEnergyEventRouter::InitializeIdentifierMappings() {
       service_id_to_device_address_[service_id] = device->GetAddress();
 
       // Characteristics
-      std::vector<BluetoothGattCharacteristic*> characteristics =
+      const std::vector<BluetoothGattCharacteristic*>& characteristics =
           service->GetCharacteristics();
-      for (std::vector<BluetoothGattCharacteristic*>::iterator citer =
+      for (std::vector<BluetoothGattCharacteristic*>::const_iterator citer =
                characteristics.begin();
            citer != characteristics.end();
            ++citer) {
@@ -555,7 +756,18 @@ void BluetoothLowEnergyEventRouter::InitializeIdentifierMappings() {
         const std::string& chrc_id = characteristic->GetIdentifier();
         chrc_id_to_service_id_[chrc_id] = service_id;
 
-        // TODO(armansito): Initialize mapping for descriptors.
+        // Descriptors
+        const std::vector<BluetoothGattDescriptor*>& descriptors =
+            characteristic->GetDescriptors();
+        for (std::vector<BluetoothGattDescriptor*>::const_iterator diter =
+                 descriptors.begin();
+             diter != descriptors.end();
+             ++diter) {
+          BluetoothGattDescriptor* descriptor = *diter;
+
+          const std::string& desc_id = descriptor->GetIdentifier();
+          desc_id_to_chrc_id_[desc_id] = chrc_id;
+        }
       }
     }
   }
@@ -616,10 +828,36 @@ BluetoothLowEnergyEventRouter::FindCharacteristicById(
   return characteristic;
 }
 
+BluetoothGattDescriptor* BluetoothLowEnergyEventRouter::FindDescriptorById(
+    const std::string& instance_id) const {
+  InstanceIdMap::const_iterator iter = desc_id_to_chrc_id_.find(instance_id);
+  if (iter == desc_id_to_chrc_id_.end()) {
+    VLOG(1) << "GATT descriptor identifier unknown: " << instance_id;
+    return NULL;
+  }
+
+  const std::string& chrc_id = iter->second;
+  BluetoothGattCharacteristic* chrc = FindCharacteristicById(chrc_id);
+  if (!chrc) {
+    VLOG(1) << "Failed to obtain characteristic for descriptor: "
+            << instance_id;
+    return NULL;
+  }
+
+  BluetoothGattDescriptor* descriptor = chrc->GetDescriptor(instance_id);
+  if (!descriptor) {
+    VLOG(1) << "GATT descriptor with ID \"" << instance_id
+            << "\" not found on characteristic \"" << chrc_id << "\"";
+    return NULL;
+  }
+
+  return descriptor;
+}
+
 void BluetoothLowEnergyEventRouter::ValueCallback(
     const base::Closure& callback,
     const std::vector<uint8>& value) {
-  VLOG(2) << "Remote characteristic value read successful.";
+  VLOG(2) << "Remote characteristic/descriptor value read successful.";
   callback.Run();
 }
 

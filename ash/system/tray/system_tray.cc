@@ -153,9 +153,6 @@ void SystemTray::InitializeTrayItems(SystemTrayDelegate* delegate) {
 }
 
 void SystemTray::CreateItems(SystemTrayDelegate* delegate) {
-#if defined(OS_CHROMEOS)
-  AddTrayItem(new TraySessionLengthLimit(this));
-#endif
 #if !defined(OS_WIN)
   // Create user items for each possible user.
   ash::Shell* shell = ash::Shell::GetInstance();
@@ -175,6 +172,7 @@ void SystemTray::CreateItems(SystemTrayDelegate* delegate) {
   tray_date_ = new TrayDate(this);
 
 #if defined(OS_CHROMEOS)
+  AddTrayItem(new TraySessionLengthLimit(this));
   AddTrayItem(new TrayEnterprise(this));
   AddTrayItem(new TrayLocallyManagedUser(this));
   AddTrayItem(new TrayIME(this));
@@ -668,7 +666,7 @@ base::string16 SystemTray::GetAccessibleNameForBubble() {
 gfx::Rect SystemTray::GetAnchorRect(
     views::Widget* anchor_widget,
     TrayBubbleView::AnchorType anchor_type,
-    TrayBubbleView::AnchorAlignment anchor_alignment) {
+    TrayBubbleView::AnchorAlignment anchor_alignment) const {
   return GetBubbleAnchorRect(anchor_widget, anchor_type, anchor_alignment);
 }
 

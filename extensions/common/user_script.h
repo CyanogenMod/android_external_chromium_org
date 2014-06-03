@@ -45,6 +45,8 @@ class UserScript {
                     // is "idle". Currently this uses the simple heuristic of:
                     // min(DOM_CONTENT_LOADED + TIMEOUT, ONLOAD), but no
                     // particular injection point is guaranteed.
+    RUN_DEFERRED,  // The user script's injection was deferred for permissions
+                   // reasons, and was executed at a later time.
     RUN_LOCATION_LAST  // Leave this as the last item.
   };
 
@@ -136,6 +138,10 @@ class UserScript {
   // Whether to match all frames, or only the top one.
   bool match_all_frames() const { return match_all_frames_; }
   void set_match_all_frames(bool val) { match_all_frames_ = val; }
+
+  // Whether to match about:blank and about:srcdoc.
+  bool match_about_blank() const { return match_about_blank_; }
+  void set_match_about_blank(bool val) { match_about_blank_ = val; }
 
   // The globs, if any, that determine which pages this script runs against.
   // These are only used with "standalone" Greasemonkey-like user scripts.
@@ -248,6 +254,10 @@ class UserScript {
   // Whether the user script should run in all frames, or only just the top one.
   // Defaults to false.
   bool match_all_frames_;
+
+  // Whether the user script should run in about:blank and about:srcdoc as well.
+  // Defaults to false.
+  bool match_about_blank_;
 
   // True if the script should be injected into an incognito tab.
   bool incognito_enabled_;

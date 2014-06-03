@@ -222,7 +222,8 @@
             '<(DEPTH)/build/linux/system.gyp:x11',
             '<(DEPTH)/build/linux/system.gyp:xcomposite',
             '<(DEPTH)/build/linux/system.gyp:xext',
-            '<(DEPTH)/ui/gfx/gfx.gyp:gfx_x11',
+            '<(DEPTH)/ui/events/platform/events_platform.gyp:events_platform',
+            '<(DEPTH)/ui/gfx/x/gfx_x11.gyp:gfx_x11',
           ],
         }],
         ['OS=="win"', {
@@ -299,6 +300,7 @@
         }],
         ['use_ozone==1', {
           'dependencies': [
+            '../gfx/ozone/gfx_ozone.gyp:gfx_ozone',
             '../ozone/ozone.gyp:ozone',
           ],
         }],
@@ -347,7 +349,6 @@
           'variables': {
             'jni_gen_package': 'ui/gl',
             'input_java_class': 'android/view/Surface.class',
-            'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../../build/jar_file_jni_generator.gypi' ],
         },
@@ -363,7 +364,6 @@
           ],
           'variables': {
             'jni_gen_package': 'ui/gl',
-            'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../../build/jni_generator.gypi' ],
         },

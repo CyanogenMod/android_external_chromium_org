@@ -28,7 +28,7 @@
 #include "content/public/common/ssl_status.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/renderer/render_view.h"
-#include "grit/component_strings.h"
+#include "grit/components_strings.h"
 #include "net/cert/cert_status_flags.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
@@ -136,6 +136,7 @@ AutofillAgent::AutofillAgent(content::RenderView* render_view,
       has_new_forms_for_browser_(false),
       ignore_text_changes_(false),
       is_popup_possibly_visible_(false),
+      main_frame_processed_(false),
       weak_ptr_factory_(this) {
   render_view->GetWebView()->setAutofillClient(this);
 
@@ -160,8 +161,10 @@ bool AutofillAgent::OnMessageReceived(const IPC::Message& message) {
                         OnPreviewFieldWithValue)
     IPC_MESSAGE_HANDLER(AutofillMsg_AcceptDataListSuggestion,
                         OnAcceptDataListSuggestion)
-    IPC_MESSAGE_HANDLER(AutofillMsg_AcceptPasswordAutofillSuggestion,
-                        OnAcceptPasswordAutofillSuggestion)
+    IPC_MESSAGE_HANDLER(AutofillMsg_FillPasswordSuggestion,
+                        OnFillPasswordSuggestion)
+    IPC_MESSAGE_HANDLER(AutofillMsg_PreviewPasswordSuggestion,
+                        OnPreviewPasswordSuggestion)
     IPC_MESSAGE_HANDLER(AutofillMsg_RequestAutocompleteResult,
                         OnRequestAutocompleteResult)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -170,31 +173,11 @@ bool AutofillAgent::OnMessageReceived(const IPC::Message& message) {
 }
 
 void AutofillAgent::DidFinishDocumentLoad(WebLocalFrame* frame) {
-  // Record timestamp on document load. This is used to record overhead of
-  // Autofill feature.
-  forms_seen_timestamp_ = base::TimeTicks::Now();
+  // If the main frame just finished loading, we should process it.
+  if (!frame->parent())
+    main_frame_processed_ = false;
 
-  // The document has now been fully loaded.  Scan for forms to be sent up to
-  // the browser.
-  std::vector<FormData> forms;
-  bool has_more_forms = false;
-  if (!frame->parent()) {
-    form_elements_.clear();
-    has_more_forms = form_cache_.ExtractFormsAndFormElements(
-        *frame, kRequiredAutofillFields, &forms, &form_elements_);
-  } else {
-    form_cache_.ExtractForms(*frame, &forms);
-  }
-
-  autofill::FormsSeenState state = has_more_forms ?
-      autofill::PARTIAL_FORMS_SEEN : autofill::NO_SPECIAL_FORMS_SEEN;
-
-  // Always communicate to browser process for topmost frame.
-  if (!forms.empty() || !frame->parent()) {
-    Send(new AutofillHostMsg_FormsSeen(routing_id(), forms,
-                                       forms_seen_timestamp_,
-                                       state));
-  }
+  ProcessForms(*frame);
 }
 
 void AutofillAgent::FrameDetached(WebFrame* frame) {
@@ -271,8 +254,11 @@ void AutofillAgent::DidChangeScrollOffset(WebLocalFrame*) {
 void AutofillAgent::didRequestAutocomplete(
     const WebFormElement& form,
     const blink::WebAutocompleteParams& details) {
-  // TODO(estade): honor |details|.
+  didRequestAutocomplete(form);
+}
 
+void AutofillAgent::didRequestAutocomplete(
+    const WebFormElement& form) {
   // Disallow the dialog over non-https or broken https, except when the
   // ignore SSL flag is passed. See http://crbug.com/272512.
   // TODO(palmer): this should be moved to the browser process after frames
@@ -513,10 +499,19 @@ void AutofillAgent::OnAcceptDataListSuggestion(const base::string16& value) {
   AcceptDataListSuggestion(value);
 }
 
-void AutofillAgent::OnAcceptPasswordAutofillSuggestion(
+void AutofillAgent::OnFillPasswordSuggestion(const base::string16& username,
+                                             const base::string16& password) {
+  bool handled = password_autofill_agent_->FillSuggestion(
+      element_,
+      username,
+      password);
+  DCHECK(handled);
+}
+
+void AutofillAgent::OnPreviewPasswordSuggestion(
     const base::string16& username,
     const base::string16& password) {
-  bool handled = password_autofill_agent_->AcceptSuggestion(
+  bool handled = password_autofill_agent_->PreviewSuggestion(
       element_,
       username,
       password);
@@ -682,6 +677,25 @@ void AutofillAgent::PreviewFieldWithValue(const base::string16& value,
                           node->suggestedValue().length());
 }
 
+void AutofillAgent::ProcessForms(const WebLocalFrame& frame) {
+  // Record timestamp of when the forms are first seen. This is used to
+  // measure the overhead of the Autofill feature.
+  base::TimeTicks forms_seen_timestamp = base::TimeTicks::Now();
+
+  std::vector<FormData> forms;
+  form_cache_.ExtractNewForms(frame, &forms);
+
+  // Always communicate to browser process for topmost frame.
+  if (!forms.empty() ||
+      (!frame.parent() && !main_frame_processed_)) {
+    Send(new AutofillHostMsg_FormsSeen(routing_id(), forms,
+                                       forms_seen_timestamp));
+  }
+
+  if (!frame.parent())
+    main_frame_processed_ = true;
+}
+
 void AutofillAgent::HidePopup() {
   if (!is_popup_possibly_visible_)
     return;
@@ -693,13 +707,15 @@ void AutofillAgent::HidePopup() {
   Send(new AutofillHostMsg_HidePopup(routing_id()));
 }
 
-// TODO(isherman): Decide if we want to support non-password autofill with AJAX.
 void AutofillAgent::didAssociateFormControls(const WebVector<WebNode>& nodes) {
   for (size_t i = 0; i < nodes.size(); ++i) {
-    WebFrame* frame = nodes[i].document().frame();
+    WebLocalFrame* frame = nodes[i].document().frame();
     // Only monitors dynamic forms created in the top frame. Dynamic forms
-    // inserted in iframes are not captured yet.
-    if (frame && !frame->parent()) {
+    // inserted in iframes are not captured yet. Frame is only processed
+    // if it has finished loading, otherwise you can end up with a partially
+    // parsed form.
+    if (frame && !frame->parent() && !frame->isLoading()) {
+      ProcessForms(*frame);
       password_autofill_agent_->OnDynamicFormsSeen(frame);
       return;
     }

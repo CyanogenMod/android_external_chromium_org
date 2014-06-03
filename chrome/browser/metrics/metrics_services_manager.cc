@@ -4,10 +4,20 @@
 
 #include "chrome/browser/metrics/metrics_services_manager.h"
 
+#include "base/command_line.h"
+#include "base/prefs/pref_service.h"
+#include "chrome/browser/metrics/chrome_metrics_service_client.h"
+#include "chrome/browser/metrics/extensions_metrics_provider.h"
 #include "chrome/browser/metrics/metrics_service.h"
 #include "chrome/browser/metrics/metrics_state_manager.h"
 #include "chrome/browser/metrics/variations/variations_service.h"
+#include "chrome/common/chrome_switches.h"
+#include "chrome/common/pref_names.h"
 #include "components/rappor/rappor_service.h"
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/settings/cros_settings.h"
+#endif
 
 MetricsServicesManager::MetricsServicesManager(PrefService* local_state)
     : local_state_(local_state) {
@@ -19,9 +29,15 @@ MetricsServicesManager::~MetricsServicesManager() {
 
 MetricsService* MetricsServicesManager::GetMetricsService() {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (!metrics_service_)
-    metrics_service_.reset(new MetricsService(GetMetricsStateManager()));
-  return metrics_service_.get();
+  if (!metrics_service_client_) {
+    metrics_service_client_ =
+        ChromeMetricsServiceClient::Create(GetMetricsStateManager(),
+                                           local_state_);
+    metrics_service_client_->metrics_service()->RegisterMetricsProvider(
+        scoped_ptr<metrics::MetricsProvider>(
+            new ExtensionsMetricsProvider(GetMetricsStateManager())));
+  }
+  return metrics_service_client_->metrics_service();
 }
 
 rappor::RapporService* MetricsServicesManager::GetRapporService() {
@@ -35,15 +51,41 @@ chrome_variations::VariationsService*
 MetricsServicesManager::GetVariationsService() {
   DCHECK(thread_checker_.CalledOnValidThread());
   if (!variations_service_) {
-    variations_service_.reset(
-        chrome_variations::VariationsService::Create(local_state_));
+    variations_service_ =
+        chrome_variations::VariationsService::Create(local_state_,
+                                                     GetMetricsStateManager());
   }
   return variations_service_.get();
 }
 
 metrics::MetricsStateManager* MetricsServicesManager::GetMetricsStateManager() {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (!metrics_state_manager_)
-    metrics_state_manager_ = metrics::MetricsStateManager::Create(local_state_);
+  if (!metrics_state_manager_) {
+    metrics_state_manager_ = metrics::MetricsStateManager::Create(
+        local_state_,
+        base::Bind(&MetricsServicesManager::IsMetricsReportingEnabled,
+                   base::Unretained(this)));
+  }
   return metrics_state_manager_.get();
+}
+
+// TODO(asvitkine): This function does not report the correct value on Android,
+// see http://crbug.com/362192.
+bool MetricsServicesManager::IsMetricsReportingEnabled() const {
+  // If the user permits metrics reporting with the checkbox in the
+  // prefs, we turn on recording.  We disable metrics completely for
+  // non-official builds, or when field trials are forced.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kForceFieldTrials))
+    return false;
+
+  bool enabled = false;
+#if defined(GOOGLE_CHROME_BUILD)
+#if defined(OS_CHROMEOS)
+  chromeos::CrosSettings::Get()->GetBoolean(chromeos::kStatsReportingPref,
+                                            &enabled);
+#else
+  enabled = local_state_->GetBoolean(prefs::kMetricsReportingEnabled);
+#endif  // #if defined(OS_CHROMEOS)
+#endif  // defined(GOOGLE_CHROME_BUILD)
+  return enabled;
 }

@@ -13,7 +13,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
-#include "device/bluetooth/bluetooth_out_of_band_pairing_data.h"
 #include "device/bluetooth/bluetooth_profile_mac.h"
 #include "device/bluetooth/bluetooth_service_record_mac.h"
 #include "device/bluetooth/bluetooth_socket_mac.h"
@@ -209,14 +208,7 @@ void BluetoothDeviceMac::ConnectToService(
   NOTIMPLEMENTED();
 }
 
-void BluetoothDeviceMac::SetOutOfBandPairingData(
-    const BluetoothOutOfBandPairingData& data,
-    const base::Closure& callback,
-    const ErrorCallback& error_callback) {
-  NOTIMPLEMENTED();
-}
-
-void BluetoothDeviceMac::ClearOutOfBandPairingData(
+void BluetoothDeviceMac::StartConnectionMonitor(
     const base::Closure& callback,
     const ErrorCallback& error_callback) {
   NOTIMPLEMENTED();
@@ -246,15 +238,7 @@ int BluetoothDeviceMac::GetHostTransmitPower(
 
 // static
 std::string BluetoothDeviceMac::GetDeviceAddress(IOBluetoothDevice* device) {
-  return NormalizeAddress(base::SysNSStringToUTF8([device addressString]));
-}
-
-// static
-std::string BluetoothDeviceMac::NormalizeAddress(const std::string& address) {
-  std::string normalized;
-  base::ReplaceChars(address, "-", ":", &normalized);
-  StringToUpperASCII(&normalized);
-  return normalized;
+  return CanonicalizeAddress(base::SysNSStringToUTF8([device addressString]));
 }
 
 }  // namespace device

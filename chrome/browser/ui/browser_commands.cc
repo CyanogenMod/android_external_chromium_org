@@ -16,6 +16,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chrome_page_zoom.h"
 #include "chrome/browser/devtools/devtools_window.h"
+#include "chrome/browser/dom_distiller/tab_utils.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
@@ -30,6 +31,7 @@
 #include "chrome/browser/sessions/tab_restore_service.h"
 #include "chrome/browser/sessions/tab_restore_service_delegate.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
+#include "chrome/browser/signin/signin_header_helper.h"
 #include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/accelerator_utils.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
@@ -59,8 +61,8 @@
 #include "chrome/common/content_restriction.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/pref_names.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/browser/bookmark_utils.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/navigation_controller.h"
@@ -446,7 +448,7 @@ void Home(Browser* browser, WindowOpenDisposition disposition) {
     if (google_util::IsGoogleHomePageUrl(
         GURL(pref_service->GetString(prefs::kHomePage)))) {
       extra_headers = RLZTracker::GetAccessPointHttpHeader(
-          RLZTracker::CHROME_HOME_PAGE);
+          RLZTracker::ChromeHomePage());
     }
   }
 #endif  // defined(ENABLE_RLZ) && !defined(OS_IOS)
@@ -735,7 +737,7 @@ void BookmarkCurrentPage(Browser* browser) {
       case extensions::CommandService::PAGE_ACTION:
         browser->window()->ShowPageActionPopup(extension);
         return;
-    };
+    }
   }
 
   BookmarkCurrentPageInternal(browser);
@@ -1041,7 +1043,8 @@ void ShowAppMenu(Browser* browser) {
 
 void ShowAvatarMenu(Browser* browser) {
   browser->window()->ShowAvatarBubbleFromAvatarButton(
-      BrowserWindow::AVATAR_BUBBLE_MODE_DEFAULT);
+      BrowserWindow::AVATAR_BUBBLE_MODE_DEFAULT,
+      signin::GAIA_SERVICE_TYPE_NONE);
 }
 
 void OpenUpdateChromeDialog(Browser* browser) {
@@ -1068,6 +1071,10 @@ void ToggleSpeechInput(Browser* browser) {
   // |search_tab_helper| can be null in unit tests.
   if (search_tab_helper)
     search_tab_helper->ToggleVoiceSearch();
+}
+
+void DistillCurrentPage(Browser* browser) {
+  DistillCurrentPageAndView(browser->tab_strip_model()->GetActiveWebContents());
 }
 
 bool CanRequestTabletSite(WebContents* current_tab) {

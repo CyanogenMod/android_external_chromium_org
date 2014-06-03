@@ -15,11 +15,10 @@
 #include "mojo/aura/screen_mojo.h"
 #include "mojo/aura/window_tree_host_mojo.h"
 #include "mojo/examples/launcher/launcher.mojom.h"
-#include "mojo/public/cpp/bindings/allocation_scope.h"
+#include "mojo/public/cpp/application/application.h"
 #include "mojo/public/cpp/gles2/gles2.h"
-#include "mojo/public/cpp/shell/application.h"
 #include "mojo/public/cpp/system/core.h"
-#include "mojo/public/interfaces/shell/shell.mojom.h"
+#include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
 #include "mojo/services/native_viewport/native_viewport.mojom.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/default_capture_client.h"
@@ -82,12 +81,9 @@ class MinimalInputEventFilter : public ui::internal::InputMethodDelegate,
  private:
   // ui::EventHandler:
   virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE {
-    const ui::EventType type = event->type();
-    if (type == ui::ET_TRANSLATED_KEY_PRESS ||
-        type == ui::ET_TRANSLATED_KEY_RELEASE) {
-      // The |event| is already handled by this object, change the type of the
-      // event to ui::ET_KEY_* and pass it to the next filter.
-      static_cast<ui::TranslatedKeyEvent*>(event)->ConvertToKeyEvent();
+    // See the comment in InputMethodEventFilter::OnKeyEvent() for details.
+    if (event->IsTranslated()) {
+      event->SetTranslated(false);
     } else {
       if (input_method_->DispatchKeyEvent(*event))
         event->StopPropagation();
@@ -96,7 +92,10 @@ class MinimalInputEventFilter : public ui::internal::InputMethodDelegate,
 
   // ui::internal::InputMethodDelegate:
   virtual bool DispatchKeyEventPostIME(const ui::KeyEvent& event) OVERRIDE {
-    ui::TranslatedKeyEvent aura_event(event);
+    // See the comment in InputMethodEventFilter::DispatchKeyEventPostIME() for
+    // details.
+    ui::KeyEvent aura_event(event);
+    aura_event.SetTranslated(true);
     ui::EventDispatchDetails details =
         root_->GetHost()->dispatcher()->OnEventFromSource(&aura_event);
     return aura_event.handled() || details.dispatcher_destroyed;
@@ -150,7 +149,7 @@ class LauncherController : public views::TextfieldController {
     views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
     params.parent = parent;
     params.bounds = parent->bounds();
-    params.can_activate = true;
+    params.activatable = views::Widget::InitParams::ACTIVATABLE_YES;
     widget->Init(params);
 
     views::View* container = new views::View;
@@ -188,21 +187,18 @@ class LauncherController : public views::TextfieldController {
   DISALLOW_COPY_AND_ASSIGN(LauncherController);
 };
 
-class LauncherImpl : public ServiceConnection<Launcher, LauncherImpl>,
+class LauncherImpl : public InterfaceImpl<Launcher>,
                      public URLReceiver {
  public:
-  LauncherImpl()
-      : launcher_controller_(this),
-        launcher_client_(NULL),
+  explicit LauncherImpl(Application* app)
+      : app_(app),
+        launcher_controller_(this),
         pending_show_(false) {
-  }
-
-  void Initialize() {
     screen_.reset(ScreenMojo::Create());
     gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, screen_.get());
 
     NativeViewportPtr viewport;
-    ConnectTo(shell(), "mojo:mojo_native_viewport_service", &viewport);
+    app_->ConnectTo("mojo:mojo_native_viewport_service", &viewport);
 
     window_tree_host_.reset(new WindowTreeHostMojo(
         viewport.Pass(), gfx::Rect(50, 50, 450, 60),
@@ -211,9 +207,6 @@ class LauncherImpl : public ServiceConnection<Launcher, LauncherImpl>,
 
  private:
   // Overridden from Launcher:
-  virtual void SetClient(LauncherClient* client) OVERRIDE {
-    launcher_client_ = client;
-  }
   virtual void Show() OVERRIDE {
     if (!window_tree_host_.get()) {
       pending_show_ = true;
@@ -227,8 +220,7 @@ class LauncherImpl : public ServiceConnection<Launcher, LauncherImpl>,
 
   // Overridden from URLReceiver:
   virtual void OnURLEntered(const std::string& url_text) OVERRIDE {
-    AllocationScope scope;
-    launcher_client_->OnURLEntered(url_text);
+    client()->OnURLEntered(String::From(url_text));
   }
 
   void HostContextCreated() {
@@ -254,6 +246,7 @@ class LauncherImpl : public ServiceConnection<Launcher, LauncherImpl>,
     }
   }
 
+  Application* app_;
   scoped_ptr<ScreenMojo> screen_;
   scoped_ptr<LauncherWindowTreeClient> window_tree_client_;
   scoped_ptr<aura::client::FocusClient> focus_client_;
@@ -262,7 +255,6 @@ class LauncherImpl : public ServiceConnection<Launcher, LauncherImpl>,
 
   LauncherController launcher_controller_;
 
-  LauncherClient* launcher_client_;
   scoped_ptr<aura::WindowTreeHost> window_tree_host_;
 
   bool pending_show_;
@@ -272,8 +264,8 @@ class LauncherImpl : public ServiceConnection<Launcher, LauncherImpl>,
 }  // namespace mojo
 
 extern "C" LAUNCHER_EXPORT MojoResult CDECL MojoMain(
-    MojoHandle shell_handle) {
-  CommandLine::Init(0, NULL);
+    MojoHandle service_provider_handle) {
+  base::CommandLine::Init(0, NULL);
   base::AtExitManager at_exit;
   base::i18n::InitializeICU();
 
@@ -291,9 +283,8 @@ extern "C" LAUNCHER_EXPORT MojoResult CDECL MojoMain(
   //             Aura that doesn't define platform-specific stuff.
   aura::Env::CreateInstance(true);
 
-  mojo::Application app(shell_handle);
-  app.AddServiceConnector(
-      new mojo::ServiceConnector<mojo::examples::LauncherImpl>());
+  mojo::Application app(service_provider_handle);
+  app.AddService<mojo::examples::LauncherImpl>(&app);
 
   loop.Run();
   return MOJO_RESULT_OK;

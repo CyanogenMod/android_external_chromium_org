@@ -12,9 +12,9 @@
 #include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
 #include "base/logging.h"
+#include "components/domain_reliability/clear_mode.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
-#include "net/url_request/url_request_job_factory.h"
 
 class ChromeAppCacheService;
 class ExtensionService;
@@ -264,7 +264,7 @@ class Profile : public content::BrowserContext {
   // TODO(ajwong): Remove once http://crbug.com/159193 is resolved.
   virtual net::URLRequestContextGetter* CreateRequestContext(
       content::ProtocolHandlerMap* protocol_handlers,
-      content::ProtocolHandlerScopedVector protocol_interceptors) = 0;
+      content::URLRequestInterceptorScopedVector request_interceptors) = 0;
 
   // Creates the net::URLRequestContextGetter for a StoragePartition. Should
   // only be called once per partition_path per ContentBrowserClient object.
@@ -276,7 +276,7 @@ class Profile : public content::BrowserContext {
       const base::FilePath& partition_path,
       bool in_memory,
       content::ProtocolHandlerMap* protocol_handlers,
-      content::ProtocolHandlerScopedVector protocol_interceptors) = 0;
+      content::URLRequestInterceptorScopedVector request_interceptors) = 0;
 
   // Returns the last directory that was chosen for uploading or opening a file.
   virtual base::FilePath last_selected_directory() = 0;
@@ -320,6 +320,12 @@ class Profile : public content::BrowserContext {
   // invoked after the Profile instance has been destroyed.
   virtual void ClearNetworkingHistorySince(base::Time time,
                                            const base::Closure& completion) = 0;
+
+  // Clears browsing data stored in the Domain Reliability Monitor. (See
+  // profile_impl_io_data.h for details.)
+  virtual void ClearDomainReliabilityMonitor(
+      domain_reliability::DomainReliabilityClearMode mode,
+      const base::Closure& competion) = 0;
 
   // Returns the home page for this profile.
   virtual GURL GetHomePage() = 0;

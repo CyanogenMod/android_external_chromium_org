@@ -8,10 +8,13 @@
 <translation id="7644305409888602715">Tłumaczę stronę na <ph name="SOURCE_LANGUAGE"/>...</translation>
 <translation id="7015922086425404465">Pobierz aplikację ze Sklepu Google Play: <ph name="APP_ACTION"/></translation>
 <translation id="1491151370853475546">Załaduj tę stronę ponownie</translation>
+<translation id="5233638681132016545">Nowa karta</translation>
 <translation id="641643625718530986">Drukuj…</translation>
+<translation id="5210365745912300556">Zamknij kartę</translation>
 <translation id="7658239707568436148">Anuluj</translation>
 <translation id="6458785801851713928">Synchronizacja nie jest dostępna w Twojej domenie.</translation>
 <translation id="2731700343119398978">Czekaj...</translation>
+<translation id="6846298663435243399">Wczytywanie…</translation>
 <translation id="7378627244592794276">Nie</translation>
 <translation id="3358663646935160692">Tym kontem zarządza <ph name="DOMAIN_NAME"/>.
 
@@ -29,7 +32,9 @@ Logujesz się na zarządzane konto i dajesz jego administratorowi kontrolę nad 
 <translation id="552553974213252141">Czy tekst został prawidłowo wyodrębniony?</translation>
 <translation id="8730621377337864115">Gotowe</translation>
 <translation id="4170011742729630528">Usługa jest niedostępna. Spróbuj ponownie później.</translation>
+<translation id="473775607612524610">Aktualizuj</translation>
 <translation id="8627706565932943526">Błąd synchronizacji</translation>
+<translation id="8374821112118309944">Musisz zainstalować nowszą wersję TalkBack.</translation>
 <translation id="4043215103217793252">Edytuj stronę w zakładkach</translation>
 <translation id="656628257199996201">Zawsze tłumacz z języka: <ph name="SOURCE_LANGUAGE"/></translation>
 <translation id="9137013805542155359">Pokaż tekst oryginalny</translation>

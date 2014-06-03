@@ -40,28 +40,37 @@ namespace file_manager {
 class MountedDiskMonitor;
 class VolumeManagerObserver;
 
-// This manager manages "Drive" and "Downloads" in addition to disks managed
-// by DiskMountManager.
+// Identifiers for volume types managed by Chrome OS file manager.
 enum VolumeType {
-  VOLUME_TYPE_GOOGLE_DRIVE,
+  VOLUME_TYPE_TESTING = -1,  // Used only in tests.
+  VOLUME_TYPE_GOOGLE_DRIVE = 0,
   VOLUME_TYPE_DOWNLOADS_DIRECTORY,
   VOLUME_TYPE_REMOVABLE_DISK_PARTITION,
   VOLUME_TYPE_MOUNTED_ARCHIVE_FILE,
   VOLUME_TYPE_CLOUD_DEVICE,
   VOLUME_TYPE_PROVIDED,  // File system provided by the FileSystemProvider API.
   VOLUME_TYPE_MTP,
-  VOLUME_TYPE_TESTING
+  // The enum values must be kept in sync with FileManagerVolumeType in
+  // tools/metrics/histograms/histograms.xml. Since enums for histograms are
+  // append-only (for keeping the number consistent across versions), new values
+  // for this enum also has to be always appended at the end (i.e., here).
+  NUM_VOLUME_TYPE,
 };
 
 struct VolumeInfo {
   VolumeInfo();
   ~VolumeInfo();
 
-  // The ID for provided file system. If other type, then equal to zero.
-  int file_system_id;
-
   // The ID of the volume.
   std::string volume_id;
+
+  // The ID for provided file systems. If other type, then empty string. Unique
+  // per providing extension.
+  std::string file_system_id;
+
+  // The ID of an extension providing the file system. If other type, then equal
+  // to an empty string.
+  std::string extension_id;
 
   // The type of mounted volume.
   VolumeType type;
@@ -88,9 +97,10 @@ struct VolumeInfo {
   // (e.g. /sys/devices/pci0000:00/.../8:0:0:0/)
   base::FilePath system_path_prefix;
 
-  // If disk is a parent, then its label, else parents label.
-  // (e.g. "TransMemory")
-  std::string drive_label;
+  // Label for the volume if the volume is either removable or a provided
+  // file system. In case of removables, if disk is a parent, then its label,
+  // else parents label (e.g. "TransMemory").
+  std::string volume_label;
 
   // Is the device is a parent device (i.e. sdb rather than sdb1).
   bool is_parent;
@@ -142,7 +152,7 @@ class VolumeManager : public KeyedService,
   bool FindVolumeInfoById(const std::string& volume_id,
                           VolumeInfo* result) const;
 
-  // For testing purpose, registers a native local file system poniting to
+  // For testing purpose, registers a native local file system pointing to
   // |path| with DOWNLOADS type, and adds its volume info.
   bool RegisterDownloadsDirectoryForTesting(const base::FilePath& path);
 

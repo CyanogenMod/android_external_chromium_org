@@ -8,6 +8,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/url_constants.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "grit/generated_resources.h"
@@ -153,14 +154,14 @@ void NtpOverriddenBubbleDelegate::RestrictToSingleExtension(
 }
 
 void NtpOverriddenBubbleDelegate::LogExtensionCount(size_t count) {
-  UMA_HISTOGRAM_COUNTS_100("NtpOverriddenBubble.ExtensionCount", count);
 }
 
 void NtpOverriddenBubbleDelegate::LogAction(
     ExtensionMessageBubbleController::BubbleAction action) {
-  UMA_HISTOGRAM_ENUMERATION("NtpOverriddenBubble.UserSelection",
-                            action,
-                            ExtensionMessageBubbleController::ACTION_BOUNDARY);
+  UMA_HISTOGRAM_ENUMERATION(
+      "ExtensionOverrideBubble.NtpOverriddenUserSelection",
+      action,
+      ExtensionMessageBubbleController::ACTION_BOUNDARY);
 }
 
 }  // namespace

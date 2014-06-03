@@ -170,6 +170,7 @@ _BANNED_CPP_FUNCTIONS = (
         r"^content[\\\/]shell[\\\/]browser[\\\/]shell_message_filter\.cc$",
         r"^mojo[\\\/]system[\\\/]raw_shared_buffer_posix\.cc$",
         r"^net[\\\/]disk_cache[\\\/]cache_util\.cc$",
+        r"^net[\\\/]url_request[\\\/]test_url_fetcher_factory\.cc$",
       ),
     ),
     (
@@ -278,9 +279,9 @@ def _CheckNoProductionCodeUsingTestOnlyFunctions(input_api, output_api):
   # calls to such functions without a proper C++ parser.
   file_inclusion_pattern = r'.+%s' % _IMPLEMENTATION_EXTENSIONS
 
-  base_function_pattern = r'ForTest(ing)?|for_test(ing)?'
+  base_function_pattern = r'[ :]test::[^\s]+|ForTest(ing)?|for_test(ing)?'
   inclusion_pattern = input_api.re.compile(r'(%s)\s*\(' % base_function_pattern)
-  comment_pattern = input_api.re.compile(r'//.*%s' % base_function_pattern)
+  comment_pattern = input_api.re.compile(r'//.*(%s)' % base_function_pattern)
   exclusion_pattern = input_api.re.compile(
     r'::[A-Za-z0-9_]+(%s)|(%s)[^;]+\{' % (
       base_function_pattern, base_function_pattern))
@@ -498,7 +499,7 @@ def _CheckUnwantedDependencies(input_api, output_api):
   original_sys_path = sys.path
   try:
     sys.path = sys.path + [input_api.os_path.join(
-        input_api.PresubmitLocalPath(), 'tools', 'checkdeps')]
+        input_api.PresubmitLocalPath(), 'buildtools', 'checkdeps')]
     import checkdeps
     from cpp_checker import CppChecker
     from rules import Rule
@@ -1103,9 +1104,19 @@ _DEPRECATED_CSS = [
 
 def _CheckNoDeprecatedCSS(input_api, output_api):
   """ Make sure that we don't use deprecated CSS
-      properties, functions or values. """
+      properties, functions or values. Our external
+      documentation is ignored by the hooks as it
+      needs to be consumed by WebKit. """
   results = []
-  file_filter = lambda f: f.LocalPath().endswith('.css')
+  file_inclusion_pattern = (r".+\.css$")
+  black_list = (_EXCLUDED_PATHS +
+                _TEST_CODE_EXCLUDED_PATHS +
+                input_api.DEFAULT_BLACK_LIST +
+                (r"^chrome/common/extensions/docs",
+                 r"^chrome/docs",
+                 r"^native_client_sdk"))
+  file_filter = lambda f: input_api.FilterSourceFile(
+      f, white_list=file_inclusion_pattern, black_list=black_list)
   for fpath in input_api.AffectedFiles(file_filter=file_filter):
     for line_num, line in fpath.ChangedContents():
       for (deprecated_value, value) in _DEPRECATED_CSS:

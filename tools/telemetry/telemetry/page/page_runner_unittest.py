@@ -136,10 +136,10 @@ class PageRunnerTests(unittest.TestCase):
 
     class CrashyMeasurement(page_measurement.PageMeasurement):
       has_crashed = False
-      def MeasurePage(self, *_):
+      def MeasurePage(self, _, tab, __):
         if not self.has_crashed:
           self.has_crashed = True
-          raise exceptions.BrowserGoneException()
+          raise exceptions.BrowserGoneException(tab.browser)
 
     options = options_for_unittests.GetCopy()
     options.output_format = 'csv'
@@ -234,8 +234,8 @@ class PageRunnerTests(unittest.TestCase):
       self.assertEquals(0, len(results.failures))
       with open(output_file) as f:
         stdout = f.read()
-      self.assertIn('RESULT metric_by_url: blank.html= [1,3] unit', stdout)
-      self.assertIn('RESULT metric_by_url: green_rect.html= [2,4] unit', stdout)
+      self.assertIn('RESULT metric: blank.html= [1,3] unit', stdout)
+      self.assertIn('RESULT metric: green_rect.html= [2,4] unit', stdout)
       self.assertIn('*RESULT metric: metric= [1,2,3,4] unit', stdout)
     finally:
       results._output_stream.close()  # pylint: disable=W0212
@@ -426,7 +426,7 @@ class PageRunnerTests(unittest.TestCase):
         self.did_call_clean_up = False
 
       def ValidatePage(self, *_):
-        raise Exception('Intentional failure')
+        raise exceptions.IntentionalException
 
       def CleanUpAfterPage(self, page, tab):
         self.did_call_clean_up = True
@@ -438,3 +438,42 @@ class PageRunnerTests(unittest.TestCase):
     SetUpPageRunnerArguments(options)
     page_runner.Run(test, ps, expectations, options)
     assert test.did_call_clean_up
+
+  # Ensure skipping the test if page cannot be run on the browser
+  def testPageCannotRunOnBrowser(self):
+    ps = page_set.PageSet()
+    expectations = test_expectations.TestExpectations()
+
+    class PageThatCannotRunOnBrowser(page_module.Page):
+
+      def __init__(self):
+        super(PageThatCannotRunOnBrowser, self).__init__(
+            url='file://blank.html', page_set=ps,
+            base_dir=util.GetUnittestDataDir())
+
+      def CanRunOnBrowser(self, _):
+        return False
+
+      def ValidatePage(self, _):
+        pass
+
+    class Test(page_test.PageTest):
+      def __init__(self, *args, **kwargs):
+        super(Test, self).__init__(*args, **kwargs)
+        self.will_navigate_to_page_called = False
+
+      def ValidatePage(self, *args):
+        pass
+
+      def WillNavigateToPage(self, _1, _2):
+        self.will_navigate_to_page_called = True
+
+    test = Test()
+    options = options_for_unittests.GetCopy()
+    options.output_format = 'none'
+    SetUpPageRunnerArguments(options)
+    results = page_runner.Run(test, ps, expectations, options)
+    self.assertFalse(test.will_navigate_to_page_called)
+    self.assertEquals(0, len(results.successes))
+    self.assertEquals(0, len(results.failures))
+    self.assertEquals(0, len(results.errors))

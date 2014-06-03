@@ -6,7 +6,6 @@
 
 """Utility script to install APKs from the command line quickly."""
 
-import multiprocessing
 import optparse
 import os
 import sys
@@ -15,12 +14,10 @@ from pylib import android_commands
 from pylib import constants
 from pylib.device import device_utils
 from pylib.utils import apk_helper
-from pylib.utils import test_options_parser
 
 
 def AddInstallAPKOption(option_parser):
   """Adds apk option used to install the APK to the OptionParser."""
-  test_options_parser.AddBuildTypeOption(option_parser)
   option_parser.add_option('--apk',
                            help=('The name of the apk containing the '
                                  ' application (with the .apk extension).'))
@@ -32,6 +29,15 @@ def AddInstallAPKOption(option_parser):
                            default=False,
                            help=('Keep the package data when installing '
                                  'the application.'))
+  option_parser.add_option('--debug', action='store_const', const='Debug',
+                           dest='build_type',
+                           default=os.environ.get('BUILDTYPE', 'Debug'),
+                           help='If set, run test suites under out/Debug. '
+                           'Default is env var BUILDTYPE or Debug')
+  option_parser.add_option('--release', action='store_const', const='Release',
+                           dest='build_type',
+                           help='If set, run test suites under out/Release. '
+                           'Default is env var BUILDTYPE or Debug.')
 
 
 def ValidateInstallAPKOption(option_parser, options):
@@ -41,13 +47,6 @@ def ValidateInstallAPKOption(option_parser, options):
   if not os.path.exists(options.apk):
     options.apk = os.path.join(constants.GetOutDirectory(), 'apks',
                                options.apk)
-
-
-def _InstallApk(args):
-  apk_path, apk_package, keep_data, device = args
-  device_utils.DeviceUtils(device=device).old_interface.ManagedInstall(
-      apk_path, keep_data, apk_package)
-  print '-----  Installed on %s  -----' % device
 
 
 def main(argv):
@@ -66,13 +65,10 @@ def main(argv):
   if not options.apk_package:
     options.apk_package = apk_helper.GetPackageName(options.apk)
 
-  pool = multiprocessing.Pool(len(devices))
-  # Send a tuple (apk_path, apk_package, device) per device.
-  pool.map(_InstallApk, zip([options.apk] * len(devices),
-                            [options.apk_package] * len(devices),
-                            [options.keep_data] * len(devices),
-                            devices))
+  device_utils.DeviceUtils.parallel(devices).old_interface.ManagedInstall(
+      options.apk, options.keep_data, options.apk_package).pFinish(None)
 
 
 if __name__ == '__main__':
   sys.exit(main(sys.argv))
+

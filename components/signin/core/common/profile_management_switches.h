@@ -11,8 +11,14 @@
 
 namespace switches {
 
+// Checks whether account consistency is enabled.
+bool IsEnableAccountConsistency();
+
 // Enables the web-based sign in flow on Chrome desktop.
 bool IsEnableWebBasedSignin();
+
+// Whether the chrome.identity API should be multi-account.
+bool IsExtensionsMultiAccount();
 
 // Checks whether the flag for fast user switching is enabled.
 bool IsFastUserSwitching();

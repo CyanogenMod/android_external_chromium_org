@@ -31,6 +31,12 @@ static const QuicConnectionId kTestConnectionId = 42;
 static const int kTestPort = 123;
 static const uint32 kInitialFlowControlWindowForTest = 32 * 1024;  // 32 KB
 
+// Data stream IDs start at 5: the crypto stream is 1, headers stream is 3.
+static const QuicStreamId kClientDataStreamId1 = 5;
+static const QuicStreamId kClientDataStreamId2 = 7;
+static const QuicStreamId kClientDataStreamId3 = 9;
+static const QuicStreamId kClientDataStreamId4 = 11;
+
 // Returns the test peer IP address.
 IPAddressNumber TestPeerIPAddress();
 
@@ -81,6 +87,11 @@ QuicVersionVector SupportedVersions(QuicVersion version);
 // from least_unacked to largest_observed acked.
 QuicAckFrame MakeAckFrame(QuicPacketSequenceNumber largest_observed,
                           QuicPacketSequenceNumber least_unacked);
+
+// Testing convenience method to construct a QuicAckFrame with |num_nack_ranges|
+// nack ranges of width 1 packet, starting from |least_unacked|.
+QuicAckFrame MakeAckFrameWithNackRanges(size_t num_nack_ranges,
+                                        QuicPacketSequenceNumber least_unacked);
 
 template<typename SaveType>
 class ValueRestore {
@@ -194,7 +205,7 @@ class MockConnectionVisitor : public QuicConnectionVisitorInterface {
   MOCK_METHOD2(OnConnectionClosed, void(QuicErrorCode error, bool from_peer));
   MOCK_METHOD0(OnWriteBlocked, void());
   MOCK_METHOD0(OnCanWrite, void());
-  MOCK_CONST_METHOD0(HasPendingWrites, bool());
+  MOCK_CONST_METHOD0(WillingAndAbleToWrite, bool());
   MOCK_CONST_METHOD0(HasPendingHandshake, bool());
   MOCK_CONST_METHOD0(HasOpenDataStreams, bool());
   MOCK_METHOD1(OnSuccessfulVersionNegotiation,

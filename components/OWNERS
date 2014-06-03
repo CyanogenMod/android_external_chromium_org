@@ -43,7 +43,21 @@ per-file favicon*=blundell@chromium.org
 # Temporary for the duration of the favicon componentization.
 per-file favicon*=droger@chromium.org
 
+per-file gcm*=dimich@chromium.org
+per-file gcm*=jianli@chromium.org
+per-file gcm*=fgorski@chromium.org
+per-file gcm*=zea@chromium.org
+
+per-file google*=isherman@chromium.org
+per-file google*=pkasting@chromium.org
+
 per-file infobars.gypi=pkasting@chromium.org
+
+per-file invalidation.gypi=dcheng@chromium.org
+per-file invalidation.gypi=nyquist@chromium.org
+per-file invalidation.gypi=rlarocque@chromium.org
+per-file invalidation.gypi=tim@chromium.org
+per-file invalidation.gypi=pavely@chromium.org
 
 per-file json_schema.gypi=asargent@chromium.org
 per-file json_schema.gypi=calamity@chromium.org
@@ -113,10 +127,11 @@ per-file signin*=tim@chromium.org
 per-file signin*=rogerta@chromium.org
 
 per-file sync_driver*=haitaol@chromium.org
+per-file sync_driver*=maniscalco@chromium.org
+per-file sync_driver*=pavely@chromium.org
 per-file sync_driver*=rlarocque@chromium.org
 per-file sync_driver*=tim@chromium.org
 per-file sync_driver*=zea@chromium.org
-per-file sync_driver*=pavely@chromium.org
 
 per-file tracing*=jbauman@chromium.org
 per-file tracing*=nduca@chromium.org

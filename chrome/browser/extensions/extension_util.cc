@@ -18,6 +18,7 @@
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_util.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_icon_set.h"
 #include "extensions/common/manifest.h"
@@ -27,6 +28,13 @@
 
 namespace extensions {
 namespace util {
+
+namespace {
+// The entry into the ExtensionPrefs for allowing an extension to script on
+// all urls without explicit permission.
+const char kExtensionAllowedOnAllUrlsPrefName[] =
+    "extension_can_script_all_urls";
+}
 
 bool IsIncognitoEnabled(const std::string& extension_id,
                         content::BrowserContext* context) {
@@ -141,6 +149,25 @@ void SetAllowFileAccess(const std::string& extension_id,
     service->ReloadExtension(extension_id);
 }
 
+bool AllowedScriptingOnAllUrls(const std::string& extension_id,
+                               content::BrowserContext* context) {
+  bool allowed = false;
+  return ExtensionPrefs::Get(context)->ReadPrefAsBoolean(
+             extension_id,
+             kExtensionAllowedOnAllUrlsPrefName,
+             &allowed) &&
+         allowed;
+}
+
+void SetAllowedScriptingOnAllUrls(const std::string& extension_id,
+                                  content::BrowserContext* context,
+                                  bool allowed) {
+  ExtensionPrefs::Get(context)->UpdateExtensionPref(
+      extension_id,
+      kExtensionAllowedOnAllUrlsPrefName,
+      allowed ? new base::FundamentalValue(true) : NULL);
+}
+
 bool IsAppLaunchable(const std::string& extension_id,
                      content::BrowserContext* context) {
   return !(ExtensionPrefs::Get(context)->GetDisableReasons(extension_id) &
@@ -151,6 +178,11 @@ bool IsAppLaunchableWithoutEnabling(const std::string& extension_id,
                                     content::BrowserContext* context) {
   return ExtensionRegistry::Get(context)->GetExtensionById(
       extension_id, ExtensionRegistry::ENABLED) != NULL;
+}
+
+bool ShouldSyncApp(const Extension* app, content::BrowserContext* context) {
+  return sync_helper::IsSyncableApp(app) &&
+      !util::IsEphemeralApp(app->id(), context);
 }
 
 bool IsExtensionIdle(const std::string& extension_id,
@@ -169,13 +201,6 @@ bool IsExtensionIdle(const std::string& extension_id,
     return false;
 
   return process_manager->GetRenderViewHostsForExtension(extension_id).empty();
-}
-
-bool IsExtensionInstalledPermanently(const std::string& extension_id,
-                                     content::BrowserContext* context) {
-  const Extension* extension = ExtensionRegistry::Get(context)->
-      GetExtensionById(extension_id, ExtensionRegistry::EVERYTHING);
-  return extension && !extension->is_ephemeral();
 }
 
 GURL GetSiteForExtensionId(const std::string& extension_id,

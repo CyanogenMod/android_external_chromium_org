@@ -11,6 +11,7 @@
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/menu_model.h"
+#include "ui/base/theme_provider.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/controls/button/label_button_border.h"
@@ -46,7 +47,7 @@ bool ToolbarButton::IsMenuShowing() const {
   return menu_showing_;
 }
 
-gfx::Size ToolbarButton::GetPreferredSize() {
+gfx::Size ToolbarButton::GetPreferredSize() const {
   gfx::Size size(image()->GetPreferredSize());
   gfx::Size label_size = label()->GetPreferredSize();
   if (label_size.width() > 0)
@@ -126,6 +127,21 @@ void ToolbarButton::GetAccessibleState(ui::AXViewState* state) {
   state->role = ui::AX_ROLE_BUTTON_DROP_DOWN;
   state->default_action = l10n_util::GetStringUTF16(IDS_APP_ACCACTION_PRESS);
   state->AddStateFlag(ui::AX_STATE_HASPOPUP);
+}
+
+scoped_ptr<views::LabelButtonBorder>
+ToolbarButton::CreateDefaultBorder() const {
+  scoped_ptr<views::LabelButtonBorder> border =
+      LabelButton::CreateDefaultBorder();
+
+  ui::ThemeProvider* provider = GetThemeProvider();
+  if (provider && provider->UsingSystemTheme()) {
+    // We set smaller insets here to accommodate the slightly larger GTK+
+    // icons.
+    border->set_insets(gfx::Insets(2, 2, 2, 2));
+  }
+
+  return border.Pass();
 }
 
 void ToolbarButton::ShowContextMenuForView(View* source,

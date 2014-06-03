@@ -6,8 +6,8 @@
 #define CHROME_BROWSER_BOOKMARKS_CHROME_BOOKMARK_CLIENT_H_
 
 #include "base/compiler_specific.h"
-#include "components/bookmarks/core/browser/base_bookmark_model_observer.h"
-#include "components/bookmarks/core/browser/bookmark_client.h"
+#include "components/bookmarks/browser/base_bookmark_model_observer.h"
+#include "components/bookmarks/browser/bookmark_client.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -34,12 +34,13 @@ class ChromeBookmarkClient : public BookmarkClient,
       const GURL& page_url,
       int icon_types,
       int desired_size_in_dip,
-      const FaviconImageCallback& callback,
+      const favicon_base::FaviconImageCallback& callback,
       base::CancelableTaskTracker* tracker) OVERRIDE;
   virtual bool SupportsTypedCountForNodes() OVERRIDE;
   virtual void GetTypedCountForNodes(
       const NodeSet& nodes,
       NodeTypedCountPairs* node_typed_count_pairs) OVERRIDE;
+  virtual bool IsPermanentNodeVisible(int node_type) OVERRIDE;
   virtual void RecordAction(const base::UserMetricsAction& action) OVERRIDE;
 
   // content::NotificationObserver:

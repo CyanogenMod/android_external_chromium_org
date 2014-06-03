@@ -56,6 +56,21 @@ void RecordUnexpectedNotGoingAway(Location location) {
                             NUM_LOCATIONS);
 }
 
+// Histogram for recording the different reasons that a QUIC session is unable
+// to complete the handshake.
+enum HandshakeFailureReason {
+  HANDSHAKE_FAILURE_UNKNOWN = 0,
+  HANDSHAKE_FAILURE_BLACK_HOLE = 1,
+  HANDSHAKE_FAILURE_PUBLIC_RESET = 2,
+  NUM_HANDSHAKE_FAILURE_REASONS = 3,
+};
+
+void RecordHandshakeFailureReason(HandshakeFailureReason reason) {
+  UMA_HISTOGRAM_ENUMERATION(
+      "Net.QuicSession.ConnectionClose.HandshakeNotConfirmed.Reason",
+      reason, NUM_HANDSHAKE_FAILURE_REASONS);
+}
+
 // Note: these values must be kept in sync with the corresponding values in:
 // tools/metrics/histograms/histograms.xml
 enum HandshakeState {
@@ -121,9 +136,12 @@ QuicClientSession::QuicClientSession(
     scoped_ptr<QuicServerInfo> server_info,
     const QuicServerId& server_id,
     const QuicConfig& config,
+    uint32 max_flow_control_receive_window_bytes,
     QuicCryptoClientConfig* crypto_config,
     NetLog* net_log)
-    : QuicClientSessionBase(connection, config),
+    : QuicClientSessionBase(connection,
+                            max_flow_control_receive_window_bytes,
+                            config),
       require_confirmation_(false),
       stream_factory_(stream_factory),
       socket_(socket.Pass()),
@@ -225,6 +243,23 @@ QuicClientSession::~QuicClientSession() {
                                   round_trip_handshakes, 0, 3, 4);
     }
   }
+  const QuicConnectionStats stats = connection()->GetStats();
+  if (stats.max_sequence_reordering == 0)
+    return;
+  const uint64 kMaxReordering = 100;
+  uint64 reordering = kMaxReordering;
+  if (stats.min_rtt_us > 0 ) {
+    reordering =
+        GG_UINT64_C(100) * stats.max_time_reordering_us / stats.min_rtt_us;
+  }
+  UMA_HISTOGRAM_CUSTOM_COUNTS("Net.QuicSession.MaxReorderingTime",
+                                reordering, 0, kMaxReordering, 50);
+  if (stats.min_rtt_us > 100 * 1000) {
+    UMA_HISTOGRAM_CUSTOM_COUNTS("Net.QuicSession.MaxReorderingTimeLongRtt",
+                                reordering, 0, kMaxReordering, 50);
+  }
+  UMA_HISTOGRAM_COUNTS("Net.QuicSession.MaxReordering",
+                       stats.max_sequence_reordering);
 }
 
 void QuicClientSession::OnStreamFrames(
@@ -525,6 +560,22 @@ void QuicClientSession::OnConnectionClosed(QuicErrorCode error,
     }
   }
 
+  if (!IsCryptoHandshakeConfirmed()) {
+    if (error == QUIC_PUBLIC_RESET) {
+      RecordHandshakeFailureReason(HANDSHAKE_FAILURE_PUBLIC_RESET);
+    } else if (connection()->GetStats().packets_received == 0) {
+      RecordHandshakeFailureReason(HANDSHAKE_FAILURE_BLACK_HOLE);
+      UMA_HISTOGRAM_SPARSE_SLOWLY(
+          "Net.QuicSession.ConnectionClose.HandshakeFailureBlackHole.QuicError",
+          error);
+    } else {
+      RecordHandshakeFailureReason(HANDSHAKE_FAILURE_UNKNOWN);
+      UMA_HISTOGRAM_SPARSE_SLOWLY(
+          "Net.QuicSession.ConnectionClose.HandshakeFailureUnknown.QuicError",
+          error);
+    }
+  }
+
   UMA_HISTOGRAM_SPARSE_SLOWLY("Net.QuicSession.QuicVersion",
                               connection()->version());
   NotifyFactoryOfSessionGoingAway();
@@ -618,7 +669,8 @@ void QuicClientSession::CloseSessionOnErrorInner(int net_error,
       NetLog::TYPE_QUIC_SESSION_CLOSE_ON_ERROR,
       NetLog::IntegerCallback("net_error", net_error));
 
-  connection()->CloseConnection(quic_error, false);
+  if (connection()->connected())
+    connection()->CloseConnection(quic_error, false);
   DCHECK(!connection()->connected());
 }
 
@@ -640,16 +692,30 @@ void QuicClientSession::CloseAllObservers(int net_error) {
 }
 
 base::Value* QuicClientSession::GetInfoAsValue(
-    const std::set<HostPortPair>& aliases) const {
+    const std::set<HostPortPair>& aliases) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   // TODO(rch): remove "host_port_pair" when Chrome 34 is stable.
   dict->SetString("host_port_pair", aliases.begin()->ToString());
   dict->SetString("version", QuicVersionToString(connection()->version()));
   dict->SetInteger("open_streams", GetNumOpenStreams());
+  base::ListValue* stream_list = new base::ListValue();
+  for (base::hash_map<QuicStreamId, QuicDataStream*>::const_iterator it
+           = streams()->begin();
+       it != streams()->end();
+       ++it) {
+    stream_list->Append(new base::StringValue(
+        base::Uint64ToString(it->second->id())));
+  }
+  dict->Set("active_streams", stream_list);
+
   dict->SetInteger("total_streams", num_total_streams_);
   dict->SetString("peer_address", peer_address().ToString());
   dict->SetString("connection_id", base::Uint64ToString(connection_id()));
   dict->SetBoolean("connected", connection()->connected());
+  const QuicConnectionStats& stats = connection()->GetStats();
+  dict->SetInteger("packets_sent", stats.packets_sent);
+  dict->SetInteger("packets_received", stats.packets_received);
+  dict->SetInteger("packets_lost", stats.packets_lost);
   SSLInfo ssl_info;
   dict->SetBoolean("secure", GetSSLInfo(&ssl_info) && ssl_info.cert);
 

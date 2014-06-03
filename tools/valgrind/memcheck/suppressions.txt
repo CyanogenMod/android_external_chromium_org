@@ -4738,8 +4738,6 @@
    fun:nssTrustDomain_FindTrustForCertificate
    fun:STAN_DeleteCertTrustMatchingSlot
    fun:SEC_DeletePermCertificate
-   ...
-   fun:_ZN3net15NSSCertDatabase16DeleteCertAndKeyEPKNS_15X509CertificateE
 }
 {
    bug_177213
@@ -5931,6 +5929,14 @@
    fun:_ZN11webkit_glue16WebURLLoaderImpl7Context18OnCompletedRequestEibRKSsRKN4base9TimeTicksE
 }
 {
+   bug_328092
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN7content16WebURLLoaderImplC1Ev
+   fun:_ZN7content17BlinkPlatformImpl15createURLLoaderEv
+   fun:_ZN7WebCore14ResourceLoader5startEv
+}
+{
    bug_329960
    Memcheck:Leak
    fun:_Znw*
@@ -6370,6 +6376,17 @@
    fun:_ZN7content19MojoApplicationHost4InitEv
 }
 {
+   bug_367809_d
+   Memcheck:Leak
+   fun:_Znw*
+   ...
+   fun:_ZN7content21RenderProcessHostImpl4InitEv
+   ...
+   fun:_ZN7content5Shell7LoadURLERK4GURL
+   fun:_ZN7content20WebKitTestController20PrepareForLayoutTestERK4GURLRKN4base8FilePathEbRKSs
+   fun:_ZN12_GLOBAL__N_110RunOneTestERKSsPbRK10scoped_ptrIN7content17BrowserMainRunnerEN4base14DefaultDeleterIS5_EEE
+}
+{
    bug_369843
    Memcheck:Leak
    fun:_Znw*
@@ -6394,17 +6411,6 @@
    fun:_ZN2v88internal25FunctionCallbackArguments4CallEPFvRKNS_20FunctionCallbackInfoINS_5ValueEEEE
 }
 {
-   bug_370327
-   Memcheck:Leak
-   fun:_Znw*
-   fun:_ZN2v88internal6Parser12ParseProgramEv
-   fun:_ZN2v88internal6Parser5ParseEv
-   fun:_ZN2v88internal6Parser5ParseEPNS0_15CompilationInfoEb
-   fun:_ZN2v88internalL15CompileToplevelEPNS0_15CompilationInfoE*
-   fun:_ZN2v88internal8Compiler13CompileScriptENS0_6HandleINS0_6StringEEENS2_INS0_6ObjectEEEiibNS2_INS0_7Context*
-   fun:_ZN2v814ScriptCompiler14CompileUnboundEPNS_7IsolateEPNS0_6SourceENS0_14CompileOptionsE
-}
-{
   bug_371844
   Memcheck:Uninitialized
   fun:bcmp
@@ -6419,4 +6425,68 @@
    fun:_ZN8feedback20FeedbackUploaderTestC1Ev
    fun:_ZN8feedback*FeedbackUploaderTest*
    fun:_ZN7testing8internal15TestFactoryImplIN8feedback*
+}
+{
+   bug_371974
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN4base8internal20PostTaskAndReplyImpl16PostTaskAndReplyERKN15tracked_objects8LocationERKNS_8CallbackIFvvEEESA_
+   fun:_ZN4base10TaskRunner16PostTaskAndReplyERKN15tracked_objects8LocationERKNS_8CallbackIFvvEEES9_
+   fun:_ZN4base26PostTaskAndReplyWithResultIbbEEbPNS_10TaskRunnerERKN15tracked_objects8LocationERKNS_8CallbackIFT_vEEERKNS7_IFvT0_EEE
+   fun:_ZN4base19ImportantFileWriter8WriteNowERKSs
+}
+{
+   bug_372487_a
+   Memcheck:Leak
+   fun:_Znw*
+   ...
+   fun:_ZN4mojo10BindToPipeIN7content19MojoApplicationHost9ShellImplEEEPT_S5_NS_16ScopedHandleBaseINS_17MessagePipeHandleEEEP15MojoAsyncWaiter
+   fun:_ZN7content19MojoApplicationHost4InitEv
+   fun:_ZN7content21RenderProcessHostImpl4InitEv
+   fun:_ZN7content18RenderViewHostImpl16CreateRenderViewERKSbItN4base20string16_char_traitsESaItEEiib
+   fun:_ZN7content15WebContentsImpl32CreateRenderViewForRenderManagerEPNS_14RenderViewHostEiPNS_26CrossProcessFrameConnectorE
+   fun:_ZN7content22RenderFrameHostManager14InitRenderViewEPNS_14RenderViewHostEi
+   fun:_ZN7content22RenderFrameHostManager8NavigateERKNS_19NavigationEntryImplE
+   fun:_ZN7content13NavigatorImpl15NavigateToEntryEPNS_19RenderFrameHostImplERKNS_19NavigationEntryImplENS_20NavigationController10ReloadTypeE
+   fun:_ZN7content13NavigatorImpl22NavigateToPendingEntryEPNS_19RenderFrameHostImplENS_20NavigationController10ReloadTypeE
+   fun:_ZN7content15WebContentsImpl22NavigateToPendingEntryENS_20NavigationController10ReloadTypeE
+   fun:_ZN7content24NavigationControllerImpl22NavigateToPendingEntryENS_20NavigationController10ReloadTypeE
+   fun:_ZN7content24NavigationControllerImpl9LoadEntryEPNS_19NavigationEntryImplE
+   fun:_ZN7content24NavigationControllerImpl17LoadURLWithParamsERKNS_20NavigationController13LoadURLParamsE
+   fun:_ZN7content5Shell15LoadURLForFrameERK4GURLRKSs
+   fun:_ZN7content5Shell7LoadURLERK4GURL
+   fun:_ZN7content20WebKitTestController20PrepareForLayoutTestERK4GURLRKN4base8FilePathEbRKSs
+   fun:_ZN12_GLOBAL__N_110RunOneTestERKSsPbRK10scoped_ptrIN7content17BrowserMainRunnerEN4base14DefaultDeleterIS5_EEE
+   fun:_Z16ShellBrowserMainRKN7content18MainFunctionParamsERK10scoped_ptrINS_17BrowserMainRunnerEN4base14DefaultDeleterIS4_EEE
+   fun:_ZN7content17ShellMainDelegate10RunProcessERKSsRKNS_18MainFunctionParamsE
+   fun:_ZN7content23RunNamedProcessTypeMainERKSsRKNS_18MainFunctionParamsEPNS_19ContentMainDelegateE
+}
+{
+   bug_372487_b
+   Memcheck:Leak
+   fun:_Znw*
+   ...
+   fun:_ZN4mojo8internal6RouterC1ENS_16ScopedHandleBaseINS_17MessagePipeHandleEEEP15MojoAsyncWaiter
+   fun:_ZN4mojo8internal18InterfaceImplStateINS_5ShellEE4BindENS_16ScopedHandleBaseINS_17MessagePipeHandleEEEP15MojoAsyncWaiter
+   fun:_ZN4mojo10BindToPipeIN7content19MojoApplicationHost9ShellImplEEEPT_S5_NS_16ScopedHandleBaseINS_17MessagePipeHandleEEEP15MojoAsyncWaiter
+   fun:_ZN7content19MojoApplicationHost4InitEv
+   fun:_ZN7content21RenderProcessHostImpl4InitEv
+   fun:_ZN7content18RenderViewHostImpl16CreateRenderViewERKSbItN4base20string16_char_traitsESaItEEiib
+   fun:_ZN7content15WebContentsImpl32CreateRenderViewForRenderManagerEPNS_14RenderViewHostEiPNS_26CrossProcessFrameConnectorE
+   fun:_ZN7content22RenderFrameHostManager14InitRenderViewEPNS_14RenderViewHostEi
+   fun:_ZN7content22RenderFrameHostManager8NavigateERKNS_19NavigationEntryImplE
+   fun:_ZN7content13NavigatorImpl15NavigateToEntryEPNS_19RenderFrameHostImplERKNS_19NavigationEntryImplENS_20NavigationController10ReloadTypeE
+   fun:_ZN7content13NavigatorImpl22NavigateToPendingEntryEPNS_19RenderFrameHostImplENS_20NavigationController10ReloadTypeE
+   fun:_ZN7content15WebContentsImpl22NavigateToPendingEntryENS_20NavigationController10ReloadTypeE
+   fun:_ZN7content24NavigationControllerImpl22NavigateToPendingEntryENS_20NavigationController10ReloadTypeE
+   fun:_ZN7content24NavigationControllerImpl9LoadEntryEPNS_19NavigationEntryImplE
+   fun:_ZN7content24NavigationControllerImpl17LoadURLWithParamsERKNS_20NavigationController13LoadURLParamsE
+   fun:_ZN7content5Shell15LoadURLForFrameERK4GURLRKSs
+   fun:_ZN7content5Shell7LoadURLERK4GURL
+}
+{
+   bug_372832
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN7content27ServiceWorkerContextWrapper12InitInternalERKN4base8FilePathEPNS1_19SequencedTaskRunnerEPNS1_16MessageLoopProxyEPN5quota17QuotaManagerProxyE
 }

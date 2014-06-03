@@ -61,7 +61,7 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   virtual bool CanSeekForward() OVERRIDE;
   virtual bool CanSeekBackward() OVERRIDE;
   virtual bool IsPlayerReady() OVERRIDE;
-  virtual void SetDrmBridge(MediaDrmBridge* drm_bridge) OVERRIDE;
+  virtual void SetCdm(MediaKeys* cdm) OVERRIDE;
   virtual void OnKeyAdded() OVERRIDE;
   virtual bool IsSurfaceInUse() const OVERRIDE;
 
@@ -167,6 +167,9 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   // |start_time_ticks_| and |start_presentation_timestamp_| so that video can
   // resync with audio and starts decoding.
   void OnPrefetchDone();
+
+  // Sets the demuxer configs for audio or video stream.
+  void SetDemuxerConfigs(const DemuxerConfigs& configs, bool is_audio);
 
   // Test-only method to setup hook for the completion of the next decode cycle.
   // This callback state is cleared when it is next run.

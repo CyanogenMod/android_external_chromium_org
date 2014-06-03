@@ -17,6 +17,7 @@
 #import "chrome/browser/ui/cocoa/infobars/translate_infobar_base.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/translate/core/browser/translate_language_list.h"
+#include "components/translate/core/browser/translate_manager.h"
 #import "content/public/browser/web_contents.h"
 #include "ipc/ipc_message.h"
 #import "testing/gmock/include/gmock/gmock.h"
@@ -38,16 +39,17 @@ class MockTranslateInfoBarDelegate : public TranslateInfoBarDelegate {
  public:
   MockTranslateInfoBarDelegate(content::WebContents* web_contents,
                                translate::TranslateStep step,
-                               TranslateErrors::Type error,
-                               PrefService* prefs)
-      : TranslateInfoBarDelegate(web_contents,
-                                 step,
-                                 NULL,
-                                 "en",
-                                 "es",
-                                 error,
-                                 prefs,
-                                 false) {}
+                               TranslateErrors::Type error)
+      : TranslateInfoBarDelegate(
+            TranslateTabHelper::GetManagerFromWebContents(
+                web_contents)->GetWeakPtr(),
+            false,
+            step,
+            NULL,
+            "en",
+            "es",
+            error,
+            false) {}
 
   MOCK_METHOD0(Translate, void());
   MOCK_METHOD0(RevertTranslation, void());
@@ -92,13 +94,10 @@ class TranslationInfoBarTest : public CocoaProfileTest {
     TranslateErrors::Type error = TranslateErrors::NONE;
     if (type == translate::TRANSLATE_STEP_TRANSLATE_ERROR)
       error = TranslateErrors::NETWORK;
-    Profile* profile =
-        Profile::FromBrowserContext(web_contents_->GetBrowserContext());
     [[infobar_controller_ view] removeFromSuperview];
 
     scoped_ptr<TranslateInfoBarDelegate> delegate(
-        new MockTranslateInfoBarDelegate(web_contents_.get(), type, error,
-                                         profile->GetPrefs()));
+        new MockTranslateInfoBarDelegate(web_contents_.get(), type, error));
     scoped_ptr<infobars::InfoBar> infobar(
         TranslateInfoBarDelegate::CreateInfoBar(delegate.Pass()));
     if (infobar_)

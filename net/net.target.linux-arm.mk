@@ -14,6 +14,7 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_V
 GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_icu_icui18n_gyp,,,$(GYP_VAR_PREFIX))/icui18n.stamp \
 	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp,,,$(GYP_VAR_PREFIX))/icuuc.stamp \
+	$(call intermediates-dir-for,GYP,net_net_derived_sources_gyp,,,$(GYP_VAR_PREFIX))/net_derived_sources.stamp \
 	$(call intermediates-dir-for,GYP,net_net_resources_gyp,,,$(GYP_VAR_PREFIX))/net_resources.stamp \
 	$(call intermediates-dir-for,GYP,net_net_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/net_jni_headers.stamp
 
@@ -76,6 +77,8 @@ LOCAL_SRC_FILES := \
 	net/http/transport_security_state.cc \
 	net/socket/client_socket_handle.cc \
 	net/socket/client_socket_pool_histograms.cc \
+	net/socket/next_proto.cc \
+	net/socket/openssl_ssl_util.cc \
 	net/socket/ssl_client_socket.cc \
 	net/socket/ssl_client_socket_openssl.cc \
 	net/socket/ssl_client_socket_pool.cc \
@@ -124,7 +127,6 @@ LOCAL_SRC_FILES := \
 	net/base/net_log_logger.cc \
 	net/base/network_change_notifier.cc \
 	net/base/network_delegate.cc \
-	net/base/network_time_notifier.cc \
 	net/base/platform_mime_util_linux.cc \
 	net/base/prioritized_dispatcher.cc \
 	net/base/request_priority.cc \
@@ -142,6 +144,7 @@ LOCAL_SRC_FILES := \
 	net/cert/cert_verify_proc_android.cc \
 	net/cert/crl_set.cc \
 	net/cert/ct_known_logs.cc \
+	net/cert/ct_log_response_parser.cc \
 	net/cert/ct_log_verifier.cc \
 	net/cert/ct_log_verifier_openssl.cc \
 	net/cert/ct_objects_extractor_openssl.cc \
@@ -184,7 +187,6 @@ LOCAL_SRC_FILES := \
 	net/disk_cache/blockfile/rankings.cc \
 	net/disk_cache/blockfile/sparse_control.cc \
 	net/disk_cache/blockfile/stats.cc \
-	net/disk_cache/blockfile/stats_histogram.cc \
 	net/disk_cache/blockfile/trace.cc \
 	net/disk_cache/cache_creator.cc \
 	net/disk_cache/cache_util.cc \
@@ -263,12 +265,6 @@ LOCAL_SRC_FILES := \
 	net/http/http_network_session.cc \
 	net/http/http_network_session_peer.cc \
 	net/http/http_network_transaction.cc \
-	net/http/http_pipelined_connection_impl.cc \
-	net/http/http_pipelined_host.cc \
-	net/http/http_pipelined_host_forced.cc \
-	net/http/http_pipelined_host_impl.cc \
-	net/http/http_pipelined_host_pool.cc \
-	net/http/http_pipelined_stream.cc \
 	net/http/http_proxy_client_socket.cc \
 	net/http/http_proxy_client_socket_pool.cc \
 	net/http/http_request_info.cc \
@@ -400,7 +396,6 @@ LOCAL_SRC_FILES := \
 	net/quic/quic_write_blocked_list.cc \
 	net/quic/reliable_quic_stream.cc \
 	net/quic/spdy_utils.cc \
-	net/socket/buffered_write_stream_socket.cc \
 	net/socket/client_socket_factory.cc \
 	net/socket/client_socket_pool.cc \
 	net/socket/client_socket_pool_base.cc \
@@ -467,7 +462,6 @@ LOCAL_SRC_FILES := \
 	net/url_request/data_protocol_handler.cc \
 	net/url_request/file_protocol_handler.cc \
 	net/url_request/ftp_protocol_handler.cc \
-	net/url_request/protocol_intercept_job_factory.cc \
 	net/url_request/static_http_user_agent_settings.cc \
 	net/url_request/url_fetcher.cc \
 	net/url_request/url_fetcher_core.cc \
@@ -488,6 +482,8 @@ LOCAL_SRC_FILES := \
 	net/url_request/url_request_filter.cc \
 	net/url_request/url_request_ftp_job.cc \
 	net/url_request/url_request_http_job.cc \
+	net/url_request/url_request_intercepting_job_factory.cc \
+	net/url_request/url_request_interceptor.cc \
 	net/url_request/url_request_job.cc \
 	net/url_request/url_request_job_factory.cc \
 	net/url_request/url_request_job_factory_impl.cc \
@@ -537,7 +533,14 @@ MY_CFLAGS_Debug := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
+	-Wno-unused-local-typedefs \
 	-fno-tree-sra \
+	-fno-partial-inlining \
+	-fno-early-inlining \
+	-fno-tree-copy-prop \
+	-fno-tree-loop-optimize \
+	-fno-move-loop-invariants \
+	-fno-caller-saves \
 	-Wno-psabi \
 	-ffunction-sections \
 	-funwind-tables \
@@ -569,12 +572,17 @@ MY_DEFS_Debug := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
+	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
+	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
+	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DVIDEO_HOLE=1' \
 	'-DNET_IMPLEMENTATION' \
 	'-DPOSIX_AVOID_MMAP' \
@@ -605,6 +613,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/zlib \
+	$(gyp_shared_intermediate_dir) \
 	$(gyp_shared_intermediate_dir)/net \
 	$(LOCAL_PATH)/third_party/openssl/openssl/include \
 	$(PWD)/frameworks/wilhelm/include \
@@ -636,7 +645,14 @@ MY_CFLAGS_Release := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
+	-Wno-unused-local-typedefs \
 	-fno-tree-sra \
+	-fno-partial-inlining \
+	-fno-early-inlining \
+	-fno-tree-copy-prop \
+	-fno-tree-loop-optimize \
+	-fno-move-loop-invariants \
+	-fno-caller-saves \
 	-Wno-psabi \
 	-ffunction-sections \
 	-funwind-tables \
@@ -668,12 +684,17 @@ MY_DEFS_Release := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
+	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
+	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
+	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DVIDEO_HOLE=1' \
 	'-DNET_IMPLEMENTATION' \
 	'-DPOSIX_AVOID_MMAP' \
@@ -705,6 +726,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/zlib \
+	$(gyp_shared_intermediate_dir) \
 	$(gyp_shared_intermediate_dir)/net \
 	$(LOCAL_PATH)/third_party/openssl/openssl/include \
 	$(PWD)/frameworks/wilhelm/include \

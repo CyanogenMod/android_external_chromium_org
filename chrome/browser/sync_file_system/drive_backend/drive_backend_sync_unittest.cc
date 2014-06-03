@@ -39,6 +39,27 @@ namespace drive_backend {
 
 typedef fileapi::FileSystemOperation::FileEntryList FileEntryList;
 
+namespace {
+
+void SetSyncStatus(const base::Closure& closure,
+                   SyncStatusCode* status_out,
+                   SyncStatusCode status) {
+  *status_out = status;
+  closure.Run();
+}
+
+void SetSyncStatusAndUrl(const base::Closure& closure,
+                         SyncStatusCode* status_out,
+                         fileapi::FileSystemURL* url_out,
+                         SyncStatusCode status,
+                         const fileapi::FileSystemURL& url) {
+  *status_out = status;
+  *url_out = url;
+  closure.Run();
+}
+
+}  // namespace
+
 class DriveBackendSyncTest : public testing::Test,
                              public LocalFileSyncService::Observer,
                              public RemoteFileSyncService::Observer {
@@ -55,6 +76,12 @@ class DriveBackendSyncTest : public testing::Test,
 
     io_task_runner_ = content::BrowserThread::GetMessageLoopProxyForThread(
         content::BrowserThread::IO);
+    scoped_refptr<base::SequencedWorkerPool> worker_pool(
+        content::BrowserThread::GetBlockingPool());
+    worker_task_runner_ =
+        worker_pool->GetSequencedTaskRunnerWithShutdownBehavior(
+            worker_pool->GetSequenceToken(),
+            base::SequencedWorkerPool::SKIP_ON_SHUTDOWN);
     file_task_runner_ = content::BrowserThread::GetMessageLoopProxyForThread(
         content::BrowserThread::FILE);
 
@@ -83,7 +110,8 @@ class DriveBackendSyncTest : public testing::Test,
         NULL, NULL, NULL));
     remote_sync_service_->AddServiceObserver(this);
     remote_sync_service_->Initialize(base_dir_.path(),
-                                     base::MessageLoopProxy::current(),
+                                     NULL,
+                                     worker_task_runner_.get(),
                                      in_memory_env_.get());
     remote_sync_service_->SetSyncEnabled(true);
 
@@ -103,6 +131,7 @@ class DriveBackendSyncTest : public testing::Test,
     fake_drive_service_helper_.reset();
     remote_sync_service_.reset();
 
+    content::BrowserThread::GetBlockingPool()->FlushForTesting();
     base::RunLoop().RunUntilIdle();
     RevokeSyncableFileSystem();
   }
@@ -161,10 +190,11 @@ class DriveBackendSyncTest : public testing::Test,
       file_system->SetUp(CannedSyncableFileSystem::QUOTA_DISABLED);
 
       SyncStatusCode status = SYNC_STATUS_UNKNOWN;
+      base::RunLoop run_loop;
       local_sync_service_->MaybeInitializeFileSystemContext(
           origin, file_system->file_system_context(),
-          CreateResultReceiver(&status));
-      base::RunLoop().RunUntilIdle();
+          base::Bind(&SetSyncStatus, run_loop.QuitClosure(), &status));
+      run_loop.Run();
       EXPECT_EQ(SYNC_STATUS_OK, status);
 
       file_system->backend()->sync_context()->
@@ -175,8 +205,11 @@ class DriveBackendSyncTest : public testing::Test,
     }
 
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
-    remote_sync_service_->RegisterOrigin(origin, CreateResultReceiver(&status));
-    base::RunLoop().RunUntilIdle();
+    base::RunLoop run_loop;
+    remote_sync_service_->RegisterOrigin(
+        origin,
+        base::Bind(&SetSyncStatus, run_loop.QuitClosure(), &status));
+    run_loop.Run();
     return status;
   }
 
@@ -222,18 +255,20 @@ class DriveBackendSyncTest : public testing::Test,
   SyncStatusCode ProcessLocalChange() {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
     fileapi::FileSystemURL url;
-    local_sync_service_->ProcessLocalChange(
-        CreateResultReceiver(&status, &url));
-    base::RunLoop().RunUntilIdle();
+    base::RunLoop run_loop;
+    local_sync_service_->ProcessLocalChange(base::Bind(
+        &SetSyncStatusAndUrl, run_loop.QuitClosure(), &status, &url));
+    run_loop.Run();
     return status;
   }
 
   SyncStatusCode ProcessRemoteChange() {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
     fileapi::FileSystemURL url;
-    remote_sync_service_->ProcessRemoteChange(
-        CreateResultReceiver(&status, &url));
-    base::RunLoop().RunUntilIdle();
+    base::RunLoop run_loop;
+    remote_sync_service_->ProcessRemoteChange(base::Bind(
+        &SetSyncStatusAndUrl, run_loop.QuitClosure(), &status, &url));
+    run_loop.Run();
     return status;
   }
 
@@ -474,7 +509,6 @@ class DriveBackendSyncTest : public testing::Test,
 
  private:
   content::TestBrowserThreadBundle thread_bundle_;
-  ScopedEnableSyncFSV2 enable_syncfs_v2_;
 
   base::ScopedTempDir base_dir_;
   scoped_ptr<leveldb::Env> in_memory_env_;
@@ -491,6 +525,7 @@ class DriveBackendSyncTest : public testing::Test,
 
 
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
+  scoped_refptr<base::SequencedTaskRunner> worker_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> file_task_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(DriveBackendSyncTest);

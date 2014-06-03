@@ -655,6 +655,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kGcm);
   skip.insert(APIPermission::kIdle);
   skip.insert(APIPermission::kIdltest);
+  skip.insert(APIPermission::kLedger);
   skip.insert(APIPermission::kLogPrivate);
   skip.insert(APIPermission::kNotification);
   skip.insert(APIPermission::kOverrideEscFullscreen);
@@ -673,6 +674,10 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kWebcamPrivate);
   skip.insert(APIPermission::kWebView);
   skip.insert(APIPermission::kWindowShape);
+
+  // These permissions are restricted to extensions force-installed by policy
+  // and don't require a prompt, i.e. they're restricted to location 'policy'.
+  skip.insert(APIPermission::kEnterprisePlatformKeys);
 
   // TODO(erikkay) add a string for this permission.
   skip.insert(APIPermission::kBackground);
@@ -739,6 +744,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kReadingListPrivate);
   skip.insert(APIPermission::kRtcPrivate);
   skip.insert(APIPermission::kStreamsPrivate);
+  skip.insert(APIPermission::kSyncedNotificationsPrivate);
   skip.insert(APIPermission::kSystemPrivate);
   skip.insert(APIPermission::kTabCaptureForTab);
   skip.insert(APIPermission::kTerminalPrivate);
@@ -908,8 +914,10 @@ TEST(PermissionsTest, GetWarningMessages_ManyHosts) {
   std::vector<base::string16> warnings =
       PermissionsData::GetPermissionMessageStrings(extension.get());
   ASSERT_EQ(1u, warnings.size());
-  EXPECT_EQ("Access your data on encrypted.google.com and www.google.com",
-            base::UTF16ToUTF8(warnings[0]));
+  EXPECT_EQ(
+      "Read and modify your data on encrypted.google.com and "
+      "www.google.com",
+      base::UTF16ToUTF8(warnings[0]));
 }
 
 TEST(PermissionsTest, GetWarningMessages_Plugins) {
@@ -925,8 +933,10 @@ TEST(PermissionsTest, GetWarningMessages_Plugins) {
   ASSERT_EQ(0u, warnings.size());
 #else
   ASSERT_EQ(1u, warnings.size());
-  EXPECT_EQ("Access all data on your computer and the websites you visit",
-            base::UTF16ToUTF8(warnings[0]));
+  EXPECT_EQ(
+      "Read and modify all your data on your computer and the websites "
+      "you visit",
+      base::UTF16ToUTF8(warnings[0]));
 #endif
 }
 
@@ -983,7 +993,8 @@ TEST(PermissionsTest, GetWarningMessages_DeclarativeWebRequest) {
   std::vector<base::string16> warnings =
       provider->GetWarningMessages(set, extension->GetType());
   EXPECT_TRUE(Contains(warnings, "Block parts of web pages"));
-  EXPECT_FALSE(Contains(warnings, "Access your data on all websites"));
+  EXPECT_FALSE(Contains(
+      warnings, "Read and modify all your data on the websites you visit"));
 
   // Now verify that declarativeWebRequest does not produce a message when host
   // permissions do cover all hosts.
@@ -992,7 +1003,8 @@ TEST(PermissionsTest, GetWarningMessages_DeclarativeWebRequest) {
   set = extension->GetActivePermissions().get();
   warnings = provider->GetWarningMessages(set, extension->GetType());
   EXPECT_FALSE(Contains(warnings, "Block parts of web pages"));
-  EXPECT_TRUE(Contains(warnings, "Access your data on all websites"));
+  EXPECT_TRUE(Contains(
+      warnings, "Read and modify all your data on the websites you visit"));
 }
 
 TEST(PermissionsTest, GetWarningMessages_Serial) {

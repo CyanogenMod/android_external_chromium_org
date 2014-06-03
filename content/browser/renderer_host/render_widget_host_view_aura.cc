@@ -768,26 +768,19 @@ bool RenderWidgetHostViewAura::IsShowing() {
 }
 
 gfx::Rect RenderWidgetHostViewAura::GetViewBounds() const {
-  // This is the size that we want the renderer to produce. While we're waiting
-  // for the correct frame (i.e. during a resize), don't change the size so that
-  // we don't pipeline more resizes than we can handle.
-  gfx::Rect bounds(window_->GetBoundsInScreen());
-  return delegated_frame_host_->GetViewBoundsWithResizeLock(bounds);
+  return window_->GetBoundsInScreen();
 }
 
-void RenderWidgetHostViewAura::SetBackground(const SkBitmap& background) {
-  RenderWidgetHostViewBase::SetBackground(background);
-  host_->SetBackground(background);
-  window_->layer()->SetFillsBoundsOpaquely(background.isOpaque());
+void RenderWidgetHostViewAura::SetBackgroundOpaque(bool opaque) {
+  RenderWidgetHostViewBase::SetBackgroundOpaque(opaque);
+  host_->SetBackgroundOpaque(opaque);
+  window_->layer()->SetFillsBoundsOpaquely(opaque);
 }
 
 gfx::Size RenderWidgetHostViewAura::GetVisibleViewportSize() const {
-  gfx::Rect window_bounds = window_->bounds();
-  int viewport_width = std::max(
-      0, window_bounds.width() - insets_.left() - insets_.right());
-  int viewport_height = std::max(
-      0, window_bounds.height() - insets_.top() - insets_.bottom());
-  return gfx::Size(viewport_width, viewport_height);
+  gfx::Rect requested_rect(GetRequestedRendererSize());
+  requested_rect.Inset(insets_);
+  return requested_rect.size();
 }
 
 void RenderWidgetHostViewAura::SetInsets(const gfx::Insets& insets) {
@@ -899,6 +892,10 @@ void RenderWidgetHostViewAura::SelectionChanged(const base::string16& text,
 #endif  // defined(USE_X11) && !defined(OS_CHROMEOS)
 }
 
+gfx::Size RenderWidgetHostViewAura::GetRequestedRendererSize() const {
+  return delegated_frame_host_->GetRequestedRendererSize();
+}
+
 void RenderWidgetHostViewAura::SelectionBoundsChanged(
     const ViewHostMsg_SelectionBounds_Params& params) {
   if (selection_anchor_rect_ == params.anchor_rect &&
@@ -961,9 +958,6 @@ void RenderWidgetHostViewAura::EndFrameSubscription() {
   delegated_frame_host_->EndFrameSubscription();
 }
 
-void RenderWidgetHostViewAura::OnAcceleratedCompositingStateChange() {
-}
-
 void RenderWidgetHostViewAura::AcceleratedSurfaceInitialized(int host_id,
                                                              int route_id) {
 }
@@ -994,13 +988,17 @@ void RenderWidgetHostViewAura::InternalSetBounds(const gfx::Rect& rect) {
   // Additonally the legacy dummy window is needed for accessibility and for
   // scrolling to work in legacy drivers for trackpoints/trackpads, etc.
   if (GetNativeViewId()) {
+    bool show_legacy_window = false;
     if (!legacy_render_widget_host_HWND_) {
       legacy_render_widget_host_HWND_ = LegacyRenderWidgetHostHWND::Create(
           reinterpret_cast<HWND>(GetNativeViewId()));
+      show_legacy_window = window_->TargetVisibility();
     }
     if (legacy_render_widget_host_HWND_) {
       legacy_render_widget_host_HWND_->SetBounds(
           window_->GetBoundsInRootWindow());
+      if (show_legacy_window)
+        legacy_render_widget_host_HWND_->Show();
     }
   }
 
@@ -1531,22 +1529,23 @@ void RenderWidgetHostViewAura::OnCandidateWindowHidden() {
 ////////////////////////////////////////////////////////////////////////////////
 // RenderWidgetHostViewAura, gfx::DisplayObserver implementation:
 
-void RenderWidgetHostViewAura::OnDisplayBoundsChanged(
-    const gfx::Display& display) {
-  gfx::Screen* screen = gfx::Screen::GetScreenFor(window_);
-  if (display.id() == screen->GetDisplayNearestWindow(window_).id()) {
-    UpdateScreenInfo(window_);
-    current_cursor_.SetDisplayInfo(display);
-    UpdateCursorIfOverSelf();
-  }
-}
-
 void RenderWidgetHostViewAura::OnDisplayAdded(
     const gfx::Display& new_display) {
 }
 
 void RenderWidgetHostViewAura::OnDisplayRemoved(
     const gfx::Display& old_display) {
+}
+
+void RenderWidgetHostViewAura::OnDisplayMetricsChanged(
+    const gfx::Display& display, uint32_t metrics) {
+  // The screen info should be updated regardless of the metric change.
+  gfx::Screen* screen = gfx::Screen::GetScreenFor(window_);
+  if (display.id() == screen->GetDisplayNearestWindow(window_).id()) {
+    UpdateScreenInfo(window_);
+    current_cursor_.SetDisplayInfo(display);
+    UpdateCursorIfOverSelf();
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2372,8 +2371,6 @@ scoped_ptr<ResizeLock> RenderWidgetHostViewAura::CreateResizeLock(
       desired_size,
       defer_compositor_lock,
       base::TimeDelta::FromMilliseconds(kResizeLockTimeoutMs)));
-  ResizeLock* lock = NULL;
-  return scoped_ptr<ResizeLock>(lock);
 }
 
 DelegatedFrameHost* RenderWidgetHostViewAura::GetDelegatedFrameHost() const {

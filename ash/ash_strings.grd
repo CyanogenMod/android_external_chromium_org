@@ -164,10 +164,10 @@ This file contains the strings for ash.
       <ph> element).  You can also use the 'grit add' tool to help you identify
       nontranslateable parts and create placeholders for them. -->
       <!-- TODO(zork): Only include these in Aura builds -->
-      <message name="IDS_AURA_APP_LIST_TITLE" desc="The title used for the Aura app list in the launcher">
+      <message name="IDS_ASH_SHELF_APP_LIST_TITLE" desc="The title used for the Ash App List in the Shelf">
         Apps
       </message>
-      <message name="IDS_AURA_APP_LIST_SYNCING_TITLE" desc="The title used for the Aura app list in the launcher to indicate loading/syncing apps.">
+      <message name="IDS_ASH_SHELF_APP_LIST_SYNCING_TITLE" desc="The title used for the Ash App List in the Shelf to indicate loading/syncing apps.">
         Syncing apps...
       </message>
       <message name="IDS_ASH_SHELF_OVERFLOW_NAME" desc="The title used for the Ash overflow button in the shelf">
@@ -512,11 +512,11 @@ Press Shift + Alt to switch.
       <message name="IDS_ASH_STATUS_TRAY_SHUTDOWN" desc="The accessible text for the shutdown button.">
         Shut down
       </message>
-      <message name="IDS_ASH_STATUS_TRAY_REMAINING_SESSION_TIME" desc="The time remaining until the end of the session. Shown if the session length is limited.">
-        <ph name="hours">$1<ex>01</ex></ph>:<ph name="minutes">$2<ex>35</ex></ph>:<ph name="seconds">$3<ex>12</ex></ph>
+      <message name="IDS_ASH_STATUS_TRAY_BUBBLE_SESSION_LENGTH_LIMIT" desc="Tray bubble item shown to inform the user that the session length is limited.">
+        Session ends in <ph name="session_time_remaining">$1<ex>4 minutes 23 seconds</ex></ph>.
       </message>
-      <message name="IDS_ASH_STATUS_TRAY_REMAINING_SESSION_TIME_NOTIFICATION" desc="Notification shown to inform the user that the session length is limited.">
-        This session will end in <ph name="session_time_remaining">$1<ex>15 minutes</ex></ph>. You will be automatically signed out.
+      <message name="IDS_ASH_STATUS_TRAY_NOTIFICATION_SESSION_LENGTH_LIMIT" desc="Notification shown to inform the user that the session length is limited.">
+        Session ends in <ph name="session_time_remaining">$1<ex>4 minutes 23 seconds</ex></ph>. You will be signed out.
       </message>
 
       <message name="IDS_ASH_STATUS_TRAY_LOCALLY_MANAGED_LABEL" desc="Label shown instead of email for supervised users">
@@ -580,6 +580,12 @@ Press Shift + Alt to switch.
       </message>
       <message name="IDS_ASH_SCREENSHOT_NOTIFICATION_TEXT_FAIL" desc="The text of the notification when taking a screenshot failed.">
         Failed to save screenshot
+      </message>
+      <message name="IDS_ASH_SIGN_OUT_WARNING_POPUP_TEXT" desc="The text of the popup when the user preses the exit shortcut in chrome-os.">
+        Press Ctrl+Shift+Q twice to sign out.
+      </message>
+      <message name="IDS_ASH_SIGN_OUT_WARNING_POPUP_TEXT_ACCESSIBLE" desc="The message used by accessibility to indicate the content of the popup when the user preses the exit shortcut in chrome-os.">
+        Press Control Shift Q twice to sign out.
       </message>
       <message name="IDS_ASH_EXIT_WARNING_POPUP_TEXT" desc="The text of the popup when the user preses the exit shortcut.">
         Press Ctrl+Shift+Q twice to quit.

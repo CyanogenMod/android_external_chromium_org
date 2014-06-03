@@ -103,7 +103,8 @@ class Target : public Item {
   const LabelTargetVector& datadeps() const { return datadeps_; }
   LabelTargetVector& datadeps() { return datadeps_; }
 
-  // List of configs that this class inherits settings from.
+  // List of configs that this class inherits settings from. Once a target is
+  // resolved, this will also list all- and direct-dependent configs.
   const LabelConfigVector& configs() const { return configs_; }
   LabelConfigVector& configs() { return configs_; }
 
@@ -197,8 +198,10 @@ class Target : public Item {
   bool external_;
 
   // Static libraries and source sets from transitive deps. These things need
-  // to be linked only with the end target (executable, shared library). These
-  // do not get pushed beyond shared library boundaries.
+  // to be linked only with the end target (executable, shared library). Source
+  // sets do not get pushed beyond static library boundaries, and neither
+  // source sets nor static libraries get pushed beyond sahred library
+  // boundaries.
   std::set<const Target*> inherited_libraries_;
 
   // These libs and dirs are inherited from statically linked deps and all

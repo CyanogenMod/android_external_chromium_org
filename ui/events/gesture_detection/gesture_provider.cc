@@ -130,7 +130,8 @@ class GestureProvider::ScaleGestureListenerImpl
       : scale_gesture_detector_(config, this),
         provider_(provider),
         ignore_multitouch_events_(false),
-        pinch_event_sent_(false) {}
+        pinch_event_sent_(false),
+        min_pinch_update_span_delta_(config.min_pinch_update_span_delta) {}
 
   bool OnTouchEvent(const MotionEvent& event) {
     // TODO: Need to deal with multi-touch transition.
@@ -180,6 +181,11 @@ class GestureProvider::ScaleGestureListenerImpl
                                     detector.GetFocusY(),
                                     e.GetPointerCount(),
                                     GetBoundingBox(e)));
+    }
+
+    if (std::abs(detector.GetCurrentSpan() - detector.GetPreviousSpan()) <
+        min_pinch_update_span_delta_) {
+      return false;
     }
 
     float scale = detector.GetScaleFactor();
@@ -246,6 +252,10 @@ class GestureProvider::ScaleGestureListenerImpl
 
   // Whether any pinch zoom event has been sent to native.
   bool pinch_event_sent_;
+
+  // The minimum change in span required before this is considered a pinch. See
+  // crbug.com/373318.
+  float min_pinch_update_span_delta_;
 
   DISALLOW_COPY_AND_ASSIGN(ScaleGestureListenerImpl);
 };
@@ -375,10 +385,26 @@ class GestureProvider::GestureListenerImpl
                        const MotionEvent& e2,
                        float velocity_x,
                        float velocity_y) OVERRIDE {
-    GestureEventDetails swipe_details(
-        ET_GESTURE_MULTIFINGER_SWIPE, velocity_x, velocity_y);
-    provider_->Send(
-        CreateGesture(ET_GESTURE_MULTIFINGER_SWIPE, e2, swipe_details));
+    GestureEventDetails swipe_details(ET_GESTURE_SWIPE, velocity_x, velocity_y);
+    provider_->Send(CreateGesture(ET_GESTURE_SWIPE, e2, swipe_details));
+    return true;
+  }
+
+  virtual bool OnTwoFingerTap(const MotionEvent& e1,
+                              const MotionEvent& e2) OVERRIDE {
+    // The location of the two finger tap event should be the location of the
+    // primary pointer.
+    GestureEventDetails two_finger_tap_details(ET_GESTURE_TWO_FINGER_TAP,
+                                               e1.GetTouchMajor(),
+                                               e1.GetTouchMajor());
+    provider_->Send(CreateGesture(ET_GESTURE_TWO_FINGER_TAP,
+                                  e2.GetId(),
+                                  e2.GetEventTime(),
+                                  e1.GetX(),
+                                  e1.GetY(),
+                                  e2.GetPointerCount(),
+                                  GetBoundingBox(e2),
+                                  two_finger_tap_details));
     return true;
   }
 

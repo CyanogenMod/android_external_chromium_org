@@ -227,10 +227,10 @@ class NewTabButton : public views::ImageButton {
  private:
   bool ShouldWindowContentsBeTransparent() const;
   gfx::ImageSkia GetBackgroundImage(views::CustomButton::ButtonState state,
-                                    ui::ScaleFactor scale_factor) const;
+                                    float scale) const;
   gfx::ImageSkia GetImageForState(views::CustomButton::ButtonState state,
-                                  ui::ScaleFactor scale_factor) const;
-  gfx::ImageSkia GetImageForScale(ui::ScaleFactor scale_factor) const;
+                                  float scale) const;
+  gfx::ImageSkia GetImageForScale(float scale) const;
 
   // Tab strip that contains this button.
   TabStrip* tab_strip_;
@@ -307,8 +307,7 @@ void NewTabButton::OnMouseReleased(const ui::MouseEvent& event) {
 #endif
 
 void NewTabButton::OnPaint(gfx::Canvas* canvas) {
-  gfx::ImageSkia image =
-      GetImageForScale(ui::GetSupportedScaleFactor(canvas->image_scale()));
+  gfx::ImageSkia image = GetImageForScale(canvas->image_scale());
   canvas->DrawImageInt(image, 0, height() - image.height());
 }
 
@@ -326,7 +325,7 @@ bool NewTabButton::ShouldWindowContentsBeTransparent() const {
 
 gfx::ImageSkia NewTabButton::GetBackgroundImage(
     views::CustomButton::ButtonState state,
-    ui::ScaleFactor scale_factor) const {
+    float scale) const {
   int background_id = 0;
   if (ShouldWindowContentsBeTransparent()) {
     background_id = IDR_THEME_TAB_BACKGROUND_V;
@@ -355,10 +354,9 @@ gfx::ImageSkia NewTabButton::GetBackgroundImage(
       GetThemeProvider()->GetImageSkiaNamed(IDR_NEWTAB_BUTTON_MASK);
   int height = mask->height();
   int width = mask->width();
-  float scale = ui::GetImageScale(scale_factor);
   // The canvas and mask has to use the same scale factor.
   if (!mask->HasRepresentation(scale))
-    scale_factor = ui::SCALE_FACTOR_100P;
+    scale = ui::GetScaleForScaleFactor(ui::SCALE_FACTOR_100P);
 
   gfx::Canvas canvas(gfx::Size(width, height), scale, false);
 
@@ -400,16 +398,16 @@ gfx::ImageSkia NewTabButton::GetBackgroundImage(
 
 gfx::ImageSkia NewTabButton::GetImageForState(
     views::CustomButton::ButtonState state,
-    ui::ScaleFactor scale_factor) const {
+    float scale) const {
   const int overlay_id = state == views::CustomButton::STATE_PRESSED ?
         IDR_NEWTAB_BUTTON_P : IDR_NEWTAB_BUTTON;
   gfx::ImageSkia* overlay = GetThemeProvider()->GetImageSkiaNamed(overlay_id);
 
   gfx::Canvas canvas(
       gfx::Size(overlay->width(), overlay->height()),
-      ui::GetImageScale(scale_factor),
+      scale,
       false);
-  canvas.DrawImageInt(GetBackgroundImage(state, scale_factor), 0, 0);
+  canvas.DrawImageInt(GetBackgroundImage(state, scale), 0, 0);
 
   // Draw the button border with a slight alpha.
   const int kGlassFrameOverlayAlpha = 178;
@@ -421,13 +419,12 @@ gfx::ImageSkia NewTabButton::GetImageForState(
   return gfx::ImageSkia(canvas.ExtractImageRep());
 }
 
-gfx::ImageSkia NewTabButton::GetImageForScale(
-    ui::ScaleFactor scale_factor) const {
+gfx::ImageSkia NewTabButton::GetImageForScale(float scale) const {
   if (!hover_animation_->is_animating())
-    return GetImageForState(state(), scale_factor);
+    return GetImageForState(state(), scale);
   return gfx::ImageSkiaOperations::CreateBlendedImage(
-      GetImageForState(views::CustomButton::STATE_NORMAL, scale_factor),
-      GetImageForState(views::CustomButton::STATE_HOVERED, scale_factor),
+      GetImageForState(views::CustomButton::STATE_NORMAL, scale),
+      GetImageForState(views::CustomButton::STATE_HOVERED, scale),
       hover_animation_->GetCurrentValue());
 }
 
@@ -514,7 +511,7 @@ TabStrip::TabStrip(TabStripController* controller)
       in_tab_close_(false),
       animation_container_(new gfx::AnimationContainer()),
       bounds_animator_(this),
-      layout_type_(TAB_STRIP_LAYOUT_SHRINK),
+      stacked_layout_(false),
       adjust_layout_(false),
       reset_to_shrink_on_exit_(false),
       mouse_move_count_(0),
@@ -550,10 +547,8 @@ void TabStrip::RemoveObserver(TabStripObserver* observer) {
   observers_.RemoveObserver(observer);
 }
 
-void TabStrip::SetLayoutType(TabStripLayoutType layout_type,
-                             bool adjust_layout) {
-  adjust_layout_ = adjust_layout;
-  if (layout_type == layout_type_)
+void TabStrip::SetStackedLayout(bool stacked_layout) {
+  if (stacked_layout == stacked_layout_)
     return;
 
   const int active_index = controller_->GetActiveIndex();
@@ -562,7 +557,7 @@ void TabStrip::SetLayoutType(TabStripLayoutType layout_type,
     active_center = ideal_bounds(active_index).x() +
         ideal_bounds(active_index).width() / 2;
   }
-  layout_type_ = layout_type;
+  stacked_layout_ = stacked_layout;
   SetResetToShrinkOnExit(false);
   SwapLayoutIfNecessary();
   // When transitioning to stacked try to keep the active tab centered.
@@ -1069,7 +1064,7 @@ Tab* TabStrip::GetTabAt(Tab* tab, const gfx::Point& tab_in_tab_coordinates) {
 
 void TabStrip::OnMouseEventInTab(views::View* source,
                                  const ui::MouseEvent& event) {
-  UpdateLayoutTypeFromMouseEvent(source, event);
+  UpdateStackedLayoutFromMouseEvent(source, event);
 }
 
 bool TabStrip::ShouldPaintTab(const Tab* tab, gfx::Rect* clip) {
@@ -1122,8 +1117,8 @@ void TabStrip::MouseMovedOutOfHost() {
   ResizeLayoutTabs();
   if (reset_to_shrink_on_exit_) {
     reset_to_shrink_on_exit_ = false;
-    SetLayoutType(TAB_STRIP_LAYOUT_SHRINK, true);
-    controller_->LayoutTypeMaybeChanged();
+    SetStackedLayout(false);
+    controller_->StackedLayoutMaybeChanged();
   }
 }
 
@@ -1139,7 +1134,8 @@ void TabStrip::Layout() {
   DoLayout();
 }
 
-void TabStrip::PaintChildren(gfx::Canvas* canvas) {
+void TabStrip::PaintChildren(gfx::Canvas* canvas,
+                             const views::CullSet& cull_set) {
   // The view order doesn't match the paint order (tabs_ contains the tab
   // ordering). Additionally we need to paint the tabs that are closing in
   // |tabs_closing_map_|.
@@ -1152,8 +1148,7 @@ void TabStrip::PaintChildren(gfx::Canvas* canvas) {
   // Since |touch_layout_| is created based on number of tabs and width we use
   // the ideal state to determine if we should paint stacked. This minimizes
   // painting changes as we switch between the two.
-  const bool stacking = (layout_type_ == TAB_STRIP_LAYOUT_STACKED) ||
-      IsStackingDraggedTabs();
+  const bool stacking = stacked_layout_ || IsStackingDraggedTabs();
 
   const chrome::HostDesktopType host_desktop_type =
       chrome::GetHostDesktopTypeForNativeView(GetWidget()->GetNativeView());
@@ -1165,7 +1160,7 @@ void TabStrip::PaintChildren(gfx::Canvas* canvas) {
   if (inactive_tab_alpha < 255)
     canvas->SaveLayerAlpha(inactive_tab_alpha);
 
-  PaintClosingTabs(canvas, tab_count());
+  PaintClosingTabs(canvas, tab_count(), cull_set);
 
   for (int i = tab_count() - 1; i >= 0; --i) {
     Tab* tab = tab_at(i);
@@ -1182,7 +1177,7 @@ void TabStrip::PaintChildren(gfx::Canvas* canvas) {
     } else if (!tab->IsActive()) {
       if (!tab->IsSelected()) {
         if (!stacking)
-          tab->Paint(canvas);
+          tab->Paint(canvas, cull_set);
       } else {
         selected_tabs.push_back(tab);
       }
@@ -1190,19 +1185,19 @@ void TabStrip::PaintChildren(gfx::Canvas* canvas) {
       active_tab = tab;
       active_tab_index = i;
     }
-    PaintClosingTabs(canvas, i);
+    PaintClosingTabs(canvas, i, cull_set);
   }
 
   // Draw from the left and then the right if we're in touch mode.
   if (stacking && active_tab_index >= 0) {
     for (int i = 0; i < active_tab_index; ++i) {
       Tab* tab = tab_at(i);
-      tab->Paint(canvas);
+      tab->Paint(canvas, cull_set);
     }
 
     for (int i = tab_count() - 1; i > active_tab_index; --i) {
       Tab* tab = tab_at(i);
-      tab->Paint(canvas);
+      tab->Paint(canvas, cull_set);
     }
   }
   if (inactive_tab_alpha < 255)
@@ -1226,33 +1221,33 @@ void TabStrip::PaintChildren(gfx::Canvas* canvas) {
   // Now selected but not active. We don't want these dimmed if using native
   // frame, so they're painted after initial pass.
   for (size_t i = 0; i < selected_tabs.size(); ++i)
-    selected_tabs[i]->Paint(canvas);
+    selected_tabs[i]->Paint(canvas, cull_set);
 
   // Next comes the active tab.
   if (active_tab && !is_dragging)
-    active_tab->Paint(canvas);
+    active_tab->Paint(canvas, cull_set);
 
   // Paint the New Tab button.
   if (inactive_tab_alpha < 255)
     canvas->SaveLayerAlpha(inactive_tab_alpha);
-  newtab_button_->Paint(canvas);
+  newtab_button_->Paint(canvas, cull_set);
   if (inactive_tab_alpha < 255)
     canvas->Restore();
 
   // And the dragged tabs.
   for (size_t i = 0; i < tabs_dragging.size(); ++i)
-    tabs_dragging[i]->Paint(canvas);
+    tabs_dragging[i]->Paint(canvas, cull_set);
 
   // If the active tab is being dragged, it goes last.
   if (active_tab && is_dragging)
-    active_tab->Paint(canvas);
+    active_tab->Paint(canvas, cull_set);
 }
 
 const char* TabStrip::GetClassName() const {
   return kViewClassName;
 }
 
-gfx::Size TabStrip::GetPreferredSize() {
+gfx::Size TabStrip::GetPreferredSize() const {
   // For stacked tabs the minimum size is calculated as the size needed to
   // handle showing any number of tabs. Otherwise report the minimum width as
   // the size required for a single selected tab plus the new tab button. Don't
@@ -1452,7 +1447,7 @@ const views::View* TabStrip::GetViewByID(int view_id) const {
 }
 
 bool TabStrip::OnMousePressed(const ui::MouseEvent& event) {
-  UpdateLayoutTypeFromMouseEvent(this, event);
+  UpdateStackedLayoutFromMouseEvent(this, event);
   // We can't return true here, else clicking in an empty area won't drag the
   // window.
   return false;
@@ -1465,7 +1460,7 @@ bool TabStrip::OnMouseDragged(const ui::MouseEvent& event) {
 
 void TabStrip::OnMouseReleased(const ui::MouseEvent& event) {
   EndDrag(END_DRAG_COMPLETE);
-  UpdateLayoutTypeFromMouseEvent(this, event);
+  UpdateStackedLayoutFromMouseEvent(this, event);
 }
 
 void TabStrip::OnMouseCaptureLost() {
@@ -1473,7 +1468,7 @@ void TabStrip::OnMouseCaptureLost() {
 }
 
 void TabStrip::OnMouseMoved(const ui::MouseEvent& event) {
-  UpdateLayoutTypeFromMouseEvent(this, event);
+  UpdateStackedLayoutFromMouseEvent(this, event);
 }
 
 void TabStrip::OnMouseEntered(const ui::MouseEvent& event) {
@@ -1488,8 +1483,8 @@ void TabStrip::OnGestureEvent(ui::GestureEvent* event) {
     case ui::ET_GESTURE_END:
       EndDrag(END_DRAG_COMPLETE);
       if (adjust_layout_) {
-        SetLayoutType(TAB_STRIP_LAYOUT_STACKED, true);
-        controller_->LayoutTypeMaybeChanged();
+        SetStackedLayout(true);
+        controller_->StackedLayoutMaybeChanged();
       }
       break;
 
@@ -1539,7 +1534,7 @@ void TabStrip::OnGestureEvent(ui::GestureEvent* event) {
 
 void TabStrip::Init() {
   set_id(VIEW_ID_TAB_STRIP);
-  // So we get enter/exit on children to switch layout type.
+  // So we get enter/exit on children to switch stacked layout on and off.
   set_notify_enter_exit_on_child(true);
   newtab_button_bounds_.SetRect(0,
                                 0,
@@ -1975,31 +1970,33 @@ TabDragController* TabStrip::ReleaseDragController() {
   return drag_controller_.release();
 }
 
-void TabStrip::PaintClosingTabs(gfx::Canvas* canvas, int index) {
+void TabStrip::PaintClosingTabs(gfx::Canvas* canvas,
+                                int index,
+                                const views::CullSet& cull_set) {
   if (tabs_closing_map_.find(index) == tabs_closing_map_.end())
     return;
 
   const std::vector<Tab*>& tabs = tabs_closing_map_[index];
   for (std::vector<Tab*>::const_reverse_iterator i(tabs.rbegin());
        i != tabs.rend(); ++i) {
-    (*i)->Paint(canvas);
+    (*i)->Paint(canvas, cull_set);
   }
 }
 
-void TabStrip::UpdateLayoutTypeFromMouseEvent(views::View* source,
-                                              const ui::MouseEvent& event) {
-  if (!GetAdjustLayout())
+void TabStrip::UpdateStackedLayoutFromMouseEvent(views::View* source,
+                                                 const ui::MouseEvent& event) {
+  if (!adjust_layout_)
     return;
 
-  // The following code attempts to switch to TAB_STRIP_LAYOUT_SHRINK when the
-  // mouse exits the tabstrip (or the mouse is pressed on a stacked tab) and
-  // TAB_STRIP_LAYOUT_STACKED when a touch device is used. This is made
-  // problematic by windows generating mouse move events that do not clearly
-  // indicate the move is the result of a touch device. This assumes a real
-  // mouse is used if |kMouseMoveCountBeforeConsiderReal| mouse move events are
-  // received within the time window |kMouseMoveTimeMS|.  At the time we get a
-  // mouse press we know whether its from a touch device or not, but we don't
-  // layout then else everything shifts. Instead we wait for the release.
+  // The following code attempts to switch to shrink (not stacked) layout when
+  // the mouse exits the tabstrip (or the mouse is pressed on a stacked tab) and
+  // to stacked layout when a touch device is used. This is made problematic by
+  // windows generating mouse move events that do not clearly indicate the move
+  // is the result of a touch device. This assumes a real mouse is used if
+  // |kMouseMoveCountBeforeConsiderReal| mouse move events are received within
+  // the time window |kMouseMoveTimeMS|.  At the time we get a mouse press we
+  // know whether its from a touch device or not, but we don't layout then else
+  // everything shifts. Instead we wait for the release.
   //
   // TODO(sky): revisit this when touch events are really plumbed through.
 
@@ -2013,8 +2010,8 @@ void TabStrip::UpdateLayoutTypeFromMouseEvent(views::View* source,
         views::View::ConvertPointToTarget(source, this, &tab_strip_point);
         Tab* tab = FindTabForEvent(tab_strip_point);
         if (tab && touch_layout_->IsStacked(GetModelIndexOfTab(tab))) {
-          SetLayoutType(TAB_STRIP_LAYOUT_SHRINK, true);
-          controller_->LayoutTypeMaybeChanged();
+          SetStackedLayout(false);
+          controller_->StackedLayoutMaybeChanged();
         }
       }
       break;
@@ -2053,8 +2050,8 @@ void TabStrip::UpdateLayoutTypeFromMouseEvent(views::View* source,
       mouse_move_count_ = 0;
       last_mouse_move_time_ = base::TimeTicks();
       if ((event.flags() & ui::EF_FROM_TOUCH) == ui::EF_FROM_TOUCH) {
-        SetLayoutType(TAB_STRIP_LAYOUT_STACKED, true);
-        controller_->LayoutTypeMaybeChanged();
+        SetStackedLayout(true);
+        controller_->StackedLayoutMaybeChanged();
       }
       break;
     }
@@ -2348,7 +2345,6 @@ TabStrip::DropInfo::DropInfo(int drop_index,
   params.keep_on_top = true;
   params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   params.accept_events = false;
-  params.can_activate = false;
   params.bounds = gfx::Rect(drop_indicator_width, drop_indicator_height);
   params.context = context->GetNativeView();
   arrow_window->Init(params);
@@ -2613,7 +2609,7 @@ void TabStrip::SwapLayoutIfNecessary() {
 }
 
 bool TabStrip::NeedsTouchLayout() const {
-  if (layout_type_ == TAB_STRIP_LAYOUT_SHRINK)
+  if (!stacked_layout_)
     return false;
 
   int mini_tab_count = GetMiniTabCount();
@@ -2627,11 +2623,11 @@ bool TabStrip::NeedsTouchLayout() const {
 }
 
 void TabStrip::SetResetToShrinkOnExit(bool value) {
-  if (!GetAdjustLayout())
+  if (!adjust_layout_)
     return;
 
-  if (value && layout_type_ == TAB_STRIP_LAYOUT_SHRINK)
-    value = false;  // We're already at TAB_STRIP_LAYOUT_SHRINK.
+  if (value && !stacked_layout_)
+    value = false;  // We're already using shrink (not stacked) layout.
 
   if (value == reset_to_shrink_on_exit_)
     return;
@@ -2642,11 +2638,4 @@ void TabStrip::SetResetToShrinkOnExit(bool value) {
     AddMessageLoopObserver();
   else
     RemoveMessageLoopObserver();
-}
-
-bool TabStrip::GetAdjustLayout() const {
-  if (!adjust_layout_)
-    return false;
-  return chrome::GetHostDesktopTypeForNativeView(
-      GetWidget()->GetNativeView()) == chrome::HOST_DESKTOP_TYPE_ASH;
 }

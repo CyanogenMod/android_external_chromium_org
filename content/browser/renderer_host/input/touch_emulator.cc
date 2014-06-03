@@ -32,6 +32,8 @@ ui::GestureProvider::Config GetGestureProviderConfig() {
   // requested by renderer.
   ui::GestureProvider::Config config = ui::DefaultGestureProviderConfig();
   config.gesture_begin_end_types_enabled = false;
+  config.gesture_detector_config.swipe_enabled = false;
+  config.gesture_detector_config.two_finger_tap_enabled = false;
   return config;
 }
 
@@ -163,8 +165,8 @@ bool TouchEmulator::HandleMouseWheelEvent(const WebMouseWheelEvent& event) {
   if (!enabled_)
     return false;
 
-  // No mouse wheel events for the renderer.
-  return true;
+  // Send mouse wheel for easy scrolling when there is no active touch.
+  return touch_active_;
 }
 
 bool TouchEmulator::HandleKeyboardEvent(const WebKeyboardEvent& event) {
@@ -202,6 +204,11 @@ void TouchEmulator::OnGestureEvent(const ui::GestureEventData& gesture) {
       CreateWebGestureEventFromGestureEventData(gesture);
 
   switch (gesture_event.type) {
+    case WebInputEvent::Undefined:
+      NOTREACHED() << "Undefined WebInputEvent type";
+      // Bail without sending the junk event to the client.
+      return;
+
     case WebInputEvent::GestureScrollBegin:
       client_->ForwardGestureEvent(gesture_event);
       // PinchBegin must always follow ScrollBegin.
@@ -351,6 +358,7 @@ bool TouchEmulator::FillTouchEventAndPoint(const WebMouseEvent& mouse_event) {
       break;
     case WebInputEvent::MouseUp:
       eventType = WebInputEvent::TouchEnd;
+      touch_active_ = false;
       break;
     default:
       eventType = WebInputEvent::Undefined;

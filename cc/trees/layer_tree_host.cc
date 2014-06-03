@@ -96,7 +96,6 @@ LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
       client_(client),
       source_frame_number_(0),
       rendering_stats_instrumentation_(RenderingStatsInstrumentation::Create()),
-      output_surface_can_be_initialized_(true),
       output_surface_lost_(true),
       num_failed_recreate_attempts_(0),
       settings_(settings),
@@ -107,9 +106,9 @@ LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
       page_scale_factor_(1.f),
       min_page_scale_factor_(1.f),
       max_page_scale_factor_(1.f),
-      trigger_idle_updates_(true),
       has_gpu_rasterization_trigger_(false),
       content_is_suitable_for_gpu_rasterization_(true),
+      gpu_rasterization_histogram_recorded_(false),
       background_color_(SK_ColorWHITE),
       has_transparent_background_(false),
       partial_texture_update_requests_(0),
@@ -350,6 +349,9 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
 
   sync_tree->PassSwapPromises(&swap_promise_list_);
 
+  host_impl->SetUseGpuRasterization(UseGpuRasterization());
+  RecordGpuRasterizationHistogram();
+
   host_impl->SetViewportSize(device_viewport_size_);
   host_impl->SetOverdrawBottomHeight(overdraw_bottom_height_);
   host_impl->SetDeviceScaleFactor(device_scale_factor_);
@@ -432,6 +434,7 @@ scoped_ptr<LayerTreeHostImpl> LayerTreeHost::CreateLayerTreeHostImpl(
                                 rendering_stats_instrumentation_.get(),
                                 shared_bitmap_manager_,
                                 id_);
+  host_impl->SetUseGpuRasterization(UseGpuRasterization());
   shared_bitmap_manager_ = NULL;
   if (settings_.calculate_top_controls_position &&
       host_impl->top_controls_manager()) {
@@ -452,15 +455,6 @@ void LayerTreeHost::DidLoseOutputSurface() {
   num_failed_recreate_attempts_ = 0;
   output_surface_lost_ = true;
   SetNeedsCommit();
-}
-
-bool LayerTreeHost::CompositeAndReadback(
-    void* pixels,
-    const gfx::Rect& rect_in_device_viewport) {
-  trigger_idle_updates_ = false;
-  bool ret = proxy_->CompositeAndReadback(pixels, rect_in_device_viewport);
-  trigger_idle_updates_ = true;
-  return ret;
 }
 
 void LayerTreeHost::FinishAllRendering() {
@@ -593,6 +587,7 @@ void LayerTreeHost::SetRootLayer(scoped_refptr<Layer> root_layer) {
   // Reset gpu rasterization flag.
   // This flag is sticky until a new tree comes along.
   content_is_suitable_for_gpu_rasterization_ = true;
+  gpu_rasterization_histogram_recorded_ = false;
 
   SetNeedsFullTreeSync();
 }
@@ -704,20 +699,15 @@ void LayerTreeHost::NotifyInputThrottledUntilCommit() {
 }
 
 void LayerTreeHost::Composite(base::TimeTicks frame_begin_time) {
-  if (!proxy_->HasImplThread())
-    static_cast<SingleThreadProxy*>(proxy_.get())->CompositeImmediately(
-        frame_begin_time);
-  else
-    SetNeedsCommit();
-}
-
-bool LayerTreeHost::InitializeOutputSurfaceIfNeeded() {
-  if (!output_surface_can_be_initialized_)
-    return false;
+  DCHECK(!proxy_->HasImplThread());
+  SingleThreadProxy* proxy = static_cast<SingleThreadProxy*>(proxy_.get());
 
   if (output_surface_lost_)
-    proxy_->CreateAndInitializeOutputSurface();
-  return !output_surface_lost_;
+    proxy->CreateAndInitializeOutputSurface();
+  if (output_surface_lost_)
+    return;
+
+  proxy->CompositeImmediately(frame_begin_time);
 }
 
 bool LayerTreeHost::UpdateLayers(ResourceUpdateQueue* queue) {
@@ -749,6 +739,31 @@ static Layer* FindFirstScrollableLayer(Layer* layer) {
   }
 
   return NULL;
+}
+
+void LayerTreeHost::RecordGpuRasterizationHistogram() {
+  // Gpu rasterization is only supported when impl-side painting is enabled.
+  if (gpu_rasterization_histogram_recorded_ || !settings_.impl_side_painting)
+    return;
+
+  // Record how widely gpu rasterization is enabled.
+  // This number takes device/gpu whitelisting/backlisting into account.
+  // Note that we do not consider the forced gpu rasterization mode, which is
+  // mostly used for debugging purposes.
+  UMA_HISTOGRAM_BOOLEAN("Renderer4.GpuRasterizationEnabled",
+                        settings_.gpu_rasterization_enabled);
+  if (settings_.gpu_rasterization_enabled) {
+    UMA_HISTOGRAM_BOOLEAN("Renderer4.GpuRasterizationTriggered",
+                          has_gpu_rasterization_trigger_);
+    UMA_HISTOGRAM_BOOLEAN("Renderer4.GpuRasterizationSuitableContent",
+                          content_is_suitable_for_gpu_rasterization_);
+    // Record how many pages actually get gpu rasterization when enabled.
+    UMA_HISTOGRAM_BOOLEAN("Renderer4.GpuRasterizationUsed",
+                          (has_gpu_rasterization_trigger_ &&
+                           content_is_suitable_for_gpu_rasterization_));
+  }
+
+  gpu_rasterization_histogram_recorded_ = true;
 }
 
 void LayerTreeHost::CalculateLCDTextMetricsCallback(Layer* layer) {
@@ -838,7 +853,7 @@ bool LayerTreeHost::UpdateLayers(Layer* root_layer,
   bool need_more_updates = false;
   PaintLayerContents(
       update_list, queue, &did_paint_content, &need_more_updates);
-  if (trigger_idle_updates_ && need_more_updates) {
+  if (need_more_updates) {
     TRACE_EVENT0("cc", "LayerTreeHost::UpdateLayers::posting prepaint task");
     prepaint_callback_.Reset(base::Bind(&LayerTreeHost::TriggerPrepaint,
                                         base::Unretained(this)));
@@ -999,7 +1014,7 @@ void LayerTreeHost::PaintLayerContents(
     if (it.represents_target_render_surface()) {
       PaintMasksForRenderSurface(
           *it, queue, did_paint_content, need_more_updates);
-    } else if (it.represents_itself() && it->DrawsContent()) {
+    } else if (it.represents_itself()) {
       DCHECK(!it->paint_properties().bounds.IsEmpty());
       *did_paint_content |= it->Update(queue, &occlusion_tracker);
       *need_more_updates |= it->NeedMoreUpdates();
@@ -1148,14 +1163,12 @@ scoped_ptr<base::Value> LayerTreeHost::AsValue() const {
   return state.PassAs<base::Value>();
 }
 
-void LayerTreeHost::AnimateLayers(base::TimeTicks time) {
+void LayerTreeHost::AnimateLayers(base::TimeTicks monotonic_time) {
   if (!settings_.accelerated_animation_enabled ||
       animation_registrar_->active_animation_controllers().empty())
     return;
 
   TRACE_EVENT0("cc", "LayerTreeHost::AnimateLayers");
-
-  double monotonic_time = (time - base::TimeTicks()).InSecondsF();
 
   AnimationRegistrar::AnimationControllerMap copy =
       animation_registrar_->active_animation_controllers();
@@ -1233,12 +1246,17 @@ void LayerTreeHost::RegisterViewportLayers(
   outer_viewport_scroll_layer_ = outer_viewport_scroll_layer;
 }
 
-bool LayerTreeHost::ScheduleMicroBenchmark(
+int LayerTreeHost::ScheduleMicroBenchmark(
     const std::string& benchmark_name,
     scoped_ptr<base::Value> value,
     const MicroBenchmark::DoneCallback& callback) {
   return micro_benchmark_controller_.ScheduleRun(
       benchmark_name, value.Pass(), callback);
+}
+
+bool LayerTreeHost::SendMessageToMicroBenchmark(int id,
+                                                scoped_ptr<base::Value> value) {
+  return micro_benchmark_controller_.SendMessage(id, value.Pass());
 }
 
 void LayerTreeHost::InsertSwapPromiseMonitor(SwapPromiseMonitor* monitor) {

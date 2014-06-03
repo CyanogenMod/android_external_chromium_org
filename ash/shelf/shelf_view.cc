@@ -454,9 +454,16 @@ void ShelfView::SchedulePaintForAllButtons() {
 
 gfx::Rect ShelfView::GetIdealBoundsOfItemIcon(ShelfID id) {
   int index = model_->ItemIndexByID(id);
-  if (index == -1 || (index > last_visible_index_ &&
-                      index < model_->FirstPanelIndex()))
+  if (index == -1)
     return gfx::Rect();
+  // Map all items from overflow area to the overflow button. Note that the
+  // section between last_index_hidden_ and model_->FirstPanelIndex() is the
+  // list of invisible panel items. However, these items are currently nowhere
+  // represented and get dropped instead - see (crbug.com/378907). As such there
+  // is no way to address them or place them. We therefore move them over the
+  // overflow button.
+  if (index > last_visible_index_ && index < model_->FirstPanelIndex())
+    index = last_visible_index_ + 1;
   const gfx::Rect& ideal_bounds(view_model_->ideal_bounds(index));
   DCHECK_NE(TYPE_APP_LIST, model_->items()[index].type);
   ShelfButton* button = static_cast<ShelfButton*>(view_model_->view_at(index));
@@ -702,7 +709,7 @@ void ShelfView::UpdateAllButtonsVisibilityInOverflowMode() {
   }
 }
 
-void ShelfView::CalculateIdealBounds(IdealBounds* bounds) {
+void ShelfView::CalculateIdealBounds(IdealBounds* bounds) const {
   int available_size = layout_manager_->PrimaryAxisValue(width(), height());
   DCHECK(model_->item_count() == view_model_->view_size());
   if (!available_size)
@@ -732,7 +739,7 @@ void ShelfView::CalculateIdealBounds(IdealBounds* bounds) {
   }
 
   if (is_overflow_mode()) {
-    UpdateAllButtonsVisibilityInOverflowMode();
+    const_cast<ShelfView*>(this)->UpdateAllButtonsVisibilityInOverflowMode();
     return;
   }
 
@@ -775,7 +782,7 @@ void ShelfView::CalculateIdealBounds(IdealBounds* bounds) {
     --last_visible_index_;
   for (int i = 0; i < view_model_->view_size(); ++i) {
     bool visible = i <= last_visible_index_ || i > last_hidden_index_;
-    // To receive drag event continously from |drag_view_| during the dragging
+    // To receive drag event continuously from |drag_view_| during the dragging
     // off from the shelf, don't make |drag_view_| invisible. It will be
     // eventually invisible and removed from the |view_model_| by
     // FinalizeRipOffDrag().
@@ -1162,7 +1169,7 @@ void ShelfView::FinalizeRipOffDrag(bool cancel) {
   DestroyDragIconProxy();
 }
 
-ShelfView::RemovableState ShelfView::RemovableByRipOff(int index) {
+ShelfView::RemovableState ShelfView::RemovableByRipOff(int index) const {
   DCHECK(index >= 0 && index < model_->item_count());
   ShelfItemType type = model_->items()[index].type;
   if (type == TYPE_APP_LIST || type == TYPE_DIALOG || !delegate_->CanPin())
@@ -1253,7 +1260,7 @@ void ShelfView::StartFadeInLastVisibleItem() {
   }
 }
 
-void ShelfView::UpdateOverflowRange(ShelfView* overflow_view) {
+void ShelfView::UpdateOverflowRange(ShelfView* overflow_view) const {
   const int first_overflow_index = last_visible_index_ + 1;
   const int last_overflow_index = last_hidden_index_;
   DCHECK_LE(first_overflow_index, last_overflow_index);
@@ -1356,7 +1363,7 @@ int ShelfView::CancelDrag(int modified_index) {
   return modified_view ? view_model_->GetIndexOfView(modified_view) : -1;
 }
 
-gfx::Size ShelfView::GetPreferredSize() {
+gfx::Size ShelfView::GetPreferredSize() const {
   IdealBounds ideal_bounds;
   CalculateIdealBounds(&ideal_bounds);
 
@@ -1583,8 +1590,8 @@ void ShelfView::PointerDraggedOnButton(views::View* view,
   // To prepare all drag types (moving an item in the shelf and dragging off),
   // we should check the x-axis and y-axis offset.
   if (!dragging() && drag_view_ &&
-      ((abs(event.x() - drag_offset_) >= kMinimumDragDistance) ||
-       (abs(event.y() - drag_offset_) >= kMinimumDragDistance))) {
+      ((std::abs(event.x() - drag_offset_) >= kMinimumDragDistance) ||
+       (std::abs(event.y() - drag_offset_) >= kMinimumDragDistance))) {
     PrepareForDrag(pointer, event);
   }
   if (drag_pointer_ == pointer)
@@ -1706,18 +1713,16 @@ void ShelfView::ButtonPressed(views::Button* sender, const ui::Event& event) {
 bool ShelfView::ShowListMenuForView(const ShelfItem& item,
                                     views::View* source,
                                     const ui::Event& event) {
-  scoped_ptr<ShelfMenuModel> menu_model;
   ShelfItemDelegate* item_delegate =
       item_manager_->GetShelfItemDelegate(item.id);
-  menu_model.reset(item_delegate->CreateApplicationMenu(event.flags()));
+  list_menu_model_.reset(item_delegate->CreateApplicationMenu(event.flags()));
 
   // Make sure we have a menu and it has at least two items in addition to the
   // application title and the 3 spacing separators.
-  if (!menu_model.get() || menu_model->GetItemCount() <= 5)
+  if (!list_menu_model_.get() || list_menu_model_->GetItemCount() <= 5)
     return false;
 
-  ShowMenu(scoped_ptr<views::MenuModelAdapter>(
-               new ShelfMenuModelAdapter(menu_model.get())),
+  ShowMenu(list_menu_model_.get(),
            source,
            gfx::Point(),
            false,
@@ -1734,34 +1739,31 @@ void ShelfView::ShowContextMenuForView(views::View* source,
     return;
   }
 
-  scoped_ptr<ui::MenuModel> menu_model;
   ShelfItemDelegate* item_delegate = item_manager_->GetShelfItemDelegate(
       model_->items()[view_index].id);
-  menu_model.reset(item_delegate->CreateContextMenu(
+  context_menu_model_.reset(item_delegate->CreateContextMenu(
       source->GetWidget()->GetNativeView()->GetRootWindow()));
-  if (!menu_model)
+  if (!context_menu_model_)
     return;
 
   base::AutoReset<ShelfID> reseter(
       &context_menu_id_,
       view_index == -1 ? 0 : model_->items()[view_index].id);
 
-  ShowMenu(scoped_ptr<views::MenuModelAdapter>(
-               new views::MenuModelAdapter(menu_model.get())),
+  ShowMenu(context_menu_model_.get(),
            source,
            point,
            true,
            source_type);
 }
 
-void ShelfView::ShowMenu(scoped_ptr<views::MenuModelAdapter> menu_model_adapter,
+void ShelfView::ShowMenu(ui::MenuModel* menu_model,
                          views::View* source,
                          const gfx::Point& click_point,
                          bool context_menu,
                          ui::MenuSourceType source_type) {
   closing_event_time_ = base::TimeDelta();
-  launcher_menu_runner_.reset(
-      new views::MenuRunner(menu_model_adapter->CreateMenu()));
+  launcher_menu_runner_.reset(new views::MenuRunner(menu_model));
 
   ScopedTargetRootWindow scoped_target(
       source->GetWidget()->GetNativeView()->GetRootWindow());

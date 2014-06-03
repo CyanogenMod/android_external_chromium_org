@@ -119,7 +119,7 @@ bool ParseHelper(Extension* extension,
 
   // Verify feature availability of permissions.
   std::vector<APIPermission::ID> to_remove;
-  FeatureProvider* permission_features =
+  const FeatureProvider* permission_features =
       FeatureProvider::GetPermissionFeatures();
   for (APIPermissionSet::const_iterator iter = api_permissions->begin();
        iter != api_permissions->end(); ++iter) {
@@ -180,7 +180,7 @@ bool ParseHelper(Extension* extension,
       // to match all paths.
       pattern.SetPath("/*");
       int valid_schemes = pattern.valid_schemes();
-      if (pattern.MatchesScheme(content::kFileScheme) &&
+      if (pattern.MatchesScheme(url::kFileScheme) &&
           !PermissionsData::CanExecuteScriptEverywhere(extension)) {
         extension->set_wants_file_access(true);
         if (!(extension->creation_flags() & Extension::ALLOW_FILE_ACCESS))
@@ -236,6 +236,25 @@ bool ParseHelper(Extension* extension,
 bool IsTrustedId(const std::string& extension_id) {
   // See http://b/4946060 for more details.
   return extension_id == std::string("nckgahadagoaajjgafhacjanaoiihapd");
+}
+
+// Returns true if the |extension| has tab-specific permission to operate on
+// the tab specified by |tab_id| with the given |url|.
+// Note that if this returns false, it doesn't mean the extension can't run on
+// the given tab, only that it does not have tab-specific permission to do so.
+bool HasTabSpecificPermissionToExecuteScript(
+    const Extension* extension,
+    int tab_id,
+    const GURL& url) {
+  if (tab_id >= 0) {
+    scoped_refptr<const PermissionSet> tab_permissions =
+        PermissionsData::GetTabSpecificPermissions(extension, tab_id);
+    if (tab_permissions.get() &&
+        tab_permissions->explicit_hosts().MatchesSecurityOrigin(url)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 }  // namespace
@@ -490,15 +509,8 @@ bool PermissionsData::CanExecuteScriptOnPage(const Extension* extension,
     return false;
   }
 
-  // If a tab ID is specified, try the tab-specific permissions.
-  if (tab_id >= 0) {
-    scoped_refptr<const PermissionSet> tab_permissions =
-        GetTabSpecificPermissions(extension, tab_id);
-    if (tab_permissions.get() &&
-        tab_permissions->explicit_hosts().MatchesSecurityOrigin(document_url)) {
-      return true;
-    }
-  }
+  if (HasTabSpecificPermissionToExecuteScript(extension, tab_id, top_frame_url))
+    return true;
 
   bool can_access = false;
 
@@ -560,6 +572,37 @@ bool PermissionsData::CanCaptureVisiblePage(const Extension* extension,
   return false;
 }
 
+// static
+bool PermissionsData::RequiresActionForScriptExecution(
+    const Extension* extension) {
+  return RequiresActionForScriptExecution(extension, -1, GURL());
+}
+
+// static
+bool PermissionsData::RequiresActionForScriptExecution(
+    const Extension* extension,
+    int tab_id,
+    const GURL& url) {
+  // For now, the user should be notified when an extension with all hosts
+  // permission tries to execute a script on a page. Exceptions for policy-
+  // enabled and component extensions, and extensions which are whitelisted to
+  // execute scripts everywhere.
+  if (!extension->ShouldDisplayInExtensionSettings() ||
+      Manifest::IsPolicyLocation(extension->location()) ||
+      Manifest::IsComponentLocation(extension->location()) ||
+      CanExecuteScriptEverywhere(extension) ||
+      !ShouldWarnAllHosts(extension)) {
+    return false;
+  }
+
+  // If the extension has explicit permission to run on the given tab, then
+  // we don't need to alert the user.
+  if (HasTabSpecificPermissionToExecuteScript(extension, tab_id, url))
+    return false;
+
+  return true;
+}
+
 bool PermissionsData::ParsePermissions(Extension* extension,
                                        base::string16* error) {
   initial_required_permissions_.reset(new InitialPermissions);
@@ -609,6 +652,11 @@ void PermissionsData::FinalizePermissions(Extension* extension) {
 
   initial_required_permissions_.reset();
   initial_optional_permissions_.reset();
+}
+
+bool PermissionsData::ShouldWarnAllHosts(const Extension* extension) {
+  base::AutoLock auto_lock(extension->permissions_data()->runtime_lock_);
+  return PermissionsData::GetActivePermissions(extension)->ShouldWarnAllHosts();
 }
 
 }  // namespace extensions

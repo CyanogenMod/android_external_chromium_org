@@ -46,8 +46,9 @@ void ReadFile(
 
 }  // namespace
 
-DevToolsTracingHandler::DevToolsTracingHandler()
-    : weak_factory_(this) {
+DevToolsTracingHandler::DevToolsTracingHandler(
+    DevToolsTracingHandler::Target target)
+    : weak_factory_(this), target_(target) {
   RegisterCommandHandler(devtools::Tracing::start::kName,
                          base::Bind(&DevToolsTracingHandler::OnStart,
                                     base::Unretained(this)));
@@ -168,10 +169,26 @@ DevToolsTracingHandler::OnStart(
     }
   }
 
-  TracingController::GetInstance()->EnableRecording(
-      categories, options, TracingController::EnableRecordingDoneCallback());
+  // If inspected target is a render process Tracing.start will be handled by
+  // tracing agent in the renderer.
+  if (target_ == Renderer) {
+    TracingController::GetInstance()->EnableRecording(
+        categories, options, TracingController::EnableRecordingDoneCallback());
+    return NULL;
+  }
 
-  return NULL;
+  TracingController::GetInstance()->EnableRecording(
+      categories, options,
+      base::Bind(&DevToolsTracingHandler::OnTracingStarted,
+                 weak_factory_.GetWeakPtr(),
+                 command));
+
+  return command->AsyncResponsePromise();
+}
+
+void DevToolsTracingHandler::OnTracingStarted(
+    scoped_refptr<DevToolsProtocol::Command> command) {
+  SendAsyncResponse(command->SuccessResponse(NULL));
 }
 
 void DevToolsTracingHandler::OnBufferUsage(float usage) {

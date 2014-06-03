@@ -19,7 +19,7 @@ namespace mojo {
 // The default factory that creates in-process contexts.
 class ContextFactoryMojo : public ui::ContextFactory {
  public:
-  explicit ContextFactoryMojo(ScopedMessagePipeHandle gles2_handle);
+  explicit ContextFactoryMojo(ScopedMessagePipeHandle command_buffer_handle);
   virtual ~ContextFactoryMojo();
 
   // ContextFactory implementation
@@ -36,12 +36,13 @@ class ContextFactoryMojo : public ui::ContextFactory {
   virtual void RemoveCompositor(ui::Compositor* compositor) OVERRIDE;
   virtual bool DoesCreateTestContexts() OVERRIDE;
   virtual cc::SharedBitmapManager* GetSharedBitmapManager() OVERRIDE;
+  virtual base::MessageLoopProxy* GetCompositorMessageLoop() OVERRIDE;
 
  private:
   scoped_refptr<webkit::gpu::ContextProviderInProcess>
       shared_main_thread_contexts_;
 
-  ScopedMessagePipeHandle gles2_handle_;
+  ScopedMessagePipeHandle command_buffer_handle_;
 
   DISALLOW_COPY_AND_ASSIGN(ContextFactoryMojo);
 };

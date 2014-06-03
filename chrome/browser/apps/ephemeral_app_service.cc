@@ -18,6 +18,7 @@
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_util.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
 
@@ -61,15 +62,14 @@ EphemeralAppService* EphemeralAppService::Get(Profile* profile) {
 
 EphemeralAppService::EphemeralAppService(Profile* profile)
     : profile_(profile),
+      extension_registry_observer_(this),
       ephemeral_app_count_(-1) {
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
             switches::kEnableEphemeralApps))
     return;
 
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_INSTALLED,
-                 content::Source<Profile>(profile_));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
-                 content::Source<Profile>(profile_));
+  extension_registry_observer_.Add(
+      extensions::ExtensionRegistry::Get(profile_));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSIONS_READY,
                  content::Source<Profile>(profile_));
   registrar_.Add(this, chrome::NOTIFICATION_PROFILE_DESTROYED,
@@ -88,26 +88,6 @@ void EphemeralAppService::Observe(
       Init();
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_INSTALLED: {
-      const Extension* extension =
-          content::Details<const InstalledExtensionInfo>(details)->extension;
-      DCHECK(extension);
-      if (extension->is_ephemeral()) {
-        ++ephemeral_app_count_;
-        if (ephemeral_app_count_ >= kGarbageCollectAppsTriggerCount)
-          TriggerGarbageCollect(
-              base::TimeDelta::FromSeconds(kGarbageCollectAppsInstallDelay));
-      }
-      break;
-    }
-    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED: {
-      const Extension* extension =
-          content::Details<const Extension>(details).ptr();
-      DCHECK(extension);
-      if (extension->is_ephemeral())
-        --ephemeral_app_count_;
-      break;
-    }
     case chrome::NOTIFICATION_PROFILE_DESTROYED: {
       // Ideally we need to know when the extension system is shutting down.
       garbage_collect_apps_timer_.Stop();
@@ -115,7 +95,36 @@ void EphemeralAppService::Observe(
     }
     default:
       NOTREACHED();
-  };
+  }
+}
+
+void EphemeralAppService::OnExtensionWillBeInstalled(
+    content::BrowserContext* browser_context,
+    const extensions::Extension* extension,
+    bool is_update,
+    bool from_ephemeral,
+    const std::string& old_name) {
+  if (from_ephemeral) {
+    // An ephemeral app was just promoted to a regular installed app.
+    --ephemeral_app_count_;
+    DCHECK_GE(ephemeral_app_count_, 0);
+  } else if (!is_update &&
+             extensions::util::IsEphemeralApp(extension->id(), profile_)) {
+    ++ephemeral_app_count_;
+    if (ephemeral_app_count_ >= kGarbageCollectAppsTriggerCount) {
+      TriggerGarbageCollect(
+          base::TimeDelta::FromSeconds(kGarbageCollectAppsInstallDelay));
+    }
+  }
+}
+
+void EphemeralAppService::OnExtensionUninstalled(
+    content::BrowserContext* browser_context,
+    const extensions::Extension* extension) {
+  if (extensions::util::IsEphemeralApp(extension->id(), profile_)) {
+    --ephemeral_app_count_;
+    DCHECK_GE(ephemeral_app_count_, 0);
+  }
 }
 
 void EphemeralAppService::Init() {
@@ -134,12 +143,14 @@ void EphemeralAppService::InitEphemeralAppCount() {
   scoped_ptr<ExtensionSet> extensions =
       extensions::ExtensionRegistry::Get(profile_)
           ->GenerateInstalledExtensionsSet();
+  ExtensionPrefs* prefs = ExtensionPrefs::Get(profile_);
+  DCHECK(prefs);
 
   ephemeral_app_count_ = 0;
   for (ExtensionSet::const_iterator it = extensions->begin();
        it != extensions->end(); ++it) {
     const Extension* extension = *it;
-    if (extension->is_ephemeral())
+    if (prefs->IsEphemeralApp(extension->id()))
       ++ephemeral_app_count_;
   }
 }
@@ -159,6 +170,7 @@ void EphemeralAppService::GarbageCollectApps() {
       extensions::ExtensionRegistry::Get(profile_)
           ->GenerateInstalledExtensionsSet();
   ExtensionPrefs* prefs = ExtensionPrefs::Get(profile_);
+  DCHECK(prefs);
 
   int app_count = 0;
   LaunchTimeAppMap app_launch_times;
@@ -168,7 +180,7 @@ void EphemeralAppService::GarbageCollectApps() {
   for (ExtensionSet::const_iterator it = extensions->begin();
        it != extensions->end(); ++it) {
     const Extension* extension = *it;
-    if (!extension->is_ephemeral())
+    if (!prefs->IsEphemeralApp(extension->id()))
       continue;
 
     ++app_count;

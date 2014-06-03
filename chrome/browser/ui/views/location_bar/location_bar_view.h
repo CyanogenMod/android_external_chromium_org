@@ -49,7 +49,6 @@ class Profile;
 class SelectedKeywordView;
 class StarView;
 class TemplateURLService;
-class ToolbarOriginChipView;
 class TranslateIconView;
 class ZoomView;
 
@@ -194,11 +193,6 @@ class LocationBarView : public LocationBar,
   // The translate icon. It may not be visible.
   TranslateIconView* translate_icon_view() { return translate_icon_view_; }
 
-  void set_toolbar_origin_chip_view(
-      ToolbarOriginChipView* toolbar_origin_chip_view) {
-    toolbar_origin_chip_view_ = toolbar_origin_chip_view;
-  }
-
   // Returns the screen coordinates of the omnibox (where the URL text appears,
   // not where the icons are shown).
   gfx::Point GetOmniboxViewOrigin() const;
@@ -223,16 +217,14 @@ class LocationBarView : public LocationBar,
   // in the toolbar in full keyboard accessibility mode.
   virtual void SelectAll();
 
-  views::ImageView* GetLocationIconView();
-  const views::ImageView* GetLocationIconView() const;
+  LocationIconView* location_icon_view() { return location_icon_view_; }
 
-  // Return a view suitable for anchoring location-bar-anchored bubbles to.
-  views::View* GetLocationBarAnchor();
   // Return the point suitable for anchoring location-bar-anchored bubbles at.
   // The point will be returned in the coordinates of the LocationBarView.
   gfx::Point GetLocationBarAnchorPoint() const;
 
   OmniboxViewViews* omnibox_view() { return omnibox_view_; }
+  const OmniboxViewViews* omnibox_view() const { return omnibox_view_; }
 
   views::View* generated_credit_card_view();
 
@@ -258,7 +250,7 @@ class LocationBarView : public LocationBar,
   // views::View:
   virtual bool HasFocus() const OVERRIDE;
   virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
 
   // OmniboxEditController:
@@ -291,6 +283,10 @@ class LocationBarView : public LocationBar,
   friend class PageActionWithBadgeView;
   typedef std::vector<ExtensionAction*> PageActions;
   typedef std::vector<PageActionWithBadgeView*> PageActionViews;
+
+  // Helper for GetMinimumWidth().  Calculates the incremental minimum width
+  // |view| should add to the trailing width after the omnibox.
+  static int IncrementalMinimumWidth(views::View* view);
 
   // Returns the thickness of any visible left and right edge, in pixels.
   int GetHorizontalEdgeThickness() const;
@@ -337,6 +333,9 @@ class LocationBarView : public LocationBar,
   // Returns true if the suggest text is valid.
   bool HasValidSuggestText() const;
 
+  bool ShouldShowKeywordBubble() const;
+  bool ShouldShowEVBubble() const;
+
   // Origin chip animation control methods.
   void OnShowURLAnimationEnded();
   void OnHideURLAnimationEnded();
@@ -370,7 +369,8 @@ class LocationBarView : public LocationBar,
   virtual const char* GetClassName() const OVERRIDE;
   virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
-  virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
+  virtual void PaintChildren(gfx::Canvas* canvas,
+                             const views::CullSet& cull_set) OVERRIDE;
 
   // views::ButtonListener:
   virtual void ButtonPressed(views::Button* sender,
@@ -426,11 +426,8 @@ class LocationBarView : public LocationBar,
   // Object used to paint the border.
   scoped_ptr<views::Painter> border_painter_;
 
-  // The version of the origin chip that appears in the location bar.
+  // The origin chip that may appear in the location bar.
   OriginChipView* origin_chip_view_;
-
-  // The version of the origin chip that appears in the toolbar.
-  ToolbarOriginChipView* toolbar_origin_chip_view_;
 
   // An icon to the left of the edit field.
   LocationIconView* location_icon_view_;

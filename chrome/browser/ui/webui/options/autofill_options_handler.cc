@@ -26,7 +26,7 @@
 #include "components/autofill/core/browser/phone_number_i18n.h"
 #include "components/autofill/core/common/autofill_constants.h"
 #include "content/public/browser/web_ui.h"
-#include "grit/component_strings.h"
+#include "grit/components_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/libaddressinput_strings.h"
 #include "third_party/libaddressinput/chromium/cpp/include/libaddressinput/address_ui.h"
@@ -162,16 +162,16 @@ void SetCountryData(const PersonalDataManager& manager,
   }
   localized_strings->Set("autofillCountrySelectList", country_list.release());
 
-  scoped_ptr<base::ListValue> defaultCountryComponents(new base::ListValue);
-  std::string defaultCountryLanguageCode;
+  scoped_ptr<base::ListValue> default_country_components(new base::ListValue);
+  std::string default_country_language_code;
   GetAddressComponents(countries.front()->country_code(),
                        g_browser_process->GetApplicationLocale(),
-                       defaultCountryComponents.get(),
-                       &defaultCountryLanguageCode);
+                       default_country_components.get(),
+                       &default_country_language_code);
   localized_strings->Set("autofillDefaultCountryComponents",
-                         defaultCountryComponents.release());
+                         default_country_components.release());
   localized_strings->SetString("autofillDefaultCountryLanguageCode",
-                               defaultCountryLanguageCode);
+                               default_country_language_code);
 }
 
 // Get the multi-valued element for |type| and return it in |ListValue| form.

@@ -22,6 +22,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/management/management_api_constants.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_ui_util.h"
 #include "chrome/browser/extensions/extension_uninstall_dialog.h"
 #include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/profiles/profile.h"
@@ -30,9 +31,11 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_utility_messages.h"
 #include "chrome/common/extensions/api/management.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "content/public/browser/notification_details.h"
@@ -40,6 +43,7 @@
 #include "content/public/browser/utility_process_host.h"
 #include "content/public/browser/utility_process_host_client.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/management_policy.h"
@@ -91,6 +95,28 @@ std::vector<std::string> CreateWarningsList(const Extension* extension) {
   }
 
   return warnings_list;
+}
+
+std::vector<management::LaunchType> GetAvailableLaunchTypes(
+    const Extension& extension) {
+  std::vector<management::LaunchType> launch_type_list;
+  if (extension.is_platform_app()) {
+    launch_type_list.push_back(management::LAUNCH_TYPE_OPEN_AS_WINDOW);
+    return launch_type_list;
+  }
+
+  launch_type_list.push_back(management::LAUNCH_TYPE_OPEN_AS_REGULAR_TAB);
+
+#if !defined(OS_MACOSX)
+  launch_type_list.push_back(management::LAUNCH_TYPE_OPEN_AS_WINDOW);
+#endif
+
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableStreamlinedHostedApps)) {
+    launch_type_list.push_back(management::LAUNCH_TYPE_OPEN_AS_PINNED_TAB);
+    launch_type_list.push_back(management::LAUNCH_TYPE_OPEN_FULL_SCREEN);
+  }
+  return launch_type_list;
 }
 
 scoped_ptr<management::ExtensionInfo> CreateExtensionInfo(
@@ -210,17 +236,51 @@ scoped_ptr<management::ExtensionInfo> CreateExtensionInfo(
       break;
   }
 
+  info->launch_type = management::LAUNCH_TYPE_NONE;
+  if (GetCurrentChannel() <= chrome::VersionInfo::CHANNEL_DEV &&
+      extension.is_app()) {
+    LaunchType launch_type;
+    if (extension.is_platform_app()) {
+      launch_type = LAUNCH_TYPE_WINDOW;
+    } else {
+      launch_type =
+          GetLaunchType(ExtensionPrefs::Get(service->profile()), &extension);
+    }
+
+    switch (launch_type) {
+      case LAUNCH_TYPE_PINNED:
+        info->launch_type = management::LAUNCH_TYPE_OPEN_AS_PINNED_TAB;
+        break;
+      case LAUNCH_TYPE_REGULAR:
+        info->launch_type = management::LAUNCH_TYPE_OPEN_AS_REGULAR_TAB;
+        break;
+      case LAUNCH_TYPE_FULLSCREEN:
+        info->launch_type = management::LAUNCH_TYPE_OPEN_FULL_SCREEN;
+        break;
+      case LAUNCH_TYPE_WINDOW:
+        info->launch_type = management::LAUNCH_TYPE_OPEN_AS_WINDOW;
+        break;
+      case LAUNCH_TYPE_INVALID:
+      case NUM_LAUNCH_TYPES:
+        NOTREACHED();
+    }
+
+    info->available_launch_types.reset(new std::vector<management::LaunchType>(
+        GetAvailableLaunchTypes(extension)));
+  }
+
   return info.Pass();
 }
 
 void AddExtensionInfo(const ExtensionSet& extensions,
                             ExtensionSystem* system,
-                            ExtensionInfoList* extension_list) {
+                            ExtensionInfoList* extension_list,
+                            content::BrowserContext* context) {
   for (ExtensionSet::const_iterator iter = extensions.begin();
        iter != extensions.end(); ++iter) {
     const Extension& extension = *iter->get();
 
-    if (extension.ShouldNotBeVisible())
+    if (ui_util::ShouldNotBeVisible(&extension, context))
       continue;  // Skip built-in extensions/apps.
 
     extension_list->push_back(make_linked_ptr<management::ExtensionInfo>(
@@ -243,9 +303,12 @@ bool ManagementGetAllFunction::RunSync() {
   ExtensionRegistry* registry = ExtensionRegistry::Get(GetProfile());
   ExtensionSystem* system = ExtensionSystem::Get(GetProfile());
 
-  AddExtensionInfo(registry->enabled_extensions(), system, &extensions);
-  AddExtensionInfo(registry->disabled_extensions(), system, &extensions);
-  AddExtensionInfo(registry->terminated_extensions(), system, &extensions);
+  AddExtensionInfo(registry->enabled_extensions(),
+                   system, &extensions, browser_context());
+  AddExtensionInfo(registry->disabled_extensions(),
+                   system, &extensions, browser_context());
+  AddExtensionInfo(registry->terminated_extensions(),
+                   system, &extensions, browser_context());
 
   results_ = management::GetAll::Results::Create(extensions);
   return true;
@@ -467,8 +530,10 @@ bool ManagementSetEnabledFunction::RunAsync() {
 
   extension_id_ = params->id;
 
-  const Extension* extension = service()->GetInstalledExtension(extension_id_);
-  if (!extension || extension->ShouldNotBeVisible()) {
+  const Extension* extension =
+      ExtensionRegistry::Get(GetProfile())
+          ->GetExtensionById(extension_id_, ExtensionRegistry::EVERYTHING);
+  if (!extension || ui_util::ShouldNotBeVisible(extension, browser_context())) {
     error_ = ErrorUtils::FormatErrorMessage(
         keys::kNoExtensionError, extension_id_);
     return false;
@@ -536,7 +601,8 @@ bool ManagementUninstallFunctionBase::Uninstall(
   extension_id_ = target_extension_id;
   const Extension* target_extension =
       service()->GetExtensionById(extension_id_, true);
-  if (!target_extension || target_extension->ShouldNotBeVisible()) {
+  if (!target_extension ||
+      ui_util::ShouldNotBeVisible(target_extension, browser_context())) {
     error_ = ErrorUtils::FormatErrorMessage(
         keys::kNoExtensionError, extension_id_);
     return false;
@@ -580,13 +646,24 @@ void ManagementUninstallFunctionBase::SetAutoConfirmForTest(
 
 void ManagementUninstallFunctionBase::Finish(bool should_uninstall) {
   if (should_uninstall) {
-    bool success = service()->UninstallExtension(
-        extension_id_,
-        false, /* external uninstall */
-        NULL);
+    // The extension can be uninstalled in another window while the UI was
+    // showing. Do nothing in that case.
+    ExtensionRegistry* registry = ExtensionRegistry::Get(GetProfile());
+    const Extension* extension = registry->GetExtensionById(
+        extension_id_, ExtensionRegistry::EVERYTHING);
+    if (!extension) {
+      error_ = ErrorUtils::FormatErrorMessage(keys::kNoExtensionError,
+                                              extension_id_);
+      SendResponse(false);
+    } else {
+      bool success =
+          service()->UninstallExtension(extension_id_,
+                                        false, /* external uninstall */
+                                        NULL);
 
-    // TODO set error_ if !success
-    SendResponse(success);
+      // TODO set error_ if !success
+      SendResponse(success);
+    }
   } else {
     error_ = ErrorUtils::FormatErrorMessage(
         keys::kUninstallCanceledError, extension_id_);
@@ -720,10 +797,65 @@ bool ManagementCreateAppShortcutFunction::RunAsync() {
   return true;
 }
 
+bool ManagementSetLaunchTypeFunction::RunSync() {
+  if (!user_gesture()) {
+    error_ = keys::kGestureNeededForSetLaunchTypeError;
+    return false;
+  }
+
+  scoped_ptr<management::SetLaunchType::Params> params(
+      management::SetLaunchType::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
+  const Extension* extension = service()->GetExtensionById(params->id, true);
+  if (!extension) {
+    error_ =
+        ErrorUtils::FormatErrorMessage(keys::kNoExtensionError, params->id);
+    return false;
+  }
+
+  if (!extension->is_app()) {
+    error_ = ErrorUtils::FormatErrorMessage(keys::kNotAnAppError, params->id);
+    return false;
+  }
+
+  std::vector<management::LaunchType> available_launch_types =
+      GetAvailableLaunchTypes(*extension);
+
+  management::LaunchType app_launch_type = params->launch_type;
+  if (std::find(available_launch_types.begin(),
+                available_launch_types.end(),
+                app_launch_type) == available_launch_types.end()) {
+    error_ = keys::kLaunchTypeNotAvailableError;
+    return false;
+  }
+
+  LaunchType launch_type = LAUNCH_TYPE_DEFAULT;
+  switch (app_launch_type) {
+    case management::LAUNCH_TYPE_OPEN_AS_PINNED_TAB:
+      launch_type = LAUNCH_TYPE_PINNED;
+      break;
+    case management::LAUNCH_TYPE_OPEN_AS_REGULAR_TAB:
+      launch_type = LAUNCH_TYPE_REGULAR;
+      break;
+    case management::LAUNCH_TYPE_OPEN_FULL_SCREEN:
+      launch_type = LAUNCH_TYPE_FULLSCREEN;
+      break;
+    case management::LAUNCH_TYPE_OPEN_AS_WINDOW:
+      launch_type = LAUNCH_TYPE_WINDOW;
+      break;
+    case management::LAUNCH_TYPE_NONE:
+      NOTREACHED();
+  }
+
+  SetLaunchType(service(), params->id, launch_type);
+
+  return true;
+}
+
 ManagementEventRouter::ManagementEventRouter(Profile* profile)
     : profile_(profile) {
-  int types[] = {chrome::NOTIFICATION_EXTENSION_INSTALLED,
-                 chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
+  int types[] = {chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
+                 chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
                  chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                  chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED};
 
@@ -748,12 +880,12 @@ void ManagementEventRouter::Observe(
   CHECK(profile_->IsSameProfile(profile));
 
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_INSTALLED:
+    case chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED:
       event_name = management::OnInstalled::kEventName;
       extension =
           content::Details<const InstalledExtensionInfo>(details)->extension;
       break;
-    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED:
+    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED:
       event_name = management::OnUninstalled::kEventName;
       extension = content::Details<const Extension>(details).ptr();
       break;
@@ -773,7 +905,7 @@ void ManagementEventRouter::Observe(
   DCHECK(event_name);
   DCHECK(extension);
 
-  if (extension->ShouldNotBeVisible())
+  if (ui_util::ShouldNotBeVisible(extension, profile_))
     return; // Don't dispatch events for built-in extensions.
 
   scoped_ptr<base::ListValue> args(new base::ListValue());

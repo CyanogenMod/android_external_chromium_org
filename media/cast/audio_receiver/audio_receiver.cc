@@ -14,29 +14,30 @@
 
 namespace {
 const int kMinSchedulingDelayMs = 1;
-// TODO(miu): This should go in AudioReceiverConfig.
-const int kTypicalAudioFrameDurationMs = 10;
 }  // namespace
 
 namespace media {
 namespace cast {
 
 AudioReceiver::AudioReceiver(scoped_refptr<CastEnvironment> cast_environment,
-                             const AudioReceiverConfig& audio_config,
+                             const FrameReceiverConfig& audio_config,
                              transport::PacedPacketSender* const packet_sender)
     : RtpReceiver(cast_environment->Clock(), &audio_config, NULL),
       cast_environment_(cast_environment),
-      event_subscriber_(kReceiverRtcpEventHistorySize,
-                        ReceiverRtcpEventSubscriber::kAudioEventSubscriber),
-      codec_(audio_config.codec),
+      event_subscriber_(kReceiverRtcpEventHistorySize, AUDIO_EVENT),
+      codec_(audio_config.codec.audio),
       frequency_(audio_config.frequency),
-      target_delay_delta_(
+      target_playout_delay_(
           base::TimeDelta::FromMilliseconds(audio_config.rtp_max_delay_ms)),
+      expected_frame_duration_(
+          base::TimeDelta::FromSeconds(1) / audio_config.max_frame_rate),
+      reports_are_scheduled_(false),
       framer_(cast_environment->Clock(),
               this,
               audio_config.incoming_ssrc,
               true,
-              audio_config.rtp_max_delay_ms / kTypicalAudioFrameDurationMs),
+              audio_config.rtp_max_delay_ms * audio_config.max_frame_rate /
+                  1000),
       rtcp_(cast_environment,
             NULL,
             NULL,
@@ -46,13 +47,16 @@ AudioReceiver::AudioReceiver(scoped_refptr<CastEnvironment> cast_environment,
             base::TimeDelta::FromMilliseconds(audio_config.rtcp_interval),
             audio_config.feedback_ssrc,
             audio_config.incoming_ssrc,
-            audio_config.rtcp_c_name),
+            audio_config.rtcp_c_name,
+            true),
       is_waiting_for_consecutive_frame_(false),
+      lip_sync_drift_(ClockDriftSmoother::GetDefaultTimeConstant()),
       weak_factory_(this) {
-  if (!audio_config.use_external_decoder)
-    audio_decoder_.reset(new AudioDecoder(cast_environment, audio_config));
+  DCHECK_GT(audio_config.rtp_max_delay_ms, 0);
+  DCHECK_GT(audio_config.max_frame_rate, 0);
+  audio_decoder_.reset(new AudioDecoder(cast_environment, audio_config));
   decryptor_.Initialize(audio_config.aes_key, audio_config.aes_iv_mask);
-  rtcp_.SetTargetDelay(target_delay_delta_);
+  rtcp_.SetTargetDelay(target_playout_delay_);
   cast_environment_->Logging()->AddRawEventSubscriber(&event_subscriber_);
   memset(frame_id_to_rtp_timestamp_, 0, sizeof(frame_id_to_rtp_timestamp_));
 }
@@ -62,47 +66,59 @@ AudioReceiver::~AudioReceiver() {
   cast_environment_->Logging()->RemoveRawEventSubscriber(&event_subscriber_);
 }
 
-void AudioReceiver::InitializeTimers() {
-  DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  ScheduleNextRtcpReport();
-  ScheduleNextCastMessage();
-}
-
 void AudioReceiver::OnReceivedPayloadData(const uint8* payload_data,
                                           size_t payload_size,
                                           const RtpCastHeader& rtp_header) {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  base::TimeTicks now = cast_environment_->Clock()->NowTicks();
 
-  // TODO(pwestin): update this as video to refresh over time.
-  if (time_first_incoming_packet_.is_null()) {
-    InitializeTimers();
-    first_incoming_rtp_timestamp_ = rtp_header.rtp_timestamp;
-    time_first_incoming_packet_ = now;
-  }
+  const base::TimeTicks now = cast_environment_->Clock()->NowTicks();
 
   frame_id_to_rtp_timestamp_[rtp_header.frame_id & 0xff] =
       rtp_header.rtp_timestamp;
   cast_environment_->Logging()->InsertPacketEvent(
-      now, kAudioPacketReceived, rtp_header.rtp_timestamp,
+      now, PACKET_RECEIVED, AUDIO_EVENT, rtp_header.rtp_timestamp,
       rtp_header.frame_id, rtp_header.packet_id, rtp_header.max_packet_id,
       payload_size);
 
   bool duplicate = false;
   const bool complete =
       framer_.InsertPacket(payload_data, payload_size, rtp_header, &duplicate);
-  if (duplicate) {
-    cast_environment_->Logging()->InsertPacketEvent(
-        now,
-        kDuplicateAudioPacketReceived,
-        rtp_header.rtp_timestamp,
-        rtp_header.frame_id,
-        rtp_header.packet_id,
-        rtp_header.max_packet_id,
-        payload_size);
-    // Duplicate packets are ignored.
+
+  // Duplicate packets are ignored.
+  if (duplicate)
     return;
+
+  // Update lip-sync values upon receiving the first packet of each frame, or if
+  // they have never been set yet.
+  if (rtp_header.packet_id == 0 || lip_sync_reference_time_.is_null()) {
+    RtpTimestamp fresh_sync_rtp;
+    base::TimeTicks fresh_sync_reference;
+    if (!rtcp_.GetLatestLipSyncTimes(&fresh_sync_rtp, &fresh_sync_reference)) {
+      // HACK: The sender should have provided Sender Reports before the first
+      // frame was sent.  However, the spec does not currently require this.
+      // Therefore, when the data is missing, the local clock is used to
+      // generate reference timestamps.
+      VLOG(2) << "Lip sync info missing.  Falling-back to local clock.";
+      fresh_sync_rtp = rtp_header.rtp_timestamp;
+      fresh_sync_reference = now;
+    }
+    // |lip_sync_reference_time_| is always incremented according to the time
+    // delta computed from the difference in RTP timestamps.  Then,
+    // |lip_sync_drift_| accounts for clock drift and also smoothes-out any
+    // sudden/discontinuous shifts in the series of reference time values.
+    if (lip_sync_reference_time_.is_null()) {
+      lip_sync_reference_time_ = fresh_sync_reference;
+    } else {
+      lip_sync_reference_time_ += RtpDeltaToTimeDelta(
+          static_cast<int32>(fresh_sync_rtp - lip_sync_rtp_timestamp_),
+          frequency_);
+    }
+    lip_sync_rtp_timestamp_ = fresh_sync_rtp;
+    lip_sync_drift_.Update(
+        now, fresh_sync_reference - lip_sync_reference_time_);
   }
+
+  // Frame not complete; wait for more packets.
   if (!complete)
     return;
 
@@ -124,15 +140,15 @@ void AudioReceiver::GetRawAudioFrame(
 
 void AudioReceiver::DecodeEncodedAudioFrame(
     const AudioFrameDecodedCallback& callback,
-    scoped_ptr<transport::EncodedAudioFrame> encoded_frame,
-    const base::TimeTicks& playout_time) {
+    scoped_ptr<transport::EncodedFrame> encoded_frame) {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
   if (!encoded_frame) {
-    callback.Run(make_scoped_ptr<AudioBus>(NULL), playout_time, false);
+    callback.Run(make_scoped_ptr<AudioBus>(NULL), base::TimeTicks(), false);
     return;
   }
   const uint32 frame_id = encoded_frame->frame_id;
   const uint32 rtp_timestamp = encoded_frame->rtp_timestamp;
+  const base::TimeTicks playout_time = encoded_frame->reference_time;
   audio_decoder_->DecodeFrame(encoded_frame.Pass(),
                               base::Bind(&AudioReceiver::EmitRawAudioFrame,
                                          cast_environment_,
@@ -155,16 +171,15 @@ void AudioReceiver::EmitRawAudioFrame(
   if (audio_bus.get()) {
     const base::TimeTicks now = cast_environment->Clock()->NowTicks();
     cast_environment->Logging()->InsertFrameEvent(
-        now, kAudioFrameDecoded, rtp_timestamp, frame_id);
+        now, FRAME_DECODED, AUDIO_EVENT, rtp_timestamp, frame_id);
     cast_environment->Logging()->InsertFrameEventWithDelay(
-        now, kAudioPlayoutDelay, rtp_timestamp, frame_id,
+        now, FRAME_PLAYOUT, AUDIO_EVENT, rtp_timestamp, frame_id,
         playout_time - now);
   }
   callback.Run(audio_bus.Pass(), playout_time, is_continuous);
 }
 
-void AudioReceiver::GetEncodedAudioFrame(
-    const AudioFrameEncodedCallback& callback) {
+void AudioReceiver::GetEncodedAudioFrame(const FrameEncodedCallback& callback) {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
   frame_request_queue_.push_back(callback);
   EmitAvailableEncodedFrames();
@@ -177,26 +192,36 @@ void AudioReceiver::EmitAvailableEncodedFrames() {
     // Attempt to peek at the next completed frame from the |framer_|.
     // TODO(miu): We should only be peeking at the metadata, and not copying the
     // payload yet!  Or, at least, peek using a StringPiece instead of a copy.
-    scoped_ptr<transport::EncodedAudioFrame> encoded_frame(
-        new transport::EncodedAudioFrame());
+    scoped_ptr<transport::EncodedFrame> encoded_frame(
+        new transport::EncodedFrame());
     bool is_consecutively_next_frame = false;
-    if (!framer_.GetEncodedAudioFrame(encoded_frame.get(),
-                                      &is_consecutively_next_frame)) {
+    bool have_multiple_complete_frames = false;
+    if (!framer_.GetEncodedFrame(encoded_frame.get(),
+                                 &is_consecutively_next_frame,
+                                 &have_multiple_complete_frames)) {
       VLOG(1) << "Wait for more audio packets to produce a completed frame.";
       return;  // OnReceivedPayloadData() will invoke this method in the future.
+    }
+
+    const base::TimeTicks now = cast_environment_->Clock()->NowTicks();
+    const base::TimeTicks playout_time =
+        GetPlayoutTime(encoded_frame->rtp_timestamp);
+
+    // If we have multiple decodable frames, and the current frame is
+    // too old, then skip it and decode the next frame instead.
+    if (have_multiple_complete_frames && now > playout_time) {
+      framer_.ReleaseFrame(encoded_frame->frame_id);
+      continue;
     }
 
     // If |framer_| has a frame ready that is out of sequence, examine the
     // playout time to determine whether it's acceptable to continue, thereby
     // skipping one or more frames.  Skip if the missing frame wouldn't complete
     // playing before the start of playback of the available frame.
-    const base::TimeTicks now = cast_environment_->Clock()->NowTicks();
-    const base::TimeTicks playout_time =
-        GetPlayoutTime(now, encoded_frame->rtp_timestamp);
     if (!is_consecutively_next_frame) {
       // TODO(miu): Also account for expected decode time here?
       const base::TimeTicks earliest_possible_end_time_of_missing_frame =
-          now + base::TimeDelta::FromMilliseconds(kTypicalAudioFrameDurationMs);
+          now + expected_frame_duration_;
       if (earliest_possible_end_time_of_missing_frame < playout_time) {
         VLOG(1) << "Wait for next consecutive frame instead of skipping.";
         if (!is_waiting_for_consecutive_frame_) {
@@ -226,14 +251,13 @@ void AudioReceiver::EmitAvailableEncodedFrames() {
       encoded_frame->data.swap(decrypted_audio_data);
     }
 
-    // At this point, we have a decrypted EncodedAudioFrame ready to be emitted.
-    encoded_frame->codec = codec_;
+    // At this point, we have a decrypted EncodedFrame ready to be emitted.
+    encoded_frame->reference_time = playout_time;
     framer_.ReleaseFrame(encoded_frame->frame_id);
     cast_environment_->PostTask(CastEnvironment::MAIN,
                                 FROM_HERE,
                                 base::Bind(frame_request_queue_.front(),
-                                           base::Passed(&encoded_frame),
-                                           playout_time));
+                                           base::Passed(&encoded_frame)));
     frame_request_queue_.pop_front();
   }
 }
@@ -245,6 +269,15 @@ void AudioReceiver::EmitAvailableEncodedFramesAfterWaiting() {
   EmitAvailableEncodedFrames();
 }
 
+base::TimeTicks AudioReceiver::GetPlayoutTime(uint32 rtp_timestamp) const {
+  return lip_sync_reference_time_ +
+      lip_sync_drift_.Current() +
+      RtpDeltaToTimeDelta(
+          static_cast<int32>(rtp_timestamp - lip_sync_rtp_timestamp_),
+          frequency_) +
+      target_playout_delay_;
+}
+
 void AudioReceiver::IncomingPacket(scoped_ptr<Packet> packet) {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
   if (Rtcp::IsRtcpPacket(&packet->front(), packet->size())) {
@@ -252,12 +285,11 @@ void AudioReceiver::IncomingPacket(scoped_ptr<Packet> packet) {
   } else {
     ReceivedPacket(&packet->front(), packet->size());
   }
-}
-
-void AudioReceiver::SetTargetDelay(base::TimeDelta target_delay) {
-  DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  target_delay_delta_ = target_delay;
-  rtcp_.SetTargetDelay(target_delay_delta_);
+  if (!reports_are_scheduled_) {
+    ScheduleNextRtcpReport();
+    ScheduleNextCastMessage();
+    reports_are_scheduled_ = true;
+  }
 }
 
 void AudioReceiver::CastFeedback(const RtcpCastMessage& cast_message) {
@@ -266,69 +298,12 @@ void AudioReceiver::CastFeedback(const RtcpCastMessage& cast_message) {
   RtpTimestamp rtp_timestamp =
       frame_id_to_rtp_timestamp_[cast_message.ack_frame_id_ & 0xff];
   cast_environment_->Logging()->InsertFrameEvent(
-      now, kAudioAckSent, rtp_timestamp, cast_message.ack_frame_id_);
+      now, FRAME_ACK_SENT, AUDIO_EVENT, rtp_timestamp,
+      cast_message.ack_frame_id_);
 
   ReceiverRtcpEventSubscriber::RtcpEventMultiMap rtcp_events;
   event_subscriber_.GetRtcpEventsAndReset(&rtcp_events);
   rtcp_.SendRtcpFromRtpReceiver(&cast_message, &rtcp_events);
-}
-
-base::TimeTicks AudioReceiver::GetPlayoutTime(base::TimeTicks now,
-                                              uint32 rtp_timestamp) {
-  DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  // Senders time in ms when this frame was recorded.
-  // Note: the senders clock and our local clock might not be synced.
-  base::TimeTicks rtp_timestamp_in_ticks;
-  base::TimeTicks playout_time;
-  if (time_offset_ == base::TimeDelta()) {
-    if (rtcp_.RtpTimestampInSenderTime(frequency_,
-                                       first_incoming_rtp_timestamp_,
-                                       &rtp_timestamp_in_ticks)) {
-      time_offset_ = time_first_incoming_packet_ - rtp_timestamp_in_ticks;
-      // TODO(miu): As clocks drift w.r.t. each other, and other factors take
-      // effect, |time_offset_| should be updated.  Otherwise, we might as well
-      // always compute the time offsets agnostic of RTCP's time data.
-    } else {
-      // We have not received any RTCP to sync the stream play it out as soon as
-      // possible.
-
-      // BUG: This means we're literally switching to a different timeline a
-      // short time after a cast receiver has been running.  Re-enable
-      // End2EndTest.StartSenderBeforeReceiver once this is fixed.
-      // http://crbug.com/356942
-      uint32 rtp_timestamp_diff = rtp_timestamp - first_incoming_rtp_timestamp_;
-
-      int frequency_khz = frequency_ / 1000;
-      base::TimeDelta rtp_time_diff_delta =
-          base::TimeDelta::FromMilliseconds(rtp_timestamp_diff / frequency_khz);
-      base::TimeDelta time_diff_delta = now - time_first_incoming_packet_;
-
-      playout_time = now + std::max(rtp_time_diff_delta - time_diff_delta,
-                                    base::TimeDelta());
-    }
-  }
-  if (playout_time.is_null()) {
-    // This can fail if we have not received any RTCP packets in a long time.
-    if (rtcp_.RtpTimestampInSenderTime(frequency_, rtp_timestamp,
-                                       &rtp_timestamp_in_ticks)) {
-      playout_time =
-          rtp_timestamp_in_ticks + time_offset_ + target_delay_delta_;
-    } else {
-      playout_time = now;
-    }
-  }
-
-  // TODO(miu): This is broken since we literally switch timelines once |rtcp_|
-  // can provide us the |time_offset_|.  Furthermore, this "getter" method may
-  // be called on frames received out-of-order, which means the playout times
-  // for earlier frames will be computed incorrectly.
-#if 0
-  // Don't allow the playout time to go backwards.
-  if (last_playout_time_ > playout_time) playout_time = last_playout_time_;
-  last_playout_time_ = playout_time;
-#endif
-
-  return playout_time;
 }
 
 void AudioReceiver::ScheduleNextRtcpReport() {

@@ -505,3 +505,59 @@ USER32.dll!CharPrevW
 USER32.dll!DispatchMessageW
 base.dll!base::MessagePumpForUI::ProcessMessageHelper
 base.dll!base::MessagePumpForUI::ProcessNextWindowsMessage
+
+UNADDRESSABLE ACCESS
+name=http://crbug.com/372177
+NPCTRL.dll!DllGetClassObject
+NPCTRL.dll!DllGetClassObject
+NPCTRL.dll!DllGetClassObject
+NPCTRL.dll!DllGetClassObject
+
+HANDLE LEAK
+name=http://crbug.com/373333
+system call NtGdiCreateCompatibleDC
+*!CreateCompatibleDC
+*!SkScalerContext_GDI::SkScalerContext_GDI
+*!LogFontTypeface::onCreateScalerContext
+*!SkTypeface::createScalerContext
+*!SkGlyphCache::VisitCache
+...
+*!SkPaint::descriptorProc
+...
+*!WebCore::RenderBlockFlow::layoutBlockFlow
+*!WebCore::RenderBlockFlow::layoutBlock
+*!WebCore::RenderBlock::layout
+
+HANDLE LEAK
+name=https://code.google.com/p/drmemory/issues/detail?id=1545
+system call NtGdiCreateCompatibleDC
+GDI32.dll!CreateCompatibleDC
+skia.dll!LogFontTypeface::onGetTableData
+
+HANDLE LEAK
+name=http://crbug.com/379000
+system call NtCreate*
+...
+*!disk_cache::MappedFile::Init
+*!disk_cache::BlockFiles::OpenBlockFile
+*!disk_cache::BlockFiles::Init
+*!disk_cache::BackendImpl::SyncInit
+*!disk_cache::BackendIO::ExecuteBackendOperation
+*!base::internal::Invoker<>::Run
+*!base::MessageLoop::RunTask
+*!base::MessageLoop::DeferOrRunPendingTask
+*!base::MessageLoop::DoWork
+*!base::MessagePumpForIO::DoRunLoop
+*!base::MessagePumpWin::Run
+*!base::MessageLoop::RunHandler
+*!base::Thread::Run
+*!content::BrowserThreadImpl::CacheThreadRun
+*!content::BrowserThreadImpl::Run
+
+UNADDRESSABLE ACCESS
+name=http://crbug.com/379204
+...
+*!WTF::PlatformCondition::timedWait
+*!WTF::ThreadCondition::timedWait
+*!WTF::MessageQueue<>::waitForMessageWithTimeout
+*!WebCore::WorkerRunLoop::run

@@ -30,6 +30,7 @@ Examples:
 
 
 WHITELISTED_LICENSES = [
+    'Anti-Grain Geometry',
     'Apache (v2.0)',
     'Apache (v2.0) BSD (2 clause)',
     'Apache (v2.0) GPL (v2)',
@@ -53,11 +54,14 @@ WHITELISTED_LICENSES = [
     'BSD-like MIT/X11 (BSD like)',
 
     'BSL (v1.0)',
+    'FreeType (BSD like)',
+    'FreeType (BSD like) with patent clause',
     'GPL (v2) LGPL (v2.1 or later)',
     'GPL (v2 or later) with Bison parser exception',
     'GPL (v2 or later) with libtool exception',
     'GPL (v3 or later) with Bison parser exception',
     'GPL with Bison parser exception',
+    'Independent JPEG Group License',
     'ISC',
     'LGPL (unversioned/unknown version)',
     'LGPL (v2)',
@@ -206,9 +210,6 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
     'third_party/libjingle/source/talk': [  # http://crbug.com/98310
         'UNKNOWN',
     ],
-    'third_party/libjpeg': [  # http://crbug.com/98313
-        'UNKNOWN',
-    ],
     'third_party/libjpeg_turbo': [  # http://crbug.com/98314
         'UNKNOWN',
     ],
@@ -258,6 +259,9 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
         'UNKNOWN',
     ],
     'third_party/ocmock/OCMock': [  # http://crbug.com/98454
+        'UNKNOWN',
+    ],
+    'third_party/pdfium': [  # http://crbug.com/374943
         'UNKNOWN',
     ],
     'third_party/ply/__init__.py': [
@@ -457,11 +461,12 @@ def check_licenses(options, args):
   if success:
     print "\nSUCCESS\n"
 
-    unused_suppressions = set(
-      PATH_SPECIFIC_WHITELISTED_LICENSES.keys()).difference(used_suppressions)
-    if unused_suppressions:
-      print "\nNOTE: unused suppressions detected:\n"
-      print '\n'.join(unused_suppressions)
+    if not len(args):
+      unused_suppressions = set(
+        PATH_SPECIFIC_WHITELISTED_LICENSES.keys()).difference(used_suppressions)
+      if unused_suppressions:
+        print "\nNOTE: unused suppressions detected:\n"
+        print '\n'.join(unused_suppressions)
 
     return 0
   else:

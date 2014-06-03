@@ -71,9 +71,10 @@
 #include "net/url_request/data_protocol_handler.h"
 #include "net/url_request/file_protocol_handler.h"
 #include "net/url_request/ftp_protocol_handler.h"
-#include "net/url_request/protocol_intercept_job_factory.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_file_job.h"
+#include "net/url_request/url_request_intercepting_job_factory.h"
+#include "net/url_request/url_request_interceptor.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
@@ -94,8 +95,8 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/drive/drive_protocol_handler.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/net/cert_verify_proc_chromeos.h"
 #include "chrome/browser/chromeos/policy/policy_cert_service.h"
 #include "chrome/browser/chromeos/policy/policy_cert_service_factory.h"
@@ -178,13 +179,13 @@ bool IsSupportedDevToolsURL(const GURL& url, base::FilePath* path) {
   return true;
 }
 
-class DebugDevToolsInterceptor
-    : public net::URLRequestJobFactory::ProtocolHandler {
+class DebugDevToolsInterceptor : public net::URLRequestInterceptor {
  public:
   DebugDevToolsInterceptor() {}
   virtual ~DebugDevToolsInterceptor() {}
 
-  virtual net::URLRequestJob* MaybeCreateJob(
+  // net::URLRequestInterceptor implementation.
+  virtual net::URLRequestJob* MaybeInterceptRequest(
       net::URLRequest* request,
       net::NetworkDelegate* network_delegate) const OVERRIDE {
     base::FilePath path;
@@ -366,6 +367,7 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
 #endif
 
   params->profile = profile;
+  params->prerender_tracker = g_browser_process->prerender_tracker();
   profile_params_.reset(params.release());
 
   ChromeNetworkDelegate::InitializePrefsOnUIThread(
@@ -612,22 +614,22 @@ ProfileIOData* ProfileIOData::FromResourceContext(
 bool ProfileIOData::IsHandledProtocol(const std::string& scheme) {
   DCHECK_EQ(scheme, StringToLowerASCII(scheme));
   static const char* const kProtocolList[] = {
-    content::kFileScheme,
+    url::kFileScheme,
     content::kChromeDevToolsScheme,
     chrome::kDomDistillerScheme,
     extensions::kExtensionScheme,
     extensions::kExtensionResourceScheme,
     content::kChromeUIScheme,
-    content::kDataScheme,
+    url::kDataScheme,
 #if defined(OS_CHROMEOS)
     chrome::kDriveScheme,
 #endif  // defined(OS_CHROMEOS)
     content::kAboutScheme,
 #if !defined(DISABLE_FTP_SUPPORT)
-    content::kFtpScheme,
+    url::kFtpScheme,
 #endif  // !defined(DISABLE_FTP_SUPPORT)
-    content::kBlobScheme,
-    content::kFileSystemScheme,
+    url::kBlobScheme,
+    url::kFileSystemScheme,
     chrome::kChromeSearchScheme,
   };
   for (size_t i = 0; i < arraysize(kProtocolList); ++i) {
@@ -689,7 +691,7 @@ ChromeURLRequestContext* ProfileIOData::GetIsolatedAppRequestContext(
     scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
         protocol_handler_interceptor,
     content::ProtocolHandlerMap* protocol_handlers,
-    content::ProtocolHandlerScopedVector protocol_interceptors) const {
+    content::URLRequestInterceptorScopedVector request_interceptors) const {
   DCHECK(initialized_);
   ChromeURLRequestContext* context = NULL;
   if (ContainsKey(app_request_context_map_, partition_descriptor)) {
@@ -700,7 +702,7 @@ ChromeURLRequestContext* ProfileIOData::GetIsolatedAppRequestContext(
                                          partition_descriptor,
                                          protocol_handler_interceptor.Pass(),
                                          protocol_handlers,
-                                         protocol_interceptors.Pass());
+                                         request_interceptors.Pass());
     app_request_context_map_[partition_descriptor] = context;
   }
   DCHECK(context);
@@ -908,7 +910,7 @@ std::string ProfileIOData::GetSSLSessionCacheShard() {
 
 void ProfileIOData::Init(
     content::ProtocolHandlerMap* protocol_handlers,
-    content::ProtocolHandlerScopedVector protocol_interceptors) const {
+    content::URLRequestInterceptorScopedVector request_interceptors) const {
   // The basic logic is implemented here. The specific initialization
   // is done in InitializeInternal(), implemented by subtypes. Static helper
   // functions have been provided to assist in common operations.
@@ -948,6 +950,7 @@ void ProfileIOData::Init(
   network_delegate->set_cookie_settings(profile_params_->cookie_settings.get());
   network_delegate->set_enable_do_not_track(&enable_do_not_track_);
   network_delegate->set_force_google_safe_search(&force_safesearch_);
+  network_delegate->set_prerender_tracker(profile_params_->prerender_tracker);
   network_delegate_.reset(network_delegate);
 
   fraudulent_certificate_reporter_.reset(
@@ -988,15 +991,11 @@ void ProfileIOData::Init(
 #if defined(OS_CHROMEOS)
   username_hash_ = profile_params_->username_hash;
   scoped_refptr<net::CertVerifyProc> verify_proc;
-  if (chromeos::UserManager::IsMultipleProfilesAllowed()) {
-    crypto::ScopedPK11Slot public_slot =
-        crypto::GetPublicSlotForChromeOSUser(username_hash_);
-    // The private slot won't be ready by this point. It shouldn't be necessary
-    // for cert trust purposes anyway.
-    verify_proc = new chromeos::CertVerifyProcChromeOS(public_slot.Pass());
-  } else {
-    verify_proc = net::CertVerifyProc::CreateDefault();
-  }
+  crypto::ScopedPK11Slot public_slot =
+      crypto::GetPublicSlotForChromeOSUser(username_hash_);
+  // The private slot won't be ready by this point. It shouldn't be necessary
+  // for cert trust purposes anyway.
+  verify_proc = new chromeos::CertVerifyProcChromeOS(public_slot.Pass());
   if (cert_verifier_) {
     cert_verifier_->InitializeOnIOThread(verify_proc);
     main_request_context_->set_cert_verifier(cert_verifier_.get());
@@ -1010,7 +1009,7 @@ void ProfileIOData::Init(
 #endif
 
   InitializeInternal(
-      profile_params_.get(), protocol_handlers, protocol_interceptors.Pass());
+      profile_params_.get(), protocol_handlers, request_interceptors.Pass());
 
   profile_params_.reset();
   initialized_ = true;
@@ -1025,7 +1024,7 @@ void ProfileIOData::ApplyProfileParamsToContext(
 
 scoped_ptr<net::URLRequestJobFactory> ProfileIOData::SetUpJobFactoryDefaults(
     scoped_ptr<net::URLRequestJobFactoryImpl> job_factory,
-    content::ProtocolHandlerScopedVector protocol_interceptors,
+    content::URLRequestInterceptorScopedVector request_interceptors,
     scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
         protocol_handler_interceptor,
     net::NetworkDelegate* network_delegate,
@@ -1033,7 +1032,7 @@ scoped_ptr<net::URLRequestJobFactory> ProfileIOData::SetUpJobFactoryDefaults(
   // NOTE(willchan): Keep these protocol handlers in sync with
   // ProfileIOData::IsHandledProtocol().
   bool set_protocol = job_factory->SetProtocolHandler(
-      content::kFileScheme,
+      url::kFileScheme,
       new net::FileProtocolHandler(
           content::BrowserThread::GetBlockingPool()->
               GetTaskRunnerWithShutdownBehavior(
@@ -1053,7 +1052,7 @@ scoped_ptr<net::URLRequestJobFactory> ProfileIOData::SetUpJobFactoryDefaults(
       CreateExtensionResourceProtocolHandler());
   DCHECK(set_protocol);
   set_protocol = job_factory->SetProtocolHandler(
-      content::kDataScheme, new net::DataProtocolHandler());
+      url::kDataScheme, new net::DataProtocolHandler());
   DCHECK(set_protocol);
 #if defined(OS_CHROMEOS)
   if (!IsOffTheRecord() && profile_params_) {
@@ -1069,25 +1068,25 @@ scoped_ptr<net::URLRequestJobFactory> ProfileIOData::SetUpJobFactoryDefaults(
 #if !defined(DISABLE_FTP_SUPPORT)
   DCHECK(ftp_transaction_factory);
   job_factory->SetProtocolHandler(
-      content::kFtpScheme,
+      url::kFtpScheme,
       new net::FtpProtocolHandler(ftp_transaction_factory));
 #endif  // !defined(DISABLE_FTP_SUPPORT)
 
 #if defined(DEBUG_DEVTOOLS)
-  protocol_interceptors.push_back(new DebugDevToolsInterceptor);
+  request_interceptors.push_back(new DebugDevToolsInterceptor);
 #endif
 
   // Set up interceptors in the reverse order.
   scoped_ptr<net::URLRequestJobFactory> top_job_factory =
       job_factory.PassAs<net::URLRequestJobFactory>();
-  for (content::ProtocolHandlerScopedVector::reverse_iterator i =
-           protocol_interceptors.rbegin();
-       i != protocol_interceptors.rend();
+  for (content::URLRequestInterceptorScopedVector::reverse_iterator i =
+           request_interceptors.rbegin();
+       i != request_interceptors.rend();
        ++i) {
-    top_job_factory.reset(new net::ProtocolInterceptJobFactory(
+    top_job_factory.reset(new net::URLRequestInterceptingJobFactory(
         top_job_factory.Pass(), make_scoped_ptr(*i)));
   }
-  protocol_interceptors.weak_clear();
+  request_interceptors.weak_clear();
 
   if (protocol_handler_interceptor) {
     protocol_handler_interceptor->Chain(top_job_factory.Pass());

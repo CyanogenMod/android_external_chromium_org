@@ -4,7 +4,6 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/stl_util.h"
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
 #include "base/sys_byteorder.h"
@@ -12,6 +11,7 @@
 #include "media/cast/audio_receiver/audio_decoder.h"
 #include "media/cast/cast_config.h"
 #include "media/cast/test/utility/audio_utility.h"
+#include "media/cast/test/utility/default_config.h"
 #include "media/cast/test/utility/standalone_cast_environment.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/opus/src/include/opus.h"
@@ -38,11 +38,10 @@ class AudioDecoderTest : public ::testing::TestWithParam<TestScenario> {
 
  protected:
   virtual void SetUp() OVERRIDE {
-    AudioReceiverConfig decoder_config;
-    decoder_config.use_external_decoder = false;
+    FrameReceiverConfig decoder_config = GetDefaultAudioReceiverConfig();
     decoder_config.frequency = GetParam().sampling_rate;
     decoder_config.channels = GetParam().num_channels;
-    decoder_config.codec = GetParam().codec;
+    decoder_config.codec.audio = GetParam().codec;
     audio_decoder_.reset(new AudioDecoder(cast_environment_, decoder_config));
     CHECK_EQ(STATUS_AUDIO_INITIALIZED, audio_decoder_->InitializationResult());
 
@@ -71,15 +70,16 @@ class AudioDecoderTest : public ::testing::TestWithParam<TestScenario> {
     total_audio_decoded_ = base::TimeDelta();
   }
 
-  // Called from the unit test thread to create another EncodedAudioFrame and
-  // push it into the decoding pipeline.
+  // Called from the unit test thread to create another EncodedFrame and push it
+  // into the decoding pipeline.
   void FeedMoreAudio(const base::TimeDelta& duration,
                      int num_dropped_frames) {
-    // Prepare a simulated EncodedAudioFrame to feed into the AudioDecoder.
-    scoped_ptr<transport::EncodedAudioFrame> encoded_frame(
-        new transport::EncodedAudioFrame());
-    encoded_frame->codec = GetParam().codec;
+    // Prepare a simulated EncodedFrame to feed into the AudioDecoder.
+    scoped_ptr<transport::EncodedFrame> encoded_frame(
+        new transport::EncodedFrame());
+    encoded_frame->dependency = transport::EncodedFrame::KEY;
     encoded_frame->frame_id = last_frame_id_ + 1 + num_dropped_frames;
+    encoded_frame->referenced_frame_id = encoded_frame->frame_id;
     last_frame_id_ = encoded_frame->frame_id;
 
     const scoped_ptr<AudioBus> audio_bus(
@@ -93,7 +93,7 @@ class AudioDecoderTest : public ::testing::TestWithParam<TestScenario> {
     if (GetParam().codec == transport::kPcm16) {
       encoded_frame->data.resize(num_elements * sizeof(int16));
       int16* const pcm_data =
-          reinterpret_cast<int16*>(string_as_array(&encoded_frame->data));
+          reinterpret_cast<int16*>(encoded_frame->mutable_bytes());
       for (size_t i = 0; i < interleaved.size(); ++i)
         pcm_data[i] = static_cast<int16>(base::HostToNet16(interleaved[i]));
     } else if (GetParam().codec == transport::kOpus) {
@@ -105,8 +105,7 @@ class AudioDecoderTest : public ::testing::TestWithParam<TestScenario> {
           opus_encode(opus_encoder,
                       &interleaved.front(),
                       audio_bus->frames(),
-                      reinterpret_cast<unsigned char*>(
-                          string_as_array(&encoded_frame->data)),
+                      encoded_frame->mutable_bytes(),
                       encoded_frame->data.size());
       CHECK_GT(payload_size, 1);
       encoded_frame->data.resize(payload_size);

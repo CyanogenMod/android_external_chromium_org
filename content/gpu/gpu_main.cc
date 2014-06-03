@@ -32,6 +32,7 @@
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/config/gpu_info_collector.h"
 #include "gpu/config/gpu_util.h"
+#include "ui/events/platform/platform_event_source.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gl_switches.h"
@@ -49,6 +50,10 @@
 
 #if defined(OS_LINUX)
 #include "content/public/common/sandbox_init.h"
+#endif
+
+#if defined(OS_MACOSX)
+#include "base/message_loop/message_pump_mac.h"
 #endif
 
 const int kGpuTimeout = 10000;
@@ -129,8 +134,8 @@ int GpuMain(const MainFunctionParams& parameters) {
   // GpuMsg_Initialize message from the browser.
   bool dead_on_arrival = false;
 
-  base::MessageLoop::Type message_loop_type = base::MessageLoop::TYPE_IO;
 #if defined(OS_WIN)
+  base::MessageLoop::Type message_loop_type = base::MessageLoop::TYPE_IO;
   // Unless we're running on desktop GL, we don't need a UI message
   // loop, so avoid its use to work around apparent problems with some
   // third-party software.
@@ -139,11 +144,24 @@ int GpuMain(const MainFunctionParams& parameters) {
           gfx::kGLImplementationDesktopName) {
     message_loop_type = base::MessageLoop::TYPE_UI;
   }
+  base::MessageLoop main_message_loop(message_loop_type);
+#elif defined(OS_LINUX) && defined(USE_X11)
+  // We need a UI loop so that we can grab the Expose events. See GLSurfaceGLX
+  // and https://crbug.com/326995.
+  base::MessageLoop main_message_loop(base::MessageLoop::TYPE_UI);
+  scoped_ptr<ui::PlatformEventSource> event_source =
+      ui::PlatformEventSource::CreateDefault();
 #elif defined(OS_LINUX)
-  message_loop_type = base::MessageLoop::TYPE_DEFAULT;
+  base::MessageLoop main_message_loop(base::MessageLoop::TYPE_DEFAULT);
+#elif defined(OS_MACOSX)
+  // This is necessary for CoreAnimation layers hosted in the GPU process to be
+  // drawn. See http://crbug.com/312462.
+  scoped_ptr<base::MessagePump> pump(new base::MessagePumpCFRunLoop());
+  base::MessageLoop main_message_loop(pump.Pass());
+#else
+  base::MessageLoop main_message_loop(base::MessageLoop::TYPE_IO);
 #endif
 
-  base::MessageLoop main_message_loop(message_loop_type);
   base::PlatformThread::SetName("CrGpuMain");
 
   // In addition to disabling the watchdog if the command line switch is
@@ -365,7 +383,7 @@ namespace {
 #if defined(OS_LINUX)
 void CreateDummyGlContext() {
   scoped_refptr<gfx::GLSurface> surface(
-      gfx::GLSurface::CreateOffscreenGLSurface(gfx::Size(1, 1)));
+      gfx::GLSurface::CreateOffscreenGLSurface(gfx::Size()));
   if (!surface.get()) {
     VLOG(1) << "gfx::GLSurface::CreateOffscreenGLSurface failed";
     return;

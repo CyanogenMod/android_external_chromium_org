@@ -110,6 +110,10 @@
 #include "ui/base/webui/jstemplate_builder.h"
 #include "widevine_cdm_version.h"  // In SHARED_INTERMEDIATE_DIR.
 
+#if !defined(DISABLE_NACL)
+#include "components/nacl/renderer/nacl_helper.h"
+#endif
+
 #if defined(ENABLE_WEBRTC)
 #include "chrome/renderer/media/webrtc_logging_message_filter.h"
 #endif
@@ -303,8 +307,7 @@ void ChromeContentRendererClient::RenderThreadStarted() {
     thread->RegisterExtension(extensions_v8::SearchBoxExtension::Get());
 
   if (command_line->HasSwitch(switches::kPlaybackMode) ||
-      command_line->HasSwitch(switches::kRecordMode) ||
-      command_line->HasSwitch(switches::kNoJsRandomness)) {
+      command_line->HasSwitch(switches::kRecordMode)) {
     thread->RegisterExtension(extensions_v8::PlaybackExtension::Get());
   }
 
@@ -396,6 +399,10 @@ void ChromeContentRendererClient::RenderFrameCreated(
 
 #if defined(ENABLE_PLUGINS)
   new PepperHelper(render_frame);
+#endif
+
+#if !defined(DISABLE_NACL)
+  new nacl::NaClHelper(render_frame);
 #endif
 
   // TODO(jam): when the frame tree moves into content and parent() works at

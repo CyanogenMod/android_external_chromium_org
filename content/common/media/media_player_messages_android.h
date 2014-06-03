@@ -42,6 +42,7 @@ IPC_STRUCT_TRAITS_END()
 IPC_STRUCT_TRAITS_BEGIN(media::DemuxerData)
   IPC_STRUCT_TRAITS_MEMBER(type)
   IPC_STRUCT_TRAITS_MEMBER(access_units)
+  IPC_STRUCT_TRAITS_MEMBER(demuxer_configs)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(media::AccessUnit)
@@ -175,10 +176,6 @@ IPC_MESSAGE_CONTROL2(MediaPlayerMsg_ReadFromDemuxer,
                      int /* demuxer_client_id */,
                      media::DemuxerStream::Type /* type */)
 
-// The player needs new config data
-IPC_MESSAGE_CONTROL1(MediaPlayerMsg_MediaConfigRequest,
-                     int /* demuxer_client_id */)
-
 // Clank has connected to the remote device.
 IPC_MESSAGE_ROUTED2(MediaPlayerMsg_ConnectedToRemoteDevice,
                     int /* player_id */,
@@ -191,6 +188,9 @@ IPC_MESSAGE_ROUTED1(MediaPlayerMsg_DisconnectedFromRemoteDevice,
 // Instructs the video element to enter fullscreen.
 IPC_MESSAGE_ROUTED1(MediaPlayerMsg_RequestFullscreen,
                     int /*player_id */)
+
+// Pauses all video playback.
+IPC_MESSAGE_ROUTED0(MediaPlayerMsg_PauseVideo)
 
 // Messages for controlling the media playback in browser process ----------
 

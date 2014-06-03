@@ -570,8 +570,9 @@ NET_ERROR(SPDY_SERVER_REFUSED_STREAM, -351)
 // SPDY server didn't respond to the PING message.
 NET_ERROR(SPDY_PING_FAILED, -352)
 
-// The request couldn't be completed on an HTTP pipeline. Client should retry.
-NET_ERROR(PIPELINE_EVICTION, -353)
+// Obsolete.  Kept here to avoid reuse, as the old error can still appear on
+// histograms.
+// NET_ERROR(PIPELINE_EVICTION, -353)
 
 // The HTTP response body transferred fewer bytes than were advertised by the
 // Content-Length header when the connection is closed.
@@ -593,6 +594,9 @@ NET_ERROR(QUIC_HANDSHAKE_FAILED, -358)
 
 // An https resource was requested over an insecure QUIC connection.
 NET_ERROR(REQUEST_FOR_SECURE_RESOURCE_OVER_INSECURE_QUIC, -359)
+
+// Transport security is inadequate for the SPDY version.
+NET_ERROR(SPDY_INADEQUATE_TRANSPORT_SECURITY, -360)
 
 // The cache does not have the requested entry.
 NET_ERROR(CACHE_MISS, -400)

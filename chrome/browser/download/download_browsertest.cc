@@ -42,7 +42,6 @@
 #include "chrome/browser/history/download_row.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/net/url_request_mock_util.h"
 #include "chrome/browser/profiles/profile.h"
@@ -62,6 +61,7 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
 #include "components/infobars/core/infobar.h"
 #include "content/public/browser/download_interrupt_reasons.h"
 #include "content/public/browser/download_item.h"
@@ -1333,7 +1333,8 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, PerWindowShelf) {
 
   // Open a second tab and wait.
   EXPECT_NE(static_cast<WebContents*>(NULL),
-            chrome::AddSelectedTabWithURL(browser(), GURL(),
+            chrome::AddSelectedTabWithURL(browser(),
+                                          GURL(content::kAboutBlankURL),
                                           content::PAGE_TRANSITION_TYPED));
   EXPECT_EQ(2, browser()->tab_strip_model()->count());
   EXPECT_TRUE(browser()->window()->IsDownloadShelfVisible());
@@ -1939,6 +1940,10 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, MAYBE_DownloadTest_History) {
   std::string last_modified = item->GetLastModifiedTime();
   base::TrimWhitespaceASCII(last_modified, base::TRIM_ALL, &last_modified);
   EXPECT_EQ("Mon, 13 Nov 2006 20:31:09 GMT", last_modified);
+
+  // Downloads that were restored from history shouldn't cause the download
+  // shelf to be displayed.
+  EXPECT_FALSE(browser()->window()->IsDownloadShelfVisible());
 }
 
 // Test for crbug.com/14505. This tests that chrome:// urls are still functional
@@ -3211,4 +3216,18 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, Resumption_MultipleAttempts) {
   EXPECT_EQ(DownloadItem::COMPLETE, download->GetState());
 
   EXPECT_FALSE(DidShowFileChooser());
+}
+
+// The file empty.bin is served with a MIME type of application/octet-stream.
+// The content body is empty. Make sure this case is handled properly and we
+// don't regress on http://crbug.com/320394.
+IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadTest_GZipWithNoContent) {
+  ASSERT_TRUE(test_server()->Start());
+  GURL url(test_server()->GetURL("files/downloads/empty.bin"));
+  // Downloading the same URL twice causes the second request to be served from
+  // cached (with a high probability). This test verifies that that doesn't
+  // happen regardless of whether the request is served via the cache or from
+  // the network.
+  DownloadAndWait(browser(), url);
+  DownloadAndWait(browser(), url);
 }

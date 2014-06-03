@@ -30,12 +30,6 @@ class ResponderThunk : public MessageReceiver {
     return result;
   }
 
-  virtual bool AcceptWithResponder(Message* message,
-                                   MessageReceiver* responder) MOJO_OVERRIDE {
-    assert(false);  // not reached!
-    return false;
-  }
-
  private:
   SharedData<Router*> router_;
 };
@@ -53,22 +47,19 @@ bool Router::HandleIncomingMessageThunk::Accept(Message* message) {
   return router_->HandleIncomingMessage(message);
 }
 
-bool Router::HandleIncomingMessageThunk::AcceptWithResponder(
-    Message* message,
-    MessageReceiver* responder) {
-  assert(false);  // not reached!
-  return false;
-}
-
 // ----------------------------------------------------------------------------
 
-Router::Router(ScopedMessagePipeHandle message_pipe, MojoAsyncWaiter* waiter)
-    : connector_(message_pipe.Pass(), waiter),
+Router::Router(ScopedMessagePipeHandle message_pipe,
+               FilterChain filters,
+               MojoAsyncWaiter* waiter)
+    : thunk_(this),
+      filters_(filters.Pass()),
+      connector_(message_pipe.Pass(), waiter),
       weak_self_(this),
       incoming_receiver_(NULL),
-      thunk_(this),
       next_request_id_(0) {
-  connector_.set_incoming_receiver(&thunk_);
+  filters_.SetSink(&thunk_);
+  connector_.set_incoming_receiver(filters_.GetHead());
 }
 
 Router::~Router() {

@@ -125,7 +125,6 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
       const scoped_refptr<media::VideoFrame>& target,
       const base::Callback<void(bool)>& callback) OVERRIDE;
   virtual bool CanCopyToVideoFrame() const OVERRIDE;
-  virtual void OnAcceleratedCompositingStateChange() OVERRIDE;
   virtual void AcceleratedSurfaceInitialized(int host_id,
                                              int route_id) OVERRIDE;
   virtual void AcceleratedSurfaceBuffersSwapped(
@@ -141,7 +140,6 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
   virtual bool PostProcessEventForPluginIme(
       const NativeWebKeyboardEvent& event) OVERRIDE;
 #elif defined(OS_ANDROID)
-  virtual void SelectionRootBoundsChanged(const gfx::Rect&) OVERRIDE {}
   virtual void ShowDisambiguationPopup(
       const gfx::Rect& target_rect,
       const SkBitmap& zoomed_bitmap) OVERRIDE {}
@@ -310,6 +308,7 @@ class TestRenderViewHost
 
   virtual bool CreateRenderView(const base::string16& frame_name,
                                 int opener_route_id,
+                                int proxy_route_id,
                                 int32 max_page_id,
                                 bool window_was_created_with_opener) OVERRIDE;
   virtual bool IsRenderViewLive() const OVERRIDE;

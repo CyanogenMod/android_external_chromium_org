@@ -15,6 +15,7 @@
 #include "ui/base/dragdrop/drag_utils.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_switches_util.h"
+#include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/events/event.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
@@ -63,6 +64,18 @@ void ConvertRectToScreen(const View* src, gfx::Rect* r) {
   r->set_origin(new_origin);
 }
 
+// Get the drag selection timer delay, respecting animation scaling for testing.
+int GetDragSelectionDelay() {
+  switch (ui::ScopedAnimationDurationScaleMode::duration_scale_mode()) {
+      case ui::ScopedAnimationDurationScaleMode::NORMAL_DURATION: return 100;
+      case ui::ScopedAnimationDurationScaleMode::FAST_DURATION:   return 25;
+      case ui::ScopedAnimationDurationScaleMode::SLOW_DURATION:   return 400;
+      case ui::ScopedAnimationDurationScaleMode::ZERO_DURATION:   return 0;
+    }
+  return 100;
+}
+
+// Get the default command for a given key |event| and selection state.
 int GetCommandForKeyEvent(const ui::KeyEvent& event, bool has_selection) {
   if (event.type() != ui::ET_KEY_PRESSED || event.IsUnicodeKeyCode())
     return kNoCommand;
@@ -135,6 +148,7 @@ int GetCommandForKeyEvent(const ui::KeyEvent& event, bool has_selection) {
 }
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+// Convert a custom text edit |command| to the equivalent views command ID.
 int GetViewsCommand(const ui::TextEditCommandAuraLinux& command, bool rtl) {
   const bool select = command.extend_selection();
   switch (command.command_id()) {
@@ -312,14 +326,14 @@ base::i18n::TextDirection Textfield::GetTextDirection() const {
   return GetRenderText()->GetTextDirection();
 }
 
+base::string16 Textfield::GetSelectedText() const {
+  return model_->GetSelectedText();
+}
+
 void Textfield::SelectAll(bool reversed) {
   model_->SelectAll(reversed);
   UpdateSelectionClipboard();
   UpdateAfterChange(false, true);
-}
-
-base::string16 Textfield::GetSelectedText() const {
-  return model_->GetSelectedText();
 }
 
 void Textfield::ClearSelection() {
@@ -481,7 +495,7 @@ int Textfield::GetBaseline() const {
   return GetInsets().top() + GetRenderText()->GetBaseline();
 }
 
-gfx::Size Textfield::GetPreferredSize() {
+gfx::Size Textfield::GetPreferredSize() const {
   const gfx::Insets& insets = GetInsets();
   return gfx::Size(GetFontList().GetExpectedTextWidth(default_width_in_chars_) +
                    insets.width(), GetFontList().GetHeight() + insets.height());
@@ -552,35 +566,32 @@ bool Textfield::OnMousePressed(const ui::MouseEvent& event) {
 }
 
 bool Textfield::OnMouseDragged(const ui::MouseEvent& event) {
+  last_drag_location_ = event.location();
+
   // Don't adjust the cursor on a potential drag and drop, or if the mouse
   // movement from the last mouse click does not exceed the drag threshold.
   if (initiating_drag_ || !event.IsOnlyLeftMouseButton() ||
-      !ExceededDragThreshold(event.location() - last_click_location_)) {
+      !ExceededDragThreshold(last_drag_location_ - last_click_location_)) {
     return true;
   }
 
-  OnBeforeUserAction();
-  model_->MoveCursorTo(event.location(), true);
-  if (aggregated_clicks_ == 1) {
-    model_->SelectWord();
-    // Expand the selection so the initially selected word remains selected.
-    gfx::Range selection = GetRenderText()->selection();
-    const size_t min = std::min(selection.GetMin(),
-                                double_click_word_.GetMin());
-    const size_t max = std::max(selection.GetMax(),
-                                double_click_word_.GetMax());
-    const bool reversed = selection.is_reversed();
-    selection.set_start(reversed ? max : min);
-    selection.set_end(reversed ? min : max);
-    model_->SelectRange(selection);
+  // A timer is used to continuously scroll while selecting beyond side edges.
+  if ((event.location().x() > 0 && event.location().x() < size().width()) ||
+      GetDragSelectionDelay() == 0) {
+    drag_selection_timer_.Stop();
+    SelectThroughLastDragLocation();
+  } else if (!drag_selection_timer_.IsRunning()) {
+    drag_selection_timer_.Start(
+        FROM_HERE, base::TimeDelta::FromMilliseconds(GetDragSelectionDelay()),
+        this, &Textfield::SelectThroughLastDragLocation);
   }
-  UpdateAfterChange(false, true);
-  OnAfterUserAction();
+
   return true;
 }
 
 void Textfield::OnMouseReleased(const ui::MouseEvent& event) {
   OnBeforeUserAction();
+  drag_selection_timer_.Stop();
   // Cancel suspected drag initiations, the user was clicking in the selection.
   if (initiating_drag_)
     MoveCursorTo(event.location(), false);
@@ -591,19 +602,15 @@ void Textfield::OnMouseReleased(const ui::MouseEvent& event) {
 
 bool Textfield::OnKeyPressed(const ui::KeyEvent& event) {
   bool handled = controller_ && controller_->HandleKeyEvent(this, event);
-  if (handled)
-    return true;
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
   ui::TextEditKeyBindingsDelegateAuraLinux* delegate =
       ui::GetTextEditKeyBindingsDelegate();
   std::vector<ui::TextEditCommandAuraLinux> commands;
-  if (delegate) {
-    if (!delegate->MatchEvent(event, &commands))
-      return false;
+  if (!handled && delegate && delegate->MatchEvent(event, &commands)) {
     const bool rtl = GetTextDirection() == base::i18n::RIGHT_TO_LEFT;
     for (size_t i = 0; i < commands.size(); ++i) {
-      int command = GetViewsCommand(commands[i], rtl);
+      const int command = GetViewsCommand(commands[i], rtl);
       if (IsCommandIdEnabled(command)) {
         ExecuteCommand(command);
         handled = true;
@@ -614,11 +621,11 @@ bool Textfield::OnKeyPressed(const ui::KeyEvent& event) {
 #endif
 
   const int command = GetCommandForKeyEvent(event, HasSelection());
-  if (IsCommandIdEnabled(command)) {
+  if (!handled && IsCommandIdEnabled(command)) {
     ExecuteCommand(command);
-    return true;
+    handled = true;
   }
-  return false;
+  return handled;
 }
 
 ui::TextInputClient* Textfield::GetTextInputClient() {
@@ -724,9 +731,10 @@ bool Textfield::SkipDefaultKeyEventProcessing(const ui::KeyEvent& event) {
   }
 #endif
 
-  // Skip any accelerator handling of backspace; textfields handle this key.
+  // Skip backspace accelerator handling; editable textfields handle this key.
   // Also skip processing Windows [Alt]+<num-pad digit> Unicode alt-codes.
-  return event.key_code() == ui::VKEY_BACK || event.IsUnicodeKeyCode();
+  const bool is_backspace = event.key_code() == ui::VKEY_BACK;
+  return (is_backspace && !read_only()) || event.IsUnicodeKeyCode();
 }
 
 bool Textfield::GetDropFormats(
@@ -862,7 +870,7 @@ void Textfield::OnFocus() {
   GetRenderText()->set_focused(true);
   cursor_visible_ = true;
   SchedulePaint();
-  GetInputMethod()->OnFocus();
+  GetInputMethod()->OnTextInputTypeChanged(this);
   OnCaretBoundsChanged();
 
   const size_t caret_blink_ms = Textfield::GetCaretBlinkMs();
@@ -878,7 +886,7 @@ void Textfield::OnFocus() {
 
 void Textfield::OnBlur() {
   GetRenderText()->set_focused(false);
-  GetInputMethod()->OnBlur();
+  GetInputMethod()->OnTextInputTypeChanged(this);
   cursor_repaint_timer_.Stop();
   if (cursor_visible_) {
     cursor_visible_ = false;
@@ -955,7 +963,7 @@ void Textfield::WriteDragDataForView(View* sender,
   // Desktop Linux Aura does not yet support transparency in drag images.
   canvas->DrawColor(background);
 #endif
-  label.Paint(canvas.get());
+  label.Paint(canvas.get(), views::CullSet());
   const gfx::Vector2d kOffset(-15, 0);
   drag_utils::SetDragImageOnDataObject(*canvas, label.size(), kOffset, data);
   if (controller_)
@@ -1110,7 +1118,7 @@ void Textfield::ExecuteCommand(int command_id, int event_flags) {
   bool rtl = GetTextDirection() == base::i18n::RIGHT_TO_LEFT;
   gfx::VisualCursorDirection begin = rtl ? gfx::CURSOR_RIGHT : gfx::CURSOR_LEFT;
   gfx::VisualCursorDirection end = rtl ? gfx::CURSOR_LEFT : gfx::CURSOR_RIGHT;
-  gfx::Range selection_range = GetSelectedRange();
+  gfx::SelectionModel selection_model = GetSelectionModel();
 
   OnBeforeUserAction();
   switch (command_id) {
@@ -1198,7 +1206,7 @@ void Textfield::ExecuteCommand(int command_id, int event_flags) {
       break;
   }
 
-  cursor_changed |= GetSelectedRange() != selection_range;
+  cursor_changed |= GetSelectionModel() != selection_model;
   if (cursor_changed)
     UpdateSelectionClipboard();
   UpdateAfterChange(text_changed, cursor_changed);
@@ -1539,6 +1547,26 @@ void Textfield::PaintTextAndCursor(gfx::Canvas* canvas) {
 void Textfield::MoveCursorTo(const gfx::Point& point, bool select) {
   if (model_->MoveCursorTo(point, select))
     UpdateAfterChange(false, true);
+}
+
+void Textfield::SelectThroughLastDragLocation() {
+  OnBeforeUserAction();
+  model_->MoveCursorTo(last_drag_location_, true);
+  if (aggregated_clicks_ == 1) {
+    model_->SelectWord();
+    // Expand the selection so the initially selected word remains selected.
+    gfx::Range selection = GetRenderText()->selection();
+    const size_t min = std::min(selection.GetMin(),
+                                double_click_word_.GetMin());
+    const size_t max = std::max(selection.GetMax(),
+                                double_click_word_.GetMax());
+    const bool reversed = selection.is_reversed();
+    selection.set_start(reversed ? max : min);
+    selection.set_end(reversed ? min : max);
+    model_->SelectRange(selection);
+  }
+  UpdateAfterChange(false, true);
+  OnAfterUserAction();
 }
 
 void Textfield::OnCaretBoundsChanged() {

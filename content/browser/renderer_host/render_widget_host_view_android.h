@@ -114,9 +114,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
                                 const gfx::Range& range) OVERRIDE;
   virtual void SelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params) OVERRIDE;
-  virtual void SelectionRootBoundsChanged(const gfx::Rect& bounds) OVERRIDE;
   virtual void ScrollOffsetChanged() OVERRIDE;
-  virtual void OnAcceleratedCompositingStateChange() OVERRIDE;
   virtual void AcceleratedSurfaceInitialized(int host_id,
                                              int route_id) OVERRIDE;
   virtual void AcceleratedSurfaceBuffersSwapped(
@@ -128,7 +126,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   virtual void AcceleratedSurfaceSuspend() OVERRIDE;
   virtual void AcceleratedSurfaceRelease() OVERRIDE;
   virtual bool HasAcceleratedSurface(const gfx::Size& desired_size) OVERRIDE;
-  virtual void SetBackground(const SkBitmap& background) OVERRIDE;
+  virtual void SetBackgroundOpaque(bool transparent) OVERRIDE;
   virtual void CopyFromCompositingSurface(
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
@@ -159,6 +157,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   virtual void OnSwapCompositorFrame(
       uint32 output_surface_id,
       scoped_ptr<cc::CompositorFrame> frame) OVERRIDE;
+  virtual void DidOverscroll(const DidOverscrollParams& params) OVERRIDE;
   virtual void DidStopFlinging() OVERRIDE;
   virtual void ShowDisambiguationPopup(const gfx::Rect& target_rect,
                                        const SkBitmap& zoomed_bitmap) OVERRIDE;
@@ -180,6 +179,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   virtual void OnWillDestroyWindow() OVERRIDE;
   virtual void OnVSync(base::TimeTicks frame_time,
                        base::TimeDelta vsync_period) OVERRIDE;
+  virtual void OnAnimate(base::TimeTicks begin_frame_time) OVERRIDE;
 
   // ImageTransportFactoryAndroidObserver implementation.
   virtual void OnLostResources() OVERRIDE;
@@ -200,7 +200,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   void OnTextInputStateChanged(const ViewHostMsg_TextInputState_Params& params);
   void OnDidChangeBodyBackgroundColor(SkColor color);
-  void OnDidOverscroll(const DidOverscrollParams& params);
   void OnStartContentIntent(const GURL& content_url);
   void OnSetNeedsBeginFrame(bool enabled);
   void OnSmartClipDataExtracted(const base::string16& result);

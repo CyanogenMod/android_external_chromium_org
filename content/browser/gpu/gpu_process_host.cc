@@ -38,6 +38,7 @@
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_switches.h"
 #include "ipc/message_filter.h"
+#include "media/base/media_switches.h"
 #include "ui/events/latency_info.h"
 #include "ui/gl/gl_switches.h"
 
@@ -51,6 +52,10 @@
 
 #if defined(USE_OZONE)
 #include "ui/ozone/ozone_switches.h"
+#endif
+
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+#include "ui/gfx/x/x11_switches.h"
 #endif
 
 namespace content {
@@ -800,6 +805,13 @@ void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
                                "GpuHostMsg_AcceleratedSurfaceBuffersSwapped"))
     return;
 
+  gfx::AcceleratedWidget native_widget =
+      GpuSurfaceTracker::Get()->AcquireNativeWidget(params.surface_id);
+  if (native_widget) {
+    RenderWidgetHelper::OnNativeSurfaceBuffersSwappedOnIOThread(this, params);
+    return;
+  }
+
   gfx::GLSurfaceHandle surface_handle =
       GpuSurfaceTracker::Get()->GetSurfaceHandle(params.surface_id);
   // Compositor window is always gfx::kNullPluginWindow.
@@ -930,6 +942,7 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
     switches::kGpuSandboxAllowSysVShm,
     switches::kGpuSandboxFailuresFatal,
     switches::kGpuSandboxStartAfterInitialization,
+    switches::kIgnoreResolutionLimitsForAcceleratedVideoDecode,
     switches::kLoggingLevel,
     switches::kNoSandbox,
     switches::kTestGLLib,
@@ -945,8 +958,8 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
 #if defined(USE_OZONE)
     switches::kOzonePlatform,
 #endif
-#if defined(OS_WIN)
-    switches::kHighDPISupport,
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+    switches::kX11Display,
 #endif
   };
   cmd_line->CopySwitchesFrom(browser_command_line, kSwitchNames,

@@ -305,6 +305,15 @@
     "dependencies": ["permission:echoPrivate"],
     "contexts": ["blessed_extension"]
   },
+  "enterprise.platformKeys": {
+    "dependencies": ["permission:enterprise.platformKeys"],
+    "contexts": ["blessed_extension"]
+  },
+  "enterprise.platformKeysInternal": {
+    "dependencies": ["permission:enterprise.platformKeys"],
+    "internal": true,
+    "contexts": ["blessed_extension"]
+  },
   "enterprise.platformKeysPrivate": {
     "platforms": ["chromeos"],
     "dependencies": ["permission:enterprise.platformKeysPrivate"],
@@ -319,12 +328,10 @@
   },
   "experimental.devtools.audits": {
     "dependencies": ["permission:experimental", "manifest:devtools_page"],
-    "extension_types": ["platform_app"],
     "contexts": ["blessed_extension"]
   },
   "experimental.devtools.console": {
     "dependencies": ["permission:experimental", "manifest:devtools_page"],
-    "extension_types": ["platform_app"],
     "contexts": ["blessed_extension"]
   },
   "extension": {
@@ -398,6 +405,12 @@
     "dependencies": ["permission:fileBrowserPrivate"],
     "contexts": ["blessed_extension"]
   },
+  "fileBrowserPrivateInternal": {
+    "internal": true,
+    "platforms": ["chromeos"],
+    "dependencies": ["permission:fileBrowserPrivate"],
+    "contexts": ["blessed_extension"]
+  },
   "fileSystem": {
     "dependencies": ["permission:fileSystem"],
     "contexts": ["blessed_extension"]
@@ -456,6 +469,11 @@
     "dependencies": ["permission:identity"],
     "contexts": ["blessed_extension"]
   },
+  "identity.getAccounts": {
+    "channel": "dev",
+    "dependencies": ["permission:identity"],
+    "contexts": ["blessed_extension"]
+  },
   "identityPrivate": {
     "dependencies": ["permission:identityPrivate"],
     "contexts": ["blessed_extension"]
@@ -480,6 +498,11 @@
   "inputMethodPrivate": {
     "platforms": ["chromeos"],
     "dependencies": ["permission:inputMethodPrivate"],
+    "contexts": ["blessed_extension"]
+  },
+  "ledger": {
+    "platforms": ["chromeos"],
+    "dependencies": ["permission:ledger"],
     "contexts": ["blessed_extension"]
   },
   "location": {
@@ -510,6 +533,11 @@
     "extension_types": ["extension", "legacy_packaged_app", "platform_app"]
   },
   "management.createAppShortcut": {
+    "dependencies": ["permission:management"],
+    "channel": "dev",
+    "contexts": ["blessed_extension"]
+  },
+  "management.setLaunchType": {
     "dependencies": ["permission:management"],
     "channel": "dev",
     "contexts": ["blessed_extension"]
@@ -645,6 +673,10 @@
   "syncFileSystem": {
     "dependencies": ["permission:syncFileSystem"],
     "contexts": ["blessed_extension"]
+  },
+  "syncedNotificationsPrivate": {
+    "contexts": ["blessed_extension"],
+    "dependencies": ["permission:syncedNotificationsPrivate"]
   },
   "systemIndicator": {
     "dependencies": ["manifest:system_indicator"],

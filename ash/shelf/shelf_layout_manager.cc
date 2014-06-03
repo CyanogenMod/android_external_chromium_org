@@ -723,6 +723,14 @@ void ShelfLayoutManager::UpdateBoundsAndOpacity(
 
   GetLayer(shelf_->status_area_widget())->SetOpacity(
       target_bounds.status_opacity);
+
+  // Having a window which is visible but does not have an opacity is an illegal
+  // state. We therefore show / hide the shelf here if required.
+  if (!target_bounds.status_opacity)
+    shelf_->status_area_widget()->Hide();
+  else if (target_bounds.status_opacity)
+    shelf_->status_area_widget()->Show();
+
   // TODO(harrym): Once status area widget is a child view of shelf
   // this can be simplified.
   gfx::Rect status_bounds = target_bounds.status_bounds_in_shelf;
@@ -1178,16 +1186,8 @@ void ShelfLayoutManager::OnDockBoundsChanging(
 
 void ShelfLayoutManager::OnLockStateEvent(LockStateObserver::EventType event) {
   if (event == EVENT_LOCK_ANIMATION_STARTED) {
-    // Enter the screen locked state as the animation starts to prevent
-    // layout changes as the screen locks.
+    // Enter the screen locked state.
     state_.is_screen_locked = true;
-    // Hide the status area widget (using auto hide animation).
-    base::AutoReset<ShelfVisibilityState> state(&state_.visibility_state,
-                                                SHELF_HIDDEN);
-    TargetBounds target_bounds;
-    CalculateTargetBounds(state_, &target_bounds);
-    UpdateBoundsAndOpacity(target_bounds, true, NULL);
-    UpdateVisibilityState();
   }
 }
 

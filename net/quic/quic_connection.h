@@ -49,7 +49,6 @@ class QuicConnection;
 class QuicDecrypter;
 class QuicEncrypter;
 class QuicFecGroup;
-class QuicFlowController;
 class QuicRandom;
 
 namespace test {
@@ -94,10 +93,12 @@ class NET_EXPORT_PRIVATE QuicConnectionVisitorInterface {
   // Called when a blocked socket becomes writable.
   virtual void OnCanWrite() = 0;
 
-  // Called to ask if any writes are pending in this visitor. Writes may be
-  // pending because they were write-blocked, congestion-throttled or
-  // yielded to other connections.
-  virtual bool HasPendingWrites() const = 0;
+  // Called to ask if the visitor wants to schedule write resumption as it both
+  // has pending data to write, and is able to write (e.g. based on flow control
+  // limits).
+  // Writes may be pending because they were write-blocked, congestion-throttled
+  // or yielded to other connections.
+  virtual bool WillingAndAbleToWrite() const = 0;
 
   // Called to ask if any handshake messages are pending in this visitor.
   virtual bool HasPendingHandshake() const = 0;
@@ -217,8 +218,7 @@ class NET_EXPORT_PRIVATE QuicConnection
                  QuicConnectionHelperInterface* helper,
                  QuicPacketWriter* writer,
                  bool is_server,
-                 const QuicVersionVector& supported_versions,
-                 uint32 max_flow_control_receive_window_bytes);
+                 const QuicVersionVector& supported_versions);
   virtual ~QuicConnection();
 
   // Sets connection parameters from the supplied |config|.
@@ -266,8 +266,6 @@ class NET_EXPORT_PRIVATE QuicConnection
   virtual void SendGoAway(QuicErrorCode error,
                           QuicStreamId last_good_stream_id,
                           const std::string& reason);
-
-  QuicFlowController* flow_controller() { return flow_controller_.get(); }
 
   // Returns statistics tracked for this connection.
   const QuicConnectionStats& GetStats();
@@ -417,9 +415,9 @@ class NET_EXPORT_PRIVATE QuicConnection
   // initially encrypted packets when the initial encrypter changes.
   void RetransmitUnackedPackets(RetransmissionType retransmission_type);
 
-  // Calls |sent_packet_manager_|'s DiscardUnencryptedPackets. Used when the
+  // Calls |sent_packet_manager_|'s NeuterUnencryptedPackets. Used when the
   // connection becomes forward secure and hasn't received acks for all packets.
-  void DiscardUnencryptedPackets();
+  void NeuterUnencryptedPackets();
 
   // Changes the encrypter used for level |level| to |encrypter|. The function
   // takes ownership of |encrypter|.
@@ -458,12 +456,7 @@ class NET_EXPORT_PRIVATE QuicConnection
   }
 
   bool CanWrite(TransmissionType transmission_type,
-                HasRetransmittableData retransmittable,
-                IsHandshake handshake);
-
-  uint32 max_flow_control_receive_window_bytes() const {
-    return max_flow_control_receive_window_bytes_;
-  }
+                HasRetransmittableData retransmittable);
 
   // Stores current batch state for connection, puts the connection
   // into batch mode, and destruction restores the stored batch state.
@@ -611,6 +604,11 @@ class NET_EXPORT_PRIVATE QuicConnection
   // Sets the ping alarm to the appropriate value, if any.
   void SetPingAlarm();
 
+  // On arrival of a new packet, checks to see if the socket addresses have
+  // changed since the last packet we saw on this connection.
+  void CheckForAddressMigration(const IPEndPoint& self_address,
+                                const IPEndPoint& peer_address);
+
   QuicFramer framer_;
   QuicConnectionHelperInterface* helper_;  // Not owned.
   QuicPacketWriter* writer_;  // Not owned.
@@ -623,6 +621,8 @@ class NET_EXPORT_PRIVATE QuicConnection
   // client.
   IPEndPoint self_address_;
   IPEndPoint peer_address_;
+  // Used to store latest peer port to possibly migrate to later.
+  int migrating_peer_port_;
 
   bool last_packet_revived_;  // True if the last packet was revived from FEC.
   size_t last_size_;  // Size of the last received packet.
@@ -734,19 +734,25 @@ class NET_EXPORT_PRIVATE QuicConnection
   // close.
   bool connected_;
 
-  // Set to true if the udp packet headers have a new self or peer address.
-  // This is checked later on validating a data or version negotiation packet.
-  bool address_migrating_;
+  // Set to true if the UDP packet headers have a new IP address for the peer.
+  // If true, do not perform connection migration.
+  bool peer_ip_changed_;
+
+  // Set to true if the UDP packet headers have a new port for the peer.
+  // If true, and the IP has not changed, then we can migrate the connection.
+  bool peer_port_changed_;
+
+  // Set to true if the UDP packet headers are addressed to a different IP.
+  // We do not support connection migration when the self IP changed.
+  bool self_ip_changed_;
+
+  // Set to true if the UDP packet headers are addressed to a different port.
+  // We do not support connection migration when the self port changed.
+  bool self_port_changed_;
 
   // If non-empty this contains the set of versions received in a
   // version negotiation packet.
   QuicVersionVector server_supported_versions_;
-
-  // Initial flow control receive window size for new streams.
-  uint32 max_flow_control_receive_window_bytes_;
-
-  // Used for connection level flow control.
-  scoped_ptr<QuicFlowController> flow_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicConnection);
 };

@@ -92,7 +92,7 @@ class CC_EXPORT PictureLayerImpl
   virtual void AppendQuads(QuadSink* quad_sink,
                            AppendQuadsData* append_quads_data) OVERRIDE;
   virtual void UpdateTilePriorities() OVERRIDE;
-  virtual void NotifyTileInitialized(const Tile* tile) OVERRIDE;
+  virtual void NotifyTileStateChanged(const Tile* tile) OVERRIDE;
   virtual void DidBecomeActive() OVERRIDE;
   virtual void DidBeginTracing() OVERRIDE;
   virtual void ReleaseResources() OVERRIDE;
@@ -131,14 +131,12 @@ class CC_EXPORT PictureLayerImpl
 
   virtual void RunMicroBenchmark(MicroBenchmarkImpl* benchmark) OVERRIDE;
 
-  void SetUseGpuRasterization(bool use_gpu);
-  bool ShouldUseGpuRasterization() const { return use_gpu_rasterization_; }
-
   // Functions used by tile manager.
   void DidUnregisterLayer();
   PictureLayerImpl* GetTwinLayer() { return twin_layer_; }
   WhichTree GetTree() const;
   bool IsOnActiveOrPendingTree() const;
+  bool AllTilesRequiredForActivationAreReadyToDraw() const;
 
  protected:
   friend class LayerRasterTileIterator;
@@ -150,9 +148,6 @@ class CC_EXPORT PictureLayerImpl
   void SyncFromActiveLayer(const PictureLayerImpl* other);
   void ManageTilings(bool animating_transform_to_screen,
                      float maximum_animation_contents_scale);
-  bool ShouldHaveLowResTiling() const {
-    return should_use_low_res_tiling_ && !ShouldUseGpuRasterization();
-  }
   virtual bool ShouldAdjustRasterScale(
       bool animating_transform_to_screen) const;
   virtual void RecalculateRasterScales(bool animating_transform_to_screen,
@@ -211,8 +206,6 @@ class CC_EXPORT PictureLayerImpl
   // A sanity state check to make sure UpdateTilePriorities only gets called
   // after a CalculateContentsScale/ManageTilings.
   bool should_update_tile_priorities_;
-  bool should_use_low_res_tiling_;
-  bool use_gpu_rasterization_;
 
   bool layer_needs_to_register_itself_;
 

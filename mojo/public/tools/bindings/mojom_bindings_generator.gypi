@@ -8,32 +8,32 @@
       'rule_name': 'Generate C++ source files from mojom files',
       'extension': 'mojom',
       'variables': {
-        # TODO(sky): uncomment this once gyp bug fixed and remove explicit
-        # setting everywhere
-        # 'mojom_base_output_dir':
-        #      '<!(python <(DEPTH)/build/inverse_depth.py <(DEPTH))',
+        'mojom_base_output_dir':
+             '<!(python <(DEPTH)/build/inverse_depth.py <(DEPTH))',
         'mojom_bindings_generator':
             '<(DEPTH)/mojo/public/tools/bindings/mojom_bindings_generator.py',
       },
       'inputs': [
         '<(mojom_bindings_generator)',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/enum_declaration.tmpl',
-        '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/enum_traits.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/interface_declaration.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/interface_definition.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/interface_macros.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/interface_proxy_declaration.tmpl',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/interface_request_validator_declaration.tmpl',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/interface_response_validator_declaration.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/interface_stub_declaration.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/module.cc.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/module.h.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/module-internal.h.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/params_definition.tmpl',
-        '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/struct_builder_definition.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/struct_declaration.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/struct_definition.tmpl',
-        '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/struct_destructor.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/struct_macros.tmpl',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/struct_serialization_declaration.tmpl',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/struct_serialization_definition.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/wrapper_class_declaration.tmpl',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/wrapper_class_definition.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/js_templates/enum_definition.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/js_templates/interface_definition.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/js_templates/module.js.tmpl',

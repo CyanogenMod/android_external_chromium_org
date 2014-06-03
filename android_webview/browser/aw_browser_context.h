@@ -64,6 +64,8 @@ class AwBrowserContext : public content::BrowserContext,
   static AwBrowserContext* FromWebContents(
       content::WebContents* web_contents);
 
+  static void SetDataReductionProxyEnabled(bool enabled);
+
   // Maps to BrowserMainParts::PreMainMessageLoopRun.
   void PreMainMessageLoopRun();
 
@@ -112,19 +114,18 @@ class AwBrowserContext : public content::BrowserContext,
   virtual void RequestProtectedMediaIdentifierPermission(
       int render_process_id,
       int render_view_id,
-      int bridge_id,
-      int group_id,
-      const GURL& requesting_frame,
+      const GURL& origin,
       const ProtectedMediaIdentifierPermissionCallback& callback) OVERRIDE;
-  virtual void CancelProtectedMediaIdentifierPermissionRequests(int group_id)
-      OVERRIDE;
+  virtual void CancelProtectedMediaIdentifierPermissionRequests(
+      int render_process_id,
+      int render_view_id,
+      const GURL& origin) OVERRIDE;
   virtual content::ResourceContext* GetResourceContext() OVERRIDE;
   virtual content::DownloadManagerDelegate*
       GetDownloadManagerDelegate() OVERRIDE;
   virtual content::GeolocationPermissionContext*
       GetGeolocationPermissionContext() OVERRIDE;
-  virtual content::BrowserPluginGuestManagerDelegate*
-      GetGuestManagerDelegate() OVERRIDE;
+  virtual content::BrowserPluginGuestManager* GetGuestManager() OVERRIDE;
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
 
   // visitedlink::VisitedLinkDelegate implementation.
@@ -132,6 +133,8 @@ class AwBrowserContext : public content::BrowserContext,
       const scoped_refptr<URLEnumerator>& enumerator) OVERRIDE;
 
  private:
+  static bool data_reduction_proxy_enabled_;
+
   // The file path where data for this context is persisted.
   base::FilePath context_storage_path_;
 

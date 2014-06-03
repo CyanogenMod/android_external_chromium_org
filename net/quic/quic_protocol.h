@@ -57,6 +57,8 @@ const QuicByteCount kDefaultMaxPacketSize = 1200;
 // additional 8 bytes.  This is a total overhead of 48 bytes.  Ethernet's
 // max packet size is 1500 bytes,  1500 - 48 = 1452.
 const QuicByteCount kMaxPacketSize = 1452;
+// Default maximum packet size used in Linux TCP implementations.
+const QuicByteCount kDefaultTCPMSS = 1460;
 
 // Maximum size of the initial congestion window in packets.
 const size_t kDefaultInitialWindow = 10;
@@ -275,7 +277,8 @@ enum QuicVersion {
 //
 // IMPORTANT: if you are addding to this list, follow the instructions at
 // http://sites/quic/adding-and-removing-versions
-static const QuicVersion kSupportedQuicVersions[] = {QUIC_VERSION_18,
+static const QuicVersion kSupportedQuicVersions[] = {QUIC_VERSION_19,
+                                                     QUIC_VERSION_18,
                                                      QUIC_VERSION_17,
                                                      QUIC_VERSION_16,
                                                      QUIC_VERSION_15};
@@ -450,6 +453,8 @@ enum QuicErrorCode {
   QUIC_INVALID_HEADERS_STREAM_DATA = 56,
   // The peer violated the flow control protocol.
   QUIC_FLOW_CONTROL_ERROR = 59,
+  // The connection has been IP pooled into an existing connection.
+  QUIC_CONNECTION_IP_POOLED = 62,
 
   // Crypto errors.
 
@@ -505,7 +510,7 @@ enum QuicErrorCode {
   QUIC_VERSION_NEGOTIATION_MISMATCH = 55,
 
   // No error. Used as bound while iterating.
-  QUIC_LAST_ERROR = 62,
+  QUIC_LAST_ERROR = 63,
 };
 
 struct NET_EXPORT_PRIVATE QuicPacketPublicHeader {
@@ -688,6 +693,7 @@ enum CongestionFeedbackType {
   kTCP,  // Used to mimic TCP.
   kInterArrival,  // Use additional inter arrival information.
   kFixRate,  // Provided for testing.
+  kTCPBBR,  // BBR implementation based on TCP congestion feedback.
 };
 
 enum LossDetectionType {
@@ -1033,8 +1039,8 @@ struct NET_EXPORT_PRIVATE TransmissionInfo {
   // Stores the sequence numbers of all transmissions of this packet.
   // Can never be null.
   SequenceNumberSet* all_transmissions;
-  // Pending packets have not been abandoned or lost.
-  bool pending;
+  // In flight packets have not been abandoned or lost.
+  bool in_flight;
 };
 
 // A struct for functions which consume data payloads and fins.

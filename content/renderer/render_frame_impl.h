@@ -18,12 +18,17 @@
 #include "content/public/common/referrer.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/renderer/media/webmediaplayer_delegate.h"
+#include "content/renderer/render_frame_proxy.h"
 #include "content/renderer/renderer_webcookiejar_impl.h"
 #include "ipc/ipc_message.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
 #include "third_party/WebKit/public/web/WebFrameClient.h"
 #include "third_party/WebKit/public/web/WebHistoryCommitType.h"
 #include "ui/gfx/range/range.h"
+
+#if defined(OS_ANDROID)
+#include "content/renderer/media/android/renderer_media_player_manager.h"
+#endif
 
 class TransportDIB;
 struct FrameMsg_BuffersSwapped_Params;
@@ -53,7 +58,7 @@ class Rect;
 namespace content {
 
 class ChildFrameCompositingHelper;
-class MediaStreamClient;
+class MediaStreamRendererFactory;
 class NotificationProvider;
 class PepperPluginInstanceImpl;
 class RendererPpapiHost;
@@ -62,6 +67,11 @@ class RenderViewImpl;
 class RenderWidget;
 class RenderWidgetFullscreenPepper;
 struct CustomContextMenuContext;
+
+#if defined(OS_ANDROID)
+class RendererCdmManager;
+class RendererMediaPlayerManager;
+#endif
 
 class CONTENT_EXPORT RenderFrameImpl
     : public RenderFrame,
@@ -73,6 +83,9 @@ class CONTENT_EXPORT RenderFrameImpl
   // Callers *must* call |SetWebFrame| immediately after creation.
   // TODO(creis): We should structure this so that |SetWebFrame| isn't needed.
   static RenderFrameImpl* Create(RenderViewImpl* render_view, int32 routing_id);
+
+  // Returns the RenderFrameImpl for the given routing ID.
+  static RenderFrameImpl* FromRoutingID(int routing_id);
 
   // Just like RenderFrame::FromWebFrame but returns the implementation.
   static RenderFrameImpl* FromWebFrame(blink::WebFrame* web_frame);
@@ -86,6 +99,12 @@ class CONTENT_EXPORT RenderFrameImpl
 
   bool is_swapped_out() const {
     return is_swapped_out_;
+  }
+
+  // TODO(nasko): This can be removed once we don't have a swapped out state on
+  // RenderFrames. See https://crbug.com/357747.
+  void set_render_frame_proxy(RenderFrameProxy* proxy) {
+    render_frame_proxy_ = proxy;
   }
 
   // Out-of-process child frames receive a signal from RenderWidgetCompositor
@@ -112,6 +131,10 @@ class CONTENT_EXPORT RenderFrameImpl
 
   // Notification from RenderView.
   virtual void OnStop();
+
+  // Notifications from RenderWidget.
+  void WasHidden();
+  void WasShown();
 
   // Start/Stop loading notifications.
   // TODO(nasko): Those are page-level methods at this time and come from
@@ -177,10 +200,6 @@ class CONTENT_EXPORT RenderFrameImpl
     const gfx::Range& replacement_range,
     bool keep_selection);
 #endif  // ENABLE_PLUGINS
-
-  // Overrides the MediaStreamClient used when creating MediaStream players.
-  // Must be called before any players are created.
-  void SetMediaStreamClientForTesting(MediaStreamClient* media_stream_client);
 
   // IPC::Sender
   virtual bool Send(IPC::Message* msg) OVERRIDE;
@@ -274,7 +293,7 @@ class CONTENT_EXPORT RenderFrameImpl
       blink::WebLocalFrame* frame,
       const blink::WebHistoryItem& item,
       blink::WebHistoryCommitType commit_type);
-  virtual void didClearWindowObject(blink::WebLocalFrame* frame, int world_id);
+  virtual void didClearWindowObject(blink::WebLocalFrame* frame);
   virtual void didCreateDocumentElement(blink::WebLocalFrame* frame);
   virtual void didReceiveTitle(blink::WebLocalFrame* frame,
                                const blink::WebString& title,
@@ -386,7 +405,7 @@ class CONTENT_EXPORT RenderFrameImpl
   friend class RenderFrameObserver;
   FRIEND_TEST_ALL_PREFIXES(RendererAccessibilityTest,
                            AccessibilityMessagesQueueWhileSwappedOut);
-    FRIEND_TEST_ALL_PREFIXES(RenderFrameImplTest,
+  FRIEND_TEST_ALL_PREFIXES(RenderFrameImplTest,
                            ShouldUpdateSelectionTextFromContextMenuParams);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
                            OnExtendSelectionAndDelete);
@@ -412,7 +431,7 @@ class CONTENT_EXPORT RenderFrameImpl
   // The documentation for these functions should be in
   // content/common/*_messages.h for the message that the function is handling.
   void OnBeforeUnload();
-  void OnSwapOut();
+  void OnSwapOut(int proxy_routing_id);
   void OnChildFrameProcessGone();
   void OnBuffersSwapped(const FrameMsg_BuffersSwapped_Params& params);
   void OnCompositorFrameSwapped(const IPC::Message& message);
@@ -460,6 +479,22 @@ class CONTENT_EXPORT RenderFrameImpl
                const Referrer& referrer,
                blink::WebNavigationPolicy policy);
 
+  // Update current main frame's encoding and send it to browser window.
+  // Since we want to let users see the right encoding info from menu
+  // before finishing loading, we call the UpdateEncoding in
+  // a) function:DidCommitLoadForFrame. When this function is called,
+  // that means we have got first data. In here we try to get encoding
+  // of page if it has been specified in http header.
+  // b) function:DidReceiveTitle. When this function is called,
+  // that means we have got specified title. Because in most of webpages,
+  // title tags will follow meta tags. In here we try to get encoding of
+  // page if it has been specified in meta tag.
+  // c) function:DidFinishDocumentLoadForFrame. When this function is
+  // called, that means we have got whole html page. In here we should
+  // finally get right encoding of page.
+  void UpdateEncoding(blink::WebFrame* frame,
+                      const std::string& encoding_name);
+
   // Dispatches the current state of selection on the webpage to the browser if
   // it has changed.
   // TODO(varunjain): delete this method once we figure out how to keep
@@ -485,19 +520,26 @@ class CONTENT_EXPORT RenderFrameImpl
                                const blink::WebURLError& error,
                                bool replace);
 
-  // Initializes |media_stream_client_|, returning true if successful. Returns
+  // Initializes |web_user_media_client_|, returning true if successful. Returns
   // false if it wasn't possible to create a MediaStreamClient (e.g., WebRTC is
-  // disabled) in which case |media_stream_client_| is NULL.
-  bool InitializeMediaStreamClient();
+  // disabled) in which case |web_user_media_client_| is NULL.
+  bool InitializeUserMediaClient();
 
   blink::WebMediaPlayer* CreateWebMediaPlayerForMediaStream(
       const blink::WebURL& url,
       blink::WebMediaPlayerClient* client);
 
+  // Creates a factory object used for creating audio and video renderers.
+  // The method is virtual so that layouttests can override it.
+  virtual scoped_ptr<MediaStreamRendererFactory> CreateRendererFactory();
+
 #if defined(OS_ANDROID)
- blink::WebMediaPlayer* CreateAndroidWebMediaPlayer(
+  blink::WebMediaPlayer* CreateAndroidWebMediaPlayer(
       const blink::WebURL& url,
       blink::WebMediaPlayerClient* client);
+
+  RendererMediaPlayerManager* GetMediaPlayerManager();
+  RendererCdmManager* GetCdmManager();
 #endif
 
   // Stores the WebLocalFrame we are associated with.
@@ -506,6 +548,10 @@ class CONTENT_EXPORT RenderFrameImpl
   base::WeakPtr<RenderViewImpl> render_view_;
   int routing_id_;
   bool is_swapped_out_;
+  // RenderFrameProxy exists only when is_swapped_out_ is true.
+  // TODO(nasko): This can be removed once we don't have a swapped out state on
+  // RenderFrame. See https://crbug.com/357747.
+  RenderFrameProxy* render_frame_proxy_;
   bool is_detaching_;
 
 #if defined(ENABLE_PLUGINS)
@@ -559,9 +605,15 @@ class CONTENT_EXPORT RenderFrameImpl
   // Holds a reference to the service which provides desktop notifications.
   NotificationProvider* notification_provider_;
 
-  // MediaStreamClient attached to this frame; lazily initialized.
-  MediaStreamClient* media_stream_client_;
   blink::WebUserMediaClient* web_user_media_client_;
+
+#if defined(OS_ANDROID)
+  // These manage all media players and CDMs in this render frame for
+  // communicating with the real media player and CDM objects in the browser
+  // process. It's okay to use raw pointers since they are RenderFrameObservers.
+  RendererMediaPlayerManager* media_player_manager_;
+  RendererCdmManager* cdm_manager_;
+#endif
 
   base::WeakPtrFactory<RenderFrameImpl> weak_factory_;
 

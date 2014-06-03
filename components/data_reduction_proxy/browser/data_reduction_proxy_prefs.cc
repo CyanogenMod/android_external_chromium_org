@@ -6,7 +6,7 @@
 
 #include "base/prefs/pref_registry_simple.h"
 #include "components/data_reduction_proxy/common/data_reduction_proxy_pref_names.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 
 namespace data_reduction_proxy {
 
@@ -35,7 +35,6 @@ void RegisterPrefs(PrefRegistrySimple* registry) {
       prefs::kHttpReceivedContentLength, 0);
   registry->RegisterInt64Pref(
       prefs::kHttpOriginalContentLength, 0);
-#if defined(OS_ANDROID) || defined(OS_IOS)
   registry->RegisterListPref(
       prefs::kDailyHttpOriginalContentLength);
   registry->RegisterListPref(
@@ -58,7 +57,6 @@ void RegisterPrefs(PrefRegistrySimple* registry) {
       prefs::kDailyContentLengthViaDataReductionProxy);
   registry->RegisterInt64Pref(
       prefs::kDailyHttpContentLengthLastUpdateDate, 0L);
-#endif
 }
 
 }  // namespace data_reduction_proxy

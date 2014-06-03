@@ -11,15 +11,15 @@
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
+#include "base/scoped_observer.h"
 #include "base/strings/string16.h"
 #include "chrome/browser/managed_mode/managed_mode_url_filter.h"
 #include "chrome/browser/managed_mode/managed_users.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "components/keyed_service/core/keyed_service.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_registry_observer.h"
 #include "extensions/browser/management_policy.h"
 
 class Browser;
@@ -28,7 +28,12 @@ class ManagedModeURLFilter;
 class ManagedModeSiteList;
 class ManagedUserRegistrationUtility;
 class ManagedUserSettingsService;
+class PermissionRequestCreator;
 class Profile;
+
+namespace extensions {
+class ExtensionRegistry;
+}
 
 namespace user_prefs {
 class PrefRegistrySyncable;
@@ -40,7 +45,7 @@ class PrefRegistrySyncable;
 class ManagedUserService : public KeyedService,
                            public extensions::ManagementPolicy::Provider,
                            public ProfileSyncServiceObserver,
-                           public content::NotificationObserver,
+                           public extensions::ExtensionRegistryObserver,
                            public chrome::BrowserListObserver {
  public:
   typedef std::vector<base::string16> CategoryList;
@@ -80,6 +85,8 @@ class ManagedUserService : public KeyedService,
 
   // Whether the user can request access to blocked URLs.
   bool AccessRequestsEnabled();
+
+  void OnPermissionRequestIssued();
 
   // Adds an access request for the given URL. The requests are stored using
   // a prefix followed by a URIEncoded version of the URL. Each entry contains
@@ -142,10 +149,14 @@ class ManagedUserService : public KeyedService,
   // ProfileSyncServiceObserver implementation:
   virtual void OnStateChanged() OVERRIDE;
 
-  // content::NotificationObserver implementation:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // extensions::ExtensionRegistryObserver implementation.
+  virtual void OnExtensionLoaded(
+      content::BrowserContext* browser_context,
+      const extensions::Extension* extension) OVERRIDE;
+  virtual void OnExtensionUnloaded(
+      content::BrowserContext* browser_context,
+      const extensions::Extension* extension,
+      extensions::UnloadedExtensionInfo::Reason reason) OVERRIDE;
 
   // chrome::BrowserListObserver implementation:
   virtual void OnBrowserSetLastActive(Browser* browser) OVERRIDE;
@@ -227,7 +238,10 @@ class ManagedUserService : public KeyedService,
   // Owns us via the KeyedService mechanism.
   Profile* profile_;
 
-  content::NotificationRegistrar registrar_;
+  ScopedObserver<extensions::ExtensionRegistry,
+                 extensions::ExtensionRegistryObserver>
+      extension_registry_observer_;
+
   PrefChangeRegistrar pref_change_registrar_;
 
   // True iff we're waiting for the Sync service to be initialized.
@@ -243,6 +257,12 @@ class ManagedUserService : public KeyedService,
   bool did_shutdown_;
 
   URLFilterContext url_filter_context_;
+
+  // Used to create permission requests.
+  scoped_ptr<PermissionRequestCreator> permissions_creator_;
+
+  // True iff we are waiting for a permission request to be issued.
+  bool waiting_for_permissions_;
 
   base::WeakPtrFactory<ManagedUserService> weak_ptr_factory_;
 };

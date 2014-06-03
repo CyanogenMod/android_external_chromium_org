@@ -588,10 +588,12 @@ DirectoryModel.prototype.onRenameEntry = function(
  * @param {string} name Directory name.
  * @param {function(DirectoryEntry)} successCallback Callback on success.
  * @param {function(FileError)} errorCallback Callback on failure.
+ * @param {function()} abortCallback Callback on abort (cancelled by user).
  */
 DirectoryModel.prototype.createDirectory = function(name,
                                                     successCallback,
-                                                    errorCallback) {
+                                                    errorCallback,
+                                                    abortCallback) {
   // Obtain and check the current directory.
   var entry = this.getCurrentDirEntry();
   if (!entry || this.isSearching()) {
@@ -620,8 +622,10 @@ DirectoryModel.prototype.createDirectory = function(name,
         // Do not change anything or call the callback if current
         // directory changed.
         tracker.stop();
-        if (tracker.hasChanged)
+        if (tracker.hasChanged) {
+          abortCallback();
           return;
+        }
 
         // If target directory is already in the list, just select it.
         var existing = this.getFileList().slice().filter(
@@ -643,11 +647,15 @@ DirectoryModel.prototype.createDirectory = function(name,
 };
 
 /**
- * Change the current directory to the directory represented by
+ * Changes the current directory to the directory represented by
  * a DirectoryEntry or a fake entry.
  *
  * Dispatches the 'directory-changed' event when the directory is successfully
  * changed.
+ *
+ * Note : if this is called from UI, please consider to use DirectoryModel.
+ * activateDirectoryEntry instead of this, which is higher-level function and
+ * cares about the selection.
  *
  * @param {DirectoryEntry|Object} dirEntry The entry of the new directory to
  *     be opened.
@@ -688,6 +696,31 @@ DirectoryModel.prototype.changeDirectoryEntry = function(
           this.dispatchEvent(event);
         }.bind(this));
       }.bind(this, this.changeDirectorySequence_));
+};
+
+/**
+ * Activates the given directry.
+ * This method:
+ *  - Changes the current directory, if the given directory is the current
+ *    directory.
+ *  - Clears the selection, if the given directory is the current directory.
+ *
+ * @param {DirectoryEntry|Object} dirEntry The entry of the new directory to
+ *     be opened.
+ * @param {function()=} opt_callback Executed if the directory loads
+ *     successfully.
+ */
+DirectoryModel.prototype.activateDirectoryEntry = function(
+    dirEntry, opt_callback) {
+  var currentDirectoryEntry = this.getCurrentDirEntry();
+  if (currentDirectoryEntry &&
+      util.isSameEntry(dirEntry, currentDirectoryEntry)) {
+    // On activating the current directory, clear the selection on the filelist.
+    this.clearSelection();
+  } else {
+    // Otherwise, changes the current directory.
+    this.changeDirectoryEntry(dirEntry, opt_callback);
+  }
 };
 
 /**

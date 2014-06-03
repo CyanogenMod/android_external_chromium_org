@@ -9,6 +9,7 @@
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/test/base/testing_profile.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/extension_icon_set.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -266,30 +267,6 @@ TEST_F(BookmarkAppHelperTest, ConstrainBitmapsToSizes) {
     ValidateBitmapSizeAndColor(results[16], 16, SK_ColorYELLOW);
     ValidateBitmapSizeAndColor(results[32], 32, SK_ColorBLUE);
     ValidateBitmapSizeAndColor(results[256], 256, SK_ColorRED);
-  }
-}
-
-TEST_F(BookmarkAppHelperTest, GenerateIcons) {
-  {
-    // The 32x32 icon should be generated from the 16x16 icon.
-    std::map<int, SkBitmap> bitmaps;
-    bitmaps[16] = CreateSquareBitmapWithColor(16, SK_ColorRED);
-    BookmarkAppHelper::GenerateContainerIcon(&bitmaps, 32);
-    EXPECT_EQ(1u, bitmaps.count(32));
-    EXPECT_EQ(32, bitmaps[32].width());
-  }
-  {
-    // The 32x32 icon should not be generated because no smaller icon exists.
-    std::map<int, SkBitmap> bitmaps;
-    bitmaps[48] = CreateSquareBitmapWithColor(48, SK_ColorRED);
-    BookmarkAppHelper::GenerateContainerIcon(&bitmaps, 32);
-    EXPECT_EQ(0u, bitmaps.count(32));
-  }
-  {
-    // The 32x32 icon should not be generated with no base icons.
-    std::map<int, SkBitmap> bitmaps;
-    BookmarkAppHelper::GenerateContainerIcon(&bitmaps, 32);
-    EXPECT_EQ(0u, bitmaps.count(32));
   }
 }
 

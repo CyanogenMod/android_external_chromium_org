@@ -31,11 +31,11 @@ WorkspaceBackdropDelegate::WorkspaceBackdropDelegate(aura::Window* container)
   views::Widget::InitParams params(
       views::Widget::InitParams::TYPE_WINDOW_FRAMELESS);
   params.parent = container_;
-  params.bounds = container_->bounds();
+  params.bounds = container_->GetBoundsInScreen();
   params.layer_type = aura::WINDOW_LAYER_SOLID_COLOR;
   // To disallow the MRU list from picking this window up it should not be
   // activateable.
-  params.can_activate = false;
+  params.activatable = views::Widget::InitParams::ACTIVATABLE_NO;
   background_->Init(params);
   // Do not use the animation system. We don't want the bounds animation and
   // opacity needs to get set to |kBackdropOpacity|.

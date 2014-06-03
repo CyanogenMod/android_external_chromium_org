@@ -43,12 +43,14 @@ class ProfileSyncComponentsFactoryImpl : public ProfileSyncComponentsFactory {
   virtual browser_sync::SyncBackendHost* CreateSyncBackendHost(
       const std::string& name,
       Profile* profile,
-      const base::WeakPtr<sync_driver::SyncPrefs>& sync_prefs) OVERRIDE;
+      invalidation::InvalidationService* invalidator,
+      const base::WeakPtr<sync_driver::SyncPrefs>& sync_prefs,
+      const base::FilePath& sync_folder) OVERRIDE;
 
   virtual base::WeakPtr<syncer::SyncableService> GetSyncableServiceForType(
       syncer::ModelType type) OVERRIDE;
-  virtual scoped_ptr<syncer::AttachmentStore>
-      CreateCustomAttachmentStoreForType(syncer::ModelType type) OVERRIDE;
+  virtual scoped_ptr<syncer::AttachmentService> CreateAttachmentService(
+      syncer::AttachmentService::Delegate* delegate) OVERRIDE;
 
   // Legacy datatypes that need to be converted to the SyncableService API.
   virtual SyncComponents CreateBookmarkSyncComponents(

@@ -55,6 +55,7 @@
 #include "third_party/WebKit/public/web/WebPlugin.h"
 #include "third_party/WebKit/public/web/WebUserGestureToken.h"
 #include "ui/base/ime/text_input_type.h"
+#include "ui/events/latency_info.h"
 #include "ui/gfx/rect.h"
 #include "url/gurl.h"
 
@@ -89,6 +90,7 @@ namespace ppapi {
 class Resource;
 struct InputEventData;
 struct PPP_Instance_Combined;
+class ScopedPPVar;
 }
 
 namespace v8 {
@@ -296,8 +298,8 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // already in fullscreen mode).
   bool SetFullscreen(bool fullscreen);
 
-  // Implementation of PPP_Messaging.
-  void HandleMessage(PP_Var message);
+  // Send the message on to the plugin.
+  void HandleMessage(ppapi::ScopedPPVar message);
 
   // Returns true if the plugin is processing a user gesture.
   bool IsProcessingUserGesture();
@@ -363,6 +365,7 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   virtual void SetSelectedText(const base::string16& selected_text) OVERRIDE;
   virtual void SetLinkUnderCursor(const std::string& url) OVERRIDE;
   virtual void SetTextInputType(ui::TextInputType type) OVERRIDE;
+  virtual void PostMessageToJavaScript(PP_Var message) OVERRIDE;
 
   // PPB_Instance_API implementation.
   virtual PP_Bool BindGraphics(PP_Instance instance,
@@ -402,6 +405,7 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
                                               uint32_t event_classes) OVERRIDE;
   virtual void ClearInputEventRequest(PP_Instance instance,
                                       uint32_t event_classes) OVERRIDE;
+  virtual void StartTrackingLatency(PP_Instance instance) OVERRIDE;
   virtual void ZoomChanged(PP_Instance instance, double factor) OVERRIDE;
   virtual void ZoomLimitsChanged(PP_Instance instance,
                                  double minimum_factor,
@@ -504,6 +508,8 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
 
   // RenderFrameObserver
   virtual void OnDestruct() OVERRIDE;
+
+  void AddLatencyInfo(const std::vector<ui::LatencyInfo>& latency_info);
 
  private:
   friend class base::RefCounted<PepperPluginInstanceImpl>;
@@ -861,6 +867,10 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
 
   // The text that is currently selected in the plugin.
   base::string16 selected_text_;
+
+  int64 last_input_number_;
+
+  bool is_tracking_latency_;
 
   // We use a weak ptr factory for scheduling DidChangeView events so that we
   // can tell whether updates are pending and consolidate them. When there's

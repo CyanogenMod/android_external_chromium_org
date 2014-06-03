@@ -105,9 +105,9 @@
 #include "ash/shell.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_util.h"
 #include "chrome/browser/chromeos/chromeos_utils.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/chromeos/login/wallpaper_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/reset/metrics.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
@@ -266,7 +266,6 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
     { "hotwordConfirmEnable", IDS_HOTWORD_CONFIRM_BUBBLE_ENABLE },
     { "hotwordConfirmDisable", IDS_HOTWORD_CONFIRM_BUBBLE_DISABLE },
     { "hotwordConfirmMessage", IDS_HOTWORD_SEARCH_PREF_DESCRIPTION },
-    { "hotwordRetryDownloadButton", IDS_HOTWORD_RETRY_DOWNLOAD_BUTTON },
     { "hotwordAudioLoggingEnable", IDS_HOTWORD_AUDIO_LOGGING_ENABLE },
     { "importData", IDS_OPTIONS_IMPORT_DATA_BUTTON },
     { "improveBrowsingExperience", IDS_OPTIONS_IMPROVE_BROWSING_EXPERIENCE },
@@ -711,11 +710,6 @@ void BrowserOptionsHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "requestHotwordAvailable",
       base::Bind(&BrowserOptionsHandler::HandleRequestHotwordAvailable,
-                 base::Unretained(this)));
-
-  web_ui()->RegisterMessageCallback(
-      "requestHotwordSetupRetry",
-      base::Bind(&BrowserOptionsHandler::HandleRequestHotwordSetupRetry,
                  base::Unretained(this)));
 
   web_ui()->RegisterMessageCallback(
@@ -1267,18 +1261,18 @@ void BrowserOptionsHandler::DeleteProfile(const base::ListValue* args) {
 void BrowserOptionsHandler::ObserveThemeChanged() {
   Profile* profile = Profile::FromWebUI(web_ui());
   ThemeService* theme_service = ThemeServiceFactory::GetForProfile(profile);
-  bool is_native_theme = false;
+  bool is_system_theme = false;
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
   bool profile_is_managed = profile->IsManaged();
-  is_native_theme = theme_service->UsingNativeTheme();
-  base::FundamentalValue native_theme_enabled(!is_native_theme &&
+  is_system_theme = theme_service->UsingSystemTheme();
+  base::FundamentalValue native_theme_enabled(!is_system_theme &&
                                               !profile_is_managed);
   web_ui()->CallJavascriptFunction("BrowserOptions.setNativeThemeButtonEnabled",
                                    native_theme_enabled);
 #endif
 
-  bool is_classic_theme = !is_native_theme &&
+  bool is_classic_theme = !is_system_theme &&
                           theme_service->UsingDefaultTheme();
   base::FundamentalValue enabled(!is_classic_theme);
   web_ui()->CallJavascriptFunction("BrowserOptions.setThemesResetButtonEnabled",
@@ -1295,7 +1289,7 @@ void BrowserOptionsHandler::ThemesReset(const base::ListValue* args) {
 void BrowserOptionsHandler::ThemesSetNative(const base::ListValue* args) {
   content::RecordAction(UserMetricsAction("Options_GtkThemeSet"));
   Profile* profile = Profile::FromWebUI(web_ui());
-  ThemeServiceFactory::GetForProfile(profile)->SetNativeTheme();
+  ThemeServiceFactory::GetForProfile(profile)->UseSystemTheme();
 }
 #endif
 
@@ -1325,18 +1319,14 @@ scoped_ptr<base::DictionaryValue>
 BrowserOptionsHandler::GetSyncStateDictionary() {
   scoped_ptr<base::DictionaryValue> sync_status(new base::DictionaryValue);
   Profile* profile = Profile::FromWebUI(web_ui());
-  if (profile->IsManaged()) {
-    sync_status->SetBoolean("supervisedUser", true);
-    sync_status->SetBoolean("signinAllowed", false);
-    return sync_status.Pass();
-  }
   if (profile->IsGuestSession()) {
     // Cannot display signin status when running in guest mode on chromeos
     // because there is no SigninManager.
     sync_status->SetBoolean("signinAllowed", false);
     return sync_status.Pass();
   }
-  sync_status->SetBoolean("supervisedUser", false);
+
+  sync_status->SetBoolean("supervisedUser", profile->IsManaged());
 
   bool signout_prohibited = false;
 #if !defined(OS_CHROMEOS)
@@ -1537,21 +1527,24 @@ void BrowserOptionsHandler::HandleRequestHotwordAvailable(
   Profile* profile = Profile::FromWebUI(web_ui());
   std::string group = base::FieldTrialList::FindFullName("VoiceTrigger");
   if (group != "" && group != "Disabled") {
-    if (HotwordServiceFactory::IsServiceAvailable(profile))
+    if (HotwordServiceFactory::IsServiceAvailable(profile)) {
       web_ui()->CallJavascriptFunction("BrowserOptions.showHotwordSection");
+    } else if (HotwordServiceFactory::IsHotwordAllowed(profile)) {
+      base::StringValue error_message(l10n_util::GetStringUTF16(
+          HotwordServiceFactory::GetCurrentError(profile)));
+      base::string16 hotword_help_url =
+          base::ASCIIToUTF16(chrome::kHotwordLearnMoreURL);
+      base::StringValue help_link(l10n_util::GetStringFUTF16(
+          IDS_HOTWORD_HELP_LINK, hotword_help_url));
+      web_ui()->CallJavascriptFunction("BrowserOptions.showHotwordSection",
+                                       error_message, help_link);
+    }
   }
 }
 
 void BrowserOptionsHandler::HandleLaunchEasyUnlockSetup(
     const base::ListValue* args) {
   easy_unlock::LaunchEasyUnlockSetup(Profile::FromWebUI(web_ui()));
-}
-
-void BrowserOptionsHandler::HandleRequestHotwordSetupRetry(
-    const base::ListValue* args) {
-  // TODO(joshtrask): invoke BrowserOptions.showHotwordSection again, passing
-  // the new error message if any.
-  HotwordServiceFactory::RetryHotwordExtension(Profile::FromWebUI(web_ui()));
 }
 
 void BrowserOptionsHandler::HandleRefreshExtensionControlIndicators(

@@ -30,6 +30,7 @@ from pylib import android_commands
 from pylib import constants
 from pylib.cmd_helper import GetCmdOutput
 from pylib.device import device_blacklist
+from pylib.device import device_errors
 from pylib.device import device_utils
 
 def DeviceInfo(serial, options):
@@ -63,6 +64,12 @@ def DeviceInfo(serial, options):
       return lambda_function(found[0])
     return 'Unknown'
 
+  def _GetBatteryInfo(battery):
+    if not battery:
+      return 'No battery info.'
+    battery_info = battery.split('\n')
+    return battery_info[0] + '\n  '.join(battery_info[1:])
+
   ac_power = _GetData('AC powered: (\w+)', battery)
   battery_level = _GetData('level: (\d+)', battery)
   imei_slice = _GetData('Device ID = (\d+)',
@@ -71,7 +78,7 @@ def DeviceInfo(serial, options):
   report = ['Device %s (%s)' % (serial, device_type),
             '  Build: %s (%s)' %
               (device_build, device_adb.old_interface.GetBuildFingerprint()),
-            '  %s' % '\n  '.join(battery.split('\n')),
+            '  %s' % _GetBatteryInfo(battery),
             '  IMEI slice: %s' % imei_slice,
             '  Wifi IP: %s' % device_adb.old_interface.GetWifiIP(),
             '']
@@ -89,7 +96,13 @@ def DeviceInfo(serial, options):
 
   # Turn off devices with low battery.
   if battery_level < 15:
-    device_adb.old_interface.EnableAdbRoot()
+    try:
+      device_adb.EnableRoot()
+    except device_errors.CommandFailedError as e:
+      # Attempt shutdown anyway.
+      # TODO(jbudorick) Handle this exception appropriately after interface
+      #                 conversions are finished.
+      logging.error(str(e))
     device_adb.old_interface.Shutdown()
   full_report = '\n'.join(report)
   return device_type, device_build, battery_level, full_report, errors, True

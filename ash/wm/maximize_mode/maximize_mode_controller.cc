@@ -4,10 +4,19 @@
 
 #include "ash/wm/maximize_mode/maximize_mode_controller.h"
 
+#include "ash/accelerators/accelerator_controller.h"
+#include "ash/accelerators/accelerator_table.h"
 #include "ash/accelerometer/accelerometer_controller.h"
+#include "ash/ash_switches.h"
 #include "ash/display/display_manager.h"
 #include "ash/shell.h"
 #include "ash/wm/maximize_mode/maximize_mode_event_blocker.h"
+#include "base/auto_reset.h"
+#include "base/command_line.h"
+#include "ui/base/accelerators/accelerator.h"
+#include "ui/events/event.h"
+#include "ui/events/event_handler.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/vector3d_f.h"
 
 namespace ash {
@@ -51,8 +60,10 @@ const float kDisplayRotationStickyAngleDegrees = 60.0f;
 
 // The minimum acceleration in a direction required to trigger screen rotation.
 // This prevents rapid toggling of rotation when the device is near flat and
-// there is very little screen aligned force on it.
-const float kMinimumAccelerationScreenRotation = 0.3f;
+// there is very little screen aligned force on it. The value is effectively the
+// sine of the rise angle required, with the current value requiring at least a
+// 25 degree rise.
+const float kMinimumAccelerationScreenRotation = 0.42f;
 
 const float kRadiansToDegrees = 180.0f / 3.14159265f;
 
@@ -79,10 +90,54 @@ float ClockwiseAngleBetweenVectorsInDegrees(const gfx::Vector3dF& base,
   return angle;
 }
 
+#if defined(OS_CHROMEOS)
+
+// An event handler which listens for a volume down + power keypress and
+// triggers a screenshot when this is seen.
+class ScreenshotActionHandler : public ui::EventHandler {
+ public:
+  ScreenshotActionHandler();
+  virtual ~ScreenshotActionHandler();
+
+  // ui::EventHandler:
+  virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
+
+ private:
+  bool volume_down_pressed_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScreenshotActionHandler);
+};
+
+ScreenshotActionHandler::ScreenshotActionHandler()
+    : volume_down_pressed_(false) {
+  Shell::GetInstance()->PrependPreTargetHandler(this);
+}
+
+ScreenshotActionHandler::~ScreenshotActionHandler() {
+  Shell::GetInstance()->RemovePreTargetHandler(this);
+}
+
+void ScreenshotActionHandler::OnKeyEvent(ui::KeyEvent* event) {
+  if (event->key_code() == ui::VKEY_VOLUME_DOWN) {
+    volume_down_pressed_ = event->type() == ui::ET_KEY_PRESSED ||
+                           event->type() == ui::ET_TRANSLATED_KEY_PRESS;
+  } else if (volume_down_pressed_ &&
+             event->key_code() == ui::VKEY_POWER &&
+             event->type() == ui::ET_KEY_PRESSED) {
+    Shell::GetInstance()->accelerator_controller()->PerformAction(
+        ash::TAKE_SCREENSHOT, ui::Accelerator());
+  }
+}
+
+#endif  // OS_CHROMEOS
+
 }  // namespace
 
 MaximizeModeController::MaximizeModeController()
-    : rotation_locked_(false) {
+    : rotation_locked_(false),
+      have_seen_accelerometer_data_(false),
+      in_set_screen_rotation_(false),
+      user_rotation_(gfx::Display::ROTATE_0) {
   Shell::GetInstance()->accelerometer_controller()->AddObserver(this);
 }
 
@@ -90,9 +145,21 @@ MaximizeModeController::~MaximizeModeController() {
   Shell::GetInstance()->accelerometer_controller()->RemoveObserver(this);
 }
 
+bool MaximizeModeController::CanEnterMaximizeMode() {
+  // If we have ever seen accelerometer data, then HandleHingeRotation may
+  // trigger maximize mode at some point in the future.
+  // The --enable-touch-view-testing switch can also mean that we may enter
+  // maximize mode.
+  return have_seen_accelerometer_data_ ||
+         CommandLine::ForCurrentProcess()->HasSwitch(
+             switches::kAshEnableTouchViewTesting);
+}
+
 void MaximizeModeController::OnAccelerometerUpdated(
     const gfx::Vector3dF& base,
     const gfx::Vector3dF& lid) {
+  have_seen_accelerometer_data_ = true;
+
   // Ignore the reading if it appears unstable. The reading is considered
   // unstable if it deviates too much from gravity and/or the magnitude of the
   // reading from the lid differs too much from the reading from the base.
@@ -141,12 +208,10 @@ void MaximizeModeController::HandleHingeRotation(const gfx::Vector3dF& base,
   if (maximize_mode_engaged &&
       angle > kFullyOpenAngleErrorTolerance &&
       angle < kExitMaximizeModeAngle) {
-    Shell::GetInstance()->EnableMaximizeModeWindowManager(false);
-    event_blocker_.reset();
+    LeaveMaximizeMode();
   } else if (!maximize_mode_engaged &&
       angle > kEnterMaximizeModeAngle) {
-    Shell::GetInstance()->EnableMaximizeModeWindowManager(true);
-    event_blocker_.reset(new MaximizeModeEventBlocker);
+    EnterMaximizeMode();
   }
 }
 
@@ -154,30 +219,13 @@ void MaximizeModeController::HandleScreenRotation(const gfx::Vector3dF& lid) {
   bool maximize_mode_engaged =
       Shell::GetInstance()->IsMaximizeModeWindowManagerEnabled();
 
+  if (!maximize_mode_engaged || rotation_locked_)
+    return;
+
   DisplayManager* display_manager =
       Shell::GetInstance()->display_manager();
   gfx::Display::Rotation current_rotation = display_manager->GetDisplayInfo(
       gfx::Display::InternalDisplayId()).rotation();
-
-  // If maximize mode is not engaged, ensure the screen is not rotated and
-  // do not rotate to match the current device orientation.
-  if (!maximize_mode_engaged) {
-    if (current_rotation != gfx::Display::ROTATE_0) {
-      // TODO(flackr): Currently this will prevent setting a manual rotation on
-      // the screen of a device with an accelerometer, this should only set it
-      // back to ROTATE_0 if it was last set by the accelerometer.
-      // Also, SetDisplayRotation will save the setting to the local store,
-      // this should be stored in a way that we can distinguish what the
-      // rotation was set by.
-      display_manager->SetDisplayRotation(gfx::Display::InternalDisplayId(),
-                                          gfx::Display::ROTATE_0);
-    }
-    rotation_locked_ = false;
-    return;
-  }
-
-  if (rotation_locked_)
-    return;
 
   // After determining maximize mode state, determine if the screen should
   // be rotated.
@@ -224,13 +272,44 @@ void MaximizeModeController::HandleScreenRotation(const gfx::Vector3dF& lid) {
   else if (angle < 270.0f)
     new_rotation = gfx::Display::ROTATE_180;
 
-  // When exiting maximize mode return rotation to 0. When entering, rotate to
-  // match screen orientation.
-  if (new_rotation == gfx::Display::ROTATE_0 ||
-      maximize_mode_engaged) {
-    display_manager->SetDisplayRotation(gfx::Display::InternalDisplayId(),
-                                        new_rotation);
-  }
+  if (new_rotation != current_rotation)
+    SetDisplayRotation(display_manager, new_rotation);
+}
+
+void MaximizeModeController::SetDisplayRotation(
+    DisplayManager* display_manager,
+    gfx::Display::Rotation rotation) {
+  base::AutoReset<bool> auto_in_set_screen_rotation(
+      &in_set_screen_rotation_, true);
+  display_manager->SetDisplayRotation(gfx::Display::InternalDisplayId(),
+                                      rotation);
+}
+
+void MaximizeModeController::EnterMaximizeMode() {
+  // TODO(jonross): Listen for display configuration changes. If the user
+  // causes a rotation change a rotation lock should be applied.
+  // https://crbug.com/369505
+  DisplayManager* display_manager = Shell::GetInstance()->display_manager();
+  user_rotation_ = display_manager->
+      GetDisplayInfo(gfx::Display::InternalDisplayId()).rotation();
+  Shell::GetInstance()->EnableMaximizeModeWindowManager(true);
+  event_blocker_.reset(new MaximizeModeEventBlocker);
+#if defined(OS_CHROMEOS)
+  event_handler_.reset(new ScreenshotActionHandler);
+#endif
+}
+
+void MaximizeModeController::LeaveMaximizeMode() {
+  DisplayManager* display_manager = Shell::GetInstance()->display_manager();
+  DisplayInfo info = display_manager->
+      GetDisplayInfo(gfx::Display::InternalDisplayId());
+  gfx::Display::Rotation current_rotation = info.rotation();
+  if (current_rotation != user_rotation_)
+    SetDisplayRotation(display_manager, user_rotation_);
+  rotation_locked_ = false;
+  Shell::GetInstance()->EnableMaximizeModeWindowManager(false);
+  event_blocker_.reset();
+  event_handler_.reset();
 }
 
 }  // namespace ash

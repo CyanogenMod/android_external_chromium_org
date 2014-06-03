@@ -25,6 +25,7 @@ FakeWiFiService::FakeWiFiService() {
     network_properties.signal_strength = 40;
     network_properties.json_extra =
       "{"
+      "  \"MacAddress\": \"00:11:22:AA:BB:CC\","
       "  \"IPConfigs\": [{"
       "     \"Gateway\": \"0.0.0.1\","
       "     \"IPAddress\": \"0.0.0.0\","
@@ -69,11 +70,11 @@ void FakeWiFiService::GetProperties(const std::string& network_guid,
                                     std::string* error) {
   WiFiService::NetworkList::iterator network_properties =
       FindNetwork(network_guid);
-  if (network_properties != networks_.end()) {
-    properties->Swap(network_properties->ToValue(false).get());
-  } else {
-    *error = "Error.DBusFailed";
+  if (network_properties == networks_.end()) {
+    *error = "Error.InvalidNetworkGuid";
+    return;
   }
+  properties->Swap(network_properties->ToValue(false).get());
 }
 
 void FakeWiFiService::GetManagedProperties(
@@ -90,7 +91,7 @@ void FakeWiFiService::GetState(const std::string& network_guid,
   WiFiService::NetworkList::iterator network_properties =
       FindNetwork(network_guid);
   if (network_properties == networks_.end()) {
-    *error = "Error.InvalidParameter";
+    *error = "Error.InvalidNetworkGuid";
     return;
   }
   properties->Swap(network_properties->ToValue(true).get());
@@ -143,29 +144,29 @@ void FakeWiFiService::RequestNetworkScan() {
 void FakeWiFiService::StartConnect(const std::string& network_guid,
                                    std::string* error) {
   NetworkList::iterator network_properties = FindNetwork(network_guid);
-  if (network_properties != networks_.end()) {
-    DisconnectAllNetworksOfType(network_properties->type);
-    network_properties->connection_state = onc::connection_state::kConnected;
-    SortNetworks();
-    NotifyNetworkListChanged(networks_);
-    NotifyNetworkChanged(network_guid);
-  } else {
-    *error = "configure-failed";
+  if (network_properties == networks_.end()) {
+    *error = "Error.InvalidNetworkGuid";
+    return;
   }
+  DisconnectAllNetworksOfType(network_properties->type);
+  network_properties->connection_state = onc::connection_state::kConnected;
+  SortNetworks();
+  NotifyNetworkListChanged(networks_);
+  NotifyNetworkChanged(network_guid);
 }
 
 void FakeWiFiService::StartDisconnect(const std::string& network_guid,
                                       std::string* error) {
   WiFiService::NetworkList::iterator network_properties =
       FindNetwork(network_guid);
-  if (network_properties != networks_.end()) {
-    network_properties->connection_state = onc::connection_state::kNotConnected;
-    SortNetworks();
-    NotifyNetworkListChanged(networks_);
-    NotifyNetworkChanged(network_guid);
-  } else {
-    *error = "not-found";
+  if (network_properties == networks_.end()) {
+    *error = "Error.InvalidNetworkGuid";
+    return;
   }
+  network_properties->connection_state = onc::connection_state::kNotConnected;
+  SortNetworks();
+  NotifyNetworkListChanged(networks_);
+  NotifyNetworkChanged(network_guid);
 }
 
 void FakeWiFiService::GetKeyFromSystem(const std::string& network_guid,

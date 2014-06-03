@@ -18,6 +18,7 @@
 #include "content/child/web_url_loader_impl.h"
 #include "content/common/resource_request_body.h"
 #include "content/common/service_worker/service_worker_types.h"
+#include "content/public/common/resource_response_info.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
@@ -25,7 +26,6 @@
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "webkit/child/multipart_response_delegate.h"
 #include "webkit/child/resource_loader_bridge.h"
-#include "webkit/common/resource_response_info.h"
 
 namespace content {
 namespace {
@@ -190,9 +190,8 @@ void PluginURLFetcher::OnUploadProgress(uint64 position, uint64 size) {
 
 bool PluginURLFetcher::OnReceivedRedirect(
     const GURL& new_url,
-    const webkit_glue::ResourceResponseInfo& info,
-    bool* has_new_first_party_for_cookies,
-    GURL* new_first_party_for_cookies) {
+    const GURL& new_first_party_for_cookies,
+    const ResourceResponseInfo& info) {
   if (!plugin_stream_)
     return false;
 
@@ -218,8 +217,7 @@ bool PluginURLFetcher::OnReceivedRedirect(
     method_ = "GET";
   GURL old_url = url_;
   url_ = new_url;
-  *has_new_first_party_for_cookies = true;
-  *new_first_party_for_cookies = first_party_for_cookies_;
+  first_party_for_cookies_ = new_first_party_for_cookies;
 
   // If the plugin does not participate in url redirect notifications then just
   // block cross origin 307 POST redirects.
@@ -238,8 +236,7 @@ bool PluginURLFetcher::OnReceivedRedirect(
   return true;
 }
 
-void PluginURLFetcher::OnReceivedResponse(
-    const webkit_glue::ResourceResponseInfo& info) {
+void PluginURLFetcher::OnReceivedResponse(const ResourceResponseInfo& info) {
   if (!plugin_stream_)
     return;
 

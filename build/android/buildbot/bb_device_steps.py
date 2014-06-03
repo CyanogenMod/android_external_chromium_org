@@ -96,13 +96,21 @@ def _GetRevision(options):
   return revision
 
 
-def RunTestSuites(options, suites):
+def RunTestSuites(options, suites, suites_options=None):
   """Manages an invocation of test_runner.py for gtests.
 
   Args:
     options: options object.
     suites: List of suite names to run.
+    suites_options: Command line options dictionary for particular suites.
+                    For example,
+                    {'content_browsertests', ['--num_retries=1', '--release']}
+                    will add the options only to content_browsertests.
   """
+
+  if not suites_options:
+    suites_options = {}
+
   args = ['--verbose']
   if options.target == 'Release':
     args.append('--release')
@@ -110,9 +118,11 @@ def RunTestSuites(options, suites):
     args.append('--tool=asan')
   if options.gtest_filter:
     args.append('--gtest-filter=%s' % options.gtest_filter)
+
   for suite in suites:
     bb_annotations.PrintNamedStep(suite)
     cmd = ['build/android/test_runner.py', 'gtest', '-s', suite] + args
+    cmd += suites_options.get(suite, [])
     if suite == 'content_browsertests':
       cmd.append('--num_retries=1')
     RunCmd(cmd)
@@ -396,7 +406,7 @@ def ProvisionDevices(options):
 
   if not bb_utils.TESTING:
     # Restart adb to work around bugs, sleep to wait for usb discovery.
-    device_utils.DeviceUtils(None).old_interface.RestartAdbServer()
+    device_utils.RestartServer()
     RunCmd(['sleep', '1'])
   provision_cmd = ['build/android/provision_devices.py', '-t', options.target]
   if options.auto_reconnect:
@@ -446,10 +456,10 @@ def RunWebRTCNativeTests(options):
 
 
 def RunGPUTests(options):
-  InstallApk(options, INSTRUMENTATION_TESTS['ContentShell'], False)
-
-  bb_annotations.PrintNamedStep('gpu_tests')
   revision = _GetRevision(options)
+  builder_name = options.build_properties.get('buildername', 'noname')
+
+  bb_annotations.PrintNamedStep('pixel_tests')
   RunCmd(['content/test/gpu/run_gpu_test.py',
           'pixel',
           '--browser',
@@ -462,8 +472,7 @@ def RunGPUTests(options):
           '--os-type',
           'android',
           '--test-machine-name',
-          EscapeBuilderName(
-              options.build_properties.get('buildername', 'noname'))])
+          EscapeBuilderName(builder_name)])
 
   bb_annotations.PrintNamedStep('webgl_conformance_tests')
   RunCmd(['content/test/gpu/run_gpu_test.py',

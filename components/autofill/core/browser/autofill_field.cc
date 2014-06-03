@@ -14,7 +14,7 @@
 #include "components/autofill/core/browser/autofill_type.h"
 #include "components/autofill/core/browser/phone_number.h"
 #include "components/autofill/core/browser/state_names.h"
-#include "grit/component_strings.h"
+#include "grit/components_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using base::ASCIIToUTF16;
@@ -291,12 +291,9 @@ void FillStreetAddress(const base::string16& value,
     return;
   }
 
-  base::string16 one_line_value;
-  const base::char16 kNewline[] = { '\n', 0 };
-  const base::string16 separator =
+  const base::string16& separator =
       l10n_util::GetStringUTF16(IDS_AUTOFILL_ADDRESS_LINE_SEPARATOR);
-  base::ReplaceChars(value, kNewline, separator, &one_line_value);
-  field->value = one_line_value;
+  base::ReplaceChars(value, base::ASCIIToUTF16("\n"), separator, &field->value);
 }
 
 std::string Hash32Bit(const std::string& str) {

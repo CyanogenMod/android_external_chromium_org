@@ -18,6 +18,7 @@
 #include "chrome/browser/sync_file_system/remote_file_sync_service.h"
 #include "chrome/browser/sync_file_system/sync_action.h"
 #include "chrome/browser/sync_file_system/sync_direction.h"
+#include "chrome/browser/sync_file_system/task_logger.h"
 #include "net/base/network_change_notifier.h"
 
 class ExtensionServiceInterface;
@@ -73,12 +74,10 @@ class SyncWorker : public SyncTaskManager::Client {
     virtual ~Observer() {}
   };
 
-  static scoped_ptr<SyncWorker> CreateOnWorker(
-      const base::FilePath& base_dir,
-      Observer* observer,
-      const base::WeakPtr<ExtensionServiceInterface>& extension_service,
-      scoped_ptr<SyncEngineContext> sync_engine_context,
-      leveldb::Env* env_override);
+  SyncWorker(const base::FilePath& base_dir,
+             const base::WeakPtr<ExtensionServiceInterface>& extension_service,
+             scoped_ptr<SyncEngineContext> sync_engine_context,
+             leveldb::Env* env_override);
 
   virtual ~SyncWorker();
 
@@ -88,6 +87,7 @@ class SyncWorker : public SyncTaskManager::Client {
   virtual void MaybeScheduleNextTask() OVERRIDE;
   virtual void NotifyLastOperationStatus(
       SyncStatusCode sync_status, bool used_network) OVERRIDE;
+  virtual void RecordTaskLog(scoped_ptr<TaskLogger::TaskLog> task_log) OVERRIDE;
 
   void RegisterOrigin(const GURL& origin, const SyncStatusCallback& callback);
   void EnableOrigin(const GURL& origin, const SyncStatusCallback& callback);
@@ -100,7 +100,8 @@ class SyncWorker : public SyncTaskManager::Client {
   void SetRemoteChangeProcessor(
       RemoteChangeProcessorOnWorker* remote_change_processor_on_worker);
   RemoteServiceState GetCurrentState() const;
-  void GetOriginStatusMap(RemoteFileSyncService::OriginStatusMap* status_map);
+  void GetOriginStatusMap(
+      const RemoteFileSyncService::StatusMapCallback& callback);
   scoped_ptr<base::ListValue> DumpFiles(const GURL& origin);
   scoped_ptr<base::ListValue> DumpDatabase();
   void SetSyncEnabled(bool enabled);
@@ -138,11 +139,6 @@ class SyncWorker : public SyncTaskManager::Client {
  private:
   friend class DriveBackendSyncTest;
   friend class SyncEngineTest;
-
-  SyncWorker(const base::FilePath& base_dir,
-             const base::WeakPtr<ExtensionServiceInterface>& extension_service,
-             scoped_ptr<SyncEngineContext> sync_engine_context,
-             leveldb::Env* env_override);
 
   void DoDisableApp(const std::string& app_id,
                     const SyncStatusCallback& callback);

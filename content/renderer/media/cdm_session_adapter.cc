@@ -30,6 +30,8 @@ CdmSessionAdapter::~CdmSessionAdapter() {}
 bool CdmSessionAdapter::Initialize(
 #if defined(ENABLE_PEPPER_CDMS)
     const CreatePepperCdmCB& create_pepper_cdm_cb,
+#elif defined(OS_ANDROID)
+    RendererCdmManager* manager,
 #endif  // defined(ENABLE_PEPPER_CDMS)
     const std::string& key_system,
     const GURL& security_origin) {
@@ -40,8 +42,7 @@ bool CdmSessionAdapter::Initialize(
 #if defined(ENABLE_PEPPER_CDMS)
       create_pepper_cdm_cb,
 #elif defined(OS_ANDROID)
-      // TODO(xhwang): Support Android.
-      NULL,
+      manager,
       &cdm_id_,
 #endif  // defined(ENABLE_PEPPER_CDMS)
       base::Bind(&CdmSessionAdapter::OnSessionCreated, weak_this),
@@ -112,7 +113,7 @@ void CdmSessionAdapter::OnSessionCreated(uint32 session_id,
 
 void CdmSessionAdapter::OnSessionMessage(uint32 session_id,
                                          const std::vector<uint8>& message,
-                                         const std::string& destination_url) {
+                                         const GURL& destination_url) {
   WebContentDecryptionModuleSessionImpl* session = GetSession(session_id);
   DLOG_IF(WARNING, !session) << __FUNCTION__ << " for unknown session "
                              << session_id;

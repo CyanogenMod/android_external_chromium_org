@@ -236,6 +236,13 @@ class BrowserPluginBindingAttach: public BrowserPluginMethodBinding {
   virtual bool Invoke(BrowserPluginBindings* bindings,
                       const NPVariant* args,
                       NPVariant* result) OVERRIDE {
+    bool attached = InvokeHelper(bindings, args);
+    BOOLEAN_TO_NPVARIANT(attached, *result);
+    return true;
+  }
+
+ private:
+  bool InvokeHelper(BrowserPluginBindings* bindings, const NPVariant* args) {
     if (!bindings->instance()->render_view())
       return false;
 
@@ -259,8 +266,6 @@ class BrowserPluginBindingAttach: public BrowserPluginMethodBinding {
     bindings->instance()->Attach(instance_id, extra_params.Pass());
     return true;
   }
-
- private:
   DISALLOW_COPY_AND_ASSIGN(BrowserPluginBindingAttach);
 };
 
@@ -510,36 +515,6 @@ class BrowserPluginPropertyBindingMinWidth
   DISALLOW_COPY_AND_ASSIGN(BrowserPluginPropertyBindingMinWidth);
 };
 
-class BrowserPluginPropertyBindingName
-    : public BrowserPluginPropertyBinding {
- public:
-  BrowserPluginPropertyBindingName()
-      : BrowserPluginPropertyBinding(browser_plugin::kAttributeName) {
-  }
-  virtual bool GetProperty(BrowserPluginBindings* bindings,
-                           NPVariant* result) OVERRIDE {
-    std::string name = bindings->instance()->GetNameAttribute();
-    return StringToNPVariant(name, result);
-  }
-  virtual bool SetProperty(BrowserPluginBindings* bindings,
-                           NPObject* np_obj,
-                           const NPVariant* variant) OVERRIDE {
-    std::string new_value = StringFromNPVariant(*variant);
-    if (bindings->instance()->GetNameAttribute() != new_value) {
-      UpdateDOMAttribute(bindings, new_value);
-      bindings->instance()->ParseNameAttribute();
-    }
-    return true;
-  }
-  virtual void RemoveProperty(BrowserPluginBindings* bindings,
-                              NPObject* np_obj) OVERRIDE {
-    bindings->instance()->RemoveDOMAttribute(name());
-    bindings->instance()->ParseNameAttribute();
-  }
- private:
-  DISALLOW_COPY_AND_ASSIGN(BrowserPluginPropertyBindingName);
-};
-
 class BrowserPluginPropertyBindingPartition
     : public BrowserPluginPropertyBinding {
  public:
@@ -660,7 +635,6 @@ BrowserPluginBindings::BrowserPluginBindings(BrowserPlugin* instance)
   property_bindings_.push_back(new BrowserPluginPropertyBindingMaxWidth);
   property_bindings_.push_back(new BrowserPluginPropertyBindingMinHeight);
   property_bindings_.push_back(new BrowserPluginPropertyBindingMinWidth);
-  property_bindings_.push_back(new BrowserPluginPropertyBindingName);
   property_bindings_.push_back(new BrowserPluginPropertyBindingPartition);
   property_bindings_.push_back(new BrowserPluginPropertyBindingSrc);
 }

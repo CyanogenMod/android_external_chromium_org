@@ -124,7 +124,7 @@ class QuicDispatcherTest : public ::testing::Test {
     scoped_ptr<QuicEncryptedPacket> packet(ConstructEncryptedPacket(
         connection_id, has_version_flag, false, 1, data));
     data_ = string(packet->data(), packet->length());
-    dispatcher_.ProcessPacket(server_address_, client_address, *packet.get());
+    dispatcher_.ProcessPacket(server_address_, client_address, *packet);
   }
 
   void ValidatePacket(const QuicEncryptedPacket& packet) {
@@ -290,16 +290,16 @@ TEST(QuicDispatcherFlowControlTest, NoNewVersion17ConnectionsIfFlagDisabled) {
   // When flag is enabled, new connections should support QUIC_VERSION_17.
   FLAGS_enable_quic_stream_flow_control_2 = true;
   scoped_ptr<QuicConnection> connection_1(
-      QuicDispatcherPeer::CreateQuicConnection(
-          &dispatcher, kCID, client, server, kInitialFlowControlWindowForTest));
+      QuicDispatcherPeer::CreateQuicConnection(&dispatcher, kCID, client,
+                                               server));
   EXPECT_EQ(QUIC_VERSION_17, connection_1->version());
 
 
   // When flag is disabled, new connections should not support QUIC_VERSION_17.
   FLAGS_enable_quic_stream_flow_control_2 = false;
   scoped_ptr<QuicConnection> connection_2(
-      QuicDispatcherPeer::CreateQuicConnection(
-          &dispatcher, kCID, client, server, kInitialFlowControlWindowForTest));
+      QuicDispatcherPeer::CreateQuicConnection(&dispatcher, kCID, client,
+                                               server));
   EXPECT_EQ(QUIC_VERSION_16, connection_2->version());
 }
 

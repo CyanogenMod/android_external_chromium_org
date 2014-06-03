@@ -22,6 +22,7 @@
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/constants.h"
@@ -196,11 +197,11 @@ void ErrorConsole::Enable() {
       content::NotificationService::AllBrowserContextsAndSources());
   notification_registrar_.Add(
       this,
-      chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
+      chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
       content::Source<Profile>(profile_));
   notification_registrar_.Add(
       this,
-      chrome::NOTIFICATION_EXTENSION_INSTALLED,
+      chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
       content::Source<Profile>(profile_));
 
   const ExtensionSet& extensions =
@@ -258,12 +259,12 @@ void ErrorConsole::Observe(int type,
         errors_.RemoveIncognitoErrors();
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED:
+    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED:
       // No need to check the profile here, since we registered to only receive
       // notifications from our own.
       errors_.Remove(content::Details<Extension>(details).ptr()->id());
       break;
-    case chrome::NOTIFICATION_EXTENSION_INSTALLED: {
+    case chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED: {
       const InstalledExtensionInfo* info =
           content::Details<InstalledExtensionInfo>(details).ptr();
 

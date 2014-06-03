@@ -7,8 +7,8 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/chromeos/login/login_manager_test.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/login/user_adding_screen.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/ui/user_adding_screen.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/stub_cros_settings_provider.h"
 #include "chrome/browser/ui/browser.h"
@@ -121,9 +121,7 @@ IN_PROC_BROWSER_TEST_F(AccountsOptionsTest, PRE_MultiProfilesAccountsOptions) {
   StartupUtils::MarkOobeCompleted();
 }
 
-// TODO(pastarmovj): Enable this test once https://crbug.com/362430 is fixed.
-IN_PROC_BROWSER_TEST_F(AccountsOptionsTest,
-                       DISABLED_MultiProfilesAccountsOptions) {
+IN_PROC_BROWSER_TEST_F(AccountsOptionsTest, MultiProfilesAccountsOptions) {
   LoginUser(kTestUsers[0]);
   UserAddingScreen::Get()->Start();
   content::RunAllPendingInMessageLoop();

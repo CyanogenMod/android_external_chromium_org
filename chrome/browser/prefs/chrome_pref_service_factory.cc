@@ -39,7 +39,7 @@
 #include "chrome/browser/ui/profile_error_dialog.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/pref_names.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/pref_names.h"
@@ -158,10 +158,25 @@ const PrefHashFilter::TrackedPreferenceMetadata kTrackedPrefs[] = {
     PrefHashFilter::NO_ENFORCEMENT,
     PrefHashFilter::TRACKING_STRATEGY_ATOMIC
   },
+  {
+    // Protecting kPreferenceResetTime does two things:
+    //  1) It ensures this isn't accidently set by someone stomping the pref
+    //     file.
+    //  2) More importantly, it declares kPreferenceResetTime as a protected
+    //     pref which is required for it to be visible when queried via the
+    //     SegregatedPrefStore. This is because it's written directly in the
+    //     protected JsonPrefStore by that store's PrefHashFilter if there was
+    //     a reset in FilterOnLoad and SegregatedPrefStore will not look for it
+    //     in the protected JsonPrefStore unless it's declared as a protected
+    //     preference here.
+    15, prefs::kPreferenceResetTime,
+    PrefHashFilter::ENFORCE_ON_LOAD,
+    PrefHashFilter::TRACKING_STRATEGY_ATOMIC
+  },
 };
 
 // The count of tracked preferences IDs across all platforms.
-const size_t kTrackedPrefsReportingIDsCount = 15;
+const size_t kTrackedPrefsReportingIDsCount = 16;
 COMPILE_ASSERT(kTrackedPrefsReportingIDsCount >= arraysize(kTrackedPrefs),
                need_to_increment_ids_count);
 
@@ -265,8 +280,11 @@ GetTrackingConfiguration() {
     }
 
     if (enforcement_group >= GROUP_ENFORCE_ALWAYS_WITH_EXTENSIONS &&
-        data.name == extensions::pref_names::kExtensions) {
-      // Specifically enable extension settings enforcement.
+        (data.name == extensions::pref_names::kExtensions ||
+         data.name == extensions::pref_names::kKnownDisabled)) {
+      // Specifically enable extension settings enforcement and ensure
+      // kKnownDisabled follows it in the Protected Preferences.
+      // TODO(gab): Get rid of kKnownDisabled altogether.
       data.enforcement_level = PrefHashFilter::ENFORCE_ON_LOAD;
     }
 
@@ -295,7 +313,8 @@ void HandleReadError(PersistentPrefStore::PrefReadError error) {
     // an example problem that this can cause.
     // Do some diagnosis and try to avoid losing data.
     int message_id = 0;
-    if (error <= PersistentPrefStore::PREF_READ_ERROR_JSON_TYPE) {
+    if (error <= PersistentPrefStore::PREF_READ_ERROR_JSON_TYPE ||
+        error == PersistentPrefStore::PREF_READ_ERROR_LEVELDB_CORRUPTION) {
       message_id = IDS_PREFERENCES_CORRUPT_ERROR;
     } else if (error != PersistentPrefStore::PREF_READ_ERROR_NO_FILE) {
       message_id = IDS_PREFERENCES_UNREADABLE_ERROR;
@@ -431,6 +450,7 @@ scoped_ptr<PrefService> CreateLocalState(
 scoped_ptr<PrefServiceSyncable> CreateProfilePrefs(
     const base::FilePath& profile_path,
     base::SequencedTaskRunner* pref_io_task_runner,
+    TrackedPreferenceValidationDelegate* validation_delegate,
     policy::PolicyService* policy_service,
     ManagedUserSettingsService* managed_user_settings,
     const scoped_refptr<PrefStore>& extension_prefs,
@@ -438,14 +458,15 @@ scoped_ptr<PrefServiceSyncable> CreateProfilePrefs(
     bool async) {
   TRACE_EVENT0("browser", "chrome_prefs::CreateProfilePrefs");
   PrefServiceSyncableFactory factory;
-  PrepareFactory(&factory,
-                 policy_service,
-                 managed_user_settings,
-                 scoped_refptr<PersistentPrefStore>(
-                     CreateProfilePrefStoreManager(profile_path)
-                         ->CreateProfilePrefStore(pref_io_task_runner)),
-                 extension_prefs,
-                 async);
+  PrepareFactory(
+      &factory,
+      policy_service,
+      managed_user_settings,
+      scoped_refptr<PersistentPrefStore>(
+          CreateProfilePrefStoreManager(profile_path)->CreateProfilePrefStore(
+              pref_io_task_runner, validation_delegate)),
+      extension_prefs,
+      async);
   scoped_ptr<PrefServiceSyncable> pref_service =
       factory.CreateSyncable(pref_registry.get());
 

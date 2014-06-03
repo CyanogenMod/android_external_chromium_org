@@ -178,6 +178,9 @@ cr.define('options', function() {
       };
 
       chrome.send('requestHotwordAvailable');
+      var hotwordIndicator = $('hotword-search-setting-indicator');
+      HotwordSearchSettingIndicator.decorate(hotwordIndicator);
+      hotwordIndicator.disabledOnErrorSection = $('hotword-search-enable');
 
       if ($('set-wallpaper')) {
         $('set-wallpaper').onclick = function(event) {
@@ -837,17 +840,18 @@ cr.define('options', function() {
       $('sync-section').hidden = false;
       this.maybeShowUserSection_();
 
-      var subSection = $('sync-section').firstChild;
-      while (subSection) {
-        if (subSection.nodeType == Node.ELEMENT_NODE)
-          subSection.hidden = syncData.supervisedUser;
-        subSection = subSection.nextSibling;
-      }
+      if (cr.isChromeOS && syncData.supervisedUser) {
+        var subSection = $('sync-section').firstChild;
+        while (subSection) {
+          if (subSection.nodeType == Node.ELEMENT_NODE)
+            subSection.hidden = true;
+          subSection = subSection.nextSibling;
+        }
 
-      if (syncData.supervisedUser) {
         $('account-picture-wrapper').hidden = false;
         $('sync-general').hidden = false;
         $('sync-status').hidden = true;
+
         return;
       }
 
@@ -989,10 +993,14 @@ cr.define('options', function() {
 
     /**
      * Activates the Hotword section from the System settings page.
+     * @param {string} opt_error The error message to display.
+     * @param {string} opt_help_link The link to a troubleshooting page.
      * @private
      */
-    showHotwordSection_: function(opt_error) {
+    showHotwordSection_: function(opt_error, opt_help_link) {
       $('hotword-search').hidden = false;
+      $('hotword-search-setting-indicator').errorText = opt_error;
+      $('hotword-search-setting-indicator').helpLink = opt_help_link;
     },
 
     /**

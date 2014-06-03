@@ -19,7 +19,7 @@
         '../components/components.gyp:startup_metric_utils',
         '../components/components.gyp:plugins_renderer',
         '../components/components.gyp:translate_core_common',
-        '../components/components.gyp:translate_language_detection',
+        '../components/components.gyp:translate_core_language_detection',
         '../components/components.gyp:visitedlink_renderer',
         '../content/content.gyp:content_renderer',
         '../extensions/extensions.gyp:extensions_renderer',
@@ -52,6 +52,8 @@
         'renderer/extensions/app_bindings.h',
         'renderer/extensions/app_window_custom_bindings.cc',
         'renderer/extensions/app_window_custom_bindings.h',
+        'renderer/extensions/automation_internal_custom_bindings.cc',
+        'renderer/extensions/automation_internal_custom_bindings.h',
         'renderer/extensions/cast_streaming_native_handler.cc',
         'renderer/extensions/cast_streaming_native_handler.h',
         'renderer/extensions/chrome_extension_helper.cc',
@@ -146,6 +148,7 @@
         'renderer/resources/extensions/context_menus_custom_bindings.js',
         'renderer/resources/extensions/declarative_content_custom_bindings.js',
         'renderer/resources/extensions/declarative_webrequest_custom_bindings.js',
+        'renderer/resources/extensions/enterprise_platform_keys_custom_bindings.js',
         'renderer/resources/extensions/event.js',
         'renderer/resources/extensions/extension_custom_bindings.js',
         'renderer/resources/extensions/feedback_private_custom_bindings.js',
@@ -242,7 +245,6 @@
         'renderer/printing/print_web_view_helper_android.cc',
         'renderer/printing/print_web_view_helper_linux.cc',
         'renderer/printing/print_web_view_helper_mac.mm',
-        'renderer/printing/print_web_view_helper_win.cc',
         'renderer/safe_browsing/feature_extractor_clock.cc',
         'renderer/safe_browsing/feature_extractor_clock.h',
         'renderer/safe_browsing/features.cc',
@@ -356,6 +358,15 @@
           'sources/': [
             ['exclude', '^renderer/printing/']
           ]
+        }],
+        ['win_pdf_metafile_for_printing', {
+          'sources': [
+            'renderer/printing/print_web_view_helper_pdf_win.cc',
+          ],
+        }, {
+          'sources': [
+            'renderer/printing/print_web_view_helper_win.cc',
+          ],
         }],
         ['OS=="android"', {
           'sources!': [

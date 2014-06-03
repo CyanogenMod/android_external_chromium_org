@@ -299,9 +299,12 @@
           'engine/directory_commit_contribution_unittest.cc',
           'engine/directory_update_handler_unittest.cc',
           'engine/get_updates_processor_unittest.cc',
+          'engine/model_thread_sync_entity_unittest.cc',
+          'engine/non_blocking_type_processor_unittest.cc',
           'engine/sync_scheduler_unittest.cc',
           'engine/syncer_proto_util_unittest.cc',
           'engine/syncer_unittest.cc',
+          'engine/syncer_util_unittest.cc',
           'js/js_event_details_unittest.cc',
           'js/sync_js_controller_unittest.cc',
           'protocol/proto_enum_conversions_unittest.cc',
@@ -424,6 +427,11 @@
           '..',
         ],
         'sources': [
+          'internal_api/attachments/attachment_downloader_impl_unittest.cc',
+          'internal_api/attachments/attachment_uploader_impl_unittest.cc',
+          'internal_api/attachments/fake_attachment_downloader_unittest.cc',
+          'internal_api/attachments/fake_attachment_store_unittest.cc',
+          'internal_api/attachments/fake_attachment_uploader_unittest.cc',
           'internal_api/debug_info_event_listener_unittest.cc',
           'internal_api/http_bridge_unittest.cc',
           'internal_api/js_mutation_event_observer_unittest.cc',
@@ -435,7 +443,7 @@
           'internal_api/sync_backup_manager_unittest.cc',
           'internal_api/sync_core_proxy_impl_unittest.cc',
           'internal_api/sync_encryption_handler_impl_unittest.cc',
-          'internal_api/sync_manager_impl_unittest.cc',          
+          'internal_api/sync_manager_impl_unittest.cc',
           'internal_api/sync_rollback_manager_base_unittest.cc',
           'internal_api/sync_rollback_manager_unittest.cc',
           'internal_api/syncapi_server_connection_manager_unittest.cc',
@@ -481,8 +489,6 @@
           'api/attachments/attachment_unittest.cc',
           'api/attachments/attachment_id_unittest.cc',
           'api/attachments/attachment_service_proxy_unittest.cc',
-          'api/attachments/fake_attachment_store_unittest.cc',
-          'api/attachments/fake_attachment_uploader_unittest.cc',
           'api/sync_change_unittest.cc',
           'api/sync_data_unittest.cc',
           'api/sync_error_unittest.cc',
@@ -516,7 +522,7 @@
             '../base/allocator/allocator.gyp:allocator',
           ],
         }],
-        ['OS == "android" and gtest_target_type == "shared_library"', {
+        ['OS == "android"', {
           'dependencies': [
             '../testing/android/native_test.gyp:native_test_native_code',
           ],
@@ -565,29 +571,6 @@
   'conditions': [
     ['OS != "ios"', {
       'targets': [
-        {
-          'target_name': 'sync_tools_helper',
-          'type': 'static_library',
-          'defines': [
-            'SYNC_IMPLEMENTATION',
-          ],
-          'include_dirs': [
-            '..',
-          ],
-          'dependencies': [
-            '../base/base.gyp:base',
-            'sync',
-          ],
-          'export_dependent_settings': [
-            '../base/base.gyp:base',
-            'sync',
-          ],
-          'sources': [
-            'tools/null_invalidation_state_tracker.cc',
-            'tools/null_invalidation_state_tracker.h',
-          ],
-        },
-
         # A tool that can be used to launch a python sync server instance.
         {
           'target_name': 'run_sync_testserver',
@@ -601,47 +584,6 @@
           ],
           'sources': [
             'tools/testserver/run_sync_testserver.cc',
-          ],
-        },
-
-        # A tool to listen to sync notifications and print them out.
-        {
-          'target_name': 'sync_listen_notifications',
-          'type': 'executable',
-          'defines': [
-            'SYNC_TEST',
-          ],
-          'dependencies': [
-            '../base/base.gyp:base',
-            '../jingle/jingle.gyp:notifier',
-            '../net/net.gyp:net',
-            '../net/net.gyp:net_test_support',
-            'sync',
-            'sync_tools_helper',
-          ],
-          'sources': [
-            'tools/sync_listen_notifications.cc',
-          ],
-        },
-
-        # A standalone command-line sync client.
-        {
-          'target_name': 'sync_client',
-          'type': 'executable',
-          'defines': [
-            'SYNC_TEST',
-          ],
-          'dependencies': [
-            '../base/base.gyp:base',
-            '../jingle/jingle.gyp:notifier',
-            '../net/net.gyp:net',
-            '../net/net.gyp:net_test_support',
-            'sync',
-            'sync_tools_helper',
-            'test_support_sync_core'
-          ],
-          'sources': [
-            'tools/sync_client.cc',
           ],
         },
       ],
@@ -675,9 +617,7 @@
         },
       ],
     }],
-    # Special target to wrap a gtest_target_type==shared_library
-    # sync_unit_tests into an android apk for execution.
-    ['OS == "android" and gtest_target_type == "shared_library"', {
+    ['OS == "android"', {
       'targets': [
         {
           'target_name': 'sync_unit_tests_apk',

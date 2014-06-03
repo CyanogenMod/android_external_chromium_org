@@ -72,7 +72,8 @@ class QuicClientSessionTest : public ::testing::TestWithParam<QuicVersion> {
                  make_scoped_ptr((QuicServerInfo*)NULL),
                  QuicServerId(kServerHostname, kServerPort, false,
                               PRIVACY_MODE_DISABLED),
-                 DefaultQuicConfig(), &crypto_config_, &net_log_) {
+                 DefaultQuicConfig(), kInitialFlowControlWindowForTest,
+                 &crypto_config_, &net_log_) {
     session_.config()->SetDefaults();
     crypto_config_.SetDefaults();
   }

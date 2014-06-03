@@ -50,7 +50,7 @@ const int kUploadDataSize = arraysize(kUploadData)-1;
 
 // SpdyNextProtos returns a vector of next protocols for negotiating
 // SPDY.
-std::vector<NextProto> SpdyNextProtos();
+NextProtoVector SpdyNextProtos();
 
 // Chop a frame into an array of MockWrites.
 // |data| is the frame to chop.
@@ -218,13 +218,19 @@ struct SpdySessionDependencies {
   NextProto protocol;
   size_t stream_initial_recv_window_size;
   SpdySession::TimeFunc time_func;
+  NextProtoVector next_protos;
   std::string trusted_spdy_proxy;
+  bool force_spdy_over_ssl;
+  bool force_spdy_always;
+  bool use_alternate_protocols;
   NetLog* net_log;
 };
 
 class SpdyURLRequestContext : public URLRequestContext {
  public:
-  explicit SpdyURLRequestContext(NextProto protocol);
+  SpdyURLRequestContext(NextProto protocol,
+                        bool force_spdy_over_ssl,
+                        bool force_spdy_always);
   virtual ~SpdyURLRequestContext();
 
   MockClientSocketFactory& socket_factory() { return socket_factory_; }
@@ -365,6 +371,10 @@ class SpdyTestUtil {
   // |settings| are the settings to set.
   // Returns the constructed frame.  The caller takes ownership of the frame.
   SpdyFrame* ConstructSpdySettings(const SettingsMap& settings) const;
+
+  // Constructs an expected SPDY SETTINGS acknowledgement frame, if the protocol
+  // version is SPDY4 or higher, or an empty placeholder frame otherwise.
+  SpdyFrame* ConstructSpdySettingsAck() const;
 
   // Construct a SPDY PING frame.
   // Returns the constructed frame.  The caller takes ownership of the frame.

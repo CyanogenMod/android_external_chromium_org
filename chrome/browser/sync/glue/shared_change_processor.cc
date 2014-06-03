@@ -8,9 +8,6 @@
 #include "components/sync_driver/generic_change_processor.h"
 #include "components/sync_driver/generic_change_processor_factory.h"
 #include "components/sync_driver/sync_api_component_factory.h"
-#include "sync/api/attachments/attachment_service.h"
-#include "sync/api/attachments/fake_attachment_service.h"
-#include "sync/api/attachments/fake_attachment_uploader.h"
 #include "sync/api/sync_change.h"
 
 using base::AutoLock;
@@ -69,25 +66,12 @@ base::WeakPtr<syncer::SyncableService> SharedChangeProcessor::Connect(
     return base::WeakPtr<syncer::SyncableService>();
   }
 
-  // TODO(maniscalco): Use a shared (one per profile) thread-safe instance of
-  // AttachmentUpload instead of creating a new one per AttachmentService (bug
-  // 369536).
-  scoped_ptr<syncer::AttachmentUploader> attachment_uploader(
-      new syncer::FakeAttachmentUploader);
-
-  // TODO(maniscalco): Replace FakeAttachmentService with a real
-  // AttachmentService implementation once implemented (bug 356359).
-  scoped_ptr<syncer::AttachmentService> attachment_service(
-      new syncer::FakeAttachmentService(
-          sync_factory->CreateCustomAttachmentStoreForType(type),
-          attachment_uploader.Pass()));
-
-  generic_change_processor_ = processor_factory->CreateGenericChangeProcessor(
-      user_share,
-      error_handler,
-      local_service,
-      merge_result,
-      attachment_service.Pass()).release();
+  generic_change_processor_ =
+      processor_factory->CreateGenericChangeProcessor(user_share,
+                                                      error_handler,
+                                                      local_service,
+                                                      merge_result,
+                                                      sync_factory).release();
   return local_service;
 }
 

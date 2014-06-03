@@ -4,6 +4,8 @@
 
 #include "chromeos/network/shill_property_handler.h"
 
+#include <sstream>
+
 #include "base/bind.h"
 #include "base/format_macros.h"
 #include "base/stl_util.h"
@@ -353,9 +355,15 @@ void ShillPropertyHandler::UpdateProperties(ManagedState::ManagedType type,
     (*iter)->GetAsString(&path);
     if (path.empty())
       continue;
+    // Only request properties once. Favorites that are visible will be updated
+    // when the Network entry is updated. Since 'Services' is always processed
+    // before ServiceCompleteList, only Favorites that are not visible will be
+    // requested here, and GetPropertiesCallback() will only get called with
+    // type == FAVORITE for non-visible Favorites.
     if (type == ManagedState::MANAGED_TYPE_FAVORITE &&
-        requested_service_updates.count(path) > 0)
-      continue;  // Update already requested
+        requested_service_updates.count(path) > 0) {
+      continue;
+    }
 
     // We add a special case for devices here to work around an issue in shill
     // that prevents it from sending property changed signals for cellular
@@ -406,9 +414,10 @@ void ShillPropertyHandler::UpdateObserved(ManagedState::ManagedType type,
 
 void ShillPropertyHandler::UpdateAvailableTechnologies(
     const base::ListValue& technologies) {
+  std::stringstream technologies_str;
+  technologies_str << technologies;
+  NET_LOG_EVENT("AvailableTechnologies:", technologies_str.str());
   available_technologies_.clear();
-  NET_LOG_EVENT("AvailableTechnologiesChanged",
-                base::StringPrintf("Size: %" PRIuS, technologies.GetSize()));
   for (base::ListValue::const_iterator iter = technologies.begin();
        iter != technologies.end(); ++iter) {
     std::string technology;
@@ -421,9 +430,10 @@ void ShillPropertyHandler::UpdateAvailableTechnologies(
 
 void ShillPropertyHandler::UpdateEnabledTechnologies(
     const base::ListValue& technologies) {
+  std::stringstream technologies_str;
+  technologies_str << technologies;
+  NET_LOG_EVENT("EnabledTechnologies:", technologies_str.str());
   enabled_technologies_.clear();
-  NET_LOG_EVENT("EnabledTechnologiesChanged",
-                base::StringPrintf("Size: %" PRIuS, technologies.GetSize()));
   for (base::ListValue::const_iterator iter = technologies.begin();
        iter != technologies.end(); ++iter) {
     std::string technology;
@@ -437,9 +447,10 @@ void ShillPropertyHandler::UpdateEnabledTechnologies(
 
 void ShillPropertyHandler::UpdateUninitializedTechnologies(
     const base::ListValue& technologies) {
+  std::stringstream technologies_str;
+  technologies_str << technologies;
+  NET_LOG_EVENT("UninitializedTechnologies:", technologies_str.str());
   uninitialized_technologies_.clear();
-  NET_LOG_EVENT("UninitializedTechnologiesChanged",
-                base::StringPrintf("Size: %" PRIuS, technologies.GetSize()));
   for (base::ListValue::const_iterator iter = technologies.begin();
        iter != technologies.end(); ++iter) {
     std::string technology;
@@ -477,16 +488,13 @@ void ShillPropertyHandler::GetPropertiesCallback(
                   base::StringPrintf("%s: %d", path.c_str(), call_status));
     return;
   }
-  // Update Favorite properties for networks in the Services list.
+  // Update Favorite properties for networks in the Services list. Call this
+  // for all networks, regardless of whether or not Profile is set, because
+  // we track all networks in the Favorites list (even if they aren't saved
+  // in a Profile). See notes in UpdateProperties() and favorite_state.h.
   if (type == ManagedState::MANAGED_TYPE_NETWORK) {
-    // Only networks with a ProfilePath set are Favorites.
-    std::string profile_path;
-    properties.GetStringWithoutPathExpansion(
-        shill::kProfileProperty, &profile_path);
-    if (!profile_path.empty()) {
-      listener_->UpdateManagedStateProperties(
-          ManagedState::MANAGED_TYPE_FAVORITE, path, properties);
-    }
+    listener_->UpdateManagedStateProperties(
+        ManagedState::MANAGED_TYPE_FAVORITE, path, properties);
   }
   listener_->UpdateManagedStateProperties(type, path, properties);
 

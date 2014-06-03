@@ -23,6 +23,7 @@
 
 #include "nacl_io/kernel_intercept.h"
 #include "nacl_io/kernel_wrap_real.h"
+#include "nacl_io/log.h"
 #include "nacl_io/osmman.h"
 
 
@@ -122,7 +123,6 @@ EXTERN_C_BEGIN
 #define USE_WRAP(name) \
   __nacl_irt_##name = (typeof(__nacl_irt_##name)) WRAP(name)
 
-
 #define EXPAND_SYMBOL_LIST_OPERATION(OP) \
   OP(chdir); \
   OP(close); \
@@ -143,25 +143,56 @@ EXTERN_C_BEGIN
   OP(write); \
   OP(mmap); \
   OP(munmap); \
-  OP(open_resource);
+  OP(open_resource); \
+  \
+  OP(socket); \
+  OP(accept); \
+  OP(bind); \
+  OP(listen); \
+  OP(connect); \
+  OP(send); \
+  OP(sendmsg); \
+  OP(sendto); \
+  OP(recv); \
+  OP(recvmsg); \
+  OP(recvfrom); \
+  OP(getpeername); \
+  OP(getsockname); \
+  OP(getsockopt); \
+  OP(setsockopt); \
+  OP(socketpair); \
+  OP(shutdown);
+
+// TODO(bradnelson): Add these as well.
+// OP(epoll_create);
+// OP(epoll_create1);
+// OP(epoll_ctl);
+// OP(epoll_pwait);
+// OP(ppoll);
+// OP(pselect);
+//
 
 EXPAND_SYMBOL_LIST_OPERATION(DECLARE_REAL_PTR);
 
 int WRAP(chdir)(const char* pathname) {
-  return (ki_chdir(pathname)) ? errno : 0;
+  RTN_ERRNO_IF(ki_chdir(pathname) < 0);
+  return 0;
 }
 
 int WRAP(close)(int fd) {
-  return (ki_close(fd) < 0) ? errno : 0;
+  RTN_ERRNO_IF(ki_close(fd) < 0);
+  return 0;
 }
 
 int WRAP(dup)(int fd, int* newfd) NOTHROW {
   *newfd = ki_dup(fd);
-  return (*newfd < 0) ? errno : 0;
+  RTN_ERRNO_IF(*newfd < 0);
+  return 0;
 }
 
 int WRAP(dup2)(int fd, int newfd) NOTHROW {
-  return (ki_dup2(fd, newfd) < 0) ? errno : 0;
+  RTN_ERRNO_IF(ki_dup2(fd, newfd) < 0);
+  return 0;
 }
 
 void WRAP(exit)(int status) {
@@ -172,15 +203,13 @@ int WRAP(fstat)(int fd, struct nacl_abi_stat *nacl_buf) {
   struct stat buf;
   memset(&buf, 0, sizeof(struct stat));
   int res = ki_fstat(fd, &buf);
-  if (res < 0)
-    return errno;
+  RTN_ERRNO_IF(res < 0);
   stat_to_nacl_stat(&buf, nacl_buf);
   return 0;
 }
 
 int WRAP(getcwd)(char* buf, size_t size) {
-  if (ki_getcwd(buf, size) == NULL)
-    return errno;
+  RTN_ERRNO_IF(ki_getcwd(buf, size) == NULL);
   return 0;
 }
 
@@ -194,8 +223,7 @@ int WRAP(getdents)(int fd, dirent* nacl_buf, size_t nacl_count, size_t *nread) {
   int count;
 
   count = ki_getdents(fd, buf, nacl_count);
-  if (count < 0)
-    return errno;
+  RTN_ERRNO_IF(count < 0);
 
   while (offset < count) {
     dirent* d = (dirent*)(buf + offset);
@@ -215,7 +243,8 @@ int WRAP(getdents)(int fd, dirent* nacl_buf, size_t nacl_count, size_t *nread) {
 }
 
 int WRAP(mkdir)(const char* pathname, mode_t mode) {
-  return (ki_mkdir(pathname, mode)) ? errno : 0;
+  RTN_ERRNO_IF(ki_mkdir(pathname, mode) < 0);
+  return 0;
 }
 
 int WRAP(mmap)(void** addr, size_t length, int prot, int flags, int fd,
@@ -224,7 +253,8 @@ int WRAP(mmap)(void** addr, size_t length, int prot, int flags, int fd,
     return REAL(mmap)(addr, length, prot, flags, fd, offset);
 
   *addr = ki_mmap(*addr, length, prot, flags, fd, offset);
-  return *addr == (void*)-1 ? errno : 0;
+  RTN_ERRNO_IF(*addr == (void*)-1);
+  return 0;
 }
 
 int WRAP(munmap)(void* addr, size_t length) {
@@ -236,47 +266,52 @@ int WRAP(munmap)(void* addr, size_t length) {
 
 int WRAP(open)(const char* pathname, int oflag, mode_t cmode, int* newfd) {
   *newfd = ki_open(pathname, oflag);
-  return (*newfd < 0) ? errno : 0;
+  RTN_ERRNO_IF(*newfd < 0);
+  return 0;
 }
 
 int WRAP(open_resource)(const char* file, int* fd) {
   *fd = ki_open_resource(file);
-  return (*fd < 0) ? errno : 0;
+  RTN_ERRNO_IF(*fd < 0);
+  return 0;
 }
 
 int WRAP(poll)(struct pollfd *fds, nfds_t nfds, int timeout, int* count) {
   *count = ki_poll(fds, nfds, timeout);
-  return (*count < 0) ? errno : 0;
-
+  RTN_ERRNO_IF(*count < 0);
+  return 0;
 }
 
 int WRAP(read)(int fd, void *buf, size_t count, size_t *nread) {
   ssize_t signed_nread = ki_read(fd, buf, count);
   *nread = static_cast<size_t>(signed_nread);
-  return (signed_nread < 0) ? errno : 0;
+  RTN_ERRNO_IF(signed_nread < 0);
+  return 0;
 }
 
 int WRAP(rmdir)(const char* pathname) {
-  return (ki_rmdir(pathname) < 0) ? errno : 0;
+  RTN_ERRNO_IF(ki_rmdir(pathname) < 0);
+  return 0;
 }
 
 int WRAP(seek)(int fd, off_t offset, int whence, off_t* new_offset) {
   *new_offset = ki_lseek(fd, offset, whence);
-  return (*new_offset < 0) ? errno : 0;
+  RTN_ERRNO_IF(*new_offset < 0);
+  return 0;
 }
 
 int WRAP(select)(int nfds, fd_set* readfds, fd_set* writefds,
                  fd_set* exceptfds, struct timeval* timeout, int* count) {
   *count = ki_select(nfds, readfds, writefds, exceptfds, timeout);
-  return (*count < 0) ? errno : 0;
+  RTN_ERRNO_IF(*count < 0);
+  return 0;
 }
 
 int WRAP(stat)(const char *pathname, struct nacl_abi_stat *nacl_buf) {
   struct stat buf;
   memset(&buf, 0, sizeof(struct stat));
   int res = ki_stat(pathname, &buf);
-  if (res < 0)
-    return errno;
+  RTN_ERRNO_IF(res < 0);
   stat_to_nacl_stat(&buf, nacl_buf);
   return 0;
 }
@@ -284,7 +319,115 @@ int WRAP(stat)(const char *pathname, struct nacl_abi_stat *nacl_buf) {
 int WRAP(write)(int fd, const void* buf, size_t count, size_t* nwrote) {
   ssize_t signed_nwrote = ki_write(fd, buf, count);
   *nwrote = static_cast<size_t>(signed_nwrote);
-  return (signed_nwrote < 0) ? errno : 0;
+  RTN_ERRNO_IF(signed_nwrote < 0);
+  return 0;
+}
+
+int WRAP(accept)(int sockfd, struct sockaddr* addr,
+                 socklen_t* addrlen, int *sd) {
+  *sd = ki_accept(sockfd, addr, addrlen);
+  RTN_ERRNO_IF(*sd < 0);
+  return 0;
+}
+
+int WRAP(bind)(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
+  RTN_ERRNO_IF(ki_bind(sockfd, addr, addrlen) < 0);
+  return 0;
+}
+
+int WRAP(connect)(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
+  RTN_ERRNO_IF(ki_connect(sockfd, addr, addrlen) < 0);
+  return 0;
+}
+
+int WRAP(getpeername)(int sockfd, struct sockaddr* addr, socklen_t* addrlen) {
+  RTN_ERRNO_IF(ki_getpeername(sockfd, addr, addrlen) < 0);
+  return 0;
+}
+
+int WRAP(getsockname)(int sockfd, struct sockaddr* addr, socklen_t* addrlen) {
+  RTN_ERRNO_IF(ki_getsockname(sockfd, addr, addrlen) < 0);
+  return 0;
+}
+
+int WRAP(getsockopt)(int sockfd, int level, int optname, void* optval,
+                     socklen_t* optlen) {
+  RTN_ERRNO_IF(ki_getsockopt(sockfd, level, optname, optval, optlen) < 0);
+  return 0;
+}
+
+int WRAP(setsockopt)(int sockfd, int level, int optname, const void* optval,
+                     socklen_t optlen) {
+  RTN_ERRNO_IF(ki_setsockopt(sockfd, level, optname, optval, optlen) < 0);
+  return 0;
+}
+
+int WRAP(listen)(int sockfd, int backlog) {
+  RTN_ERRNO_IF(ki_listen(sockfd, backlog) < 0);
+  return 0;
+}
+
+int WRAP(recv)(int sockfd, void* buf, size_t len, int flags, int* count) {
+  ssize_t signed_nread = ki_recv(sockfd, buf, len, flags);
+  *count = static_cast<int>(signed_nread);
+  RTN_ERRNO_IF(signed_nread < 0);
+  return 0;
+}
+
+int WRAP(recvfrom)(int sockfd, void* buf, size_t len, int flags,
+                   struct sockaddr* addr, socklen_t* addrlen, int* count) {
+  ssize_t signed_nread = ki_recvfrom(sockfd, buf, len, flags, addr, addrlen);
+  *count = static_cast<int>(signed_nread);
+  RTN_ERRNO_IF(signed_nread < 0);
+  return 0;
+}
+
+int WRAP(recvmsg)(int sockfd, struct msghdr* msg, int flags, int *count) {
+  ssize_t signed_nread = ki_recvmsg(sockfd, msg, flags);
+  *count = static_cast<int>(signed_nread);
+  RTN_ERRNO_IF(signed_nread < 0);
+  return 0;
+}
+
+ssize_t WRAP(send)(int sockfd, const void* buf, size_t len, int flags,
+                   int* count) {
+  ssize_t signed_nread = ki_send(sockfd, buf, len, flags);
+  *count = static_cast<int>(signed_nread);
+  RTN_ERRNO_IF(signed_nread < 0);
+  return 0;
+}
+
+ssize_t WRAP(sendto)(int sockfd, const void* buf, size_t len, int flags,
+                     const struct sockaddr* addr, socklen_t addrlen,
+                     int* count) {
+  ssize_t signed_nread = ki_sendto(sockfd, buf, len, flags, addr, addrlen);
+  *count = static_cast<int>(signed_nread);
+  RTN_ERRNO_IF(signed_nread < 0);
+  return 0;
+}
+
+ssize_t WRAP(sendmsg)(int sockfd, const struct msghdr* msg, int flags,
+                      int* count) {
+  ssize_t signed_nread = ki_sendmsg(sockfd, msg, flags);
+  *count = static_cast<int>(signed_nread);
+  RTN_ERRNO_IF(signed_nread < 0);
+  return 0;
+}
+
+int WRAP(shutdown)(int sockfd, int how) {
+  RTN_ERRNO_IF(ki_shutdown(sockfd, how) < 0);
+  return 0;
+}
+
+int WRAP(socket)(int domain, int type, int protocol, int* sd) {
+  *sd = ki_socket(domain, type, protocol);
+  RTN_ERRNO_IF(*sd < 0);
+  return 0;
+}
+
+int WRAP(socketpair)(int domain, int type, int protocol, int* sv) {
+  RTN_ERRNO_IF(ki_socketpair(domain, type, protocol, sv) < 0);
+  return 0;
 }
 
 static void assign_real_pointers() {
@@ -403,6 +546,7 @@ int _real_write(int fd, const void *buf, size_t count, size_t *nwrote) {
 static bool s_wrapped = false;
 void kernel_wrap_init() {
   if (!s_wrapped) {
+    LOG_TRACE("kernel_wrap_init");
     assign_real_pointers();
     EXPAND_SYMBOL_LIST_OPERATION(USE_WRAP)
     s_wrapped = true;
@@ -411,6 +555,7 @@ void kernel_wrap_init() {
 
 void kernel_wrap_uninit() {
   if (s_wrapped) {
+    LOG_TRACE("kernel_wrap_uninit");
     EXPAND_SYMBOL_LIST_OPERATION(USE_REAL)
     s_wrapped = false;
   }

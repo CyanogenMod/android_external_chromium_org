@@ -16,11 +16,15 @@
 #include "base/strings/utf_offset_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "cc/base/latency_info_swap_promise.h"
 #include "cc/layers/texture_layer.h"
+#include "cc/trees/layer_tree_host.h"
 #include "content/common/content_constants_internal.h"
+#include "content/common/input/web_input_event_traits.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/renderer/content_renderer_client.h"
+#include "content/renderer/gpu/render_widget_compositor.h"
 #include "content/renderer/pepper/common.h"
 #include "content/renderer/pepper/content_decryptor_delegate.h"
 #include "content/renderer/pepper/event_conversion.h"
@@ -80,6 +84,7 @@
 #include "ppapi/shared_impl/ppp_instance_combined.h"
 #include "ppapi/shared_impl/resource.h"
 #include "ppapi/shared_impl/scoped_pp_resource.h"
+#include "ppapi/shared_impl/scoped_pp_var.h"
 #include "ppapi/shared_impl/time_conversion.h"
 #include "ppapi/shared_impl/url_request_info_data.h"
 #include "ppapi/shared_impl/var.h"
@@ -146,6 +151,7 @@ using ppapi::PPB_View_Shared;
 using ppapi::PPP_Instance_Combined;
 using ppapi::Resource;
 using ppapi::ScopedPPResource;
+using ppapi::ScopedPPVar;
 using ppapi::StringVar;
 using ppapi::TrackedCallback;
 using ppapi::thunk::EnterResourceNoLock;
@@ -402,6 +408,23 @@ class PluginInstanceLockTarget : public MouseLockDispatcher::LockTarget {
   PepperPluginInstanceImpl* plugin_;
 };
 
+void InitLatencyInfo(ui::LatencyInfo* new_latency,
+                     const ui::LatencyInfo* old_latency,
+                     blink::WebInputEvent::Type type,
+                     int64 input_sequence) {
+  new_latency->AddLatencyNumber(
+      ui::INPUT_EVENT_LATENCY_BEGIN_PLUGIN_COMPONENT,
+      0,
+      input_sequence);
+  new_latency->TraceEventType(WebInputEventTraits::GetName(type));
+  if (old_latency) {
+    new_latency->CopyLatencyFrom(*old_latency,
+                                 ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT);
+    new_latency->CopyLatencyFrom(*old_latency,
+                                 ui::INPUT_EVENT_LATENCY_UI_COMPONENT);
+  }
+}
+
 }  // namespace
 
 // static
@@ -536,6 +559,8 @@ PepperPluginInstanceImpl::PepperPluginInstanceImpl(
       npp_(new NPP_t),
       isolate_(v8::Isolate::GetCurrent()),
       is_deleted_(false),
+      last_input_number_(0),
+      is_tracking_latency_(false),
       view_change_weak_ptr_factory_(this),
       weak_factory_(this) {
   pp_instance_ = HostGlobals::Get()->AddInstance(this);
@@ -822,8 +847,14 @@ bool PepperPluginInstanceImpl::Initialize(
   scoped_ptr<const char * []> argv_array(StringVectorToArgArray(argv_));
   bool success = PP_ToBool(instance_interface_->DidCreate(
       pp_instance(), argn_.size(), argn_array.get(), argv_array.get()));
-  if (success)
-    message_channel_->StopQueueingJavaScriptMessages();
+  // If this is a plugin that hosts external plugins, we should delay messages
+  // so that the child plugin that's created later will receive all the
+  // messages. (E.g., NaCl trusted plugin starting a child NaCl app.)
+  //
+  // A host for external plugins will call ResetAsProxied later, at which point
+  // we can Start() the message_channel_.
+  if (success && (!module_->renderer_ppapi_host()->IsExternalPluginHost()))
+    message_channel_->Start();
   return success;
 }
 
@@ -1091,8 +1122,20 @@ bool PepperPluginInstanceImpl::HandleInputEvent(
         pending_user_gesture_token_.setOutOfProcess();
       }
 
+      const ui::LatencyInfo* current_event_latency_info = NULL;
+      if (render_frame_->GetRenderWidget()) {
+        current_event_latency_info =
+            render_frame_->GetRenderWidget()->current_event_latency_info();
+      }
+
       // Each input event may generate more than one PP_InputEvent.
       for (size_t i = 0; i < events.size(); i++) {
+        if (is_tracking_latency_) {
+          InitLatencyInfo(&events[i].latency_info,
+                          current_event_latency_info,
+                          event.type,
+                          last_input_number_++);
+        }
         if (filtered_input_event_mask_ & event_class)
           events[i].is_filtered = true;
         else
@@ -1112,11 +1155,11 @@ bool PepperPluginInstanceImpl::HandleInputEvent(
   return rv;
 }
 
-void PepperPluginInstanceImpl::HandleMessage(PP_Var message) {
+void PepperPluginInstanceImpl::HandleMessage(ScopedPPVar message) {
   TRACE_EVENT0("ppapi", "PepperPluginInstanceImpl::HandleMessage");
   ppapi::proxy::HostDispatcher* dispatcher =
       ppapi::proxy::HostDispatcher::GetForInstance(pp_instance());
-  if (!dispatcher || (message.type == PP_VARTYPE_OBJECT)) {
+  if (!dispatcher || (message.get().type == PP_VARTYPE_OBJECT)) {
     // The dispatcher should always be valid, and the browser should never send
     // an 'object' var over PPP_Messaging.
     NOTREACHED();
@@ -1125,7 +1168,7 @@ void PepperPluginInstanceImpl::HandleMessage(PP_Var message) {
   dispatcher->Send(new PpapiMsg_PPPMessaging_HandleMessage(
       ppapi::API_ID_PPP_MESSAGING,
       pp_instance(),
-      ppapi::proxy::SerializedVarSendInputShmem(dispatcher, message,
+      ppapi::proxy::SerializedVarSendInputShmem(dispatcher, message.get(),
                                                 pp_instance())));
 }
 
@@ -1256,6 +1299,10 @@ void PepperPluginInstanceImpl::SetLinkUnderCursor(const std::string& url) {
 void PepperPluginInstanceImpl::SetTextInputType(ui::TextInputType type) {
   text_input_type_ = type;
   render_frame_->PepperTextInputTypeChanged(this);
+}
+
+void PepperPluginInstanceImpl::PostMessageToJavaScript(PP_Var message) {
+  message_channel_->PostMessageToJavaScript(message);
 }
 
 base::string16 PepperPluginInstanceImpl::GetSelectedText(bool html) {
@@ -1633,7 +1680,8 @@ bool PepperPluginInstanceImpl::PrintPage(int page_number,
   // The canvas only has a metafile on it for print preview.
   bool save_for_later =
       (printing::MetafileSkiaWrapper::GetMetafileFromCanvas(*canvas) != NULL);
-#if defined(OS_MACOSX) || defined(OS_WIN)
+#if defined(OS_MACOSX) || \
+    (defined(OS_WIN) && !defined(WIN_PDF_METAFILE_FOR_PRINTING))
   save_for_later = save_for_later && skia::IsPreviewMetafile(*canvas);
 #endif
   if (save_for_later) {
@@ -1982,6 +2030,21 @@ bool PepperPluginInstanceImpl::PrepareTextureMailbox(
 }
 
 void PepperPluginInstanceImpl::OnDestruct() { render_frame_ = NULL; }
+
+void PepperPluginInstanceImpl::AddLatencyInfo(
+    const std::vector<ui::LatencyInfo>& latency_info) {
+  if (render_frame_ && render_frame_->GetRenderWidget()) {
+    RenderWidgetCompositor* compositor =
+        render_frame_->GetRenderWidget()->compositor();
+    if (compositor) {
+      for (size_t i = 0; i < latency_info.size(); i++) {
+        scoped_ptr<cc::SwapPromise> swap_promise(
+            new cc::LatencyInfoSwapPromise(latency_info[i]));
+        compositor->QueueSwapPromise(swap_promise.Pass());
+      }
+    }
+  }
+}
 
 void PepperPluginInstanceImpl::AddPluginObject(PluginObject* plugin_object) {
   DCHECK(live_plugin_objects_.find(plugin_object) ==
@@ -2492,6 +2555,11 @@ void PepperPluginInstanceImpl::ClearInputEventRequest(PP_Instance instance,
   RequestInputEventsHelper(event_classes);
 }
 
+void PepperPluginInstanceImpl::StartTrackingLatency(PP_Instance instance) {
+  if (module_->permissions().HasPermission(ppapi::PERMISSION_PRIVATE))
+    is_tracking_latency_ = true;
+}
+
 void PepperPluginInstanceImpl::ZoomChanged(PP_Instance instance,
                                            double factor) {
   // We only want to tell the page to change its zoom if the whole page is the
@@ -2518,7 +2586,7 @@ void PepperPluginInstanceImpl::ZoomLimitsChanged(PP_Instance instance,
 
 void PepperPluginInstanceImpl::PostMessage(PP_Instance instance,
                                            PP_Var message) {
-  message_channel_->PostMessageToJavaScript(message);
+  PostMessageToJavaScript(message);
 }
 
 PP_Bool PepperPluginInstanceImpl::SetCursor(PP_Instance instance,
@@ -2732,9 +2800,6 @@ PP_ExternalPluginResult PepperPluginInstanceImpl::ResetAsProxied(
   original_module_ = module_;
   module_ = module;
 
-  // Don't send any messages to the plugin until DidCreate() has finished.
-  message_channel_->QueueJavaScriptMessages();
-
   // For NaCl instances, remember the NaCl plugin instance interface, so we
   // can shut it down by calling its DidDestroy in our Delete() method.
   original_instance_interface_.reset(instance_interface_.release());
@@ -2770,7 +2835,7 @@ PP_ExternalPluginResult PepperPluginInstanceImpl::ResetAsProxied(
   if (!instance_interface_->DidCreate(
           pp_instance(), argn_.size(), argn_array.get(), argv_array.get()))
     return PP_EXTERNAL_PLUGIN_ERROR_INSTANCE;
-  message_channel_->StopQueueingJavaScriptMessages();
+  message_channel_->Start();
 
   // Clear sent_initial_did_change_view_ and cancel any pending DidChangeView
   // event. This way, SendDidChangeView will send the "current" view

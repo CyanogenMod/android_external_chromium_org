@@ -119,6 +119,7 @@ class SyncEngineTest
         extension_service_.get(),
         NULL /* signin_manager */));
     sync_engine_->Initialize(profile_dir_.path(),
+                             NULL,
                              base::MessageLoopProxy::current(),
                              in_memory_env_.get());
     sync_engine_->SetSyncEnabled(true);
@@ -246,30 +247,32 @@ TEST_F(SyncEngineTest, GetOriginStatusMap) {
   GURL origin = extensions::Extension::GetBaseURLFromExtensionId(kAppID);
 
   sync_engine()->RegisterOrigin(GURL("chrome-extension://app_0"),
-                                     CreateResultReceiver(&sync_status));
+                                CreateResultReceiver(&sync_status));
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(SYNC_STATUS_OK, sync_status);
 
   sync_engine()->RegisterOrigin(GURL("chrome-extension://app_1"),
-                                     CreateResultReceiver(&sync_status));
+                                CreateResultReceiver(&sync_status));
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(SYNC_STATUS_OK, sync_status);
 
-  RemoteFileSyncService::OriginStatusMap status_map;
-  sync_engine()->GetOriginStatusMap(&status_map);
-  ASSERT_EQ(2u, status_map.size());
-  EXPECT_EQ("Enabled", status_map[GURL("chrome-extension://app_0")]);
-  EXPECT_EQ("Enabled", status_map[GURL("chrome-extension://app_1")]);
+  scoped_ptr<RemoteFileSyncService::OriginStatusMap> status_map;
+  sync_engine()->GetOriginStatusMap(CreateResultReceiver(&status_map));
+  base::RunLoop().RunUntilIdle();
+  ASSERT_EQ(2u, status_map->size());
+  EXPECT_EQ("Enabled", (*status_map)[GURL("chrome-extension://app_0")]);
+  EXPECT_EQ("Enabled", (*status_map)[GURL("chrome-extension://app_1")]);
 
   sync_engine()->DisableOrigin(GURL("chrome-extension://app_1"),
                                CreateResultReceiver(&sync_status));
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(SYNC_STATUS_OK, sync_status);
 
-  sync_engine()->GetOriginStatusMap(&status_map);
-  ASSERT_EQ(2u, status_map.size());
-  EXPECT_EQ("Enabled", status_map[GURL("chrome-extension://app_0")]);
-  EXPECT_EQ("Disabled", status_map[GURL("chrome-extension://app_1")]);
+  sync_engine()->GetOriginStatusMap(CreateResultReceiver(&status_map));
+  base::RunLoop().RunUntilIdle();
+  ASSERT_EQ(2u, status_map->size());
+  EXPECT_EQ("Enabled", (*status_map)[GURL("chrome-extension://app_0")]);
+  EXPECT_EQ("Disabled", (*status_map)[GURL("chrome-extension://app_1")]);
 }
 
 TEST_F(SyncEngineTest, UpdateServiceState) {

@@ -36,6 +36,7 @@
             '../base/base.gyp:base',
             '../skia/skia.gyp:skia',
             '../sync/sync.gyp:sync',
+            '../third_party/dom_distiller_js/dom_distiller_js.gyp:dom_distiller_js_proto',
             '../third_party/leveldatabase/leveldatabase.gyp:leveldatabase',
             '../third_party/protobuf/protobuf.gyp:protobuf_lite',
             'components_resources.gyp:components_resources',
@@ -47,6 +48,7 @@
           ],
           'export_dependent_settings': [
             'distilled_page_proto',
+            '../third_party/dom_distiller_js/dom_distiller_js.gyp:dom_distiller_js_proto',
           ],
           'sources': [
             'dom_distiller/android/component_jni_registrar.cc',
@@ -154,6 +156,8 @@
                 'dom_distiller/content/distiller_page_web_contents.h',
                 'dom_distiller/content/dom_distiller_viewer_source.cc',
                 'dom_distiller/content/dom_distiller_viewer_source.h',
+                'dom_distiller/content/web_contents_main_frame_observer.cc',
+                'dom_distiller/content/web_contents_main_frame_observer.h',
               ],
             },
           ],

@@ -8,7 +8,8 @@
 
 #include "base/stl_util.h"
 #include "components/usb_service/usb_context.h"
-#include "components/usb_service/usb_device_handle.h"
+#include "components/usb_service/usb_device_handle_impl.h"
+#include "components/usb_service/usb_interface_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "third_party/libusb/src/libusb/libusb.h"
 
@@ -97,8 +98,8 @@ scoped_refptr<UsbDeviceHandle> UsbDeviceImpl::Open() {
     scoped_refptr<UsbConfigDescriptor> interfaces = ListInterfaces();
     if (!interfaces)
       return NULL;
-    scoped_refptr<UsbDeviceHandle> device_handle =
-        new UsbDeviceHandle(context_, this, handle, interfaces);
+    scoped_refptr<UsbDeviceHandleImpl> device_handle =
+        new UsbDeviceHandleImpl(context_, this, handle, interfaces);
     handles_.push_back(device_handle);
     return device_handle;
   }
@@ -126,7 +127,7 @@ scoped_refptr<UsbConfigDescriptor> UsbDeviceImpl::ListInterfaces() {
   const int list_result =
       libusb_get_active_config_descriptor(platform_device_, &platform_config);
   if (list_result == 0)
-    return new UsbConfigDescriptor(platform_config);
+    return new UsbConfigDescriptorImpl(platform_config);
 
   return NULL;
 }
@@ -135,12 +136,8 @@ void UsbDeviceImpl::OnDisconnect() {
   DCHECK(thread_checker_.CalledOnValidThread());
   HandlesVector handles;
   swap(handles, handles_);
-  for (std::vector<scoped_refptr<UsbDeviceHandle> >::iterator it =
-           handles.begin();
-       it != handles.end();
-       ++it) {
+  for (HandlesVector::iterator it = handles.begin(); it != handles.end(); ++it)
     (*it)->InternalClose();
-  }
 }
 
 }  // namespace usb_service

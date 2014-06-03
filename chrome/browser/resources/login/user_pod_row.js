@@ -47,6 +47,13 @@ cr.define('login', function() {
   var POD_ROW_PADDING = 10;
 
   /**
+   * Minimal padding between user pod and virtual keyboard.
+   * @type {number}
+   * @const
+   */
+  var USER_POD_KEYBOARD_MIN_PADDING = 20;
+
+  /**
    * Whether to preselect the first pod automatically on login screen.
    * @type {boolean}
    * @const
@@ -159,7 +166,6 @@ cr.define('login', function() {
     /** @override */
     decorate: function() {
       this.tabIndex = UserPodTabOrder.POD_INPUT;
-      this.customButtonElement.tabIndex = UserPodTabOrder.POD_INPUT;
       this.actionBoxAreaElement.tabIndex = UserPodTabOrder.ACTION_BOX;
 
       this.addEventListener('keydown', this.handlePodKeyDown_.bind(this));
@@ -187,9 +193,6 @@ cr.define('login', function() {
             'click',
             this.handleRemoveUserConfirmationClick_.bind(this));
       }
-
-      this.customButtonElement.addEventListener('click',
-          this.handleCustomButtonClick_.bind(this));
     },
 
     /**
@@ -432,12 +435,12 @@ cr.define('login', function() {
     },
 
     /**
-     * Gets the custom button. This button is normally hidden, but can be shown
+     * Gets the custom icon. This icon is normally hidden, but can be shown
      * using the chrome.screenlockPrivate API.
-     * @type {!HTMLInputElement}
+     * @type {!HTMLDivElement}
      */
-    get customButtonElement() {
-      return this.querySelector('.custom-button');
+    get customIconElement() {
+      return this.querySelector('.custom-icon');
     },
 
     /**
@@ -451,11 +454,8 @@ cr.define('login', function() {
       this.signedInIndicatorElement.hidden = !this.user_.signedIn;
 
       this.signinButtonElement.hidden = !this.isAuthTypeOnlineSignIn;
-      this.customButtonElement.tabIndex = UserPodTabOrder.POD_INPUT;
-      if (this.isAuthTypeUserClick) {
+      if (this.isAuthTypeUserClick)
         this.passwordLabelElement.textContent = this.authValue;
-        this.customButtonElement.tabIndex = -1;
-      }
 
       this.updateActionBoxArea();
 
@@ -675,7 +675,7 @@ cr.define('login', function() {
         this.showSigninUI();
       } else if (this.isAuthTypeUserClick) {
         Oobe.disableSigninUI();
-        chrome.send('authenticateUser', [this.user.username, '']);
+        chrome.send('attemptUnlock', [this.user.username]);
       } else if (this.isAuthTypePassword) {
         if (!this.passwordElement.value)
           return false;
@@ -881,13 +881,6 @@ cr.define('login', function() {
             this.parentNode.setActivatedPod(this);
           break;
       }
-    },
-
-    /**
-     * Called when the custom button is clicked.
-     */
-    handleCustomButtonClick_: function() {
-      chrome.send('customButtonClicked', [this.user.username]);
     }
   };
 
@@ -1144,10 +1137,8 @@ cr.define('login', function() {
       this.passwordElement.hidden = !isLockedUser;
       this.nameElement.hidden = isLockedUser;
 
-      if (this.isAuthTypeUserClick) {
+      if (this.isAuthTypeUserClick)
         this.passwordLabelElement.textContent = this.authValue;
-        this.customButtonElement.tabIndex = -1;
-      }
 
       UserPod.prototype.updateActionBoxArea.call(this);
     },
@@ -1398,11 +1389,15 @@ cr.define('login', function() {
     },
 
     /**
-     * Return true if user pod row has only single user pod in it.
+     * Return true if user pod row has only single user pod in it, which should
+     * always be focused.
      * @type {boolean}
      */
-    get isSinglePod() {
-      return this.children.length == 1;
+    get alwaysFocusSinglePod() {
+      var isDesktopUserManager = Oobe.getInstance().displayType ==
+          DISPLAY_TYPE.DESKTOP_USER_MANAGER;
+
+      return isDesktopUserManager ? false : this.children.length == 1;
     },
 
     /**
@@ -1572,6 +1567,29 @@ cr.define('login', function() {
     },
 
     /**
+     * Scrolls focused user pod into view.
+     */
+    scrollFocusedPodIntoView: function() {
+      var pod = this.focusedPod_;
+      if (!pod)
+        return;
+
+      // First check whether focused pod is already fully visible.
+      var visibleArea = $('scroll-container');
+      var scrollTop = visibleArea.scrollTop;
+      var clientHeight = visibleArea.clientHeight;
+      var podTop = $('oobe').offsetTop + pod.offsetTop;
+      var padding = USER_POD_KEYBOARD_MIN_PADDING;
+      if (podTop + pod.height + padding <= scrollTop + clientHeight &&
+          podTop - padding >= scrollTop) {
+        return;
+      }
+
+      // Scroll so that user pod is as centered as possible.
+      visibleArea.scrollTop = podTop - (clientHeight - pod.offsetHeight) / 2;
+    },
+
+    /**
      * Rebuilds pod row using users_ and apps_ that were previously set or
      * updated.
      */
@@ -1622,7 +1640,11 @@ cr.define('login', function() {
           Oobe.getInstance().toggleClass('flying-pods', true);
         }, 0);
 
-        this.focusPod(this.preselectedPod);
+        // On desktop, don't pre-select a pod if it's the only one.
+        if (isDesktopUserManager && this.pods.length == 1)
+          this.focusPod();
+        else
+          this.focusPod(this.preselectedPod);
       } else {
         this.podPlacementPostponed_ = true;
 
@@ -1664,12 +1686,11 @@ cr.define('login', function() {
     },
 
     /**
-     * Shows a button on a user pod with an icon. Clicking on this button
-     * triggers an event used by the chrome.screenlockPrivate API.
+     * Shows a custom icon on a user pod besides the input field.
      * @param {string} username Username of pod to add button
      * @param {string} iconURL URL of the button icon
      */
-    showUserPodButton: function(username, iconURL) {
+    showUserPodCustomIcon: function(username, iconURL) {
       var pod = this.getPodWithUsername_(username);
       if (pod == null) {
         console.error('Unable to show user pod button for ' + username +
@@ -1677,17 +1698,15 @@ cr.define('login', function() {
         return;
       }
 
-      pod.customButtonElement.hidden = false;
-      var icon =
-          pod.customButtonElement.querySelector('.custom-button-icon');
-      icon.src = iconURL;
+      pod.customIconElement.hidden = false;
+      pod.customIconElement.style.backgroundImage = url(iconURL);
     },
 
     /**
-     * Hides button from user pod added by showUserPodButton().
+     * Hides the custom icon in the user pod added by showUserPodCustomIcon().
      * @param {string} username Username of pod to remove button
      */
-    hideUserPodButton: function(username) {
+    hideUserPodCustomIcon: function(username) {
       var pod = this.getPodWithUsername_(username);
       if (pod == null) {
         console.error('Unable to hide user pod button for ' + username +
@@ -1695,7 +1714,7 @@ cr.define('login', function() {
         return;
       }
 
-      pod.customButtonElement.hidden = true;
+      pod.customIconElement.hidden = true;
     },
 
     /**
@@ -1728,7 +1747,7 @@ cr.define('login', function() {
       bubbleContent.classList.add('easy-unlock-button-content');
       bubbleContent.textContent = loadTimeData.getString('easyUnlockTooltip');
 
-      var attachElement = this.focusedPod_.customButtonElement;
+      var attachElement = this.focusedPod_.customIconElement;
       /** @const */ var BUBBLE_OFFSET = 20;
       /** @const */ var BUBBLE_PADDING = 8;
       $('bubble').showContentForElement(attachElement,
@@ -1745,6 +1764,9 @@ cr.define('login', function() {
       var layout = this.calculateLayout_();
       if (layout.columns != this.columns || layout.rows != this.rows)
         this.placePods_();
+
+      if (Oobe.getInstance().virtualKeyboardShown)
+        this.scrollFocusedPodIntoView();
     },
 
     /**
@@ -1840,7 +1862,7 @@ cr.define('login', function() {
       this.setAttribute('ncolumns', columns);
     },
     get columns() {
-      return this.getAttribute('ncolumns');
+      return parseInt(this.getAttribute('ncolumns'));
     },
 
     /**
@@ -1852,7 +1874,7 @@ cr.define('login', function() {
       this.setAttribute('nrows', rows);
     },
     get rows() {
-      return this.getAttribute('nrows');
+      return parseInt(this.getAttribute('nrows'));
     },
 
     /**
@@ -1892,7 +1914,7 @@ cr.define('login', function() {
       this.insideFocusPod_ = true;
 
       for (var i = 0, pod; pod = this.pods[i]; ++i) {
-        if (!this.isSinglePod) {
+        if (!this.alwaysFocusSinglePod) {
           pod.isActionBoxMenuActive = false;
         }
         if (pod != podToFocus) {
@@ -1918,6 +1940,9 @@ cr.define('login', function() {
           chrome.send('focusPod', [podToFocus.user.username]);
         this.firstShown_ = false;
         this.lastFocusedPod_ = podToFocus;
+
+        if (Oobe.getInstance().virtualKeyboardShown)
+          this.scrollFocusedPodIntoView();
       }
       this.insideFocusPod_ = false;
       this.keyboardActivated_ = false;
@@ -2051,7 +2076,7 @@ cr.define('login', function() {
 
       // Clears focus if not clicked on a pod and if there's more than one pod.
       var pod = findAncestorByClass(e.target, 'pod');
-      if ((!pod || pod.parentNode != this) && !this.isSinglePod) {
+      if ((!pod || pod.parentNode != this) && !this.alwaysFocusSinglePod) {
         this.focusPod();
       }
 
@@ -2059,7 +2084,7 @@ cr.define('login', function() {
         pod.isActionBoxMenuHovered = true;
 
       // Return focus back to single pod.
-      if (this.isSinglePod) {
+      if (this.alwaysFocusSinglePod) {
         this.focusPod(this.focusedPod_, true /* force */);
         if (!pod)
           this.focusedPod_.isActionBoxMenuHovered = false;
@@ -2128,7 +2153,7 @@ cr.define('login', function() {
       // Do not "defocus" user pod when it is a single pod.
       // That means that 'focused' class will not be removed and
       // input field/button will always be visible.
-      if (!this.isSinglePod)
+      if (!this.alwaysFocusSinglePod)
         this.focusPod();
     },
 
@@ -2176,7 +2201,7 @@ cr.define('login', function() {
           }
           break;
         case 'U+001B':  // Esc
-          if (!this.isSinglePod)
+          if (!this.alwaysFocusSinglePod)
             this.focusPod();
           break;
       }

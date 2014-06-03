@@ -368,7 +368,7 @@
                          '--breakpad=0',
                          '--keystone=<(mac_keystone)',
                          '--scm=1',
-                         '--pdf=<(internal_pdf)',
+                         '--pdf=1',
                          '--bundle_id=<(mac_bundle_id)'],
             },
             {
@@ -430,23 +430,17 @@
             # chrome/app/theme/google_chrome/BRANDING have the short name
             # "chrome" etc.; should we try to extract from there instead?
 
-            # On Mac, this is done in chrome_dll.gypi.
-            ['internal_pdf', {
+            # CrOS does this in a separate build step.
+            ['OS=="linux" and chromeos==0 and linux_dump_symbols==1', {
               'dependencies': [
-                '../pdf/pdf.gyp:pdf',
+                '../pdf/pdf.gyp:pdf_linux_symbols',
               ],
-              'conditions': [
-                # CrOS does this in a separate build step.
-                ['OS=="linux" and chromeos==0 and linux_dump_symbols==1', {
-                  'dependencies': [
-                    '../pdf/pdf.gyp:pdf_linux_symbols',
-                  ],
-                }], # OS=="linux" and chromeos==0 and linux_dump_symbols==1
-              ],
-            }], # internal_pdf
+            }], # OS=="linux" and chromeos==0 and linux_dump_symbols==1
           ],
           'dependencies': [
             '../components/components.gyp:startup_metric_utils',
+            # On Mac, this is done in chrome_dll.gypi.
+            '../pdf/pdf.gyp:pdf',
             'chrome_resources.gyp:packed_extra_resources',
             'chrome_resources.gyp:packed_resources',
             # Copy Flash Player files to PRODUCT_DIR if applicable. Let the .gyp
@@ -501,7 +495,6 @@
             '../breakpad/breakpad.gyp:breakpad_sender',
             '../chrome_elf/chrome_elf.gyp:chrome_elf',
             '../components/components.gyp:breakpad_component',
-            '../components/components.gyp:policy',
             '../sandbox/sandbox.gyp:sandbox',
           ],
           'sources': [
@@ -534,6 +527,13 @@
               ],
             },
           },
+          'conditions': [
+            ['configuration_policy==1', {
+              'dependencies': [
+                '<(DEPTH)/components/components.gyp:policy',
+              ],
+            }],
+          ],
           'actions': [
             {
               'action_name': 'first_run',
@@ -628,7 +628,6 @@
                 '../breakpad/breakpad.gyp:breakpad_sender_win64',
                 '../components/components.gyp:breakpad_win64',
                 '../chrome/common_constants.gyp:common_constants_win64',
-                '../components/components.gyp:policy_win64',
                 '../components/nacl.gyp:nacl_win64',
                 '../crypto/crypto.gyp:crypto_nacl_win64',
                 '../ipc/ipc.gyp:ipc_win64',
@@ -652,6 +651,13 @@
                   'msvs_target_platform': 'x64',
                 },
               },
+              'conditions': [
+                ['configuration_policy==1', {
+                  'dependencies': [
+                    '<(DEPTH)/components/components.gyp:policy_win64',
+                  ],
+                }],
+              ],
             },
           ],
         }, {  # else (disable_nacl==1)

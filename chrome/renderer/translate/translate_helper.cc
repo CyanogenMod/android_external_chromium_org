@@ -23,7 +23,7 @@
 #include "components/translate/core/common/translate_constants.h"
 #include "components/translate/core/common/translate_metrics.h"
 #include "components/translate/core/common/translate_util.h"
-#include "components/translate/language_detection/language_detection_util.h"
+#include "components/translate/core/language_detection/language_detection_util.h"
 #include "content/public/renderer/render_view.h"
 #include "extensions/common/constants.h"
 #include "extensions/renderer/extension_groups.h"
@@ -126,7 +126,7 @@ void TranslateHelper::PrepareForUrl(const GURL& url) {
     return;
   if (url.SchemeIs(content::kChromeDevToolsScheme))
     return;
-  if (url.SchemeIs(content::kFtpScheme))
+  if (url.SchemeIs(url::kFtpScheme))
     return;
 #if defined(OS_CHROMEOS)
   if (url.SchemeIs(extensions::kExtensionScheme) &&

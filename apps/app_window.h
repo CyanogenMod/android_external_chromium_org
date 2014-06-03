@@ -262,6 +262,7 @@ class AppWindow : public content::NotificationObserver,
   const GURL& app_icon_url() const { return app_icon_url_; }
   const gfx::Image& badge_icon() const { return badge_icon_; }
   const GURL& badge_icon_url() const { return badge_icon_url_; }
+  bool is_hidden() const { return is_hidden_; }
 
   const extensions::Extension* GetExtension() const;
   NativeAppWindow* GetBaseWindow();
@@ -335,6 +336,10 @@ class AppWindow : public content::NotificationObserver,
 
   AppWindowContents* app_window_contents_for_test() {
     return app_window_contents_.get();
+  }
+
+  int fullscreen_types_for_test() {
+    return fullscreen_types_;
   }
 
   // Set whether the window should stay above other windows which are not
@@ -517,6 +522,14 @@ class AppWindow : public content::NotificationObserver,
 
   // The first visually non-empty paint has completed.
   bool first_paint_complete_;
+
+  // Whether the window is hidden or not. Hidden in this context means actively
+  // by the chrome.app.window API, not in an operating system context. For
+  // example windows which are minimized are not hidden, and windows which are
+  // part of a hidden app on OS X are not hidden. Windows which were created
+  // with the |hidden| flag set to true, or which have been programmatically
+  // hidden, are considered hidden.
+  bool is_hidden_;
 
   // Whether the delayed Show() call was for an active or inactive window.
   ShowType delayed_show_type_;

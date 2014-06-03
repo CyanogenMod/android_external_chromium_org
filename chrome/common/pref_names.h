@@ -12,7 +12,7 @@
 #include "build/build_config.h"
 
 #include "components/autofill/core/common/autofill_pref_names.h"
-#include "components/bookmarks/core/common/bookmark_pref_names.h"
+#include "components/bookmarks/common/bookmark_pref_names.h"
 #include "components/data_reduction_proxy/common/data_reduction_proxy_pref_names.h"
 #include "components/signin/core/common/signin_pref_names.h"
 
@@ -276,6 +276,7 @@ extern const char kFirstRunTutorialShown[];
 extern const char kSAMLOfflineSigninTimeLimit[];
 extern const char kSAMLLastGAIASignInTime[];
 extern const char kTimeOnOobe[];
+extern const char kCurrentWallpaperAppName[];
 #endif  // defined(OS_CHROMEOS)
 extern const char kIpcDisabledMessages[];
 extern const char kShowHomeButton[];
@@ -428,21 +429,16 @@ extern const char kEulaAccepted[];
 extern const char kMetricsClientID[];
 extern const char kMetricsSessionID[];
 extern const char kMetricsLowEntropySource[];
-extern const char kMetricsPermutedEntropyCache[];
 extern const char kMetricsOldClientID[];
 extern const char kMetricsOldLowEntropySource[];
 extern const char kMetricsReportingEnabled[];
 extern const char kMetricsReportingEnabledTimestamp[];
-extern const char kMetricsMachineId[];
-extern const char kMetricsResetIds[];
 // Android has it's own metric / crash reporting implemented in Android
 // Java code so kMetricsReportingEnabled doesn't make sense. We use this
 // to inform crashes_ui that we have enabled crash reporting.
 #if defined(OS_ANDROID)
 extern const char kCrashReportingEnabled[];
 #endif
-extern const char kMetricsInitialLogs[];
-extern const char kMetricsOngoingLogs[];
 
 extern const char kVariationsLastFetchTime[];
 extern const char kVariationsRestrictParameter[];
@@ -594,9 +590,6 @@ extern const char kDevToolsRemoteEnabled[];
 
 extern const char kGoogleServicesPasswordHash[];
 
-extern const char kInvalidatorClientId[];
-extern const char kInvalidatorInvalidationState[];
-extern const char kInvalidatorSavedInvalidations[];
 extern const char kInvalidationServiceUseGCMChannel[];
 
 extern const char kSignInPromoStartupCount[];
@@ -712,11 +705,13 @@ extern const char kDeviceRobotAnyApiRefreshToken[];
 extern const char kDeviceEnrollmentRequisition[];
 extern const char kDeviceEnrollmentAutoStart[];
 extern const char kDeviceEnrollmentCanExit[];
+extern const char kTimesHIDDialogShown[];
 extern const char kUsersLRUInputMethod[];
 extern const char kEchoCheckedOffers[];
 extern const char kCachedMultiProfileUserBehavior[];
 extern const char kInitialLocale[];
 extern const char kOobeComplete[];
+extern const char kOobeScreenPending[];
 extern const char kDeviceRegistered[];
 extern const char kUsedPolicyCertificates[];
 extern const char kServerBackedDeviceState[];
@@ -733,7 +728,7 @@ extern const char kChromeOsReleaseChannel[];
 
 extern const char kPerformanceTracingEnabled[];
 
-extern const char kTabStripLayoutType[];
+extern const char kTabStripStackedLayout[];
 
 extern const char kRegisteredBackgroundContents[];
 

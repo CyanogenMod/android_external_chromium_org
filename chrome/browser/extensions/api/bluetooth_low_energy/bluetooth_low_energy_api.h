@@ -197,6 +197,15 @@ class BluetoothLowEnergyWriteCharacteristicValueFunction
 
   // BluetoothLowEnergyExtensionFunction override.
   virtual bool DoWork() OVERRIDE;
+
+ private:
+  // Success and error callbacks, called by
+  // BluetoothLowEnergyEventRouter::WriteCharacteristicValue.
+  void SuccessCallback();
+  void ErrorCallback();
+
+  // The instance ID of the requested characteristic.
+  std::string instance_id_;
 };
 
 class BluetoothLowEnergyReadDescriptorValueFunction
@@ -210,6 +219,15 @@ class BluetoothLowEnergyReadDescriptorValueFunction
 
   // BluetoothLowEnergyExtensionFunction override.
   virtual bool DoWork() OVERRIDE;
+
+ private:
+  // Success and error callbacks, called by
+  // BluetoothLowEnergyEventRouter::ReadDescriptorValue.
+  void SuccessCallback();
+  void ErrorCallback();
+
+  // The instance ID of the requested descriptor.
+  std::string instance_id_;
 };
 
 class BluetoothLowEnergyWriteDescriptorValueFunction
@@ -223,6 +241,15 @@ class BluetoothLowEnergyWriteDescriptorValueFunction
 
   // BluetoothLowEnergyExtensionFunction override.
   virtual bool DoWork() OVERRIDE;
+
+ private:
+  // Success and error callbacks, called by
+  // BluetoothLowEnergyEventRouter::WriteDescriptorValue.
+  void SuccessCallback();
+  void ErrorCallback();
+
+  // The instance ID of the requested descriptor.
+  std::string instance_id_;
 };
 
 }  // namespace api

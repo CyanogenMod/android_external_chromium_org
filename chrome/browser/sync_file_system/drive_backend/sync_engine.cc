@@ -7,7 +7,9 @@
 #include <vector>
 
 #include "base/bind.h"
+#include "base/metrics/histogram.h"
 #include "base/threading/sequenced_worker_pool.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/drive/drive_api_service.h"
 #include "chrome/browser/drive/drive_notification_manager.h"
@@ -58,18 +60,22 @@ class RemoteChangeProcessor;
 
 namespace drive_backend {
 
-class SyncEngine::WorkerObserver
-    : public SyncWorker::Observer {
+class SyncEngine::WorkerObserver : public SyncWorker::Observer {
  public:
   WorkerObserver(base::SequencedTaskRunner* ui_task_runner,
                  base::WeakPtr<SyncEngine> sync_engine)
       : ui_task_runner_(ui_task_runner),
-        sync_engine_(sync_engine){
-  }
+        sync_engine_(sync_engine) {}
 
   virtual ~WorkerObserver() {}
 
   virtual void OnPendingFileListUpdated(int item_count) OVERRIDE {
+    if (ui_task_runner_->RunsTasksOnCurrentThread()) {
+      if (sync_engine_)
+        sync_engine_->OnPendingFileListUpdated(item_count);
+      return;
+    }
+
     ui_task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&SyncEngine::OnPendingFileListUpdated,
@@ -81,6 +87,13 @@ class SyncEngine::WorkerObserver
                                    SyncFileStatus file_status,
                                    SyncAction sync_action,
                                    SyncDirection direction) OVERRIDE {
+    if (ui_task_runner_->RunsTasksOnCurrentThread()) {
+      if (sync_engine_)
+        sync_engine_->OnFileStatusChanged(
+            url, file_status, sync_action, direction);
+      return;
+    }
+
     ui_task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&SyncEngine::OnFileStatusChanged,
@@ -88,9 +101,14 @@ class SyncEngine::WorkerObserver
                    url, file_status, sync_action, direction));
   }
 
-
   virtual void UpdateServiceState(RemoteServiceState state,
                                   const std::string& description) OVERRIDE {
+    if (ui_task_runner_->RunsTasksOnCurrentThread()) {
+      if (sync_engine_)
+        sync_engine_->UpdateServiceState(state, description);
+      return;
+    }
+
     ui_task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&SyncEngine::UpdateServiceState,
@@ -108,10 +126,19 @@ namespace {
 
 void EmptyStatusCallback(SyncStatusCode status) {}
 
+void DidRegisterOrigin(const base::TimeTicks& start_time,
+                       const SyncStatusCallback& callback,
+                       SyncStatusCode status) {
+  base::TimeDelta delta(base::TimeTicks::Now() - start_time);
+  HISTOGRAM_TIMES("SyncFileSystem.RegisterOriginTime", delta);
+  callback.Run(status);
+}
+
 }  // namespace
 
 scoped_ptr<SyncEngine> SyncEngine::CreateForBrowserContext(
-    content::BrowserContext* context) {
+    content::BrowserContext* context,
+    TaskLogger* task_logger) {
   scoped_refptr<base::SequencedWorkerPool> worker_pool(
       content::BrowserThread::GetBlockingPool());
   scoped_refptr<base::SequencedTaskRunner> drive_task_runner(
@@ -160,10 +187,10 @@ scoped_ptr<SyncEngine> SyncEngine::CreateForBrowserContext(
                      notification_manager,
                      extension_service,
                      signin_manager));
-  sync_engine->Initialize(
-      GetSyncFileSystemDir(context->GetPath()),
-      file_task_runner.get(),
-      NULL);
+  sync_engine->Initialize(GetSyncFileSystemDir(context->GetPath()),
+                          task_logger,
+                          file_task_runner.get(),
+                          NULL);
 
   return sync_engine.Pass();
 }
@@ -183,31 +210,36 @@ SyncEngine::~SyncEngine() {
   if (notification_manager_)
     notification_manager_->RemoveObserver(this);
 
-  // TODO(tzik): Destroy |sync_worker_| and |worker_observer_| on the worker.
+  WorkerObserver* worker_observer = worker_observer_.release();
+  if (!worker_task_runner_->DeleteSoon(FROM_HERE, worker_observer))
+    delete worker_observer;
+
+  SyncWorker* sync_worker = sync_worker_.release();
+  if (!worker_task_runner_->DeleteSoon(FROM_HERE, sync_worker))
+    delete sync_worker;
 }
 
 void SyncEngine::Initialize(const base::FilePath& base_dir,
+                            TaskLogger* task_logger,
                             base::SequencedTaskRunner* file_task_runner,
                             leveldb::Env* env_override) {
   // DriveServiceWrapper and DriveServiceOnWorker relay communications
   // between DriveService and syncers in SyncWorker.
-  scoped_ptr<drive::DriveServiceInterface>
-      drive_service_on_worker(
-          new DriveServiceOnWorker(drive_service_wrapper_->AsWeakPtr(),
-                                   base::MessageLoopProxy::current(),
-                                   worker_task_runner_));
-  scoped_ptr<drive::DriveUploaderInterface>
-      drive_uploader_on_worker(
-          new DriveUploaderOnWorker(drive_uploader_wrapper_->AsWeakPtr(),
-                                    base::MessageLoopProxy::current(),
-                                    worker_task_runner_));
-  scoped_ptr<SyncEngineContext>
-      sync_engine_context(
-          new SyncEngineContext(drive_service_on_worker.Pass(),
-                                drive_uploader_on_worker.Pass(),
+  scoped_ptr<drive::DriveServiceInterface> drive_service_on_worker(
+      new DriveServiceOnWorker(drive_service_wrapper_->AsWeakPtr(),
+                               base::MessageLoopProxy::current(),
+                               worker_task_runner_));
+  scoped_ptr<drive::DriveUploaderInterface> drive_uploader_on_worker(
+      new DriveUploaderOnWorker(drive_uploader_wrapper_->AsWeakPtr(),
                                 base::MessageLoopProxy::current(),
-                                worker_task_runner_,
-                                file_task_runner));
+                                worker_task_runner_));
+  scoped_ptr<SyncEngineContext> sync_engine_context(
+      new SyncEngineContext(drive_service_on_worker.Pass(),
+                            drive_uploader_on_worker.Pass(),
+                            task_logger,
+                            base::MessageLoopProxy::current(),
+                            worker_task_runner_,
+                            file_task_runner));
 
   worker_observer_.reset(
       new WorkerObserver(base::MessageLoopProxy::current(),
@@ -217,13 +249,16 @@ void SyncEngine::Initialize(const base::FilePath& base_dir,
   if (extension_service_)
     extension_service_weak_ptr = extension_service_->AsWeakPtr();
 
-  // TODO(peria): Use PostTask on |worker_task_runner_| to call this function.
-  sync_worker_ = SyncWorker::CreateOnWorker(
+  sync_worker_.reset(new SyncWorker(
       base_dir,
-      worker_observer_.get(),
       extension_service_weak_ptr,
       sync_engine_context.Pass(),
-      env_override);
+      env_override));
+  sync_worker_->AddObserver(worker_observer_.get());
+  worker_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&SyncWorker::Initialize,
+                 base::Unretained(sync_worker_.get())));
 
   if (notification_manager_)
     notification_manager_->AddObserver(this);
@@ -247,7 +282,10 @@ void SyncEngine::RegisterOrigin(
                  base::Unretained(sync_worker_.get()),
                  origin,
                  RelayCallbackToCurrentThread(
-                     FROM_HERE, callback)));
+                     FROM_HERE,
+                     base::Bind(&DidRegisterOrigin,
+                                base::TimeTicks::Now(),
+                                callback))));
 }
 
 void SyncEngine::EnableOrigin(
@@ -315,29 +353,36 @@ LocalChangeProcessor* SyncEngine::GetLocalChangeProcessor() {
   return this;
 }
 
-bool SyncEngine::IsConflicting(const fileapi::FileSystemURL& url) {
-  // TODO(tzik): Implement this before we support manual conflict resolution.
-  return false;
-}
-
 RemoteServiceState SyncEngine::GetCurrentState() const {
-  // TODO(peria): Post task
-  return sync_worker_->GetCurrentState();
+  return service_state_;
 }
 
-void SyncEngine::GetOriginStatusMap(OriginStatusMap* status_map) {
-  // TODO(peria): Make this route asynchronous.
-  sync_worker_->GetOriginStatusMap(status_map);
+void SyncEngine::GetOriginStatusMap(const StatusMapCallback& callback) {
+  worker_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&SyncWorker::GetOriginStatusMap,
+                 base::Unretained(sync_worker_.get()),
+                 RelayCallbackToCurrentThread(FROM_HERE, callback)));
 }
 
-scoped_ptr<base::ListValue> SyncEngine::DumpFiles(const GURL& origin) {
-  // TODO(peria): Make this route asynchronous.
-  return sync_worker_->DumpFiles(origin);
+void SyncEngine::DumpFiles(const GURL& origin,
+                           const ListCallback& callback) {
+  PostTaskAndReplyWithResult(
+      worker_task_runner_,
+      FROM_HERE,
+      base::Bind(&SyncWorker::DumpFiles,
+                 base::Unretained(sync_worker_.get()),
+                 origin),
+      callback);
 }
 
-scoped_ptr<base::ListValue> SyncEngine::DumpDatabase() {
-  // TODO(peria): Make this route asynchronous.
-  return sync_worker_->DumpDatabase();
+void SyncEngine::DumpDatabase(const ListCallback& callback) {
+  PostTaskAndReplyWithResult(
+      worker_task_runner_,
+      FROM_HERE,
+      base::Bind(&SyncWorker::DumpDatabase,
+                 base::Unretained(sync_worker_.get())),
+      callback);
 }
 
 void SyncEngine::SetSyncEnabled(bool enabled) {
@@ -346,53 +391,6 @@ void SyncEngine::SetSyncEnabled(bool enabled) {
       base::Bind(&SyncWorker::SetSyncEnabled,
                  base::Unretained(sync_worker_.get()),
                  enabled));
-}
-
-void SyncEngine::UpdateSyncEnabled(bool enabled) {
-  const char* status_message = enabled ? "Sync is enabled" : "Sync is disabled";
-  FOR_EACH_OBSERVER(
-      Observer, service_observers_,
-      OnRemoteServiceStateUpdated(GetCurrentState(), status_message));
-}
-
-SyncStatusCode SyncEngine::SetDefaultConflictResolutionPolicy(
-    ConflictResolutionPolicy policy) {
-  // TODO(peria): Make this route asynchronous.
-  return sync_worker_->SetDefaultConflictResolutionPolicy(policy);
-}
-
-SyncStatusCode SyncEngine::SetConflictResolutionPolicy(
-    const GURL& origin,
-    ConflictResolutionPolicy policy) {
-  // TODO(peria): Make this route asynchronous.
-  return sync_worker_->SetConflictResolutionPolicy(origin, policy);
-}
-
-ConflictResolutionPolicy SyncEngine::GetDefaultConflictResolutionPolicy()
-    const {
-  // TODO(peria): Make this route asynchronous.
-  return sync_worker_->GetDefaultConflictResolutionPolicy();
-}
-
-ConflictResolutionPolicy SyncEngine::GetConflictResolutionPolicy(
-    const GURL& origin) const {
-  // TODO(peria): Make this route asynchronous.
-  return sync_worker_->GetConflictResolutionPolicy(origin);
-}
-
-void SyncEngine::GetRemoteVersions(
-    const fileapi::FileSystemURL& url,
-    const RemoteVersionsCallback& callback) {
-  // TODO(tzik): Implement this before we support manual conflict resolution.
-  callback.Run(SYNC_STATUS_FAILED, std::vector<Version>());
-}
-
-void SyncEngine::DownloadRemoteVersion(
-    const fileapi::FileSystemURL& url,
-    const std::string& version_id,
-    const DownloadVersionCallback& callback) {
-  // TODO(tzik): Implement this before we support manual conflict resolution.
-  callback.Run(SYNC_STATUS_FAILED, webkit_blob::ScopedFile());
 }
 
 void SyncEngine::PromoteDemotedChanges() {
@@ -425,7 +423,6 @@ void SyncEngine::ApplyLocalChange(
 }
 
 SyncTaskManager* SyncEngine::GetSyncTaskManagerForTesting() {
-  // TODO(peria): Post task
   return sync_worker_->GetSyncTaskManager();
 }
 
@@ -489,6 +486,7 @@ SyncEngine::SyncEngine(
       drive_service_wrapper_(new DriveServiceWrapper(drive_service_.get())),
       drive_uploader_(drive_uploader.Pass()),
       drive_uploader_wrapper_(new DriveUploaderWrapper(drive_uploader_.get())),
+      service_state_(REMOTE_SERVICE_TEMPORARY_UNAVAILABLE),
       notification_manager_(notification_manager),
       extension_service_(extension_service),
       signin_manager_(signin_manager),
@@ -514,6 +512,8 @@ void SyncEngine::OnFileStatusChanged(const fileapi::FileSystemURL& url,
 
 void SyncEngine::UpdateServiceState(RemoteServiceState state,
                                     const std::string& description) {
+  service_state_ = state;
+
   FOR_EACH_OBSERVER(
       Observer, service_observers_,
       OnRemoteServiceStateUpdated(state, description));

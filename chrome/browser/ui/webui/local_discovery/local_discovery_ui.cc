@@ -23,11 +23,13 @@ content::WebUIDataSource* CreateLocalDiscoveryHTMLSource() {
   source->SetDefaultResource(IDR_LOCAL_DISCOVERY_HTML);
   source->AddResourcePath("local_discovery.css", IDR_LOCAL_DISCOVERY_CSS);
   source->AddResourcePath("local_discovery.js", IDR_LOCAL_DISCOVERY_JS);
+  source->AddResourcePath("device.png", IDR_LOCAL_DISCOVERY_DEVICE_PNG);
   source->AddResourcePath("printer.png", IDR_LOCAL_DISCOVERY_PRINTER_PNG);
 
   source->SetUseJsonJSFormatV2();
   source->AddLocalizedString("serviceRegister",
                              IDS_LOCAL_DISCOVERY_SERVICE_REGISTER);
+  source->AddLocalizedString("manageDevice", IDS_LOCAL_DISCOVERY_MANAGE_DEVICE);
 
   source->AddLocalizedString("registerConfirmMessage",
                              IDS_LOCAL_DISCOVERY_REGISTER_CONFIRMATION);
@@ -51,8 +53,10 @@ content::WebUIDataSource* CreateLocalDiscoveryHTMLSource() {
                              IDS_LOCAL_DISCOVERY_ADDING_PRINTER_MESSAGE2);
   source->AddLocalizedString("devicesTitle",
                              IDS_LOCAL_DISCOVERY_DEVICES_PAGE_TITLE);
-  source->AddLocalizedString("noDescription",
-                             IDS_LOCAL_DISCOVERY_NO_DESCRIPTION);
+  source->AddLocalizedString("noDescriptionDevice",
+                             IDS_LOCAL_DISCOVERY_NO_DESCRIPTION_DEVICE);
+  source->AddLocalizedString("noDescriptionPrinter",
+                             IDS_LOCAL_DISCOVERY_NO_DESCRIPTION_PRINTER);
   source->AddLocalizedString("printersOnNetworkZero",
                              IDS_LOCAL_DISCOVERY_PRINTERS_ON_NETWORK_ZERO);
   source->AddLocalizedString("printersOnNetworkOne",

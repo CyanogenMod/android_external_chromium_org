@@ -18,8 +18,10 @@
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/ui/events/events.gyp:events',
+        '<(DEPTH)/ui/events/ozone/events_ozone.gyp:events_ozone',
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx',
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx_geometry',
+        '<(DEPTH)/ui/gfx/ozone/gfx_ozone.gyp:gfx_ozone',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<@(external_ozone_platform_deps)',
         '<@(internal_ozone_platform_deps)',
@@ -41,14 +43,13 @@
         # 'chromeos' folder name.
         'common/chromeos/native_display_delegate_ozone.cc',
         'common/chromeos/native_display_delegate_ozone.h',
+        'common/chromeos/touchscreen_device_manager_ozone.cc',
+        'common/chromeos/touchscreen_device_manager_ozone.h',
         'ozone_platform.cc',
         'ozone_platform.h',
         'ozone_switches.cc',
         'ozone_switches.h',
         '<@(external_ozone_platform_files)',
-      ],
-      'includes': [
-        'ime/ime.gypi',
       ],
       'actions': [
         {
@@ -91,9 +92,19 @@
         'platform/caca/caca.gypi',
       ],
     }],
-    ['<(ozone_platform_dri) == 1', {
+    ['<(ozone_platform_dri) == 1 or <(ozone_platform_gbm) == 1', {
       'includes': [
         'platform/dri/dri.gypi',
+      ],
+    }],
+    ['<(ozone_platform_egltest) == 1', {
+      'includes': [
+        'platform/egltest/egltest.gypi',
+      ],
+    }],
+    ['<(ozone_platform_gbm) == 1', {
+      'includes': [
+        'platform/dri/gbm.gypi',
       ],
     }],
     ['<(ozone_platform_test) == 1', {

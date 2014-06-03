@@ -128,6 +128,8 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkInstCnt.cpp \
 	third_party/skia/src/core/SkImageFilter.cpp \
 	third_party/skia/src/core/SkImageInfo.cpp \
+	third_party/skia/src/core/SkImageGenerator.cpp \
+	third_party/skia/src/core/SkLocalMatrixShader.cpp \
 	third_party/skia/src/core/SkLineClipper.cpp \
 	third_party/skia/src/core/SkMallocPixelRef.cpp \
 	third_party/skia/src/core/SkMask.cpp \
@@ -261,7 +263,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/effects/SkEmbossMask.cpp \
 	third_party/skia/src/effects/SkEmbossMaskFilter.cpp \
 	third_party/skia/src/effects/SkGpuBlurUtils.cpp \
-	third_party/skia/src/effects/SkKernel33MaskFilter.cpp \
 	third_party/skia/src/effects/SkLayerDrawLooper.cpp \
 	third_party/skia/src/effects/SkLayerRasterizer.cpp \
 	third_party/skia/src/effects/SkLerpXfermode.cpp \
@@ -347,7 +348,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/GrPathRenderer.cpp \
 	third_party/skia/src/gpu/GrPathUtils.cpp \
 	third_party/skia/src/gpu/GrPictureUtils.cpp \
-	third_party/skia/src/gpu/GrRectanizer.cpp \
+	third_party/skia/src/gpu/GrRectanizer_pow2.cpp \
 	third_party/skia/src/gpu/GrRectanizer_skyline.cpp \
 	third_party/skia/src/gpu/GrRenderTarget.cpp \
 	third_party/skia/src/gpu/GrReducedClip.cpp \
@@ -369,6 +370,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/effects/GrConvexPolyEffect.cpp \
 	third_party/skia/src/gpu/effects/GrBicubicEffect.cpp \
 	third_party/skia/src/gpu/effects/GrCustomCoordsTextureEffect.cpp \
+	third_party/skia/src/gpu/effects/GrDashingEffect.cpp \
 	third_party/skia/src/gpu/effects/GrDistanceFieldTextureEffect.cpp \
 	third_party/skia/src/gpu/effects/GrOvalEffect.cpp \
 	third_party/skia/src/gpu/effects/GrRRectEffect.cpp \
@@ -460,12 +462,17 @@ MY_DEFS_Debug := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
+	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
+	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
+	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DVIDEO_HOLE=1' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -474,10 +481,12 @@ MY_DEFS_Debug := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
+	'-DSK_SUPPORT_LEGACY_ASIMAGEINFO' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
+	'-DSK_IGNORE_CORRECT_HIGH_QUALITY_IMAGE_SCALE' \
+	'-DSK_SUPPORT_LEGACY_INSTALLPIXELSPARAMS' \
+	'-DSK_SUPPORT_LEGACY_IMAGEGENERATORAPI' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
@@ -489,6 +498,7 @@ MY_DEFS_Debug := \
 	'-DSK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS' \
 	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(1*1024*1024)' \
 	'-DSK_USE_DISCARDABLE_SCALEDIMAGECACHE' \
+	'-DSK_IGNORE_DWRITE_BITMAP_FIX' \
 	'-DSK_FONTHOST_DOES_NOT_USE_FONTMGR' \
 	'-DSK_GAMMA_APPLY_TO_A8' \
 	'-DSK_GAMMA_EXPONENT=1.4' \
@@ -600,12 +610,17 @@ MY_DEFS_Release := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
+	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
+	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
+	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DVIDEO_HOLE=1' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -614,10 +629,12 @@ MY_DEFS_Release := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
+	'-DSK_SUPPORT_LEGACY_ASIMAGEINFO' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
+	'-DSK_IGNORE_CORRECT_HIGH_QUALITY_IMAGE_SCALE' \
+	'-DSK_SUPPORT_LEGACY_INSTALLPIXELSPARAMS' \
+	'-DSK_SUPPORT_LEGACY_IMAGEGENERATORAPI' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
@@ -629,6 +646,7 @@ MY_DEFS_Release := \
 	'-DSK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS' \
 	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(1*1024*1024)' \
 	'-DSK_USE_DISCARDABLE_SCALEDIMAGECACHE' \
+	'-DSK_IGNORE_DWRITE_BITMAP_FIX' \
 	'-DSK_FONTHOST_DOES_NOT_USE_FONTMGR' \
 	'-DSK_GAMMA_APPLY_TO_A8' \
 	'-DSK_GAMMA_EXPONENT=1.4' \

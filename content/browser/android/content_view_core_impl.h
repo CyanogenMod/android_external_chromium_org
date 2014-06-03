@@ -17,8 +17,6 @@
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/android/content_view_core.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/gfx/rect.h"
@@ -31,12 +29,12 @@ class WindowAndroid;
 }
 
 namespace content {
+class JavaBridgeDispatcherHostManager;
 class RenderWidgetHostViewAndroid;
 struct MenuItem;
 
 // TODO(jrg): this is a shell.  Upstream the rest.
 class ContentViewCoreImpl : public ContentViewCore,
-                            public NotificationObserver,
                             public WebContentsObserver {
  public:
   static ContentViewCoreImpl* FromWebContents(WebContents* web_contents);
@@ -44,7 +42,8 @@ class ContentViewCoreImpl : public ContentViewCore,
                       jobject obj,
                       WebContents* web_contents,
                       ui::ViewAndroid* view_android,
-                      ui::WindowAndroid* window_android);
+                      ui::WindowAndroid* window_android,
+                      jobject java_bridge_retained_object_set);
 
   // ContentViewCore implementation.
   virtual base::android::ScopedJavaLocalRef<jobject> GetJavaObject() OVERRIDE;
@@ -89,7 +88,8 @@ class ContentViewCoreImpl : public ContentViewCore,
       jbyteArray post_data,
       jstring base_url_for_data_url,
       jstring virtual_url_for_data_url,
-      jboolean can_load_local_resources);
+      jboolean can_load_local_resources,
+      jboolean is_renderer_initiated);
   base::android::ScopedJavaLocalRef<jstring> GetURL(JNIEnv* env, jobject) const;
   jboolean IsIncognito(JNIEnv* env, jobject obj);
   void SendOrientationChangeEvent(JNIEnv* env, jobject obj, jint orientation);
@@ -164,6 +164,7 @@ class ContentViewCoreImpl : public ContentViewCore,
   long GetNativeImeAdapter(JNIEnv* env, jobject obj);
   void SetFocus(JNIEnv* env, jobject obj, jboolean focused);
   void ScrollFocusedEditableNodeIntoView(JNIEnv* env, jobject obj);
+  void SelectWordAroundCaret(JNIEnv* env, jobject obj);
 
   jint GetBackgroundColor(JNIEnv* env, jobject obj);
   void SetBackgroundColor(JNIEnv* env, jobject obj, jint color);
@@ -184,8 +185,7 @@ class ContentViewCoreImpl : public ContentViewCore,
                               jobject obj,
                               jobject object,
                               jstring name,
-                              jclass safe_annotation_clazz,
-                              jobject retained_object_set);
+                              jclass safe_annotation_clazz);
   void RemoveJavascriptInterface(JNIEnv* env, jobject obj, jstring name);
   int GetNavigationHistory(JNIEnv* env, jobject obj, jobject history);
   void GetDirectedNavigationHistory(JNIEnv* env,
@@ -264,7 +264,6 @@ class ContentViewCoreImpl : public ContentViewCore,
   void OnSelectionChanged(const std::string& text);
   void OnSelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params);
-  void OnSelectionRootBoundsChanged(const gfx::Rect& bounds);
 
   void StartContentIntent(const GURL& content_url);
 
@@ -312,13 +311,10 @@ class ContentViewCoreImpl : public ContentViewCore,
   friend class ContentViewUserData;
   virtual ~ContentViewCoreImpl();
 
-  // NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
-
   // WebContentsObserver implementation.
   virtual void RenderViewReady() OVERRIDE;
+  virtual void RenderViewHostChanged(RenderViewHost* old_host,
+                                     RenderViewHost* new_host) OVERRIDE;
   virtual void WebContentsDestroyed() OVERRIDE;
 
   // --------------------------------------------------------------------------
@@ -351,8 +347,6 @@ class ContentViewCoreImpl : public ContentViewCore,
   // A weak reference to the Java ContentViewCore object.
   JavaObjectWeakGlobalRef java_ref_;
 
-  NotificationRegistrar notification_registrar_;
-
   // Reference to the current WebContents used to determine how and what to
   // display in the ContentViewCore.
   WebContentsImpl* web_contents_;
@@ -374,9 +368,11 @@ class ContentViewCoreImpl : public ContentViewCore,
   // will be sent to Renderer once it is ready.
   int device_orientation_;
 
-  bool geolocation_needs_pause_;
-
   bool accessibility_enabled_;
+
+  // Manages injecting Java objects.
+  scoped_ptr<JavaBridgeDispatcherHostManager>
+      java_bridge_dispatcher_host_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentViewCoreImpl);
 };

@@ -14,7 +14,6 @@
 #include "apps/app_window_registry.h"
 #include "base/callback.h"
 #include "base/lazy_instance.h"
-#include "base/platform_file.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -866,15 +865,18 @@ void MediaGalleriesGetMetadataFunction::SniffMimeType(
     return;
   }
 
+  // TODO(tommycli): Enable getting attached images.
   scoped_refptr<metadata::SafeMediaMetadataParser> parser(
       new metadata::SafeMediaMetadataParser(GetProfile(), blob_uuid,
-                                            total_blob_length, mime_type));
+                                            total_blob_length, mime_type,
+                                            false /* get_attached_images */));
   parser->Start(base::Bind(
       &MediaGalleriesGetMetadataFunction::OnSafeMediaMetadataParserDone, this));
 }
 
 void MediaGalleriesGetMetadataFunction::OnSafeMediaMetadataParserDone(
-    bool parse_success, base::DictionaryValue* metadata_dictionary) {
+    bool parse_success, scoped_ptr<base::DictionaryValue> metadata_dictionary,
+    scoped_ptr<std::vector<metadata::AttachedImage> > attached_images) {
   if (!parse_success) {
     SendResponse(false);
     return;

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,19 +8,16 @@
 
 #include "base/i18n/string_compare.h"
 #include "base/metrics/histogram.h"
-#include "base/prefs/pref_service.h"
-#include "chrome/browser/browser_process.h"
-#include "chrome/browser/infobars/infobar_service.h"
-#include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
 #include "components/infobars/core/infobar.h"
+#include "components/infobars/core/infobar_manager.h"
+#include "components/translate/core/browser/language_state.h"
 #include "components/translate/core/browser/translate_accept_languages.h"
+#include "components/translate/core/browser/translate_client.h"
 #include "components/translate/core/browser/translate_download_manager.h"
+#include "components/translate/core/browser/translate_driver.h"
 #include "components/translate/core/browser/translate_manager.h"
 #include "components/translate/core/common/translate_constants.h"
-#include "content/public/browser/navigation_entry.h"
-#include "content/public/browser/web_contents.h"
-#include "grit/generated_resources.h"
+#include "grit/components_strings.h"
 #include "grit/theme_resources.h"
 #include "third_party/icu/source/i18n/unicode/coll.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -53,14 +50,19 @@ TranslateInfoBarDelegate::~TranslateInfoBarDelegate() {
 }
 
 // static
-void TranslateInfoBarDelegate::Create(bool replace_existing_infobar,
-                                      content::WebContents* web_contents,
-                                      translate::TranslateStep step,
-                                      const std::string& original_language,
-                                      const std::string& target_language,
-                                      TranslateErrors::Type error_type,
-                                      PrefService* prefs,
-                                      bool triggered_from_menu) {
+void TranslateInfoBarDelegate::Create(
+    bool replace_existing_infobar,
+    const base::WeakPtr<TranslateManager>& translate_manager,
+    infobars::InfoBarManager* infobar_manager,
+    bool is_off_the_record,
+    translate::TranslateStep step,
+    const std::string& original_language,
+    const std::string& target_language,
+    TranslateErrors::Type error_type,
+    bool triggered_from_menu) {
+  DCHECK(translate_manager);
+  DCHECK(infobar_manager);
+
   // Check preconditions.
   if (step != translate::TRANSLATE_STEP_TRANSLATE_ERROR) {
     DCHECK(TranslateDownloadManager::IsSupportedLanguage(target_language));
@@ -75,22 +77,18 @@ void TranslateInfoBarDelegate::Create(bool replace_existing_infobar,
   }
 
   // Do not create the after translate infobar if we are auto translating.
-  if ((step == translate::TRANSLATE_STEP_AFTER_TRANSLATE) ||
-      (step == translate::TRANSLATE_STEP_TRANSLATING)) {
-    TranslateTabHelper* translate_tab_helper =
-        TranslateTabHelper::FromWebContents(web_contents);
-    if (!translate_tab_helper ||
-        translate_tab_helper->GetLanguageState().InTranslateNavigation())
-      return;
+  if (((step == translate::TRANSLATE_STEP_AFTER_TRANSLATE) ||
+       (step == translate::TRANSLATE_STEP_TRANSLATING)) &&
+      translate_manager->translate_client()->GetTranslateDriver()
+          ->GetLanguageState().InTranslateNavigation()) {
+    return;
   }
 
   // Find any existing translate infobar delegate.
   infobars::InfoBar* old_infobar = NULL;
-  InfoBarService* infobar_service =
-      InfoBarService::FromWebContents(web_contents);
   TranslateInfoBarDelegate* old_delegate = NULL;
-  for (size_t i = 0; i < infobar_service->infobar_count(); ++i) {
-    old_infobar = infobar_service->infobar_at(i);
+  for (size_t i = 0; i < infobar_manager->infobar_count(); ++i) {
+    old_infobar = infobar_manager->infobar_at(i);
     old_delegate = old_infobar->delegate()->AsTranslateInfoBarDelegate();
     if (old_delegate) {
       if (!replace_existing_infobar)
@@ -102,13 +100,13 @@ void TranslateInfoBarDelegate::Create(bool replace_existing_infobar,
   // Add the new delegate.
   scoped_ptr<infobars::InfoBar> infobar(CreateInfoBar(
       scoped_ptr<TranslateInfoBarDelegate>(new TranslateInfoBarDelegate(
-          web_contents, step, old_delegate, original_language,
-          target_language, error_type, prefs,
+          translate_manager, is_off_the_record, step, old_delegate,
+          original_language, target_language, error_type,
           triggered_from_menu))));
   if (old_delegate)
-    infobar_service->ReplaceInfoBar(old_infobar, infobar.Pass());
+    infobar_manager->ReplaceInfoBar(old_infobar, infobar.Pass());
   else
-    infobar_service->AddInfoBar(infobar.Pass());
+    infobar_manager->AddInfoBar(infobar.Pass());
 }
 
 
@@ -132,11 +130,8 @@ void TranslateInfoBarDelegate::RevertTranslation() {
 }
 
 void TranslateInfoBarDelegate::ReportLanguageDetectionError() {
-  TranslateManager* manager =
-      TranslateTabHelper::GetManagerFromWebContents(GetWebContents());
-  if (!manager)
-    return;
-  manager->ReportLanguageDetectionError();
+  if (translate_manager_)
+    translate_manager_->ReportLanguageDetectionError();
 }
 
 void TranslateInfoBarDelegate::TranslationDeclined() {
@@ -144,13 +139,10 @@ void TranslateInfoBarDelegate::TranslationDeclined() {
 }
 
 bool TranslateInfoBarDelegate::IsTranslatableLanguageByPrefs() {
-  Profile* profile =
-      Profile::FromBrowserContext(GetWebContents()->GetBrowserContext());
-  Profile* original_profile = profile->GetOriginalProfile();
-  scoped_ptr<TranslatePrefs> translate_prefs(
-      TranslateTabHelper::CreateTranslatePrefs(original_profile->GetPrefs()));
+  TranslateClient* client = GetTranslateClient();
+  scoped_ptr<TranslatePrefs> translate_prefs(client->GetTranslatePrefs());
   TranslateAcceptLanguages* accept_languages =
-      TranslateTabHelper::GetTranslateAcceptLanguages(original_profile);
+      client->GetTranslateAcceptLanguages();
   return translate_prefs->CanTranslateLanguage(accept_languages,
                                                original_language_code());
 }
@@ -254,10 +246,8 @@ void TranslateInfoBarDelegate::MessageInfoBarButtonPressed() {
     return;
   }
   // This is the "Try again..." case.
-  TranslateManager* manager =
-      TranslateTabHelper::GetManagerFromWebContents(GetWebContents());
-  DCHECK(manager);
-  manager->TranslatePage(
+  DCHECK(translate_manager_);
+  translate_manager_->TranslatePage(
       original_language_code(), target_language_code(), false);
 }
 
@@ -267,27 +257,16 @@ bool TranslateInfoBarDelegate::ShouldShowMessageInfoBarButton() {
 
 bool TranslateInfoBarDelegate::ShouldShowNeverTranslateShortcut() {
   DCHECK_EQ(translate::TRANSLATE_STEP_BEFORE_TRANSLATE, step_);
-  return !GetWebContents()->GetBrowserContext()->IsOffTheRecord() &&
+  return !is_off_the_record_ &&
       (prefs_->GetTranslationDeniedCount(original_language_code()) >=
           kNeverTranslateMinCount);
 }
 
 bool TranslateInfoBarDelegate::ShouldShowAlwaysTranslateShortcut() {
   DCHECK_EQ(translate::TRANSLATE_STEP_BEFORE_TRANSLATE, step_);
-  return !GetWebContents()->GetBrowserContext()->IsOffTheRecord() &&
+  return !is_off_the_record_ &&
       (prefs_->GetTranslationAcceptedCount(original_language_code()) >=
           kAlwaysTranslateMinCount);
-}
-
-content::WebContents* TranslateInfoBarDelegate::GetWebContents() {
-  return InfoBarService::WebContentsFromInfoBar(infobar());
-}
-
-// static
-base::string16 TranslateInfoBarDelegate::GetLanguageDisplayableName(
-    const std::string& language_code) {
-  return l10n_util::GetDisplayNameForLocale(
-      language_code, g_browser_process->GetApplicationLocale(), true);
 }
 
 // static
@@ -325,30 +304,47 @@ void TranslateInfoBarDelegate::GetAfterTranslateStrings(
   strings->push_back(text.substr(offsets[1]));
 }
 
+TranslateDriver* TranslateInfoBarDelegate::GetTranslateDriver() {
+  if (!translate_manager_)
+    return NULL;
+
+  return translate_manager_->translate_client()->GetTranslateDriver();
+}
+
 TranslateInfoBarDelegate::TranslateInfoBarDelegate(
-    content::WebContents* web_contents,
+    const base::WeakPtr<TranslateManager>& translate_manager,
+    bool is_off_the_record,
     translate::TranslateStep step,
     TranslateInfoBarDelegate* old_delegate,
     const std::string& original_language,
     const std::string& target_language,
     TranslateErrors::Type error_type,
-    PrefService* prefs,
     bool triggered_from_menu)
     : infobars::InfoBarDelegate(),
+      is_off_the_record_(is_off_the_record),
       step_(step),
       background_animation_(NONE),
-      ui_delegate_(TranslateTabHelper::FromWebContents(web_contents),
-                   TranslateTabHelper::GetManagerFromWebContents(web_contents),
+      ui_delegate_(translate_manager->translate_client(),
+                   translate_manager.get(),
                    original_language,
                    target_language),
+      translate_manager_(translate_manager),
       error_type_(error_type),
-      prefs_(TranslateTabHelper::CreateTranslatePrefs(prefs)),
+      prefs_(translate_manager->translate_client()->GetTranslatePrefs()),
       triggered_from_menu_(triggered_from_menu) {
   DCHECK_NE((step_ == translate::TRANSLATE_STEP_TRANSLATE_ERROR),
             (error_type_ == TranslateErrors::NONE));
+  DCHECK(translate_manager_);
 
   if (old_delegate && (old_delegate->is_error() != is_error()))
     background_animation_ = is_error() ? NORMAL_TO_ERROR : ERROR_TO_NORMAL;
+}
+
+TranslateClient* TranslateInfoBarDelegate::GetTranslateClient() {
+  if (!translate_manager_)
+    return NULL;
+
+  return translate_manager_->translate_client();
 }
 
 // TranslateInfoBarDelegate::CreateInfoBar() is implemented in platform-specific

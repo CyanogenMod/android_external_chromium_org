@@ -20,6 +20,8 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/content_switches.h"
+#include "content/public/common/url_constants.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_prefs.h"
@@ -36,10 +38,8 @@
 #include "url/gurl.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/drive/file_errors.h"
-#include "chrome/browser/chromeos/drive/file_system_interface.h"
-#include "chrome/browser/chromeos/drive/file_system_util.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/file_manager/filesystem_api_util.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #endif
 
 namespace app_runtime = apps::api::app_runtime;
@@ -63,8 +63,8 @@ namespace {
 
 const char kFallbackMimeType[] = "application/octet-stream";
 
-bool MakePathAbsolute(const base::FilePath& current_directory,
-                      base::FilePath* file_path) {
+bool DoMakePathAbsolute(const base::FilePath& current_directory,
+                        base::FilePath* file_path) {
   DCHECK(file_path);
   if (file_path->IsAbsolute())
     return true;
@@ -81,27 +81,11 @@ bool MakePathAbsolute(const base::FilePath& current_directory,
   return true;
 }
 
-bool GetAbsolutePathFromCommandLine(const CommandLine& command_line,
-                                    const base::FilePath& current_directory,
-                                    base::FilePath* path) {
-  if (!command_line.GetArgs().size())
-    return false;
-
-  base::FilePath relative_path(command_line.GetArgs()[0]);
-  base::FilePath absolute_path(relative_path);
-  if (!MakePathAbsolute(current_directory, &absolute_path)) {
-    LOG(WARNING) << "Cannot make absolute path from " << relative_path.value();
-    return false;
-  }
-  *path = absolute_path;
-  return true;
-}
-
 // Helper method to launch the platform app |extension| with no data. This
 // should be called in the fallback case, where it has been impossible to
 // load or obtain file launch data.
 void LaunchPlatformAppWithNoData(Profile* profile, const Extension* extension) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   AppEventRouter::DispatchOnLaunchedEvent(profile, extension);
 }
 
@@ -119,7 +103,7 @@ class PlatformAppPathLauncher
       : profile_(profile), extension_(extension), file_path_(file_path) {}
 
   void Launch() {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
     if (file_path_.empty()) {
       LaunchPlatformAppWithNoData(profile_, extension_);
       return;
@@ -147,15 +131,40 @@ class PlatformAppPathLauncher
     Launch();
   }
 
+  void LaunchWithRelativePath(const base::FilePath& current_directory) {
+    BrowserThread::PostTask(
+        BrowserThread::FILE,
+        FROM_HERE,
+        base::Bind(&PlatformAppPathLauncher::MakePathAbsolute,
+                   this,
+                   current_directory));
+  }
+
  private:
   friend class base::RefCountedThreadSafe<PlatformAppPathLauncher>;
 
   virtual ~PlatformAppPathLauncher() {}
 
+  void MakePathAbsolute(const base::FilePath& current_directory) {
+    DCHECK_CURRENTLY_ON(BrowserThread::FILE);
+
+    if (!DoMakePathAbsolute(current_directory, &file_path_)) {
+      LOG(WARNING) << "Cannot make absolute path from " << file_path_.value();
+      file_path_ = base::FilePath();
+    }
+
+    BrowserThread::PostTask(BrowserThread::UI,
+                            FROM_HERE,
+                            base::Bind(&PlatformAppPathLauncher::Launch, this));
+  }
+
   void OnFileValid() {
 #if defined(OS_CHROMEOS)
-    if (drive::util::IsUnderDriveMountPoint(file_path_)) {
-      PlatformAppPathLauncher::GetMimeTypeAndLaunchForDriveFile();
+    if (file_manager::util::IsUnderNonNativeLocalPath(profile_, file_path_)) {
+      file_manager::util::GetNonNativeLocalPathMimeType(
+          profile_,
+          file_path_,
+          base::Bind(&PlatformAppPathLauncher::OnGotMimeType, this));
       return;
     }
 #endif
@@ -171,7 +180,7 @@ class PlatformAppPathLauncher
   }
 
   void GetMimeTypeAndLaunch() {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+    DCHECK_CURRENTLY_ON(BrowserThread::FILE);
 
     // If the file doesn't exist, or is a directory, launch with no launch data.
     if (!base::PathExists(file_path_) ||
@@ -204,37 +213,14 @@ class PlatformAppPathLauncher
   }
 
 #if defined(OS_CHROMEOS)
-  void GetMimeTypeAndLaunchForDriveFile() {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-    drive::FileSystemInterface* file_system =
-        drive::util::GetFileSystemByProfile(profile_);
-    if (!file_system) {
+  void OnGotMimeType(bool success, const std::string& mime_type) {
+    if (!success) {
       LaunchWithNoLaunchData();
       return;
     }
-
-    file_system->GetFile(
-        drive::util::ExtractDrivePath(file_path_),
-        base::Bind(&PlatformAppPathLauncher::OnGotDriveFile, this));
-  }
-
-  void OnGotDriveFile(drive::FileError error,
-                      const base::FilePath& file_path,
-                      scoped_ptr<drive::ResourceEntry> entry) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-    if (error != drive::FILE_ERROR_OK ||
-        !entry || entry->file_specific_info().is_hosted_document()) {
-      LaunchWithNoLaunchData();
-      return;
-    }
-
-    const std::string& mime_type =
-        entry->file_specific_info().content_mime_type();
     LaunchWithMimeType(mime_type.empty() ? kFallbackMimeType : mime_type);
   }
-#endif  // defined(OS_CHROMEOS)
+#endif
 
   void LaunchWithNoLaunchData() {
     // This method is required as an entry point on the UI thread.
@@ -310,9 +296,12 @@ class PlatformAppPathLauncher
   // The profile the app should be run in.
   Profile* profile_;
   // The extension providing the app.
+  // TODO(benwells): Hold onto the extension ID instead of a pointer as it
+  // is possible the extension will be unloaded while we're doing our thing.
+  // See http://crbug.com/372270 for details.
   const Extension* extension_;
   // The path to be passed through to the app.
-  const base::FilePath file_path_;
+  base::FilePath file_path_;
   // The ID of the file handler used to launch the app.
   std::string handler_id_;
 
@@ -342,22 +331,32 @@ void LaunchPlatformAppWithCommandLine(Profile* profile,
     }
   }
 
-  base::FilePath path;
-  if (!GetAbsolutePathFromCommandLine(command_line, current_directory, &path)) {
+#if defined(OS_WIN)
+  base::CommandLine::StringType about_blank_url(
+      base::ASCIIToWide(content::kAboutBlankURL));
+#else
+  base::CommandLine::StringType about_blank_url(content::kAboutBlankURL);
+#endif
+  CommandLine::StringVector args = command_line.GetArgs();
+  // Browser tests will add about:blank to the command line. This should
+  // never be interpreted as a file to open, as doing so with an app that
+  // has write access will result in a file 'about' being created, which
+  // causes problems on the bots.
+  if (args.empty() || (command_line.HasSwitch(switches::kTestType) &&
+                       args[0] == about_blank_url)) {
     LaunchPlatformAppWithNoData(profile, extension);
     return;
   }
 
-  // TODO(benwells): add a command-line argument to provide a handler ID.
-  LaunchPlatformAppWithPath(profile, extension, path);
+  base::FilePath file_path(command_line.GetArgs()[0]);
+  scoped_refptr<PlatformAppPathLauncher> launcher =
+      new PlatformAppPathLauncher(profile, extension, file_path);
+  launcher->LaunchWithRelativePath(current_directory);
 }
 
 void LaunchPlatformAppWithPath(Profile* profile,
                                const Extension* extension,
                                const base::FilePath& file_path) {
-  // launcher will be freed when nothing has a reference to it. The message
-  // queue will retain a reference for any outstanding task, so when the
-  // launcher has finished it will be freed.
   scoped_refptr<PlatformAppPathLauncher> launcher =
       new PlatformAppPathLauncher(profile, extension, file_path);
   launcher->Launch();

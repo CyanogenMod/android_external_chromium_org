@@ -112,9 +112,6 @@ class WizardController : public ScreenObserver {
   // Called right after the browser session has started.
   void OnSessionStart();
 
-  // Skip update, go straight to enrollment after EULA is accepted.
-  void SkipUpdateEnrollAfterEula();
-
   // TODO(antrim) : temporary hack. Should be removed once screen system is
   // reworked at hackaton.
   void EnableUserImageScreenReturnToPreviousHack();
@@ -271,6 +268,8 @@ class WizardController : public ScreenObserver {
     local_state_for_testing_ = local_state;
   }
 
+  std::string first_screen_name() { return first_screen_name_; }
+
   // Called when network is UP.
   void StartTimezoneResolve();
 
@@ -285,6 +284,10 @@ class WizardController : public ScreenObserver {
   void OnLocationResolved(const Geoposition& position,
                           bool server_error,
                           const base::TimeDelta elapsed);
+
+  // Returns true if callback has been installed.
+  // Returns false if timezone has already been resolved.
+  bool SetOnTimeZoneResolvedForTesting(const base::Closure& callback);
 
   // Whether to skip any screens that may normally be shown after login
   // (registration, Terms of Service, user image selection).
@@ -346,10 +349,6 @@ class WizardController : public ScreenObserver {
   // during wizard lifetime.
   bool usage_statistics_reporting_;
 
-  // If true then update check is cancelled and enrollment is started after
-  // EULA is accepted.
-  bool skip_update_enroll_after_eula_;
-
   // Time when the EULA was accepted. Used to measure the duration from the EULA
   // acceptance until the Sign-In screen is displayed.
   base::Time time_eula_accepted_;
@@ -368,15 +367,20 @@ class WizardController : public ScreenObserver {
   FRIEND_TEST_ALL_PREFIXES(EnrollmentScreenTest, TestCancel);
   FRIEND_TEST_ALL_PREFIXES(WizardControllerFlowTest, Accelerators);
   friend class WizardControllerFlowTest;
+  friend class WizardControllerOobeResumeTest;
   friend class WizardInProcessBrowserTest;
   friend class WizardControllerBrokenLocalStateTest;
 
   scoped_ptr<AccessibilityStatusSubscription> accessibility_subscription_;
 
-  base::WeakPtrFactory<WizardController> weak_factory_;
-
   scoped_ptr<SimpleGeolocationProvider> geolocation_provider_;
   scoped_ptr<TimeZoneProvider> timezone_provider_;
+
+  // Tests check result of timezone resolve.
+  bool timezone_resolved_;
+  base::Closure on_timezone_resolved_for_testing_;
+
+  base::WeakPtrFactory<WizardController> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(WizardController);
 };

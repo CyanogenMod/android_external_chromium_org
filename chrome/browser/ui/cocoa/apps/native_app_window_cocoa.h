@@ -101,6 +101,12 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow,
   // Called when the window is zoomed (maximized or de-maximized).
   void WindowWillZoom();
 
+  // Called when the window enters fullscreen.
+  void WindowDidEnterFullscreen();
+
+  // Called when the window exits fullscreen.
+  void WindowDidExitFullscreen();
+
   // Called to handle a key event.
   bool HandledByExtensionCommand(NSEvent* event);
 
@@ -162,9 +168,7 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow,
   content::WebContents* WebContents() const;
 
   // Returns the WindowStyleMask based on the type of window frame.
-  // Specifically, this includes NSResizableWindowMask if the window is
-  // resizable, and does not include NSTexturedBackgroundWindowMask when a
-  // native frame is used.
+  // This includes NSResizableWindowMask if the window is resizable.
   NSUInteger GetWindowStyleMask() const;
 
   void InstallView();
@@ -181,9 +185,6 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow,
 
   bool has_frame_;
 
-  // Whether this window is hidden according to the app.window API. This is set
-  // by Hide, Show, and ShowInactive.
-  bool is_hidden_;
   // Whether this window last became hidden due to a request to hide the entire
   // app, e.g. via the dock menu or Cmd+H. This is set by Hide/ShowWithApp.
   bool is_hidden_with_app_;

@@ -22,8 +22,10 @@
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
+#include "chrome/browser/prefs/mock_validation_delegate.h"
 #include "chrome/browser/prefs/pref_hash_filter.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "chrome/common/pref_names.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
@@ -111,6 +113,17 @@ class ProfilePrefStoreManagerTest : public testing::Test {
         std::string(),
         user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 
+    // As in chrome_pref_service_factory.cc, kPreferencesResetTime needs to be
+    // declared as protected in order to be read from the proper store by the
+    // SegregatedPrefStore. Only declare it after configured prefs have been
+    // registered above for this test as kPreferenceResetTime is already
+    // registered in ProfilePrefStoreManager::RegisterProfilePrefs.
+    PrefHashFilter::TrackedPreferenceMetadata pref_reset_time_config =
+        {configuration_.rbegin()->reporting_id + 1, prefs::kPreferenceResetTime,
+         PrefHashFilter::ENFORCE_ON_LOAD,
+         PrefHashFilter::TRACKING_STRATEGY_ATOMIC};
+    configuration_.push_back(pref_reset_time_config);
+
     ASSERT_TRUE(profile_dir_.CreateUniqueTempDir());
     ReloadConfiguration();
   }
@@ -142,7 +155,8 @@ class ProfilePrefStoreManagerTest : public testing::Test {
     // actually a SegregatedPrefStore backed by two underlying pref stores.
     scoped_refptr<PersistentPrefStore> pref_store =
         manager_->CreateProfilePrefStore(
-            main_message_loop_.message_loop_proxy());
+            main_message_loop_.message_loop_proxy(),
+            &mock_validation_delegate_);
     InitializePrefStore(pref_store);
     pref_store = NULL;
     base::RunLoop().RunUntilIdle();
@@ -187,7 +201,7 @@ class ProfilePrefStoreManagerTest : public testing::Test {
   void LoadExistingPrefs() {
     DestroyPrefStore();
     pref_store_ = manager_->CreateProfilePrefStore(
-        main_message_loop_.message_loop_proxy());
+        main_message_loop_.message_loop_proxy(), NULL);
     pref_store_->AddObserver(&registry_verifier_);
     pref_store_->ReadPrefs();
   }
@@ -221,12 +235,21 @@ class ProfilePrefStoreManagerTest : public testing::Test {
     }
   }
 
+  void ExpectValidationObserved(const std::string& pref_path) {
+    // No validations are expected for platforms that do not support tracking.
+    if (!ProfilePrefStoreManager::kPlatformSupportsPreferenceTracking)
+      return;
+    if (!mock_validation_delegate_.GetEventForPath(pref_path))
+      ADD_FAILURE() << "No validation observed for preference: " << pref_path;
+  }
+
   base::MessageLoop main_message_loop_;
   std::vector<PrefHashFilter::TrackedPreferenceMetadata> configuration_;
   base::ScopedTempDir profile_dir_;
   TestingPrefServiceSimple local_state_;
   scoped_refptr<user_prefs::PrefRegistrySyncable> profile_pref_registry_;
   RegistryVerifier registry_verifier_;
+  MockValidationDelegate mock_validation_delegate_;
   scoped_ptr<ProfilePrefStoreManager> manager_;
   scoped_refptr<PersistentPrefStore> pref_store_;
 };
@@ -239,6 +262,8 @@ TEST_F(ProfilePrefStoreManagerTest, StoreValues) {
   ExpectStringValueEquals(kTrackedAtomic, kFoobar);
   ExpectStringValueEquals(kProtectedAtomic, kHelloWorld);
   EXPECT_FALSE(WasResetRecorded());
+  ExpectValidationObserved(kTrackedAtomic);
+  ExpectValidationObserved(kProtectedAtomic);
 }
 
 TEST_F(ProfilePrefStoreManagerTest, GetPrefFilePathFromProfilePath) {
@@ -271,6 +296,9 @@ TEST_F(ProfilePrefStoreManagerTest, ProtectValues) {
             pref_store_->GetValue(kProtectedAtomic, NULL));
   EXPECT_EQ(ProfilePrefStoreManager::kPlatformSupportsPreferenceTracking,
             WasResetRecorded());
+
+  ExpectValidationObserved(kTrackedAtomic);
+  ExpectValidationObserved(kProtectedAtomic);
 }
 
 TEST_F(ProfilePrefStoreManagerTest, ResetPrefHashStore) {
@@ -288,6 +316,9 @@ TEST_F(ProfilePrefStoreManagerTest, ResetPrefHashStore) {
             pref_store_->GetValue(kProtectedAtomic, NULL));
   EXPECT_EQ(ProfilePrefStoreManager::kPlatformSupportsPreferenceTracking,
             WasResetRecorded());
+
+  ExpectValidationObserved(kTrackedAtomic);
+  ExpectValidationObserved(kProtectedAtomic);
 }
 
 TEST_F(ProfilePrefStoreManagerTest, ResetAllPrefHashStores) {
@@ -305,6 +336,9 @@ TEST_F(ProfilePrefStoreManagerTest, ResetAllPrefHashStores) {
             pref_store_->GetValue(kProtectedAtomic, NULL));
   EXPECT_EQ(ProfilePrefStoreManager::kPlatformSupportsPreferenceTracking,
             WasResetRecorded());
+
+  ExpectValidationObserved(kTrackedAtomic);
+  ExpectValidationObserved(kProtectedAtomic);
 }
 
 TEST_F(ProfilePrefStoreManagerTest, MigrateFromOneFile) {
@@ -360,6 +394,10 @@ TEST_F(ProfilePrefStoreManagerTest, InitializePrefsFromMasterPrefs) {
 
 TEST_F(ProfilePrefStoreManagerTest, UnprotectedToProtected) {
   InitializePrefs();
+
+  ExpectValidationObserved(kTrackedAtomic);
+  ExpectValidationObserved(kProtectedAtomic);
+
   LoadExistingPrefs();
   ExpectStringValueEquals(kUnprotectedPref, kFoobar);
 
@@ -403,6 +441,9 @@ TEST_F(ProfilePrefStoreManagerTest, UnprotectedToProtected) {
 TEST_F(ProfilePrefStoreManagerTest, UnprotectedToProtectedWithoutTrust) {
   InitializePrefs();
 
+  ExpectValidationObserved(kTrackedAtomic);
+  ExpectValidationObserved(kProtectedAtomic);
+
   // Now update the configuration to protect it.
   PrefHashFilter::TrackedPreferenceMetadata new_protected = {
       kExtraReportingId, kUnprotectedPref, PrefHashFilter::ENFORCE_ON_LOAD,
@@ -422,14 +463,14 @@ TEST_F(ProfilePrefStoreManagerTest, UnprotectedToProtectedWithoutTrust) {
             WasResetRecorded());
 }
 
-// This test does not directly verify that the values are moved from one pref
-// store to the other. segregated_pref_store_unittest.cc _does_ verify that
-// functionality.
-//
-// _This_ test verifies that preference values are correctly maintained when a
+// This test verifies that preference values are correctly maintained when a
 // preference's protection state changes from protected to unprotected.
 TEST_F(ProfilePrefStoreManagerTest, ProtectedToUnprotected) {
   InitializePrefs();
+
+  ExpectValidationObserved(kTrackedAtomic);
+  ExpectValidationObserved(kProtectedAtomic);
+
   DestroyPrefStore();
 
   // Unconfigure protection for kProtectedAtomic
@@ -438,7 +479,7 @@ TEST_F(ProfilePrefStoreManagerTest, ProtectedToUnprotected) {
        it != configuration_.end();
        ++it) {
     if (it->name == kProtectedAtomic) {
-      configuration_.erase(it);
+      it->enforcement_level = PrefHashFilter::NO_ENFORCEMENT;
       break;
     }
   }

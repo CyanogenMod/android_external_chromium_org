@@ -46,7 +46,7 @@
 #include "chrome/common/logging_chrome.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -80,9 +80,10 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/browser_process_platform_part_chromeos.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
+#include "chrome/browser/profiles/profiles_state.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -326,11 +327,12 @@ Profile* ProfileManager::GetPrimaryUserProfile() {
 Profile* ProfileManager::GetActiveUserProfile() {
   ProfileManager* profile_manager = g_browser_process->profile_manager();
 #if defined(OS_CHROMEOS)
-  if (!chromeos::UserManager::IsMultipleProfilesAllowed() ||
-      !profile_manager->IsLoggedIn() ||
-      !chromeos::UserManager::IsInitialized())
+  if (!profile_manager->IsLoggedIn() ||
+      !chromeos::UserManager::IsInitialized()) {
     return profile_manager->GetActiveUserOrOffTheRecordProfileFromPath(
         profile_manager->user_data_dir());
+  }
+
   chromeos::UserManager* manager = chromeos::UserManager::Get();
   const chromeos::User* user = manager->GetActiveUser();
   // To avoid an endless loop (crbug.com/334098) we have to additionally check
@@ -454,20 +456,13 @@ base::FilePath ProfileManager::GetInitialProfileDir() {
       // by default. http://crbug.com/294628
       profile_dir = chromeos::ProfileHelper::
           GetProfileDirByLegacyLoginProfileSwitch();
-    } else if (!command_line.HasSwitch(switches::kMultiProfiles)) {
-      // We should never be logged in with no profile dir unless
-      // multi-profiles are enabled.
-      // In that case profile dir will be defined by user_id hash.
-      NOTREACHED();
-      return base::FilePath("");
     }
     // In case of multi-profiles ignore --login-profile switch.
     // TODO(nkostylev): Some cases like Guest mode will have empty username_hash
     // so default kLoginProfile dir will be used.
     std::string user_id_hash = g_browser_process->platform_part()->
         profile_helper()->active_user_id_hash();
-    if (command_line.HasSwitch(switches::kMultiProfiles) &&
-        !user_id_hash.empty()) {
+    if (!user_id_hash.empty()) {
       profile_dir = g_browser_process->platform_part()->
           profile_helper()->GetActiveUserProfileDir();
     }
@@ -491,20 +486,12 @@ Profile* ProfileManager::GetLastUsedProfile(
     // CrOS multi-profiles implementation is different so GetLastUsedProfile
     // has custom implementation too.
     base::FilePath profile_dir;
-    const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-    if (command_line.HasSwitch(switches::kMultiProfiles)) {
-      // In case of multi-profiles we ignore "last used profile" preference
-      // since it may refer to profile that has been in use in previous session.
-      // That profile dir may not be mounted in this session so instead return
-      // active profile from current session.
-      profile_dir = g_browser_process->platform_part()->
-          profile_helper()->GetActiveUserProfileDir();
-    } else {
-      // For legacy (not multi-profiles) implementation always default to
-      // --login-profile value.
-      profile_dir =
-          chromeos::ProfileHelper::GetProfileDirByLegacyLoginProfileSwitch();
-    }
+    // In case of multi-profiles we ignore "last used profile" preference
+    // since it may refer to profile that has been in use in previous session.
+    // That profile dir may not be mounted in this session so instead return
+    // active profile from current session.
+    profile_dir = g_browser_process->platform_part()->
+        profile_helper()->GetActiveUserProfileDir();
 
     base::FilePath profile_path(user_data_dir);
     Profile* profile = GetProfile(profile_path.Append(profile_dir));
@@ -994,8 +981,7 @@ void ProfileManager::DoFinalInitForServices(Profile* profile,
   StartupTaskRunnerServiceFactory::GetForProfile(profile)->
       StartDeferredTaskRunners();
 
-  if (switches::IsNewProfileManagement())
-    AccountReconcilorFactory::GetForProfile(profile);
+  AccountReconcilorFactory::GetForProfile(profile);
 }
 
 void ProfileManager::DoFinalInitLogging(Profile* profile) {
@@ -1085,6 +1071,13 @@ void ProfileManager::FinishDeletingProfile(const base::FilePath& profile_dir) {
   Profile* profile = GetProfileByPath(profile_dir);
 
   if (profile) {
+    // TODO: Migrate additional code in this block to observe this notification
+    // instead of being implemented here.
+    content::NotificationService::current()->Notify(
+        chrome::NOTIFICATION_PROFILE_DESTRUCTION_STARTED,
+        content::Source<Profile>(profile),
+        content::NotificationService::NoDetails());
+
     // By this point, all in-progress downloads for the profile being deleted
     // must have been canceled (crbug.com/336725).
     DCHECK(DownloadServiceFactory::GetForBrowserContext(profile)->

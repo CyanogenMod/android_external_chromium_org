@@ -17,7 +17,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/custom_handlers/protocol_handler.h"
 #include "chrome/common/pref_names.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "grit/generated_resources.h"
 #include "net/base/network_delegate.h"
@@ -418,13 +418,11 @@ void ProtocolHandlerRegistry::InstallDefaultsForChromeOS() {
   AddPredefinedHandler(
       ProtocolHandler::CreateProtocolHandler(
           "mailto",
-          GURL(l10n_util::GetStringUTF8(IDS_GOOGLE_MAILTO_HANDLER_URL)),
-          l10n_util::GetStringUTF16(IDS_GOOGLE_MAILTO_HANDLER_NAME)));
+          GURL(l10n_util::GetStringUTF8(IDS_GOOGLE_MAILTO_HANDLER_URL))));
   AddPredefinedHandler(
       ProtocolHandler::CreateProtocolHandler(
           "webcal",
-          GURL(l10n_util::GetStringUTF8(IDS_GOOGLE_WEBCAL_HANDLER_URL)),
-          l10n_util::GetStringUTF16(IDS_GOOGLE_WEBCAL_HANDLER_NAME)));
+          GURL(l10n_util::GetStringUTF8(IDS_GOOGLE_WEBCAL_HANDLER_URL))));
 #else
   NOTREACHED();  // this method should only ever be called in chromeos.
 #endif

@@ -16,6 +16,7 @@
 #include "content/shell/browser/shell.h"
 #include "content/test/webrtc_content_browsertest_base.h"
 #include "media/audio/audio_manager.h"
+#include "media/base/media_switches.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 
 #if defined(OS_WIN)
@@ -42,8 +43,8 @@ class WebRtcBrowserTest : public WebRtcContentBrowserTest,
     WebRtcContentBrowserTest::SetUpCommandLine(command_line);
 
     bool enable_audio_track_processing = GetParam();
-    if (enable_audio_track_processing)
-      command_line->AppendSwitch(switches::kEnableAudioTrackProcessing);
+    if (!enable_audio_track_processing)
+      command_line->AppendSwitch(switches::kDisableAudioTrackProcessing);
   }
 
   virtual void TearDownOnMainThread() OVERRIDE {
@@ -105,6 +106,22 @@ IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, CanSetupVideoCallWith1To1AspecRatio) {
   MakeTypicalPeerConnectionCall(javascript);
 }
 
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest,
+                       CanSetupVideoCallWith16To9AspecRatio) {
+  const std::string javascript =
+      "callAndExpectResolution({video: {mandatory: {minWidth: 640,"
+      " maxWidth: 640, minAspectRatio: 1.777}}}, 640, 360);";
+  MakeTypicalPeerConnectionCall(javascript);
+}
+
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest,
+                       CanSetupVideoCallWith4To3AspecRatio) {
+  const std::string javascript =
+      "callAndExpectResolution({video: {mandatory: {minWidth: 960,"
+      "maxAspectRatio: 1.333}}}, 960, 720);";
+  MakeTypicalPeerConnectionCall(javascript);
+}
+
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(ARCH_CPU_ARM_FAMILY)
 // Timing out on ARM linux, see http://crbug.com/240376
 #define MAYBE_CanSetupAudioAndVideoCall DISABLED_CanSetupAudioAndVideoCall
@@ -133,13 +150,21 @@ IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest,
 // Below 2 test will make a complete PeerConnection-based call between pc1 and
 // pc2, and then use the remote stream to setup a call between pc3 and pc4, and
 // then verify that video is received on pc3 and pc4.
+// The stream sent from pc3 to pc4 is the stream received on pc1.
+// The stream sent from pc4 to pc3 is cloned from stream the stream received
+// on pc2.
 // Flaky on win xp. http://crbug.com/304775
 #if defined(OS_WIN)
 #define MAYBE_CanForwardRemoteStream DISABLED_CanForwardRemoteStream
 #define MAYBE_CanForwardRemoteStream720p DISABLED_CanForwardRemoteStream720p
 #else
 #define MAYBE_CanForwardRemoteStream CanForwardRemoteStream
+// Flaky on TSAN v2. http://crbug.com/373637
+#if defined(THREAD_SANITIZER)
+#define MAYBE_CanForwardRemoteStream720p DISABLED_CanForwardRemoteStream720p
+#else
 #define MAYBE_CanForwardRemoteStream720p CanForwardRemoteStream720p
+#endif
 #endif
 IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, MAYBE_CanForwardRemoteStream) {
 #if defined (OS_ANDROID)
@@ -206,6 +231,9 @@ IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, NegotiateOfferWithBLine) {
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(ARCH_CPU_ARM_FAMILY)
 // Timing out on ARM linux, see http://crbug.com/240373
 #define MAYBE_CanSetupLegacyCall DISABLED_CanSetupLegacyCall
+#elif defined (OS_ANDROID) || defined(THREAD_SANITIZER)
+// Flaky on TSAN v2 and Android Tests (dbg): http://crbug.com/373637
+#define MAYBE_CanSetupLegacyCall DISABLED_CanSetupLegacyCall
 #else
 #define MAYBE_CanSetupLegacyCall CanSetupLegacyCall
 #endif
@@ -228,6 +256,9 @@ IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, CallWithSctpDataOnly) {
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(ARCH_CPU_ARM_FAMILY)
 // Timing out on ARM linux bot: http://crbug.com/238490
 #define MAYBE_CallWithDataAndMedia DISABLED_CallWithDataAndMedia
+#elif defined(THREAD_SANITIZER)
+// Flaky on TSAN v2: http://crbug.com/373637
+#define MAYBE_CallWithDataAndMedia DISABLED_CallWithDataAndMedia
 #else
 #define MAYBE_CallWithDataAndMedia CallWithDataAndMedia
 #endif
@@ -235,7 +266,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, CallWithSctpDataOnly) {
 // This test will make a PeerConnection-based call and test an unreliable text
 // dataChannel and audio and video tracks.
 // TODO(mallinath) - Remove this test after rtp based data channel is disabled.
-IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, MAYBE_CallWithDataAndMedia) {
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, DISABLED_CallWithDataAndMedia) {
   MakeTypicalPeerConnectionCall("callWithDataAndMedia();");
 }
 
@@ -332,8 +363,16 @@ IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest,
       "callAndEnsureAudioTrackMutingWorks(%s);", kUseLenientAudioChecking));
 }
 
+// Flaky on TSAN v2: http://crbug.com/373637
+#if defined(THREAD_SANITIZER)
+#define MAYBE_EstablishAudioVideoCallAndVerifyUnmutingWorks\
+        DISABLED_EstablishAudioVideoCallAndVerifyUnmutingWorks
+#else
+#define MAYBE_EstablishAudioVideoCallAndVerifyUnmutingWorks\
+        EstablishAudioVideoCallAndVerifyUnmutingWorks
+#endif
 IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest,
-                       EstablishAudioVideoCallAndVerifyUnmutingWorks) {
+                       MAYBE_EstablishAudioVideoCallAndVerifyUnmutingWorks) {
   if (!media::AudioManager::Get()->HasAudioOutputDevices()) {
     // See comment on EstablishAudioVideoCallAndMeasureOutputLevel.
     LOG(INFO) << "Missing output devices: skipping test...";

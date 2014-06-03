@@ -5,11 +5,14 @@
 #
 # To test manually, run:
 #   python tools/deps2git/deps2git.py -o .DEPS.git -w <gclientdir>
-#   gclient runhooks
 # where <gcliendir> is the absolute path to the directory containing the
 # .gclient file (the parent of "src").
-# DO NOT CHECK IN CHANGES TO .DEPS.git. It will be automatically updated by
-# a bot when you modify this one.
+#
+# Then commit .DEPS.git locally (gclient doesn't like dirty trees) and run
+#   gclient sync
+# Verify the thing happened you wanted. Then revert your .DEPS.git change
+# DO NOT CHECK IN CHANGES TO .DEPS.git upstream. It will be automatically
+# updated by a bot when you modify this one.
 #
 # When adding a new dependency, please update the top-level .gitignore file
 # to list the dependency's destination directory.
@@ -25,41 +28,35 @@ vars = {
   "libcxxabi_revision": "206024",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "173750",
+  "webkit_revision": "174973",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
+  "pdfium_git": "https://pdfium.googlesource.com",
   "skia_git": "https://skia.googlesource.com",
   "swig_revision": "230490",
-  "nacl_revision": "13159",
+  "nacl_revision": "13251",
   # After changing nacl_revision, run 'glient sync' and check native_client/DEPS
   # to update other nacl_*_revision's.
   "nacl_tools_revision": "13077",  # native_client/DEPS: tools_rev
   "google_toolbox_for_mac_revision": "662",
-  "libaddressinput_revision": "176",
+  "libaddressinput_revision": "258",
   "libphonenumber_revision": "621",
   "libvpx_revision": "269083",
   "lss_revision": "26",
-
-  # These two FFmpeg variables must be updated together.  One is used for SVN
-  # checkouts and the other for Git checkouts.
-  "ffmpeg_revision": "264299",
-  "ffmpeg_hash": "ac4a9f31fe2610bd146857bbd55d7a260003a888",
-
   "sfntly_revision": "228",
   "lighttpd_revision": "33737",
-  "skia_revision": "14592",
-  "skia_hash": "24f6e29fc133f1082c73e2a96f30bee92e3123aa",
+  "skia_revision": "5744bbee6fa65f9d532587b6539fa0f104dda98b",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
   "v8_branch": "trunk",
-  "v8_revision": "21152",
+  "v8_revision": "21543",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
-  "webrtc_revision": "6085",
+  "webrtc_revision": "6261",
   "jsoncpp_revision": "248",
-  "nss_revision": "267366",
+  "nss_revision": "271760",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling swarming_client
   # and whatever else without interference from each other.
@@ -67,16 +64,28 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling openssl
   # and whatever else without interference from each other.
-  "openssl_revision": "267674",
+  "openssl_revision": "271781",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling ANGLE
   # and whatever else without interference from each other.
-  "angle_revision": "74697cf2064c0a2c0d7e1b1b28db439286766a05",
+  "angle_revision": "d7e7d735ec75a6b0ff855447b20691c7fbb6c97e",
+  # Three lines of non-changing comments so that
+  # the commit queue can handle CLs rolling build tools
+  # and whatever else without interference from each other.
+  "buildtools_revision": "83ed7189066fd9b4b9ea15ffc2d4ab6d2da62571",
+  # Three lines of non-changing comments so that
+  # the commit queue can handle CLs rolling PDFIum
+  # and whatever else without interference from each other.
+  "pdfium_revision": "7dc5172decb2e2fa8885561ff473902f6e16c707",
 }
 
 deps = {
   "src/breakpad/src":
-    (Var("googlecode_url") % "google-breakpad") + "/trunk/src@1325",
+    (Var("googlecode_url") % "google-breakpad") + "/trunk/src@1331",
+
+  "src/buildtools":
+    Var("chromium_git") + "/chromium/buildtools.git@" +
+     Var("buildtools_revision"),
 
   "src/sdch/open-vcdiff":
     (Var("googlecode_url") % "open-vcdiff") + "/trunk@42",
@@ -91,7 +100,7 @@ deps = {
     Var("chromium_git") + "/angle/angle.git@" + Var("angle_revision"),
 
   "src/third_party/trace-viewer":
-    (Var("googlecode_url") % "trace-viewer") + "/trunk@1267",
+    (Var("googlecode_url") % "trace-viewer") + "/trunk@1281",
 
   "src/third_party/WebKit":
     Var("webkit_trunk") + "@" + Var("webkit_revision"),
@@ -139,7 +148,7 @@ deps = {
     (Var("googlecode_url") % "grit-i18n") + "/trunk@167",
 
   "src/tools/gyp":
-    (Var("googlecode_url") % "gyp") + "/trunk@1918",
+    (Var("googlecode_url") % "gyp") + "/trunk@1921",
 
   "src/tools/swarming_client":
     Var("chromium_git") + "/external/swarming.client.git@" +
@@ -160,14 +169,8 @@ deps = {
     (Var("googlecode_url") % "sfntly") + "/trunk/cpp/src@" +
     Var("sfntly_revision"),
 
-  "src/third_party/skia/src":
-    (Var("googlecode_url") % "skia") + "/trunk/src@" + Var("skia_revision"),
-
-  "src/third_party/skia/gyp":
-    (Var("googlecode_url") % "skia") + "/trunk/gyp@" + Var("skia_revision"),
-
-  "src/third_party/skia/include":
-    (Var("googlecode_url") % "skia") + "/trunk/include@" + Var("skia_revision"),
+  "src/third_party/skia":
+    Var("chromium_git") + "/skia.git@" + Var("skia_revision"),
 
   "src/third_party/ots":
     (Var("googlecode_url") % "ots") + "/trunk@113",
@@ -193,7 +196,7 @@ deps = {
 
   "src/third_party/webgl/src":
     Var("chromium_git") +
-    "/external/khronosgroup/webgl.git@1700aa98cc8bc494b305d4ec1045797bc4030f45",
+    "/external/khronosgroup/webgl.git@0475a2763fc30cbed22740f8a9ef53a82f03b4ac",
 
   "src/third_party/swig/Lib":
     "/trunk/deps/third_party/swig/Lib@" + Var("swig_revision"),
@@ -207,8 +210,8 @@ deps = {
     Var("libvpx_revision"),
 
   "src/third_party/ffmpeg":
-    "/trunk/deps/third_party/ffmpeg@" +
-    Var("ffmpeg_revision"),
+    Var("chromium_git") +
+    "/chromium/third_party/ffmpeg.git@90d4238be2656ee9d6b8f0cdfa5f96d40e6ed7ad",
 
   "src/third_party/libjingle/source/talk":
     (Var("googlecode_url") % "webrtc") + "/trunk/talk@" +
@@ -216,7 +219,7 @@ deps = {
 
   "src/third_party/usrsctp/usrsctplib":
     (Var("googlecode_url") % "sctp-refimpl") +
-    "/trunk/KERN/usrsctp/usrsctplib@8838",
+    "/trunk/KERN/usrsctp/usrsctplib@8875",
 
   "src/third_party/libsrtp":
     "/trunk/deps/third_party/libsrtp@261337",
@@ -228,7 +231,7 @@ deps = {
     "/trunk/deps/third_party/yasm/patched-yasm@167605",
 
   "src/third_party/libjpeg_turbo":
-    "/trunk/deps/third_party/libjpeg_turbo@263594",
+    "/trunk/deps/third_party/libjpeg_turbo@272637",
 
   "src/third_party/flac":
     "/trunk/deps/third_party/flac@222897",
@@ -278,13 +281,14 @@ deps = {
         Var("libphonenumber_revision"),
 
   "src/tools/deps2git":
-    "/trunk/tools/deps2git@262731",
+    "/trunk/tools/deps2git@270777",
 
   "src/third_party/clang_format/script":
     Var("llvm_url") + "/cfe/trunk/tools/clang-format@206068",
 
   "src/third_party/webpagereplay":
-    (Var("googlecode_url") % "web-page-replay") + "/trunk@544",
+    Var("chromium_git") + "/external/web-page-replay.git@" +
+    "d1447899a2176bc8700865e76ed70da329628abd",
 
   "src/third_party/pywebsocket/src":
     (Var("googlecode_url") % "pywebsocket") + "/trunk/src@790",
@@ -299,7 +303,7 @@ deps = {
     "/trunk/deps/third_party/mesa@265279",
 
   "src/third_party/cld_2/src":
-    (Var("googlecode_url") % "cld2") + "/trunk@160",
+    (Var("googlecode_url") % "cld2") + "/trunk@161",
 
   "src/chrome/browser/resources/pdf/html_office":
      Var("chromium_git") +
@@ -307,17 +311,20 @@ deps = {
 
   "src/third_party/libwebm/source":
     Var("chromium_git") +
-      "/webm/libwebm.git@fb6b6e64444c637f27d103fd113e0c7bf4f107dd",
+      "/webm/libwebm.git@acf788bedd1ddc0f4a8553c28a8b4e2266accbc9",
 
   "src/third_party/openssl":
     "/trunk/deps/third_party/openssl@" + Var("openssl_revision"),
+
+  "src/third_party/pdfium":
+    Var("pdfium_git") + "/pdfium.git@" + Var("pdfium_revision"),
 }
 
 
 deps_os = {
   "win": {
     "src/chrome/tools/test/reference_build/chrome_win":
-      "/trunk/deps/reference_builds/chrome_win@254637",
+      "/trunk/deps/reference_builds/chrome_win@273882",
 
     "src/third_party/cygwin":
       "/trunk/deps/third_party/cygwin@231940",
@@ -364,7 +371,7 @@ deps_os = {
     # Binary level profile guided optimizations. This points to the
     # latest release binaries for the toolchain.
     "src/third_party/syzygy/binaries":
-      (Var("googlecode_url") % "sawbuck") + "/trunk/syzygy/binaries@2134",
+      (Var("googlecode_url") % "sawbuck") + "/trunk/syzygy/binaries@2154",
 
     # Binaries for nacl sdk.
     "src/third_party/nacl_sdk_binaries":
@@ -431,7 +438,7 @@ deps_os = {
   },
   "mac": {
     "src/chrome/tools/test/reference_build/chrome_mac":
-      "/trunk/deps/reference_builds/chrome_mac@255182",
+      "/trunk/deps/reference_builds/chrome_mac@273882",
 
     "src/third_party/google_toolbox_for_mac/src":
       (Var("googlecode_url") % "google-toolbox-for-mac") + "/trunk@" +
@@ -456,7 +463,7 @@ deps_os = {
   "unix": {
     # Linux, really.
     "src/chrome/tools/test/reference_build/chrome_linux":
-      "/trunk/deps/reference_builds/chrome_linux64@254637",
+      "/trunk/deps/reference_builds/chrome_linux64@273882",
 
     "src/third_party/xdg-utils":
       "/trunk/deps/third_party/xdg-utils@203785",
@@ -471,7 +478,7 @@ deps_os = {
     # For Linux and Chromium OS.
     "src/third_party/cros_system_api":
       Var("chromiumos_git") + "/platform/system_api.git" +
-      "@826b4567a5f3b01e2f52022759990dac56c14ea6",
+      "@7837af4f429eb20ca62f32a8dc6019b5b8b9078e",
 
     # Note that this is different from Android's freetype repo.
     "src/third_party/freetype2/src":
@@ -481,7 +488,7 @@ deps_os = {
     # Build tools for targeting ChromeOS.
     "src/third_party/chromite":
       Var("chromiumos_git") + "/chromite.git" +
-      "@63193a4393f6e964bfca992bfb03e40183554f7d",
+      "@ff441bf434f22888b09cd65daa86d9aa2982f650",
 
     # Dependency of chromite.git.
     "src/third_party/pyelftools":
@@ -503,7 +510,7 @@ deps_os = {
   "android": {
     "src/third_party/android_tools":
       Var("chromium_git") + "/android_tools.git" +
-      "@bf45c76e0eb23b7b7a9d5f26b28c16983daa173b",
+      "@ac519ee39778f7a1f2aac797a941a6b3db9d3882",
 
     "src/third_party/aosp":
       "/trunk/deps/third_party/aosp@148330",
@@ -521,6 +528,10 @@ deps_os = {
     "src/third_party/guava/src":
       Var("chromium_git") + "/external/guava-libraries.git" +
       "@c523556ab7d0f05afadebd20e7768d4c16af8771",
+
+   "src/third_party/elfutils/src":
+      Var("chromium_git") + "/external/elfutils.git" +
+      "@43a97297be82feab4b3176a094ed701ad3ccb308",
 
     "src/third_party/httpcomponents-client":
       "/trunk/deps/third_party/httpcomponents-client@170888",

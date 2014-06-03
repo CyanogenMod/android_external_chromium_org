@@ -30,7 +30,7 @@ def print_landmines(target):
       builder() == 'ninja'):
     print 'Need to clobber winja goma due to backend cwd cache fix.'
   if platform() == 'android':
-    print 'Clobber: Autogen java file needs to be removed (issue 159173002)'
+    print 'Clobber: build_size.jar needs to be deleted (issue 258633003)'
   if platform() == 'win' and builder() == 'ninja':
     print 'Compile on cc_unittests fails due to symbols removed in r185063.'
   if platform() == 'linux' and builder() == 'ninja':
@@ -48,6 +48,7 @@ def print_landmines(target):
   if (platform() == 'win' and builder() == 'ninja' and
       gyp_msvs_version().startswith('2013')):
     print "Switched win from VS2010 to VS2013."
+    print "Update to VS2013 Update 2."
   print 'Need to clobber everything due to an IDL change in r154579 (blink)'
   if (platform() != 'ios'):
     print 'Clobber to get rid of obselete test plugin after r248358'

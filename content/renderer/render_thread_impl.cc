@@ -76,13 +76,15 @@
 #include "content/renderer/media/audio_message_filter.h"
 #include "content/renderer/media/audio_renderer_mixer_manager.h"
 #include "content/renderer/media/media_stream_center.h"
-#include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/midi_message_filter.h"
 #include "content/renderer/media/peer_connection_tracker.h"
 #include "content/renderer/media/renderer_gpu_video_accelerator_factories.h"
+#include "content/renderer/media/rtc_peer_connection_handler.h"
 #include "content/renderer/media/video_capture_impl_manager.h"
 #include "content/renderer/media/video_capture_message_filter.h"
+#include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
 #include "content/renderer/media/webrtc_identity_service.h"
+#include "content/renderer/net_info_helper.h"
 #include "content/renderer/p2p/socket_dispatcher.h"
 #include "content/renderer/render_process_impl.h"
 #include "content/renderer/render_view_impl.h"
@@ -196,6 +198,7 @@ class RenderViewZoomer : public RenderViewVisitor {
     // Empty scheme works as wildcard that matches any scheme,
     if ((net::GetHostOrSpecFromURL(url) == host_) &&
         (scheme_.empty() || scheme_ == url.scheme())) {
+      webview->hidePopups();
       webview->setZoomLevel(zoom_level_);
     }
     return true;
@@ -377,9 +380,9 @@ void RenderThreadImpl::Init() {
 
   webrtc_identity_service_.reset(new WebRTCIdentityService());
 
-  media_stream_factory_.reset(new MediaStreamDependencyFactory(
+  peer_connection_factory_.reset(new PeerConnectionDependencyFactory(
       p2p_socket_dispatcher_.get()));
-  AddObserver(media_stream_factory_.get());
+  AddObserver(peer_connection_factory_.get());
 #endif  // defined(ENABLE_WEBRTC)
 
   audio_input_message_filter_ =
@@ -533,10 +536,10 @@ void RenderThreadImpl::Shutdown() {
   RemoveFilter(audio_message_filter_.get());
   audio_message_filter_ = NULL;
 
-  // |media_stream_factory_| produces users of |vc_manager_| so it must be
-  // destroyed first.
 #if defined(ENABLE_WEBRTC)
-  media_stream_factory_.reset();
+  RTCPeerConnectionHandler::DestructAllHandlers();
+
+  peer_connection_factory_.reset();
 #endif
   RemoveFilter(vc_manager_->video_capture_message_filter());
   vc_manager_.reset();
@@ -560,6 +563,11 @@ void RenderThreadImpl::Shutdown() {
     RemoveFilter(input_event_filter_.get());
     input_event_filter_ = NULL;
   }
+
+  // RemoveEmbeddedWorkerRoute may be called while deleting
+  // EmbeddedWorkerDispatcher. So it must be deleted before deleting
+  // RenderThreadImpl.
+  embedded_worker_dispatcher_.reset();
 
   // Ramp down IDB before we ramp down WebKit (and V8), since IDB classes might
   // hold pointers to V8 objects (e.g., via pending requests).
@@ -1172,7 +1180,7 @@ scoped_ptr<gfx::GpuMemoryBuffer> RenderThreadImpl::AllocateGpuMemoryBuffer(
       .PassAs<gfx::GpuMemoryBuffer>();
 }
 
-void RenderThreadImpl::AcceptConnection(
+void RenderThreadImpl::ConnectToService(
     const mojo::String& service_name,
     mojo::ScopedMessagePipeHandle message_pipe) {
   // TODO(darin): Invent some kind of registration system to use here.
@@ -1251,6 +1259,7 @@ void RenderThreadImpl::OnCreateNewView(const ViewMsg_New_Params& params) {
                          params.frame_name,
                          false,
                          params.swapped_out,
+                         params.proxy_routing_id,
                          params.hidden,
                          params.never_visible,
                          params.next_page_id,
@@ -1314,7 +1323,7 @@ blink::WebMediaStreamCenter* RenderThreadImpl::CreateMediaStreamCenter(
         ->OverrideCreateWebMediaStreamCenter(client);
     if (!media_stream_center_) {
       scoped_ptr<MediaStreamCenter> media_stream_center(
-          new MediaStreamCenter(client, GetMediaStreamDependencyFactory()));
+          new MediaStreamCenter(client, GetPeerConnectionDependencyFactory()));
       AddObserver(media_stream_center.get());
       media_stream_center_ = media_stream_center.release();
     }
@@ -1323,9 +1332,9 @@ blink::WebMediaStreamCenter* RenderThreadImpl::CreateMediaStreamCenter(
   return media_stream_center_;
 }
 
-MediaStreamDependencyFactory*
-RenderThreadImpl::GetMediaStreamDependencyFactory() {
-  return media_stream_factory_.get();
+PeerConnectionDependencyFactory*
+RenderThreadImpl::GetPeerConnectionDependencyFactory() {
+  return peer_connection_factory_.get();
 }
 
 GpuChannelHost* RenderThreadImpl::GetGpuChannel() {
@@ -1351,11 +1360,15 @@ void RenderThreadImpl::OnPurgePluginListCache(bool reload_pages) {
   FOR_EACH_OBSERVER(RenderProcessObserver, observers_, PluginListChanged());
 }
 
-void RenderThreadImpl::OnNetworkStateChanged(bool online) {
+void RenderThreadImpl::OnNetworkStateChanged(
+    bool online,
+    net::NetworkChangeNotifier::ConnectionType type) {
   EnsureWebKitInitialized();
   WebNetworkStateNotifier::setOnLine(online);
-  FOR_EACH_OBSERVER(RenderProcessObserver, observers_,
-      NetworkStateChanged(online));
+  FOR_EACH_OBSERVER(
+      RenderProcessObserver, observers_, NetworkStateChanged(online));
+  WebNetworkStateNotifier::setWebConnectionType(
+      NetConnectionTypeToWebConnectionType(type));
 }
 
 void RenderThreadImpl::OnTempCrashWithData(const GURL& data) {
@@ -1419,8 +1432,12 @@ void RenderThreadImpl::OnMemoryPressure(
       base::MemoryPressureListener::MEMORY_PRESSURE_CRITICAL) {
     // Trigger full v8 garbage collection on critical memory notification.
     v8::V8::LowMemoryNotification();
-    // Clear the image cache.
-    blink::WebImageCache::clear();
+
+    if (webkit_platform_support_) {
+      // Clear the image cache. Do not call into blink if it is not initialized.
+      blink::WebImageCache::clear();
+    }
+
     // Purge Skia font cache, by setting it to 0 and then again to the previous
     // limit.
     size_t font_cache_limit = SkGraphics::SetFontCacheLimit(0);

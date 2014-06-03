@@ -2,8 +2,12 @@ include_rules = [
   "-content",
 
   "+components/keyed_service",
+  "+components/pref_registry",
 
   "+google/cacheinvalidation",
+  "+google_apis/gaia",
+  "+jingle/notifier",
+  "+net/url_request",
 
   "+sync/internal_api/public/base",
   "+sync/notifier",

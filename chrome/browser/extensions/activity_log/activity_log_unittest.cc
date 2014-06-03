@@ -25,7 +25,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #endif
@@ -243,6 +243,8 @@ TEST_F(ActivityLogTest, LogPrerender) {
   prerender::PrerenderManager* prerender_manager =
       prerender::PrerenderManagerFactory::GetForProfile(
           Profile::FromBrowserContext(profile()));
+
+  prerender_manager->OnCookieStoreLoaded();
 
   const gfx::Size kSize(640, 480);
   scoped_ptr<prerender::PrerenderHandle> prerender_handle(

@@ -56,6 +56,7 @@ v8.log
 /build/util/support
 /build/x64/
 /build/linux/bin/eu-strip
+/buildtools
 # The Chrome OS build creates a /c symlink due to http://crbug.com/54866.
 /c
 /ceee/internal/
@@ -118,13 +119,13 @@ v8.log
 /chrome/test/data/gpu/vt/
 /chrome/test/data/layout_tests
 /chrome/test/data/osdd
+/chrome/test/data/pdf_private
 /chrome/test/data/perf/canvas_bench
 /chrome/test/data/perf/frame_rate/content
 /chrome/test/data/perf/frame_rate/private
 /chrome/test/data/perf/private/
 /chrome/test/data/perf/third_party/
 /chrome/test/data/plugin/
-/chrome/test/data/pyauto_private
 /chrome/test/data/webrtc/resources
 /chrome/tools/memory
 /chrome/tools/test/reference_build
@@ -237,6 +238,7 @@ v8.log
 /third_party/cygwin
 /third_party/directxsdk
 /third_party/drmemory
+/third_party/elfutils/src
 /third_party/eyesfree/src
 /third_party/ffmpeg
 /third_party/findbugs
@@ -292,6 +294,7 @@ v8.log
 /third_party/opus/src
 /third_party/ots
 /third_party/pdfsqueeze
+/third_party/pdfium
 /third_party/pefile
 /third_party/perl
 /third_party/platformsdk_win7

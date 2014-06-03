@@ -29,6 +29,7 @@
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/sessions/session_backend.h"
 #include "chrome/browser/sessions/session_service_factory.h"
+#include "chrome/browser/translate/translate_browser_test_utils.h"
 #include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog_queue.h"
@@ -1108,7 +1109,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, CommandCreateAppShortcutFile) {
       FILE_PATH_LITERAL("empty.html");
   GURL file_url(ui_test_utils::GetTestUrl(base::FilePath(
       base::FilePath::kCurrentDirectory), base::FilePath(kEmptyFile)));
-  ASSERT_TRUE(file_url.SchemeIs(content::kFileScheme));
+  ASSERT_TRUE(file_url.SchemeIs(url::kFileScheme));
   ui_test_utils::NavigateToURL(browser(), file_url);
   EXPECT_TRUE(command_updater->IsCommandEnabled(IDC_CREATE_SHORTCUTS));
 }
@@ -1147,7 +1148,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, CommandCreateAppShortcutFtp) {
                                      base::FilePath(kDocRoot));
   ASSERT_TRUE(test_server.Start());
   GURL ftp_url(test_server.GetURL(std::string()));
-  ASSERT_TRUE(ftp_url.SchemeIs(content::kFtpScheme));
+  ASSERT_TRUE(ftp_url.SchemeIs(url::kFtpScheme));
   ui_test_utils::NavigateToURL(browser(), ftp_url);
   EXPECT_TRUE(command_updater->IsCommandEnabled(IDC_CREATE_SHORTCUTS));
 }
@@ -1253,7 +1254,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_FaviconChange) {
       FILE_PATH_LITERAL("onload_change_favicon.html");
   GURL file_url(ui_test_utils::GetTestUrl(base::FilePath(
       base::FilePath::kCurrentDirectory), base::FilePath(kFile)));
-  ASSERT_TRUE(file_url.SchemeIs(content::kFileScheme));
+  ASSERT_TRUE(file_url.SchemeIs(url::kFileScheme));
   ui_test_utils::NavigateToURL(browser(), file_url);
 
   NavigationEntry* entry = browser()->tab_strip_model()->
@@ -1403,6 +1404,8 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, ShouldShowLocationBar) {
 
 // Tests that the CLD (Compact Language Detection) works properly.
 IN_PROC_BROWSER_TEST_F(BrowserTest, PageLanguageDetection) {
+  test::ScopedCLDDynamicDataHarness dynamic_data_scope;
+  ASSERT_NO_FATAL_FAILURE(dynamic_data_scope.Init());
   ASSERT_TRUE(test_server()->Start());
 
   //std::string lang;
@@ -1531,13 +1534,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, RestorePinnedTabs) {
 
 // This test verifies we don't crash when closing the last window and the app
 // menu is showing.
-// TODO(linux_aura) http://crbug.com/163931
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
-#define MAYBE_CloseWithAppMenuOpen DISABLED_CloseWithAppMenuOpen
-#else
-#define MAYBE_CloseWithAppMenuOpen CloseWithAppMenuOpen
-#endif
-IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_CloseWithAppMenuOpen) {
+IN_PROC_BROWSER_TEST_F(BrowserTest, CloseWithAppMenuOpen) {
   if (browser_defaults::kBrowserAliveWithNoWindows)
     return;
 
@@ -2487,13 +2484,7 @@ IN_PROC_BROWSER_TEST_F(ClickModifierTest, WindowOpenControlShiftClickTest) {
 }
 
 // Middle-clicks open in a background tab.
-// TODO(linux_aura) http://crbug.com/163931
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
-#define MAYBE_WindowOpenMiddleClickTest DISABLED_WindowOpenMiddleClickTest
-#else
-#define MAYBE_WindowOpenMiddleClickTest WindowOpenMiddleClickTest
-#endif
-IN_PROC_BROWSER_TEST_F(ClickModifierTest, MAYBE_WindowOpenMiddleClickTest) {
+IN_PROC_BROWSER_TEST_F(ClickModifierTest, WindowOpenMiddleClickTest) {
   int modifiers = 0;
   blink::WebMouseEvent::Button button = blink::WebMouseEvent::ButtonMiddle;
   WindowOpenDisposition disposition = NEW_BACKGROUND_TAB;
@@ -2556,13 +2547,7 @@ IN_PROC_BROWSER_TEST_F(ClickModifierTest, HrefControlShiftClickTest) {
 }
 
 // Middle-clicks open in a background tab.
-// TODO(linux_aura) http://crbug.com/163931
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
-#define MAYBE_HrefMiddleClickTest DISABLED_HrefMiddleClickTest
-#else
-#define MAYBE_HrefMiddleClickTest HrefMiddleClickTest
-#endif
-IN_PROC_BROWSER_TEST_F(ClickModifierTest, MAYBE_HrefMiddleClickTest) {
+IN_PROC_BROWSER_TEST_F(ClickModifierTest, HrefMiddleClickTest) {
   int modifiers = 0;
   blink::WebMouseEvent::Button button = blink::WebMouseEvent::ButtonMiddle;
   WindowOpenDisposition disposition = NEW_BACKGROUND_TAB;

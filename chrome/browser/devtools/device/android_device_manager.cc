@@ -11,11 +11,11 @@
 #include "net/base/net_errors.h"
 #include "net/socket/stream_socket.h"
 
-using content::BrowserThread;
-
 namespace {
 
 const int kBufferSize = 16 * 1024;
+
+static const char kHttpGetRequest[] = "GET %s HTTP/1.1\r\n\r\n";
 
 static const char kWebSocketUpgradeRequest[] = "GET %s HTTP/1.1\r\n"
     "Upgrade: WebSocket\r\n"
@@ -176,10 +176,28 @@ class HttpRequest {
 
 } // namespace
 
+AndroidDeviceManager::BrowserInfo::BrowserInfo()
+    : type(kTypeOther) {
+}
+
+AndroidDeviceManager::DeviceInfo::DeviceInfo() {
+}
+
+AndroidDeviceManager::DeviceInfo::~DeviceInfo() {
+}
+
 AndroidDeviceManager::Device::Device(const std::string& serial,
                                      bool is_connected)
     : serial_(serial),
       is_connected_(is_connected) {
+}
+
+void AndroidDeviceManager::Device::HttpQuery(const std::string& socket_name,
+                                             const std::string& path,
+                                             const CommandCallback& callback) {
+  std::string request(base::StringPrintf(kHttpGetRequest, path.c_str()));
+  OpenSocket(socket_name,
+             base::Bind(&HttpRequest::CommandRequest, request, callback));
 }
 
 AndroidDeviceManager::Device::~Device() {
@@ -217,16 +235,14 @@ bool AndroidDeviceManager::IsConnected(const std::string& serial) {
   return device && device->is_connected();
 }
 
-void AndroidDeviceManager::RunCommand(
-    const std::string& serial,
-    const std::string& command,
-    const CommandCallback& callback) {
+void AndroidDeviceManager::QueryDeviceInfo(const std::string& serial,
+                                           const DeviceInfoCallback& callback) {
   DCHECK(CalledOnValidThread());
   Device* device = FindDevice(serial);
   if (device)
-    device->RunCommand(command, callback);
+    device->QueryDeviceInfo(callback);
   else
-    callback.Run(net::ERR_CONNECTION_FAILED, std::string());
+    callback.Run(DeviceInfo());
 }
 
 void AndroidDeviceManager::OpenSocket(
@@ -249,8 +265,7 @@ void AndroidDeviceManager::HttpQuery(
   DCHECK(CalledOnValidThread());
   Device* device = FindDevice(serial);
   if (device)
-    device->OpenSocket(socket_name,
-        base::Bind(&HttpRequest::CommandRequest, request, callback));
+    device->HttpQuery(socket_name, request, callback);
   else
     callback.Run(net::ERR_CONNECTION_FAILED, std::string());
 }

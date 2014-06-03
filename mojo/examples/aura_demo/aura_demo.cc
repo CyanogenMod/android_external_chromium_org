@@ -5,16 +5,12 @@
 #include <stdio.h>
 #include <string>
 
-#include "base/at_exit.h"
-#include "base/command_line.h"
-#include "base/message_loop/message_loop.h"
 #include "mojo/aura/screen_mojo.h"
 #include "mojo/aura/window_tree_host_mojo.h"
-#include "mojo/public/cpp/bindings/allocation_scope.h"
+#include "mojo/public/cpp/application/application.h"
 #include "mojo/public/cpp/gles2/gles2.h"
-#include "mojo/public/cpp/shell/application.h"
 #include "mojo/public/cpp/system/core.h"
-#include "mojo/public/interfaces/shell/shell.mojom.h"
+#include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
 #include "mojo/services/native_viewport/native_viewport.mojom.h"
 #include "ui/aura/client/default_capture_client.h"
 #include "ui/aura/client/window_tree_client.h"
@@ -23,16 +19,6 @@
 #include "ui/aura/window_delegate.h"
 #include "ui/base/hit_test.h"
 #include "ui/gfx/canvas.h"
-
-#if defined(WIN32)
-#if !defined(CDECL)
-#define CDECL __cdecl
-#endif
-#define AURA_DEMO_EXPORT __declspec(dllexport)
-#else
-#define CDECL
-#define AURA_DEMO_EXPORT __attribute__((visibility("default")))
-#endif
 
 namespace mojo {
 namespace examples {
@@ -105,7 +91,6 @@ class DemoWindowTreeClient : public aura::client::WindowTreeClient {
 
  private:
   aura::Window* window_;
-
   scoped_ptr<aura::client::DefaultCaptureClient> capture_client_;
 
   DISALLOW_COPY_AND_ASSIGN(DemoWindowTreeClient);
@@ -113,7 +98,11 @@ class DemoWindowTreeClient : public aura::client::WindowTreeClient {
 
 class AuraDemo : public Application {
  public:
-  explicit AuraDemo(MojoHandle shell_handle) : Application(shell_handle) {
+  AuraDemo() {}
+  virtual ~AuraDemo() {}
+
+  virtual void Initialize() OVERRIDE {
+    aura::Env::CreateInstance(true);
     screen_.reset(ScreenMojo::Create());
     gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, screen_.get());
 
@@ -157,6 +146,7 @@ class AuraDemo : public Application {
     window_tree_host_->Show();
   }
 
+  mojo::GLES2Initializer gles2;
   scoped_ptr<ScreenMojo> screen_;
 
   scoped_ptr<DemoWindowTreeClient> window_tree_client_;
@@ -170,24 +160,16 @@ class AuraDemo : public Application {
   aura::Window* window21_;
 
   scoped_ptr<aura::WindowTreeHost> window_tree_host_;
+
+  DISALLOW_COPY_AND_ASSIGN(AuraDemo);
 };
 
 }  // namespace examples
+
+// static
+Application* Application::Create() {
+  return new examples::AuraDemo();
+}
+
 }  // namespace mojo
 
-extern "C" AURA_DEMO_EXPORT MojoResult CDECL MojoMain(
-    MojoHandle shell_handle) {
-  CommandLine::Init(0, NULL);
-  base::AtExitManager at_exit;
-  base::MessageLoop loop;
-  mojo::GLES2Initializer gles2;
-
-  // TODO(beng): This crashes in a DCHECK on X11 because this thread's
-  //             MessageLoop is not of TYPE_UI. I think we need a way to build
-  //             Aura that doesn't define platform-specific stuff.
-  aura::Env::CreateInstance(true);
-  mojo::examples::AuraDemo app(shell_handle);
-  loop.Run();
-
-  return MOJO_RESULT_OK;
-}

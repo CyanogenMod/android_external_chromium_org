@@ -14,7 +14,7 @@
 #include "base/time/time.h"
 #include "cc/base/cc_export.h"
 #include "cc/output/begin_frame_args.h"
-#include "cc/scheduler/draw_swap_readback_result.h"
+#include "cc/scheduler/draw_result.h"
 #include "cc/scheduler/scheduler_settings.h"
 #include "cc/scheduler/scheduler_state_machine.h"
 #include "cc/scheduler/time_source.h"
@@ -30,9 +30,8 @@ class SchedulerClient {
   virtual void SetNeedsBeginFrame(bool enable) = 0;
   virtual void WillBeginImplFrame(const BeginFrameArgs& args) = 0;
   virtual void ScheduledActionSendBeginMainFrame() = 0;
-  virtual DrawSwapReadbackResult ScheduledActionDrawAndSwapIfPossible() = 0;
-  virtual DrawSwapReadbackResult ScheduledActionDrawAndSwapForced() = 0;
-  virtual DrawSwapReadbackResult ScheduledActionDrawAndReadback() = 0;
+  virtual DrawResult ScheduledActionDrawAndSwapIfPossible() = 0;
+  virtual DrawResult ScheduledActionDrawAndSwapForced() = 0;
   virtual void ScheduledActionAnimate() = 0;
   virtual void ScheduledActionCommit() = 0;
   virtual void ScheduledActionUpdateVisibleTiles() = 0;
@@ -75,10 +74,6 @@ class CC_EXPORT Scheduler {
   void NotifyReadyToActivate();
 
   void SetNeedsCommit();
-
-  // Like SetNeedsCommit(), but ensures a commit will definitely happen even if
-  // we are not visible. Will eventually result in a forced draw internally.
-  void SetNeedsForcedCommitForReadback();
 
   void SetNeedsRedraw();
 
@@ -137,7 +132,7 @@ class CC_EXPORT Scheduler {
   void PollForAnticipatedDrawTriggers();
   void PollToAdvanceCommitState();
 
-  scoped_ptr<base::Value> StateAsValue() const;
+  scoped_ptr<base::Value> AsValue() const;
 
   bool IsInsideAction(SchedulerStateMachine::Action action) {
     return inside_action_ == action;
@@ -148,32 +143,12 @@ class CC_EXPORT Scheduler {
     state_machine_.SetContinuousPainting(continuous_painting);
   }
 
- private:
+ protected:
   Scheduler(
       SchedulerClient* client,
       const SchedulerSettings& scheduler_settings,
       int layer_tree_host_id,
       const scoped_refptr<base::SingleThreadTaskRunner>& impl_task_runner);
-
-  base::TimeTicks AdjustedBeginImplFrameDeadline(
-      const BeginFrameArgs& args,
-      base::TimeDelta draw_duration_estimate) const;
-  void ScheduleBeginImplFrameDeadline(base::TimeTicks deadline);
-  void SetupNextBeginFrameIfNeeded();
-  void PostBeginRetroFrameIfNeeded();
-  void SetupNextBeginFrameWhenVSyncThrottlingEnabled(bool needs_begin_frame);
-  void SetupNextBeginFrameWhenVSyncThrottlingDisabled(bool needs_begin_frame);
-  void SetupPollingMechanisms(bool needs_begin_frame);
-  void ActivatePendingTree();
-  void DrawAndSwapIfPossible();
-  void DrawAndSwapForced();
-  void DrawAndReadback();
-  void ProcessScheduledActions();
-
-  bool CanCommitAndActivateBeforeDeadline() const;
-  void AdvanceCommitStateIfPossible();
-
-  bool IsBeginMainFrameSentOrStarted() const;
 
   const SchedulerSettings settings_;
   SchedulerClient* client_;
@@ -189,7 +164,6 @@ class CC_EXPORT Scheduler {
   std::deque<BeginFrameArgs> begin_retro_frame_args_;
   BeginFrameArgs begin_impl_frame_args_;
 
-  void SetupSyntheticBeginFrames();
   scoped_ptr<SyntheticBeginFrameSource> synthetic_begin_frame_source_;
 
   base::Closure begin_retro_frame_closure_;
@@ -205,6 +179,23 @@ class CC_EXPORT Scheduler {
   SchedulerStateMachine state_machine_;
   bool inside_process_scheduled_actions_;
   SchedulerStateMachine::Action inside_action_;
+
+ private:
+  base::TimeTicks AdjustedBeginImplFrameDeadline(
+      const BeginFrameArgs& args,
+      base::TimeDelta draw_duration_estimate) const;
+  void ScheduleBeginImplFrameDeadline(base::TimeTicks deadline);
+  void SetupNextBeginFrameIfNeeded();
+  void PostBeginRetroFrameIfNeeded();
+  void SetupNextBeginFrameWhenVSyncThrottlingEnabled(bool needs_begin_frame);
+  void SetupNextBeginFrameWhenVSyncThrottlingDisabled(bool needs_begin_frame);
+  void SetupPollingMechanisms(bool needs_begin_frame);
+  void DrawAndSwapIfPossible();
+  void ProcessScheduledActions();
+  bool CanCommitAndActivateBeforeDeadline() const;
+  void AdvanceCommitStateIfPossible();
+  bool IsBeginMainFrameSentOrStarted() const;
+  void SetupSyntheticBeginFrames();
 
   base::WeakPtrFactory<Scheduler> weak_factory_;
 

@@ -533,6 +533,15 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.commandHandler.updateAvailability();
     this.document_.getElementById('drive-separator').hidden =
         !this.shouldShowDriveSettings();
+
+    // Force to update the gear menu position.
+    // TODO(hirono): Remove the workaround for the crbug.com/374093 after fixing
+    // it.
+    var gearMenu = this.document_.querySelector('#gear-menu');
+    gearMenu.style.left = '';
+    gearMenu.style.right = '';
+    gearMenu.style.top = '';
+    gearMenu.style.bottom = '';
   };
 
   /**
@@ -810,7 +819,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.document_.addEventListener('keyup', this.onKeyUp_.bind(this));
 
     this.renameInput_ = this.document_.createElement('input');
-    this.renameInput_.className = 'rename';
+    this.renameInput_.className = 'rename entry-name';
 
     this.renameInput_.addEventListener(
         'keydown', this.onRenameInputKeyDown_.bind(this));
@@ -990,15 +999,21 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.table_.list.addEventListener('focus', fileListFocusBound);
     this.grid_.addEventListener('focus', fileListFocusBound);
 
-    var dragStartBound = this.onDragStart_.bind(this);
-    this.table_.list.addEventListener('dragstart', dragStartBound);
-    this.grid_.addEventListener('dragstart', dragStartBound);
-
+    var draggingBound = this.onDragging_.bind(this);
     var dragEndBound = this.onDragEnd_.bind(this);
+
+    // Listen to drag events to hide preview panel while user is dragging files.
+    // Files.app prevents default actions in 'dragstart' in some situations,
+    // so we listen to 'drag' to know the list is actually being dragged.
+    this.table_.list.addEventListener('drag', draggingBound);
+    this.grid_.addEventListener('drag', draggingBound);
     this.table_.list.addEventListener('dragend', dragEndBound);
     this.grid_.addEventListener('dragend', dragEndBound);
-    // This event is published by DragSelector because drag end event is not
-    // published at the end of drag selection.
+
+    // Listen to dragselection events to hide preview panel while the user is
+    // selecting files by drag operation.
+    this.table_.list.addEventListener('dragselectionstart', draggingBound);
+    this.grid_.addEventListener('dragselectionstart', draggingBound);
     this.table_.list.addEventListener('dragselectionend', dragEndBound);
     this.grid_.addEventListener('dragselectionend', dragEndBound);
 
@@ -1047,7 +1062,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.directoryTree_ = this.dialogDom_.querySelector('#directory-tree');
     DirectoryTree.decorate(this.directoryTree_,
                            this.directoryModel_,
-                           this.volumeManager_);
+                           this.volumeManager_,
+                           this.metadataCache_);
 
     this.navigationList_ = this.dialogDom_.querySelector('#navigation-list');
     NavigationList.decorate(this.navigationList_,
@@ -1393,10 +1409,11 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   };
 
   /**
-   * Invoked when the drag is started on the list or the grid.
+   * Invoked while the drag is being performed on the list or the grid.
+   * Note: this method may be called multiple times before onDragEnd_().
    * @private
    */
-  FileManager.prototype.onDragStart_ = function() {
+  FileManager.prototype.onDragging_ = function() {
     // On open file dialog, the preview panel is always shown.
     if (DialogType.isOpenDialog(this.dialogType))
       return;
@@ -1581,29 +1598,9 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         return;
 
       var task = null;
-      // Handle restoring after crash, or the gallery action.
-      // TODO(mtomasz): Use the gallery action instead of just the gallery
-      //     field.
-      if (this.params_.gallery ||
-          this.params_.action === 'gallery' ||
-          this.params_.action === 'gallery-video') {
-        if (!opt_selectionEntry) {
-          // Non-existent file or a directory.
-          // Reloading while the Gallery is open with empty or multiple
-          // selection. Open the Gallery when the directory is scanned.
-          task = function() {
-            new FileTasks(this, this.params_).openGallery([]);
-          }.bind(this);
-        } else {
-          // The file or the directory exists.
-          task = function() {
-            new FileTasks(this, this.params_).openGallery([opt_selectionEntry]);
-          }.bind(this);
-        }
-      } else {
-        // TODO(mtomasz): Implement remounting archives after crash.
-        //                See: crbug.com/333139
-      }
+
+      // TODO(mtomasz): Implement remounting archives after crash.
+      //                See: crbug.com/333139
 
       // If there is a task to be run, run it after the scan is completed.
       if (task) {
@@ -1877,64 +1874,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         window.close();
       }
     }
-  };
-
-  /**
-   * Shows a modal-like file viewer/editor on top of the File Manager UI.
-   *
-   * @param {HTMLElement} popup Popup element.
-   * @param {function()} closeCallback Function to call after the popup is
-   *     closed.
-   */
-  FileManager.prototype.openFilePopup = function(popup, closeCallback) {
-    this.closeFilePopup();
-    this.filePopup_ = popup;
-    this.filePopupCloseCallback_ = closeCallback;
-    this.dialogDom_.insertBefore(
-        this.filePopup_, this.dialogDom_.querySelector('#iframe-drag-area'));
-    this.filePopup_.focus();
-    this.document_.body.setAttribute('overlay-visible', '');
-    this.document_.querySelector('#iframe-drag-area').hidden = false;
-  };
-
-  /**
-   * Closes the modal-like file viewer/editor popup.
-   */
-  FileManager.prototype.closeFilePopup = function() {
-    if (this.filePopup_) {
-      this.document_.body.removeAttribute('overlay-visible');
-      this.document_.querySelector('#iframe-drag-area').hidden = true;
-      // The window resize would not be processed properly while the relevant
-      // divs had 'display:none', force resize after the layout fired.
-      setTimeout(this.onResize_.bind(this), 0);
-      if (this.filePopup_.contentWindow &&
-          this.filePopup_.contentWindow.unload) {
-        this.filePopup_.contentWindow.unload();
-      }
-
-      if (this.filePopupCloseCallback_) {
-        this.filePopupCloseCallback_();
-        this.filePopupCloseCallback_ = null;
-      }
-
-      // These operations have to be in the end, otherwise v8 crashes on an
-      // assert. See: crbug.com/224174.
-      this.dialogDom_.removeChild(this.filePopup_);
-      this.filePopup_ = null;
-    }
-  };
-
-  /**
-   * Updates visibility of the draggable app region in the modal-like file
-   * viewer/editor.
-   *
-   * @param {boolean} visible True for visible, false otherwise.
-   */
-  FileManager.prototype.onFilePopupAppRegionChanged = function(visible) {
-    if (!this.filePopup_)
-      return;
-
-    this.document_.querySelector('#iframe-drag-area').hidden = !visible;
   };
 
   /**
@@ -2435,22 +2374,24 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       return;
     var label = item.querySelector('.filename-label');
     var input = this.renameInput_;
+    var currentEntry = this.currentList_.dataModel.item(item.listIndex);
 
     input.value = label.textContent;
     item.setAttribute('renaming', '');
     label.parentNode.appendChild(input);
     input.focus();
+
     var selectionEnd = input.value.lastIndexOf('.');
-    if (selectionEnd == -1) {
-      input.select();
-    } else {
+    if (currentEntry.isFile && selectionEnd !== -1) {
       input.selectionStart = 0;
       input.selectionEnd = selectionEnd;
+    } else {
+      input.select();
     }
 
     // This has to be set late in the process so we don't handle spurious
     // blur events.
-    input.currentEntry = this.currentList_.dataModel.item(item.listIndex);
+    input.currentEntry = currentEntry;
     this.table_.startBatchUpdates();
     this.grid_.startBatchUpdates();
   };
@@ -2844,22 +2785,37 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     var self = this;
     var list = self.currentList_;
     var tryCreate = function() {
-      self.directoryModel_.createDirectory(current(),
-                                           onSuccess, onError);
     };
 
     var onSuccess = function(entry) {
       metrics.recordUserAction('CreateNewFolder');
       list.selectedItem = entry;
+
+      self.table_.list.endBatchUpdates();
+      self.grid_.endBatchUpdates();
+
       self.initiateRename();
     };
 
     var onError = function(error) {
+      self.table_.list.endBatchUpdates();
+      self.grid_.endBatchUpdates();
+
       self.alert.show(strf('ERROR_CREATING_FOLDER', current(),
                            util.getFileErrorString(error.name)));
     };
 
-    tryCreate();
+    var onAbort = function() {
+      self.table_.list.endBatchUpdates();
+      self.grid_.endBatchUpdates();
+    };
+
+    this.table_.list.startBatchUpdates();
+    this.grid_.startBatchUpdates();
+    this.directoryModel_.createDirectory(current(),
+                                         onSuccess,
+                                         onError,
+                                         onAbort);
   };
 
   /**

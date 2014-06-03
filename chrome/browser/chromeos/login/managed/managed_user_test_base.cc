@@ -13,12 +13,14 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/auth/key.h"
+#include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/login_manager_test.h"
 #include "chrome/browser/chromeos/login/managed/supervised_user_authentication.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/login/supervised_user_manager.h"
-#include "chrome/browser/chromeos/login/webui_login_view.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/ui/webui_login_view.h"
+#include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
 #include "chrome/browser/chromeos/net/network_portal_detector_test_impl.h"
 #include "chrome/browser/chromeos/settings/stub_cros_settings_provider.h"
 #include "chrome/browser/managed_mode/managed_user_constants.h"
@@ -215,7 +217,7 @@ void ManagedUserTestBase::TearDownInProcessBrowserTestFixture() {
 }
 
 void ManagedUserTestBase::JSEval(const std::string& script) {
-  EXPECT_TRUE(content::ExecuteScript(web_contents(), script));
+  EXPECT_TRUE(content::ExecuteScript(web_contents(), script)) << script;
 }
 
 void ManagedUserTestBase::JSExpectAsync(const std::string& function) {
@@ -225,7 +227,7 @@ void ManagedUserTestBase::JSExpectAsync(const std::string& function) {
       StringPrintf(
           "(%s)(function() { window.domAutomationController.send(true); });",
           function.c_str()),
-      &result));
+      &result)) << function;
   EXPECT_TRUE(result);
 }
 
@@ -287,7 +289,9 @@ void ManagedUserTestBase::StartFlowLoginAsManager() {
 
   // Next button is now enabled.
   JSExpect("!$('managed-user-creation-next-button').disabled");
-  SetExpectedCredentials(kTestManager, kTestManagerPassword);
+  UserContext user_context(kTestManager);
+  user_context.SetKey(Key(kTestManagerPassword));
+  SetExpectedCredentials(user_context);
   content::WindowedNotificationObserver login_observer(
       chrome::NOTIFICATION_LOGIN_USER_PROFILE_PREPARED,
       content::NotificationService::AllSources());

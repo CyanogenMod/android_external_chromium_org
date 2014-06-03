@@ -20,6 +20,7 @@
         '../compositor/compositor.gyp:compositor',
         '../events/events.gyp:events',
         '../events/events.gyp:events_base',
+        '../events/platform/events_platform.gyp:events_platform',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
       ],
@@ -116,6 +117,7 @@
             '../../build/linux/system.gyp:x11',
             '../../build/linux/system.gyp:xrandr',
             '../../build/linux/system.gyp:xi',
+            '../events/platform/x11/x11_events_platform.gyp:x11_events_platform',
           ],
         }],
         ['OS=="win"', {
@@ -129,6 +131,7 @@
         }],
         ['use_ozone==1', {
           'dependencies': [
+            '../events/ozone/events_ozone.gyp:events_ozone',
             '../ozone/ozone.gyp:ozone',
           ],
         }],
@@ -211,7 +214,7 @@
       'conditions': [
         ['use_x11==1', {
           'dependencies': [
-            '../gfx/gfx.gyp:gfx_x11',
+            '../gfx/x/gfx_x11.gyp:gfx_x11',
           ],
         }],
       ]
@@ -244,7 +247,7 @@
       'conditions': [
         ['use_x11==1', {
           'dependencies': [
-            '../gfx/gfx.gyp:gfx_x11',
+            '../gfx/x/gfx_x11.gyp:gfx_x11',
           ],
         }],
       ]

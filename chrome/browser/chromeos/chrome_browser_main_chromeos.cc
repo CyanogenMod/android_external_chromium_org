@@ -43,14 +43,17 @@
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_screensaver.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/chromeos/language_preferences.h"
-#include "chrome/browser/chromeos/login/authenticator.h"
+#include "chrome/browser/chromeos/login/auth/authenticator.h"
+#include "chrome/browser/chromeos/login/auth/key.h"
+#include "chrome/browser/chromeos/login/auth/user_context.h"
+#include "chrome/browser/chromeos/login/helper.h"
+#include "chrome/browser/chromeos/login/lock/screen_locker.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/login_wizard.h"
-#include "chrome/browser/chromeos/login/screen_locker.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/chromeos/login/wallpaper_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/memory/oom_priority_manager.h"
 #include "chrome/browser/chromeos/net/network_portal_detector.h"
@@ -139,9 +142,10 @@ class StubLogin : public LoginStatusConsumer,
   StubLogin(std::string username, std::string password)
       : profile_prepared_(false) {
     authenticator_ = LoginUtils::Get()->CreateAuthenticator(this);
-    authenticator_.get()->AuthenticateToLogin(
-        ProfileHelper::GetSigninProfile(),
-        UserContext(username, password, std::string() /* auth_code */));
+    UserContext user_context(username);
+    user_context.SetKey(Key(password));
+    authenticator_.get()->AuthenticateToLogin(ProfileHelper::GetSigninProfile(),
+                                              user_context);
   }
 
   virtual ~StubLogin() {
@@ -168,9 +172,9 @@ class StubLogin : public LoginStatusConsumer,
 
   // LoginUtils::Delegate implementation:
   virtual void OnProfilePrepared(Profile* profile) OVERRIDE {
-    const std::string login_user =
+    const std::string login_user = login::CanonicalizeUserID(
         CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-            chromeos::switches::kLoginUser);
+            switches::kLoginUser));
     if (!policy::IsDeviceLocalAccountUser(login_user, NULL)) {
       profile->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
                                      login_user);
@@ -356,7 +360,7 @@ void ChromeBrowserMainPartsChromeos::PreEarlyInitialization() {
     browser_defaults::bookmarks_enabled = false;
   }
 
-  // If we're not running on real ChromeOS hardware (or under VM), and are not
+  // If we're not running on real Chrome OS hardware (or under VM), and are not
   // showing the login manager or attempting a command line login, login with a
   // stub user.
   if (!base::SysInfo::IsRunningOnChromeOS() &&
@@ -523,8 +527,8 @@ void ChromeBrowserMainPartsChromeos::PreProfileInit() {
   ChromeBrowserMainPartsLinux::PreProfileInit();
 
   if (immediate_login) {
-    const std::string user_id =
-        parsed_command_line().GetSwitchValueASCII(switches::kLoginUser);
+    const std::string user_id = login::CanonicalizeUserID(
+        parsed_command_line().GetSwitchValueASCII(switches::kLoginUser));
     UserManager* user_manager = UserManager::Get();
 
     if (policy::IsDeviceLocalAccountUser(user_id, NULL) &&
@@ -616,8 +620,9 @@ void ChromeBrowserMainPartsChromeos::PostProfileInit() {
   //    i.e. not on Chrome OS device w/o login flow.
   if (parsed_command_line().HasSwitch(switches::kLoginUser) &&
       !parsed_command_line().HasSwitch(switches::kLoginPassword)) {
-    std::string login_user = parsed_command_line().GetSwitchValueASCII(
-        chromeos::switches::kLoginUser);
+    std::string login_user = login::CanonicalizeUserID(
+        parsed_command_line().GetSwitchValueASCII(
+            chromeos::switches::kLoginUser));
     if (!base::SysInfo::IsRunningOnChromeOS() &&
         login_user == UserManager::kStubUser) {
       // For dev machines and stub user emulate as if sync has been initialized.
@@ -700,7 +705,10 @@ void ChromeBrowserMainPartsChromeos::PreBrowserStart() {
   // -- This used to be in ChromeBrowserMainParts::PreMainMessageLoopRun()
   // -- just before MetricsService::LogNeedForCleanShutdown().
 
-  g_browser_process->metrics_service()->StartExternalMetrics();
+  // Start the external metrics service, which collects metrics from Chrome OS
+  // and passes them to the browser process.
+  external_metrics_ = new chromeos::ExternalMetrics;
+  external_metrics_->Start();
 
 #if defined(USE_X11)
   // Listen for system key events so that the user will be able to adjust the

@@ -11,6 +11,7 @@
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/common/extensions/manifest_handlers/settings_overrides_handler.h"
 #include "chrome/common/url_constants.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "grit/chromium_strings.h"
@@ -243,14 +244,30 @@ bool SettingsApiBubbleDelegate::ShouldShowExtensionList() const {
 }
 
 void SettingsApiBubbleDelegate::LogExtensionCount(size_t count) {
-  UMA_HISTOGRAM_COUNTS_100("SettingsApiBubble.ExtensionCount", count);
 }
 
 void SettingsApiBubbleDelegate::LogAction(
     ExtensionMessageBubbleController::BubbleAction action) {
-  UMA_HISTOGRAM_ENUMERATION("SettingsApiBubble.UserSelection",
-                            action,
-                            ExtensionMessageBubbleController::ACTION_BOUNDARY);
+  switch (type_) {
+    case extensions::BUBBLE_TYPE_HOME_PAGE:
+      UMA_HISTOGRAM_ENUMERATION(
+          "ExtensionOverrideBubble.SettingsApiUserSelectionHomePage",
+          action,
+          ExtensionMessageBubbleController::ACTION_BOUNDARY);
+      break;
+    case extensions::BUBBLE_TYPE_STARTUP_PAGES:
+      UMA_HISTOGRAM_ENUMERATION(
+          "ExtensionOverrideBubble.SettingsApiUserSelectionStartupPage",
+          action,
+          ExtensionMessageBubbleController::ACTION_BOUNDARY);
+      break;
+    case extensions::BUBBLE_TYPE_SEARCH_ENGINE:
+      UMA_HISTOGRAM_ENUMERATION(
+          "ExtensionOverrideBubble.SettingsApiUserSelectionSearchEngine",
+          action,
+          ExtensionMessageBubbleController::ACTION_BOUNDARY);
+      break;
+  }
 }
 
 }  // namespace

@@ -16,6 +16,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/core/browser/address.h"
+#include "components/autofill/core/browser/address_i18n.h"
 #include "components/autofill/core/browser/autofill_country.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/autofill_type.h"
@@ -24,7 +25,8 @@
 #include "components/autofill/core/browser/phone_number_i18n.h"
 #include "components/autofill/core/browser/validation.h"
 #include "components/autofill/core/common/form_field_data.h"
-#include "grit/component_strings.h"
+#include "grit/components_strings.h"
+#include "third_party/libaddressinput/chromium/cpp/include/libaddressinput/address_data.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using base::ASCIIToUTF16;
@@ -293,6 +295,17 @@ void AutofillProfile::SetRawInfo(ServerFieldType type,
 
 base::string16 AutofillProfile::GetInfo(const AutofillType& type,
                                         const std::string& app_locale) const {
+  if (type.html_type() == HTML_TYPE_FULL_ADDRESS) {
+    scoped_ptr< ::i18n::addressinput::AddressData> address_data =
+        i18n::CreateAddressDataFromAutofillProfile(*this, app_locale);
+    if (!address_data->HasAllRequiredFields())
+      return base::string16();
+
+    std::vector<std::string> lines;
+    address_data->FormatForDisplay(&lines);
+    return base::UTF8ToUTF16(JoinString(lines, '\n'));
+  }
+
   const FormGroup* form_group = FormGroupForType(type);
   if (!form_group)
     return base::string16();
@@ -694,10 +707,9 @@ base::string16 AutofillProfile::ConstructInferredLabel(
   }
 
   // Flatten the label if need be.
-  const base::char16 kNewline[] = { '\n', 0 };
-  const base::string16 newline_separator =
+  const base::string16& line_separator =
       l10n_util::GetStringUTF16(IDS_AUTOFILL_ADDRESS_LINE_SEPARATOR);
-  base::ReplaceChars(label, kNewline, newline_separator, &label);
+  base::ReplaceChars(label, base::ASCIIToUTF16("\n"), line_separator, &label);
 
   return label;
 }

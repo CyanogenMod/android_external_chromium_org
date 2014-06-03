@@ -141,13 +141,6 @@ std::vector<base::string16> InnerBoundedLabel::GetWrappedText(int width,
     height = (lines + 1) * line_height;
   }
 
-  // Try to ensure that the width is no smaller than the width of the text's
-  // characters to avoid the http://crbug.com/237700 infinite loop.
-  // TODO(dharcourt): Remove when http://crbug.com/237700 is fixed.
-  width = std::max(width,
-                   2 * gfx::GetStringWidth(base::UTF8ToUTF16("W"),
-                                           font_list()));
-
   // Wrap, using INT_MAX for -1 widths that indicate no wrapping.
   std::vector<base::string16> wrapped;
   gfx::ElideRectangleText(text(), font_list(),
@@ -326,18 +319,18 @@ int BoundedLabel::GetBaseline() const {
   return label_->GetBaseline();
 }
 
-gfx::Size BoundedLabel::GetPreferredSize() {
+gfx::Size BoundedLabel::GetPreferredSize() const {
   return visible() ? label_->GetSizeForWidthAndLines(-1, -1) : gfx::Size();
 }
 
-int BoundedLabel::GetHeightForWidth(int width) {
+int BoundedLabel::GetHeightForWidth(int width) const {
   return visible() ?
          label_->GetSizeForWidthAndLines(width, line_limit_).height() : 0;
 }
 
-void BoundedLabel::Paint(gfx::Canvas* canvas) {
+void BoundedLabel::Paint(gfx::Canvas* canvas, const views::CullSet& cull_set) {
   if (visible())
-    label_->Paint(canvas);
+    label_->Paint(canvas, cull_set);
 }
 
 bool BoundedLabel::HitTestRect(const gfx::Rect& rect) const {

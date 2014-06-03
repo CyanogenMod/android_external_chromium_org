@@ -281,7 +281,7 @@
                   ],
                 },
               }],
-              [ 'os_bsd==1', {
+              ['os_bsd==1', {
                 'cflags': [
                   '<!@(python cups_config_helper.py --cflags)',
                 ],
@@ -303,7 +303,6 @@
           ],
           'variables': {
             'jni_gen_package': 'printing',
-            'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../build/jni_generator.gypi' ],
         },

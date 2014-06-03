@@ -30,7 +30,7 @@ class LinuxSandbox {
   enum LinuxSandboxIPCMethods {
     METHOD_GET_FONT_FAMILY_FOR_CHAR = 32,
     METHOD_LOCALTIME = 33,
-    METHOD_GET_CHILD_WITH_INODE = 34,
+    DEPRECATED_METHOD_GET_CHILD_WITH_INODE = 34,
     METHOD_GET_STYLE_FOR_STRIKE = 35,
     METHOD_MAKE_SHARED_MEMORY_SEGMENT = 36,
     METHOD_MATCH_WITH_FALLBACK = 37,
@@ -85,6 +85,9 @@ class LinuxSandbox {
  private:
   friend struct DefaultSingletonTraits<LinuxSandbox>;
 
+  LinuxSandbox();
+  ~LinuxSandbox();
+
   // Some methods are static and get an instance of the Singleton. These
   // are the non-static implementations.
   bool InitializeSandboxImpl();
@@ -118,8 +121,7 @@ class LinuxSandbox {
   bool yama_is_enforcing_;  // Accurate if pre_initialized_.
   scoped_ptr<sandbox::SetuidSandboxClient> setuid_sandbox_client_;
 
-  ~LinuxSandbox();
-  DISALLOW_IMPLICIT_CONSTRUCTORS(LinuxSandbox);
+  DISALLOW_COPY_AND_ASSIGN(LinuxSandbox);
 };
 
 }  // namespace content

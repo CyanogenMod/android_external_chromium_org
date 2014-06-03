@@ -16,6 +16,7 @@
 #include "ash/display/root_window_transformers.h"
 #include "ash/display/virtual_keyboard_window_controller.h"
 #include "ash/host/ash_window_tree_host.h"
+#include "ash/host/ash_window_tree_host_init_params.h"
 #include "ash/host/root_window_transformer.h"
 #include "ash/root_window_controller.h"
 #include "ash/root_window_settings.h"
@@ -43,6 +44,8 @@
 #include "ash/display/display_configurator_animation.h"
 #include "base/sys_info.h"
 #include "base/time/time.h"
+#endif  // defined(OS_CHROMEOS)
+
 #if defined(USE_X11)
 #include "ui/base/x/x11_util.h"
 #include "ui/gfx/x/x11_types.h"
@@ -52,7 +55,7 @@
 #include <X11/extensions/Xrandr.h>
 #undef RootWindow
 #endif  // defined(USE_X11)
-#endif  // defined(OS_CHROMEOS)
+
 
 namespace ash {
 namespace {
@@ -61,7 +64,8 @@ namespace {
 // accessed after Shell is deleted. A separate display instance is created
 // during the shutdown instead of always keeping two display instances
 // (one here and another one in display_manager) in sync, which is error prone.
-int64 primary_display_id = gfx::Display::kInvalidDisplayID;
+// This is initialized in the constructor, and then in CreatePrimaryHost().
+int64 primary_display_id = -1;
 
 // Specifies how long the display change should have been disabled
 // after each display change operations.
@@ -247,8 +251,6 @@ void DisplayController::Start() {
       new VirtualKeyboardWindowController);
   Shell::GetScreen()->AddObserver(this);
   Shell::GetInstance()->display_manager()->set_delegate(this);
-
-  FOR_EACH_OBSERVER(Observer, observers_, OnDisplaysInitialized());
 }
 
 void DisplayController::Shutdown() {
@@ -274,11 +276,12 @@ void DisplayController::Shutdown() {
   }
 }
 
-void DisplayController::CreatePrimaryHost() {
+void DisplayController::CreatePrimaryHost(
+    const AshWindowTreeHostInitParams& init_params) {
   const gfx::Display& primary_candidate =
       GetDisplayManager()->GetPrimaryDisplayCandidate();
   primary_display_id = primary_candidate.id();
-  AddWindowTreeHostForDisplay(primary_candidate);
+  AddWindowTreeHostForDisplay(primary_candidate, init_params);
 }
 
 void DisplayController::InitDisplays() {
@@ -289,11 +292,14 @@ void DisplayController::InitDisplays() {
   for (size_t i = 0; i < display_manager->GetNumDisplays(); ++i) {
     const gfx::Display& display = display_manager->GetDisplayAt(i);
     if (primary_display_id != display.id()) {
-      AshWindowTreeHost* ash_host = AddWindowTreeHostForDisplay(display);
+      AshWindowTreeHost* ash_host = AddWindowTreeHostForDisplay(
+          display, AshWindowTreeHostInitParams());
       RootWindowController::CreateForSecondaryDisplay(ash_host);
     }
   }
   UpdateHostWindowNames();
+
+  FOR_EACH_OBSERVER(Observer, observers_, OnDisplaysInitialized());
 }
 
 void DisplayController::AddObserver(Observer* observer) {
@@ -543,15 +549,6 @@ bool DisplayController::UpdateWorkAreaOfDisplayNearestWindow(
   return GetDisplayManager()->UpdateWorkAreaOfDisplay(id, insets);
 }
 
-void DisplayController::OnDisplayBoundsChanged(const gfx::Display& display) {
-  const DisplayInfo& display_info =
-      GetDisplayManager()->GetDisplayInfo(display.id());
-  DCHECK(!display_info.bounds_in_native().IsEmpty());
-  AshWindowTreeHost* ash_host = window_tree_hosts_[display.id()];
-  ash_host->AsWindowTreeHost()->SetBounds(display_info.bounds_in_native());
-  SetDisplayPropertiesOnHost(ash_host, display);
-}
-
 void DisplayController::OnDisplayAdded(const gfx::Display& display) {
   if (primary_tree_host_for_replace_) {
     DCHECK(window_tree_hosts_.empty());
@@ -569,7 +566,8 @@ void DisplayController::OnDisplayAdded(const gfx::Display& display) {
     if (primary_display_id == gfx::Display::kInvalidDisplayID)
       primary_display_id = display.id();
     DCHECK(!window_tree_hosts_.empty());
-    AshWindowTreeHost* ash_host = AddWindowTreeHostForDisplay(display);
+    AshWindowTreeHost* ash_host = AddWindowTreeHostForDisplay(
+        display, AshWindowTreeHostInitParams());
     RootWindowController::CreateForSecondaryDisplay(ash_host);
   }
 }
@@ -605,8 +603,9 @@ void DisplayController::OnDisplayRemoved(const gfx::Display& display) {
     GetRootWindowSettings(GetWindow(primary_host))->display_id =
         primary_display_id;
 
-    OnDisplayBoundsChanged(
-        GetDisplayManager()->GetDisplayForId(primary_display_id));
+    OnDisplayMetricsChanged(
+        GetDisplayManager()->GetDisplayForId(primary_display_id),
+        DISPLAY_METRIC_BOUNDS);
   }
   RootWindowController* controller =
       GetRootWindowController(GetWindow(host_to_delete));
@@ -616,6 +615,20 @@ void DisplayController::OnDisplayRemoved(const gfx::Display& display) {
   // root window itself yet because the stack may be using it.
   controller->Shutdown();
   base::MessageLoop::current()->DeleteSoon(FROM_HERE, controller);
+}
+
+void DisplayController::OnDisplayMetricsChanged(const gfx::Display& display,
+                                                uint32_t metrics) {
+  if (!(metrics & (DISPLAY_METRIC_BOUNDS | DISPLAY_METRIC_ROTATION |
+                   DISPLAY_METRIC_DEVICE_SCALE_FACTOR)))
+    return;
+
+  const DisplayInfo& display_info =
+      GetDisplayManager()->GetDisplayInfo(display.id());
+  DCHECK(!display_info.bounds_in_native().IsEmpty());
+  AshWindowTreeHost* ash_host = window_tree_hosts_[display.id()];
+  ash_host->AsWindowTreeHost()->SetBounds(display_info.bounds_in_native());
+  SetDisplayPropertiesOnHost(ash_host, display);
 }
 
 void DisplayController::OnHostResized(const aura::WindowTreeHost* host) {
@@ -700,12 +713,14 @@ void DisplayController::PostDisplayConfigurationChange() {
 }
 
 AshWindowTreeHost* DisplayController::AddWindowTreeHostForDisplay(
-    const gfx::Display& display) {
+    const gfx::Display& display,
+    const AshWindowTreeHostInitParams& init_params) {
   static int host_count = 0;
   const DisplayInfo& display_info =
       GetDisplayManager()->GetDisplayInfo(display.id());
-  const gfx::Rect& bounds_in_native = display_info.bounds_in_native();
-  AshWindowTreeHost* ash_host = AshWindowTreeHost::Create(bounds_in_native);
+  AshWindowTreeHostInitParams params_with_bounds(init_params);
+  params_with_bounds.initial_bounds = display_info.bounds_in_native();
+  AshWindowTreeHost* ash_host = AshWindowTreeHost::Create(params_with_bounds);
   aura::WindowTreeHost* host = ash_host->AsWindowTreeHost();
 
   host->window()->SetName(base::StringPrintf("RootWindow-%d", host_count++));

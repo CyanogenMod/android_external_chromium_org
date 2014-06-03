@@ -17,6 +17,7 @@
 #include "chrome/browser/services/gcm/gcm_profile_service.h"
 #include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
 #include "chrome/common/url_constants.h"
+#include "components/gcm_driver/gcm_driver.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_controller.h"
 #include "content/public/browser/web_ui_data_source.h"
@@ -27,10 +28,9 @@
 namespace {
 
 void SetCheckinInfo(
-    const std::vector<gcm::GCMStatsRecorder::CheckinActivity>& checkins,
+    const std::vector<gcm::CheckinActivity>& checkins,
     base::ListValue* checkin_info) {
-  std::vector<gcm::GCMStatsRecorder::CheckinActivity>::const_iterator it =
-      checkins.begin();
+  std::vector<gcm::CheckinActivity>::const_iterator it = checkins.begin();
   for (; it < checkins.end(); ++it) {
     base::ListValue* row = new base::ListValue();
     checkin_info->Append(row);
@@ -42,10 +42,9 @@ void SetCheckinInfo(
 }
 
 void SetConnectionInfo(
-    const std::vector<gcm::GCMStatsRecorder::ConnectionActivity>& connections,
+    const std::vector<gcm::ConnectionActivity>& connections,
     base::ListValue* connection_info) {
-  std::vector<gcm::GCMStatsRecorder::ConnectionActivity>::const_iterator it =
-      connections.begin();
+  std::vector<gcm::ConnectionActivity>::const_iterator it = connections.begin();
   for (; it < connections.end(); ++it) {
     base::ListValue* row = new base::ListValue();
     connection_info->Append(row);
@@ -57,10 +56,9 @@ void SetConnectionInfo(
 }
 
 void SetRegistrationInfo(
-    const std::vector<gcm::GCMStatsRecorder::RegistrationActivity>&
-        registrations,
+    const std::vector<gcm::RegistrationActivity>& registrations,
     base::ListValue* registration_info) {
-  std::vector<gcm::GCMStatsRecorder::RegistrationActivity>::const_iterator it =
+  std::vector<gcm::RegistrationActivity>::const_iterator it =
       registrations.begin();
   for (; it < registrations.end(); ++it) {
     base::ListValue* row = new base::ListValue();
@@ -75,10 +73,9 @@ void SetRegistrationInfo(
 }
 
 void SetReceivingInfo(
-    const std::vector<gcm::GCMStatsRecorder::ReceivingActivity>& receives,
+    const std::vector<gcm::ReceivingActivity>& receives,
     base::ListValue* receive_info) {
-  std::vector<gcm::GCMStatsRecorder::ReceivingActivity>::const_iterator it =
-      receives.begin();
+  std::vector<gcm::ReceivingActivity>::const_iterator it = receives.begin();
   for (; it < receives.end(); ++it) {
     base::ListValue* row = new base::ListValue();
     receive_info->Append(row);
@@ -93,10 +90,9 @@ void SetReceivingInfo(
 }
 
 void SetSendingInfo(
-    const std::vector<gcm::GCMStatsRecorder::SendingActivity>& sends,
+    const std::vector<gcm::SendingActivity>& sends,
     base::ListValue* send_info) {
-  std::vector<gcm::GCMStatsRecorder::SendingActivity>::const_iterator it =
-     sends.begin();
+  std::vector<gcm::SendingActivity>::const_iterator it = sends.begin();
   for (; it < sends.end(); ++it) {
     base::ListValue* row = new base::ListValue();
     send_info->Append(row);
@@ -156,14 +152,13 @@ void GcmInternalsUIMessageHandler::ReturnResults(
   results.Set("deviceInfo", device_info);
 
   device_info->SetBoolean("profileServiceCreated", profile_service != NULL);
-  device_info->SetString("gcmEnabledState",
-      gcm::GCMProfileService::GetGCMEnabledStateString(
-          gcm::GCMProfileService::GetGCMEnabledState(profile)));
+  device_info->SetBoolean("gcmEnabled",
+                          gcm::GCMProfileService::IsGCMEnabled(profile));
   if (profile_service) {
     device_info->SetString("signedInUserName",
-                           profile_service->SignedInUserName());
+                           profile_service->driver()->SignedInUserName());
     device_info->SetBoolean("gcmClientReady",
-                            profile_service->IsGCMClientReady());
+                            profile_service->driver()->IsGCMClientReady());
   }
   if (stats) {
     results.SetBoolean("isRecording", stats->is_recording);
@@ -234,10 +229,10 @@ void GcmInternalsUIMessageHandler::RequestAllInfo(
 
   if (!profile_service) {
     ReturnResults(profile, NULL, NULL);
-  } else if (profile_service->SignedInUserName().empty()) {
+  } else if (profile_service->driver()->SignedInUserName().empty()) {
     ReturnResults(profile, profile_service, NULL);
   } else {
-    profile_service->GetGCMStatistics(
+    profile_service->driver()->GetGCMStatistics(
         base::Bind(&GcmInternalsUIMessageHandler::RequestGCMStatisticsFinished,
                    weak_ptr_factory_.GetWeakPtr()),
         clear_logs);
@@ -263,12 +258,12 @@ void GcmInternalsUIMessageHandler::SetRecording(const base::ListValue* args) {
     ReturnResults(profile, NULL, NULL);
     return;
   }
-  if (profile_service->SignedInUserName().empty()) {
+  if (profile_service->driver()->SignedInUserName().empty()) {
     ReturnResults(profile, profile_service, NULL);
     return;
   }
   // Get fresh stats after changing recording setting.
-  profile_service->SetGCMRecording(
+  profile_service->driver()->SetGCMRecording(
       base::Bind(
           &GcmInternalsUIMessageHandler::RequestGCMStatisticsFinished,
           weak_ptr_factory_.GetWeakPtr()),

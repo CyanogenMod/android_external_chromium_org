@@ -27,6 +27,8 @@
 #include "base/process/kill.h"
 #include "base/process/launch.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
+#include "build/build_config.h"
+#include "components/nacl/common/nacl_nonsfi_util.h"
 #include "components/nacl/common/nacl_paths.h"
 #include "components/nacl/common/nacl_switches.h"
 #include "components/nacl/loader/nacl_helper_linux.h"
@@ -108,14 +110,26 @@ bool SendIPCRequestAndReadReply(int ipc_channel,
 
 }  // namespace.
 
-NaClForkDelegate::NaClForkDelegate()
-    : status_(kNaClHelperUnused),
-      fd_(-1) {}
+namespace nacl {
+
+void AddNaClZygoteForkDelegates(
+    ScopedVector<content::ZygoteForkDelegate>* delegates) {
+  delegates->push_back(new NaClForkDelegate(false /* nonsfi_mode */));
+  delegates->push_back(new NaClForkDelegate(true /* nonsfi_mode */));
+}
+
+NaClForkDelegate::NaClForkDelegate(bool nonsfi_mode)
+    : nonsfi_mode_(nonsfi_mode), status_(kNaClHelperUnused), fd_(-1) {
+}
 
 void NaClForkDelegate::Init(const int sandboxdesc,
                             const bool enable_layer1_sandbox) {
   VLOG(1) << "NaClForkDelegate::Init()";
-  int fds[2];
+
+  // Only launch the non-SFI helper process if non-SFI mode is enabled.
+  if (nonsfi_mode_ && !IsNonSFIModeEnabled()) {
+    return;
+  }
 
   scoped_ptr<sandbox::SetuidSandboxClient> setuid_sandbox_client(
       sandbox::SetuidSandboxClient::Create());
@@ -127,36 +141,41 @@ void NaClForkDelegate::Init(const int sandboxdesc,
   // Confirm a hard-wired assumption.
   DCHECK_EQ(sandboxdesc, nacl_sandbox_descriptor);
 
-  CHECK(socketpair(PF_UNIX, SOCK_SEQPACKET, 0, fds) == 0);
+  int fds[2];
+  PCHECK(0 == socketpair(PF_UNIX, SOCK_SEQPACKET, 0, fds));
   base::FileHandleMappingVector fds_to_map;
   fds_to_map.push_back(std::make_pair(fds[1], kNaClZygoteDescriptor));
   fds_to_map.push_back(std::make_pair(sandboxdesc, nacl_sandbox_descriptor));
 
-  // Using nacl_helper_bootstrap is not necessary on x86-64 because
-  // NaCl's x86-64 sandbox is not zero-address-based.  Starting
-  // nacl_helper through nacl_helper_bootstrap works on x86-64, but it
-  // leaves nacl_helper_bootstrap mapped at a fixed address at the
-  // bottom of the address space, which is undesirable because it
-  // effectively defeats ASLR.
+  bool use_nacl_bootstrap = false;
+  // For non-SFI mode, we do not use fixed address space.
+  if (!nonsfi_mode_) {
+    // Using nacl_helper_bootstrap is not necessary on x86-64 because
+    // NaCl's x86-64 sandbox is not zero-address-based.  Starting
+    // nacl_helper through nacl_helper_bootstrap works on x86-64, but it
+    // leaves nacl_helper_bootstrap mapped at a fixed address at the
+    // bottom of the address space, which is undesirable because it
+    // effectively defeats ASLR.
 #if defined(ARCH_CPU_X86_64)
-  bool kUseNaClBootstrap = false;
+    use_nacl_bootstrap = false;
 #elif defined(ARCH_CPU_X86)
-  // Performance vs. security trade-off: We prefer using a
-  // non-zero-address-based sandbox on x86-32 because it provides some
-  // ASLR and so is more secure.  However, on Atom CPUs, using a
-  // non-zero segment base is very slow, so we use a zero-based
-  // sandbox on those.
-  bool kUseNaClBootstrap = NonZeroSegmentBaseIsSlow();
+    // Performance vs. security trade-off: We prefer using a
+    // non-zero-address-based sandbox on x86-32 because it provides some
+    // ASLR and so is more secure.  However, on Atom CPUs, using a
+    // non-zero segment base is very slow, so we use a zero-based
+    // sandbox on those.
+    use_nacl_bootstrap = NonZeroSegmentBaseIsSlow();
 #else
-  bool kUseNaClBootstrap = true;
+    use_nacl_bootstrap = true;
 #endif
+  }
 
   status_ = kNaClHelperUnused;
   base::FilePath helper_exe;
   base::FilePath helper_bootstrap_exe;
   if (!PathService::Get(nacl::FILE_NACL_HELPER, &helper_exe)) {
     status_ = kNaClHelperMissing;
-  } else if (kUseNaClBootstrap &&
+  } else if (use_nacl_bootstrap &&
              !PathService::Get(nacl::FILE_NACL_HELPER_BOOTSTRAP,
                                &helper_bootstrap_exe)) {
     status_ = kNaClHelperBootstrapMissing;
@@ -166,7 +185,7 @@ void NaClForkDelegate::Init(const int sandboxdesc,
     CommandLine::StringVector argv_to_launch;
     {
       CommandLine cmd_line(CommandLine::NO_PROGRAM);
-      if (kUseNaClBootstrap)
+      if (use_nacl_bootstrap)
         cmd_line.SetProgram(helper_bootstrap_exe);
       else
         cmd_line.SetProgram(helper_exe);
@@ -186,7 +205,7 @@ void NaClForkDelegate::Init(const int sandboxdesc,
       // modified directly.
       argv_to_launch = cmd_line.argv();
     }
-    if (kUseNaClBootstrap) {
+    if (use_nacl_bootstrap) {
       // Arguments to the bootstrap helper which need to be at the start
       // of the command line, right after the helper's path.
       CommandLine::StringVector bootstrap_prepend;
@@ -262,7 +281,8 @@ void NaClForkDelegate::Init(const int sandboxdesc,
 void NaClForkDelegate::InitialUMA(std::string* uma_name,
                                   int* uma_sample,
                                   int* uma_boundary_value) {
-  *uma_name = "NaCl.Client.Helper.InitState";
+  *uma_name = nonsfi_mode_ ? "NaCl.Client.HelperNonSFI.InitState"
+                           : "NaCl.Client.Helper.InitState";
   *uma_sample = status_;
   *uma_boundary_value = kNaClHelperStatusBoundary;
 }
@@ -279,10 +299,14 @@ bool NaClForkDelegate::CanHelp(const std::string& process_type,
                                std::string* uma_name,
                                int* uma_sample,
                                int* uma_boundary_value) {
-  if (process_type != switches::kNaClLoaderProcess &&
-      process_type != switches::kNaClLoaderNonSfiProcess)
+  // We can only help with a specific process type depending on nonsfi_mode_.
+  const char* helpable_process_type = nonsfi_mode_
+                                          ? switches::kNaClLoaderNonSfiProcess
+                                          : switches::kNaClLoaderProcess;
+  if (process_type != helpable_process_type)
     return false;
-  *uma_name = "NaCl.Client.Helper.StateOnFork";
+  *uma_name = nonsfi_mode_ ? "NaCl.Client.HelperNonSFI.StateOnFork"
+                           : "NaCl.Client.Helper.StateOnFork";
   *uma_sample = status_;
   *uma_boundary_value = kNaClHelperStatusBoundary;
   return true;
@@ -305,9 +329,7 @@ pid_t NaClForkDelegate::Fork(const std::string& process_type,
   write_pickle.WriteInt(nacl::kNaClForkRequest);
   // TODO(hamaji): When we split the helper binary for non-SFI mode
   // from nacl_helper, stop sending this information.
-  const bool uses_nonsfi_mode =
-    process_type == switches::kNaClLoaderNonSfiProcess;
-  write_pickle.WriteBool(uses_nonsfi_mode);
+  write_pickle.WriteBool(nonsfi_mode_);
   write_pickle.WriteString(channel_id);
 
   char reply_buf[kNaClMaxIPCMessageLength];
@@ -375,3 +397,5 @@ bool NaClForkDelegate::GetTerminationStatus(pid_t pid, bool known_dead,
   *exit_code = remote_exit_code;
   return true;
 }
+
+}  // namespace nacl

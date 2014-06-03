@@ -55,11 +55,6 @@ class AutomationApiTest : public ExtensionApiTest {
   }
 
  public:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    ExtensionApiTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(::switches::kEnableAutomationAPI);
-  }
-
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     ExtensionApiTest::SetUpInProcessBrowserTestFixture();
   }
@@ -79,7 +74,7 @@ IN_PROC_BROWSER_TEST_F(AutomationApiTest, TestRendererAccessibilityEnabled) {
   ASSERT_FALSE(rwh->IsTreeOnlyAccessibilityModeForTesting());
 
   base::FilePath extension_path =
-      test_data_dir_.AppendASCII("automation/basic");
+      test_data_dir_.AppendASCII("automation/tests/basic");
   ExtensionTestMessageListener got_tree(kGotTree, false /* no reply */);
   LoadExtension(extension_path);
   ASSERT_TRUE(got_tree.WaitUntilSatisfied());
@@ -91,33 +86,48 @@ IN_PROC_BROWSER_TEST_F(AutomationApiTest, TestRendererAccessibilityEnabled) {
   ASSERT_TRUE(rwh->IsTreeOnlyAccessibilityModeForTesting());
 }
 
-// TODO(dtseng): See crbug.com/360297.
-#if defined(OS_MACOSX)
-#define MAYBE_SanityCheck DISABLED_SanityCheck
-#else
-#define MAYBE_SanityCheck SanityCheck
-#endif  // defined(OS_MACOSX)
-IN_PROC_BROWSER_TEST_F(AutomationApiTest, MAYBE_SanityCheck) {
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, SanityCheck) {
   StartEmbeddedTestServer();
   ASSERT_TRUE(RunExtensionSubtest("automation/tests/tabs", "sanity_check.html"))
       << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(AutomationApiTest, Events) {
-  LoadPage();
+  StartEmbeddedTestServer();
   ASSERT_TRUE(RunExtensionSubtest("automation/tests/tabs", "events.html"))
       << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(AutomationApiTest, Actions) {
-  LoadPage();
+  StartEmbeddedTestServer();
   ASSERT_TRUE(RunExtensionSubtest("automation/tests/tabs", "actions.html"))
       << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(AutomationApiTest, Location) {
-  LoadPage();
+  StartEmbeddedTestServer();
   ASSERT_TRUE(RunExtensionSubtest("automation/tests/tabs", "location.html"))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, TabsAutomationBooleanPermissions) {
+  StartEmbeddedTestServer();
+  ASSERT_TRUE(RunExtensionSubtest(
+          "automation/tests/tabs_automation_boolean", "permissions.html"))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, TabsAutomationBooleanActions) {
+  StartEmbeddedTestServer();
+  ASSERT_TRUE(RunExtensionSubtest(
+          "automation/tests/tabs_automation_boolean", "actions.html"))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, TabsAutomationHostsPermissions) {
+  StartEmbeddedTestServer();
+  ASSERT_TRUE(RunExtensionSubtest(
+          "automation/tests/tabs_automation_hosts", "permissions.html"))
       << message_;
 }
 
@@ -125,6 +135,21 @@ IN_PROC_BROWSER_TEST_F(AutomationApiTest, Location) {
 IN_PROC_BROWSER_TEST_F(AutomationApiTest, Desktop) {
   ASSERT_TRUE(RunExtensionSubtest("automation/tests/desktop", "desktop.html"))
       << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, DesktopNotRequested) {
+  ASSERT_TRUE(RunExtensionSubtest("automation/tests/tabs",
+                                  "desktop_not_requested.html")) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, DesktopActions) {
+  ASSERT_TRUE(RunExtensionSubtest("automation/tests/desktop", "actions.html"))
+      << message_;
+}
+#else
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, DesktopNotSupported) {
+  ASSERT_TRUE(RunExtensionSubtest("automation/tests/desktop",
+                                  "desktop_not_supported.html")) << message_;
 }
 #endif
 

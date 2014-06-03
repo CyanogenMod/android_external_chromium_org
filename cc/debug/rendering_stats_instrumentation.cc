@@ -18,6 +18,18 @@ RenderingStatsInstrumentation::RenderingStatsInstrumentation()
 
 RenderingStatsInstrumentation::~RenderingStatsInstrumentation() {}
 
+MainThreadRenderingStats
+RenderingStatsInstrumentation::main_thread_rendering_stats() {
+  base::AutoLock scoped_lock(lock_);
+  return main_stats_;
+}
+
+ImplThreadRenderingStats
+RenderingStatsInstrumentation::impl_thread_rendering_stats() {
+  base::AutoLock scoped_lock(lock_);
+  return impl_stats_;
+}
+
 RenderingStats RenderingStatsInstrumentation::GetRenderingStats() {
   base::AutoLock scoped_lock(lock_);
   RenderingStats rendering_stats;
@@ -29,11 +41,13 @@ RenderingStats RenderingStatsInstrumentation::GetRenderingStats() {
 }
 
 void RenderingStatsInstrumentation::AccumulateAndClearMainThreadStats() {
+  base::AutoLock scoped_lock(lock_);
   main_stats_accu_.Add(main_stats_);
   main_stats_ = MainThreadRenderingStats();
 }
 
 void RenderingStatsInstrumentation::AccumulateAndClearImplThreadStats() {
+  base::AutoLock scoped_lock(lock_);
   impl_stats_accu_.Add(impl_stats_);
   impl_stats_ = ImplThreadRenderingStats();
 }

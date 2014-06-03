@@ -86,7 +86,7 @@ PepperFileIOHost::PepperFileIOHost(BrowserPpapiHostImpl* host,
     : ResourceHost(host->GetPpapiHost(), instance, resource),
       browser_ppapi_host_(host),
       render_process_host_(NULL),
-      file_(base::kInvalidPlatformFileValue),
+      file_(BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)),
       open_flags_(0),
       file_system_type_(PP_FILESYSTEMTYPE_INVALID),
       max_written_offset_(0),
@@ -97,8 +97,6 @@ PepperFileIOHost::PepperFileIOHost(BrowserPpapiHostImpl* host,
           instance, &render_process_id_, &unused)) {
     render_process_id_ = -1;
   }
-  file_message_loop_ =
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE);
 }
 
 PepperFileIOHost::~PepperFileIOHost() {}
@@ -106,16 +104,17 @@ PepperFileIOHost::~PepperFileIOHost() {}
 int32_t PepperFileIOHost::OnResourceMessageReceived(
     const IPC::Message& msg,
     ppapi::host::HostMessageContext* context) {
-  IPC_BEGIN_MESSAGE_MAP(PepperFileIOHost, msg)
-  PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FileIO_Open, OnHostMsgOpen)
-  PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FileIO_Touch, OnHostMsgTouch)
-  PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FileIO_SetLength,
-                                    OnHostMsgSetLength)
-  PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_FileIO_Flush, OnHostMsgFlush)
-  PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FileIO_Close, OnHostMsgClose)
-  PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_FileIO_RequestOSFileHandle,
-                                      OnHostMsgRequestOSFileHandle)
-  IPC_END_MESSAGE_MAP()
+  PPAPI_BEGIN_MESSAGE_MAP(PepperFileIOHost, msg)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FileIO_Open, OnHostMsgOpen)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FileIO_Touch, OnHostMsgTouch)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FileIO_SetLength,
+                                      OnHostMsgSetLength)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_FileIO_Flush,
+                                        OnHostMsgFlush)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FileIO_Close, OnHostMsgClose)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_FileIO_RequestOSFileHandle,
+                                        OnHostMsgRequestOSFileHandle)
+  PPAPI_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
 }
 
@@ -238,10 +237,9 @@ void PepperFileIOHost::GotUIThreadStuffForInternalFileSystems(
 
 void PepperFileIOHost::DidOpenInternalFile(
     ppapi::host::ReplyMessageContext reply_context,
-    base::File::Error result,
-    base::PlatformFile file,
+    base::File file,
     const base::Closure& on_close_callback) {
-  if (result == base::File::FILE_OK) {
+  if (file.IsValid()) {
     on_close_callback_ = on_close_callback;
 
     if (FileOpenForWrite(open_flags_) && file_system_host_->ChecksQuota()) {
@@ -252,27 +250,29 @@ void PepperFileIOHost::DidOpenInternalFile(
           base::Bind(&PepperFileIOHost::DidOpenQuotaFile,
                      weak_factory_.GetWeakPtr(),
                      reply_context,
-                     file));
+                     base::Passed(&file)));
       return;
     }
   }
 
-  ExecutePlatformOpenFileCallback(
-      reply_context, result, base::PassPlatformFile(&file), true);
+  DCHECK(!file_.IsValid());
+  base::File::Error error =
+      file.IsValid() ? base::File::FILE_OK : file.error_details();
+  file_.SetFile(file.Pass());
+  OnOpenProxyCallback(reply_context, error);
 }
 
 void PepperFileIOHost::GotResolvedRenderProcessId(
     ppapi::host::ReplyMessageContext reply_context,
     base::FilePath path,
-    int platform_file_flags,
+    int file_flags,
     base::ProcessId resolved_render_process_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   resolved_render_process_id_ = resolved_render_process_id;
-  base::FileUtilProxy::CreateOrOpen(
-      file_message_loop_,
+  file_.CreateOrOpen(
       path,
-      platform_file_flags,
-      base::Bind(&PepperFileIOHost::ExecutePlatformOpenFileCallback,
+      file_flags,
+      base::Bind(&PepperFileIOHost::OnOpenProxyCallback,
                  weak_factory_.GetWeakPtr(),
                  reply_context));
 }
@@ -286,15 +286,14 @@ int32_t PepperFileIOHost::OnHostMsgTouch(
   if (rv != PP_OK)
     return rv;
 
-  if (!base::FileUtilProxy::Touch(
-          file_message_loop_,
-          file_,
+  if (!file_.SetTimes(
           PPTimeToTime(last_access_time),
           PPTimeToTime(last_modified_time),
           base::Bind(&PepperFileIOHost::ExecutePlatformGeneralCallback,
                      weak_factory_.GetWeakPtr(),
-                     context->MakeReplyMessageContext())))
+                     context->MakeReplyMessageContext()))) {
     return PP_ERROR_FAILED;
+  }
 
   state_manager_.SetPendingOperation(FileIOStateManager::OPERATION_EXCLUSIVE);
   return PP_OK_COMPLETIONPENDING;
@@ -313,14 +312,13 @@ int32_t PepperFileIOHost::OnHostMsgSetLength(
   // Quota checks are performed on the plugin side, in order to use the same
   // quota reservation and request system as Write.
 
-  if (!base::FileUtilProxy::Truncate(
-          file_message_loop_,
-          file_,
+  if (!file_.SetLength(
           length,
           base::Bind(&PepperFileIOHost::ExecutePlatformGeneralCallback,
                      weak_factory_.GetWeakPtr(),
-                     context->MakeReplyMessageContext())))
+                     context->MakeReplyMessageContext()))) {
     return PP_ERROR_FAILED;
+  }
 
   state_manager_.SetPendingOperation(FileIOStateManager::OPERATION_EXCLUSIVE);
   return PP_OK_COMPLETIONPENDING;
@@ -333,13 +331,12 @@ int32_t PepperFileIOHost::OnHostMsgFlush(
   if (rv != PP_OK)
     return rv;
 
-  if (!base::FileUtilProxy::Flush(
-          file_message_loop_,
-          file_,
+  if (!file_.Flush(
           base::Bind(&PepperFileIOHost::ExecutePlatformGeneralCallback,
                      weak_factory_.GetWeakPtr(),
-                     context->MakeReplyMessageContext())))
+                     context->MakeReplyMessageContext()))) {
     return PP_ERROR_FAILED;
+  }
 
   state_manager_.SetPendingOperation(FileIOStateManager::OPERATION_EXCLUSIVE);
   return PP_OK_COMPLETIONPENDING;
@@ -353,24 +350,23 @@ int32_t PepperFileIOHost::OnHostMsgClose(
     check_quota_ = false;
   }
 
-  if (file_ != base::kInvalidPlatformFileValue) {
-    base::FileUtilProxy::Close(file_message_loop_,
-                               file_,
-                               base::Bind(&PepperFileIOHost::DidCloseFile,
-                                          weak_factory_.GetWeakPtr()));
-    file_ = base::kInvalidPlatformFileValue;
+  if (file_.IsValid()) {
+    file_.Close(base::Bind(&PepperFileIOHost::DidCloseFile,
+                           weak_factory_.GetWeakPtr()));
   }
   return PP_OK;
 }
 
 void PepperFileIOHost::DidOpenQuotaFile(
     ppapi::host::ReplyMessageContext reply_context,
-    base::PlatformFile file,
+    base::File file,
     int64_t max_written_offset) {
+  DCHECK(!file_.IsValid());
+  DCHECK(file.IsValid());
   max_written_offset_ = max_written_offset;
+  file_.SetFile(file.Pass());
 
-  ExecutePlatformOpenFileCallback(
-      reply_context, base::File::FILE_OK, base::PassPlatformFile(&file), true);
+  OnOpenProxyCallback(reply_context, base::File::FILE_OK);
 }
 
 void PepperFileIOHost::DidCloseFile(base::File::Error /*error*/) {
@@ -424,17 +420,11 @@ void PepperFileIOHost::ExecutePlatformGeneralCallback(
   state_manager_.SetOperationFinished();
 }
 
-void PepperFileIOHost::ExecutePlatformOpenFileCallback(
+void PepperFileIOHost::OnOpenProxyCallback(
     ppapi::host::ReplyMessageContext reply_context,
-    base::File::Error error_code,
-    base::PassPlatformFile file,
-    bool unused_created) {
+    base::File::Error error_code) {
   int32_t pp_error = ppapi::FileErrorToPepperError(error_code);
-  DCHECK(file_ == base::kInvalidPlatformFileValue);
-  file_ = file.ReleaseValue();
-
-  if (file_ != base::kInvalidPlatformFileValue &&
-      !AddFileToReplyContext(open_flags_, &reply_context))
+  if (file_.IsValid() && !AddFileToReplyContext(open_flags_, &reply_context))
     pp_error = PP_ERROR_FAILED;
 
   PP_Resource quota_file_system = 0;
@@ -466,7 +456,8 @@ bool PepperFileIOHost::AddFileToReplyContext(
     plugin_process_id = resolved_render_process_id_;
 
   IPC::PlatformFileForTransit transit_file =
-      BrokerGetFileHandleForProcess(file_, plugin_process_id, false);
+      BrokerGetFileHandleForProcess(file_.GetPlatformFile(), plugin_process_id,
+                                    false);
   if (transit_file == IPC::InvalidPlatformFileForTransit())
     return false;
 

@@ -74,11 +74,12 @@ class BrowserActionView : public views::View {
   // Overridden from views::View:
   virtual void Layout() OVERRIDE;
   virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
  protected:
   // Overridden from views::View to paint the badge on top of children.
-  virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
+  virtual void PaintChildren(gfx::Canvas* canvas,
+                             const views::CullSet& cull_set) OVERRIDE;
 
  private:
   // The Browser object this view is associated with.

@@ -164,7 +164,9 @@ void ConvertFormList(GList* found,
     if (form) {
       if (lookup_form && form->signon_realm != lookup_form->signon_realm) {
         // This is not an exact match, we try PSL matching.
-        if (!(PSLMatchingHelper::IsPublicSuffixDomainMatch(
+        if (lookup_form->scheme != PasswordForm::SCHEME_HTML ||
+            form->scheme != PasswordForm::SCHEME_HTML ||
+            !(PSLMatchingHelper::IsPublicSuffixDomainMatch(
                 lookup_form->signon_realm, form->signon_realm))) {
           continue;
         }
@@ -532,7 +534,8 @@ bool NativeBackendGnome::RawAddLogin(const PasswordForm& form) {
   return true;
 }
 
-bool NativeBackendGnome::AddLogin(const PasswordForm& form) {
+password_manager::PasswordStoreChangeList NativeBackendGnome::AddLogin(
+    const PasswordForm& form) {
   // Based on LoginDatabase::AddLogin(), we search for an existing match based
   // on origin_url, username_element, username_value, password_element, submit
   // element, and signon_realm first, remove that, and then add the new entry.
@@ -544,28 +547,36 @@ bool NativeBackendGnome::AddLogin(const PasswordForm& form) {
                           base::Bind(&GKRMethod::AddLoginSearch,
                                      base::Unretained(&method),
                                      form, app_string_.c_str()));
-  PasswordFormList forms;
-  GnomeKeyringResult result = method.WaitResult(&forms);
+  ScopedVector<autofill::PasswordForm> forms;
+  GnomeKeyringResult result = method.WaitResult(&forms.get());
   if (result != GNOME_KEYRING_RESULT_OK &&
       result != GNOME_KEYRING_RESULT_NO_MATCH) {
     LOG(ERROR) << "Keyring find failed: "
                << gnome_keyring_result_to_message(result);
-    return false;
+    return password_manager::PasswordStoreChangeList();
   }
+  password_manager::PasswordStoreChangeList changes;
   if (forms.size() > 0) {
     if (forms.size() > 1) {
       LOG(WARNING) << "Adding login when there are " << forms.size()
                    << " matching logins already! Will replace only the first.";
     }
 
-    RemoveLogin(*forms[0]);
-    for (size_t i = 0; i < forms.size(); ++i)
-      delete forms[i];
+    if (RemoveLogin(*forms[0])) {
+      changes.push_back(password_manager::PasswordStoreChange(
+          password_manager::PasswordStoreChange::REMOVE, *forms[0]));
+    }
   }
-  return RawAddLogin(form);
+  if (RawAddLogin(form)) {
+    changes.push_back(password_manager::PasswordStoreChange(
+        password_manager::PasswordStoreChange::ADD, form));
+  }
+  return changes;
 }
 
-bool NativeBackendGnome::UpdateLogin(const PasswordForm& form) {
+bool NativeBackendGnome::UpdateLogin(
+    const PasswordForm& form,
+    password_manager::PasswordStoreChangeList* changes) {
   // Based on LoginDatabase::UpdateLogin(), we search for forms to update by
   // origin_url, username_element, username_value, password_element, and
   // signon_realm. We then compare the result to the updated form. If they
@@ -573,39 +584,38 @@ bool NativeBackendGnome::UpdateLogin(const PasswordForm& form) {
   // then add the new entry. We'd add the new one first, and then delete the
   // original, but then the delete might actually delete the newly-added entry!
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
+  DCHECK(changes);
+  changes->clear();
   GKRMethod method;
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
                           base::Bind(&GKRMethod::UpdateLoginSearch,
                                      base::Unretained(&method),
                                      form, app_string_.c_str()));
-  PasswordFormList forms;
-  GnomeKeyringResult result = method.WaitResult(&forms);
+  ScopedVector<autofill::PasswordForm> forms;
+  GnomeKeyringResult result = method.WaitResult(&forms.get());
   if (result != GNOME_KEYRING_RESULT_OK) {
     LOG(ERROR) << "Keyring find failed: "
                << gnome_keyring_result_to_message(result);
     return false;
   }
 
-  bool ok = true;
+  bool removed = false;
   for (size_t i = 0; i < forms.size(); ++i) {
-    if (forms[i]->action != form.action ||
-        forms[i]->password_value != form.password_value ||
-        forms[i]->ssl_valid != form.ssl_valid ||
-        forms[i]->preferred != form.preferred ||
-        forms[i]->times_used != form.times_used) {
+    if (*forms[i] != form) {
       RemoveLogin(*forms[i]);
-
-      forms[i]->action = form.action;
-      forms[i]->password_value = form.password_value;
-      forms[i]->ssl_valid = form.ssl_valid;
-      forms[i]->preferred = form.preferred;
-      forms[i]->times_used = form.times_used;
-      if (!RawAddLogin(*forms[i]))
-        ok = false;
+      removed = true;
     }
-    delete forms[i];
   }
-  return ok;
+  if (!removed)
+    return true;
+
+  if (RawAddLogin(form)) {
+    password_manager::PasswordStoreChange change(
+        password_manager::PasswordStoreChange::UPDATE, form);
+    changes->push_back(change);
+    return true;
+  }
+  return false;
 }
 
 bool NativeBackendGnome::RemoveLogin(const PasswordForm& form) {

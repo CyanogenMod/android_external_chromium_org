@@ -29,8 +29,10 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/fake_speech_recognition_manager.h"
+#include "content/public/test/test_renderer_host.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extensions_client.h"
+#include "media/base/media_switches.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
@@ -128,7 +130,7 @@ class WebContentsHiddenObserver : public content::WebContentsObserver {
                             const base::Closure& hidden_callback)
       : WebContentsObserver(web_contents),
         hidden_callback_(hidden_callback),
-        hidden_observed_(true) {
+        hidden_observed_(false) {
   }
 
   // WebContentsObserver.
@@ -233,11 +235,11 @@ class MockDownloadWebContentsDelegate : public content::WebContentsDelegate {
 
   virtual void CanDownload(
       content::RenderViewHost* render_view_host,
-      int request_id,
+      const GURL& url,
       const std::string& request_method,
       const base::Callback<void(bool)>& callback) OVERRIDE {
     orig_delegate_->CanDownload(
-        render_view_host, request_id, request_method,
+        render_view_host, url, request_method,
         base::Bind(&MockDownloadWebContentsDelegate::DownloadDecided,
                    base::Unretained(this)));
   }
@@ -407,19 +409,26 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
     observer7.Wait();
 
     content::Source<content::NavigationController> source1 = observer1.source();
-    EXPECT_TRUE(source1->GetWebContents()->GetRenderProcessHost()->IsGuest());
+    EXPECT_TRUE(source1->GetWebContents()->GetRenderProcessHost()->
+        IsIsolatedGuest());
     content::Source<content::NavigationController> source2 = observer2.source();
-    EXPECT_TRUE(source2->GetWebContents()->GetRenderProcessHost()->IsGuest());
+    EXPECT_TRUE(source2->GetWebContents()->GetRenderProcessHost()->
+        IsIsolatedGuest());
     content::Source<content::NavigationController> source3 = observer3.source();
-    EXPECT_TRUE(source3->GetWebContents()->GetRenderProcessHost()->IsGuest());
+    EXPECT_TRUE(source3->GetWebContents()->GetRenderProcessHost()->
+        IsIsolatedGuest());
     content::Source<content::NavigationController> source4 = observer4.source();
-    EXPECT_TRUE(source4->GetWebContents()->GetRenderProcessHost()->IsGuest());
+    EXPECT_TRUE(source4->GetWebContents()->GetRenderProcessHost()->
+        IsIsolatedGuest());
     content::Source<content::NavigationController> source5 = observer5.source();
-    EXPECT_TRUE(source5->GetWebContents()->GetRenderProcessHost()->IsGuest());
+    EXPECT_TRUE(source5->GetWebContents()->GetRenderProcessHost()->
+        IsIsolatedGuest());
     content::Source<content::NavigationController> source6 = observer6.source();
-    EXPECT_TRUE(source6->GetWebContents()->GetRenderProcessHost()->IsGuest());
+    EXPECT_TRUE(source6->GetWebContents()->GetRenderProcessHost()->
+        IsIsolatedGuest());
     content::Source<content::NavigationController> source7 = observer7.source();
-    EXPECT_TRUE(source7->GetWebContents()->GetRenderProcessHost()->IsGuest());
+    EXPECT_TRUE(source7->GetWebContents()->GetRenderProcessHost()->
+        IsIsolatedGuest());
 
     // Check that the first two tags use the same process and it is different
     // than the process used by the other two.
@@ -608,7 +617,8 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
 
     content::Source<content::NavigationController> source =
         guest_observer.source();
-    EXPECT_TRUE(source->GetWebContents()->GetRenderProcessHost()->IsGuest());
+    EXPECT_TRUE(source->GetWebContents()->GetRenderProcessHost()->
+        IsIsolatedGuest());
 
     bool satisfied = guest_loaded_listener.WaitUntilSatisfied();
     if (!satisfied)
@@ -674,6 +684,23 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
             base::StringPrintf("onAppCommand('%s');", message.c_str())));
   }
 
+  void SendMessageToGuestAndWait(const std::string& message,
+                                 const std::string& wait_message) {
+    scoped_ptr<ExtensionTestMessageListener> listener;
+    if (!wait_message.empty()) {
+      listener.reset(new ExtensionTestMessageListener(wait_message, false));
+    }
+
+    EXPECT_TRUE(
+        content::ExecuteScript(
+            GetGuestWebContents(),
+            base::StringPrintf("onAppCommand('%s');", message.c_str())));
+
+    if (listener) {
+      ASSERT_TRUE(listener->WaitUntilSatisfied());
+    }
+  }
+
   content::WebContents* GetGuestWebContents() {
     return guest_web_contents_;
   }
@@ -735,6 +762,34 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, EmbedderVisibilityChanged) {
   SendMessageToEmbedder("hide-embedder");
   if (!observer.hidden_observed())
     loop_runner->Run();
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, AcceptTouchEvents) {
+  LoadAppWithGuest("web_view/accept_touch_events");
+
+  content::RenderViewHost* embedder_rvh =
+      GetEmbedderWebContents()->GetRenderViewHost();
+
+  bool embedder_has_touch_handler =
+      content::RenderViewHostTester::HasTouchEventHandler(embedder_rvh);
+  EXPECT_FALSE(embedder_has_touch_handler);
+
+  SendMessageToGuestAndWait("install-touch-handler", "installed-touch-handler");
+
+  // Note that we need to wait for the installed/registered touch handler to
+  // appear in browser process before querying |embedder_rvh|.
+  // In practice, since we do a roundrtip from browser process to guest and
+  // back, this is sufficient.
+  embedder_has_touch_handler =
+      content::RenderViewHostTester::HasTouchEventHandler(embedder_rvh);
+  EXPECT_TRUE(embedder_has_touch_handler);
+
+  SendMessageToGuestAndWait("uninstall-touch-handler",
+                            "uninstalled-touch-handler");
+  // Same as the note above about waiting.
+  embedder_has_touch_handler =
+      content::RenderViewHostTester::HasTouchEventHandler(embedder_rvh);
+  EXPECT_FALSE(embedder_has_touch_handler);
 }
 
 // This test ensures JavaScript errors ("Cannot redefine property") do not
@@ -910,6 +965,10 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestNavOnSrcAttributeChange) {
   TestHelper("testNavOnSrcAttributeChange", "web_view/shim", NO_TEST_SERVER);
 }
 
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestNavigateAfterResize) {
+  TestHelper("testNavigateAfterResize", "web_view/shim", NO_TEST_SERVER);
+}
+
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestRemoveSrcAttribute) {
   TestHelper("testRemoveSrcAttribute", "web_view/shim", NO_TEST_SERVER);
 }
@@ -952,8 +1011,15 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestContentLoadEvent) {
 
 // http://crbug.com/326330
 IN_PROC_BROWSER_TEST_F(WebViewTest,
-                       DISABLED_Shim_TestDeclarativeWebRequestAPI) {
+                       Shim_TestDeclarativeWebRequestAPI) {
   TestHelper("testDeclarativeWebRequestAPI",
+             "web_view/shim",
+             NEEDS_TEST_SERVER);
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest,
+                       Shim_TestDeclarativeWebRequestAPISendMessage) {
+  TestHelper("testDeclarativeWebRequestAPISendMessage",
              "web_view/shim",
              NEEDS_TEST_SERVER);
 }
@@ -1015,12 +1081,24 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestLoadAbortIllegalJavaScriptURL) {
              NO_TEST_SERVER);
 }
 
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestLoadAbortInvalidNavigation) {
+  TestHelper("testLoadAbortInvalidNavigation", "web_view/shim", NO_TEST_SERVER);
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestLoadAbortNonWebSafeScheme) {
+  TestHelper("testLoadAbortNonWebSafeScheme", "web_view/shim", NO_TEST_SERVER);
+}
+
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestReload) {
   TestHelper("testReload", "web_view/shim", NEEDS_TEST_SERVER);
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestGetProcessId) {
   TestHelper("testGetProcessId", "web_view/shim", NEEDS_TEST_SERVER);
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestHiddenBeforeNavigation) {
+  TestHelper("testHiddenBeforeNavigation", "web_view/shim", NO_TEST_SERVER);
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestRemoveWebviewOnExit) {
@@ -1056,7 +1134,8 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestRemoveWebviewOnExit) {
 
   content::Source<content::NavigationController> source =
       guest_observer.source();
-  EXPECT_TRUE(source->GetWebContents()->GetRenderProcessHost()->IsGuest());
+  EXPECT_TRUE(source->GetWebContents()->GetRenderProcessHost()->
+      IsIsolatedGuest());
 
   ASSERT_TRUE(guest_loaded_listener.WaitUntilSatisfied());
 
@@ -1138,7 +1217,7 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_InterstitialTeardown) {
   // Wait for interstitial page to be shown in guest.
   content::WebContents* guest_web_contents = new_client.WaitForGuestCreated();
   SetBrowserClientForTesting(old_client);
-  ASSERT_TRUE(guest_web_contents->GetRenderProcessHost()->IsGuest());
+  ASSERT_TRUE(guest_web_contents->GetRenderProcessHost()->IsIsolatedGuest());
   WaitForInterstitial(guest_web_contents);
 
   // Now close the app while interstitial page being shown in guest.

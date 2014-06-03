@@ -80,10 +80,6 @@ void SyncRollbackManagerBase::Init(
   NotifyInitializationSuccess();
 }
 
-void SyncRollbackManagerBase::ThrowUnrecoverableError() {
-  NOTREACHED();
-}
-
 ModelTypeSet SyncRollbackManagerBase::InitialSyncEndedTypes() {
   return share_.directory->InitialSyncEndedTypes();
 }
@@ -330,6 +326,10 @@ void SyncRollbackManagerBase::InitBookmarkFolder(const std::string& folder) {
   sync_pb::EntitySpecifics specifics;
   AddDefaultFieldValue(BOOKMARKS, &specifics);
   entry.PutSpecifics(specifics);
+}
+
+ObserverList<SyncManager::Observer>* SyncRollbackManagerBase::GetObservers() {
+  return &observers_;
 }
 
 void SyncRollbackManagerBase::RegisterDirectoryTypeDebugInfoObserver(

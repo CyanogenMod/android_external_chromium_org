@@ -120,10 +120,17 @@ const color_utils::HSL kDefaultTintFrameIncognitoInactive = { -1, 0.3f, 0.6f };
 const color_utils::HSL kDefaultTintBackgroundTab = { -1, 0.5, 0.75 };
 
 // A list of images that we provide while in gtk mode.
+//
+// TODO(erg): We list both the normal and *_DESKTOP versions of some of these
+// images because in some contexts, we don't go through the
+// chrome::MapThemeImage interface. That should be fixed, but tracking that
+// down is Hard.
 const int kThemeImages[] = {
   IDR_THEME_TOOLBAR,
   IDR_THEME_TAB_BACKGROUND,
+  IDR_THEME_TAB_BACKGROUND_DESKTOP,
   IDR_THEME_TAB_BACKGROUND_INCOGNITO,
+  IDR_THEME_TAB_BACKGROUND_INCOGNITO_DESKTOP,
   IDR_FRAME,
   IDR_FRAME_INACTIVE,
   IDR_THEME_FRAME,
@@ -246,9 +253,12 @@ void PickButtonTintFromColors(const GdkColor& accent_gdk_color,
   // 125] will tint green instead of gray). Slight differences (+/-10 (4%) to
   // all color components) should be interpreted as this color being gray and
   // we should switch into a special grayscale mode.
-  int rb_diff = abs(SkColorGetR(accent_color) - SkColorGetB(accent_color));
-  int rg_diff = abs(SkColorGetR(accent_color) - SkColorGetG(accent_color));
-  int bg_diff = abs(SkColorGetB(accent_color) - SkColorGetG(accent_color));
+  int rb_diff = abs(static_cast<int>(SkColorGetR(accent_color)) -
+                    static_cast<int>(SkColorGetB(accent_color)));
+  int rg_diff = abs(static_cast<int>(SkColorGetR(accent_color)) -
+                    static_cast<int>(SkColorGetG(accent_color)));
+  int bg_diff = abs(static_cast<int>(SkColorGetB(accent_color)) -
+                    static_cast<int>(SkColorGetG(accent_color)));
   if (rb_diff < 10 && rg_diff < 10 && bg_diff < 10) {
     // Our accent is white/gray/black. Only the luminance of the accent color
     // matters.
@@ -549,7 +559,8 @@ scoped_ptr<views::Border> Gtk2UI::CreateNativeBorder(
   if (owning_button->GetNativeTheme() != NativeThemeGtk2::instance())
     return border.Pass();
 
-  return scoped_ptr<views::Border>(new Gtk2Border(this, owning_button));
+  return scoped_ptr<views::Border>(
+      new Gtk2Border(this, owning_button, border.Pass()));
 }
 
 void Gtk2UI::AddWindowButtonOrderObserver(
@@ -930,9 +941,6 @@ void Gtk2UI::LoadGtkValues() {
       GdkColorToSkColor(entry_style->base[GTK_STATE_ACTIVE]);
   inactive_selection_fg_color_ =
       GdkColorToSkColor(entry_style->text[GTK_STATE_ACTIVE]);
-
-  // Update the insets that we hand to Gtk2Border.
-  UpdateButtonInsets();
 }
 
 GdkColor Gtk2UI::BuildFrameColors(GtkStyle* frame_style) {
@@ -1035,12 +1043,15 @@ SkBitmap Gtk2UI::GenerateGtkThemeBitmap(int id) const {
       bitmap.setConfig(SkBitmap::kARGB_8888_Config,
                        kToolbarImageWidth, kToolbarImageHeight);
       bitmap.allocPixels();
-      bitmap.eraseRGB(color->red >> 8, color->green >> 8, color->blue >> 8);
+      bitmap.eraseARGB(0xff, color->red >> 8, color->green >> 8,
+                       color->blue >> 8);
       return bitmap;
     }
     case IDR_THEME_TAB_BACKGROUND:
+    case IDR_THEME_TAB_BACKGROUND_DESKTOP:
       return GenerateTabImage(IDR_THEME_FRAME);
     case IDR_THEME_TAB_BACKGROUND_INCOGNITO:
+    case IDR_THEME_TAB_BACKGROUND_INCOGNITO_DESKTOP:
       return GenerateTabImage(IDR_THEME_FRAME_INCOGNITO);
     case IDR_FRAME:
     case IDR_THEME_FRAME:
@@ -1344,34 +1355,6 @@ SkBitmap Gtk2UI::DrawGtkButtonBorder(int gtk_state,
   gtk_widget_destroy(window);
 
   return border;
-}
-
-gfx::Insets Gtk2UI::GetButtonInsets() const {
-  return button_insets_;
-}
-
-void Gtk2UI::UpdateButtonInsets() {
-  GtkWidget* window = gtk_offscreen_window_new();
-  GtkWidget* button = gtk_button_new();
-  gtk_container_add(GTK_CONTAINER(window), button);
-
-  GtkBorder* border = NULL;
-  gtk_widget_style_get(GTK_WIDGET(button),
-                       "default-border",
-                       &border,
-                       NULL);
-
-  gfx::Insets insets;
-  if (border) {
-    button_insets_ = gfx::Insets(border->top, border->left,
-                                 border->bottom, border->right);
-    gtk_border_free(border);
-  } else {
-    // Defined in gtkbutton.c:
-    button_insets_ = gfx::Insets(1, 1, 1, 1);
-  }
-
-  gtk_widget_destroy(window);
 }
 
 void Gtk2UI::ClearAllThemeData() {

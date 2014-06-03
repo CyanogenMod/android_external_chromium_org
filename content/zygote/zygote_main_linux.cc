@@ -5,25 +5,18 @@
 #include "content/zygote/zygote_main.h"
 
 #include <dlfcn.h>
-#include <errno.h>
-#include <fcntl.h>
 #include <pthread.h>
-#include <stdio.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
+#include <string.h>
 #include <sys/types.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 #include "base/basictypes.h"
 #include "base/bind.h"
-#include "base/callback.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/linux_util.h"
+#include "base/memory/scoped_vector.h"
 #include "base/native_library.h"
 #include "base/pickle.h"
-#include "base/posix/eintr_wrapper.h"
 #include "base/posix/unix_domain_socket_linux.h"
 #include "base/rand_util.h"
 #include "base/sys_info.h"
@@ -47,11 +40,7 @@
 #include "third_party/skia/include/ports/SkFontConfigInterface.h"
 
 #if defined(OS_LINUX)
-#include <sys/epoll.h>
 #include <sys/prctl.h>
-#include <sys/signal.h>
-#else
-#include <signal.h>
 #endif
 
 #if defined(ENABLE_WEBRTC)
@@ -180,17 +169,6 @@ static void InitLibcLocaltimeFunctions() {
     g_libc_localtime64_r = g_libc_localtime_r;
 }
 
-#if defined(MEMORY_SANITIZER)
-void msan_unpoison_string(const char *s) {
-  if (!s) return;
-  // Can't call strlen() on an uninitialized string. Instead, unpoison byte by
-  // byte until the string is over.
-  do {
-    __msan_unpoison(s, sizeof(*s));
-  } while(*(s++));
-}
-#endif
-
 // Define localtime_override() function with asm name "localtime", so that all
 // references to localtime() will resolve to this function. Notice that we need
 // to set visibility attribute to "default" to export the symbol, as it is set
@@ -212,7 +190,7 @@ struct tm* localtime_override(const time_t* timep) {
     struct tm* res = g_libc_localtime(timep);
 #if defined(MEMORY_SANITIZER)
     if (res) __msan_unpoison(res, sizeof(*res));
-    if (res->tm_zone) msan_unpoison_string(res->tm_zone);
+    if (res->tm_zone) __msan_unpoison_string(res->tm_zone);
 #endif
     return res;
   }
@@ -236,7 +214,7 @@ struct tm* localtime64_override(const time_t* timep) {
     struct tm* res = g_libc_localtime64(timep);
 #if defined(MEMORY_SANITIZER)
     if (res) __msan_unpoison(res, sizeof(*res));
-    if (res->tm_zone) msan_unpoison_string(res->tm_zone);
+    if (res->tm_zone) __msan_unpoison_string(res->tm_zone);
 #endif
     return res;
   }
@@ -257,7 +235,7 @@ struct tm* localtime_r_override(const time_t* timep, struct tm* result) {
     struct tm* res = g_libc_localtime_r(timep, result);
 #if defined(MEMORY_SANITIZER)
     if (res) __msan_unpoison(res, sizeof(*res));
-    if (res->tm_zone) msan_unpoison_string(res->tm_zone);
+    if (res->tm_zone) __msan_unpoison_string(res->tm_zone);
 #endif
     return res;
   }
@@ -278,7 +256,7 @@ struct tm* localtime64_r_override(const time_t* timep, struct tm* result) {
     struct tm* res = g_libc_localtime64_r(timep, result);
 #if defined(MEMORY_SANITIZER)
     if (res) __msan_unpoison(res, sizeof(*res));
-    if (res->tm_zone) msan_unpoison_string(res->tm_zone);
+    if (res->tm_zone) __msan_unpoison_string(res->tm_zone);
 #endif
     return res;
   }
@@ -442,7 +420,7 @@ static void EnterLayerOneSandbox(LinuxSandbox* linux_sandbox,
 }
 
 bool ZygoteMain(const MainFunctionParams& params,
-                ZygoteForkDelegate* forkdelegate) {
+                ScopedVector<ZygoteForkDelegate> fork_delegates) {
   g_am_zygote_or_renderer = true;
   sandbox::InitLibcUrandomOverrides();
 
@@ -462,11 +440,12 @@ bool ZygoteMain(const MainFunctionParams& params,
                                     std::vector<int>()));
   }
 
-  if (forkdelegate != NULL) {
-    VLOG(1) << "ZygoteMain: initializing fork delegate";
-    forkdelegate->Init(GetSandboxFD(), must_enable_setuid_sandbox);
-  } else {
-    VLOG(1) << "ZygoteMain: fork delegate is NULL";
+  VLOG(1) << "ZygoteMain: initializing " << fork_delegates.size()
+          << " fork delegates";
+  for (ScopedVector<ZygoteForkDelegate>::iterator i = fork_delegates.begin();
+       i != fork_delegates.end();
+       ++i) {
+    (*i)->Init(GetSandboxFD(), must_enable_setuid_sandbox);
   }
 
   // Turn on the first layer of the sandbox if the configuration warrants it.
@@ -476,7 +455,7 @@ bool ZygoteMain(const MainFunctionParams& params,
   bool setuid_sandbox_engaged = sandbox_flags & kSandboxLinuxSUID;
   CHECK_EQ(must_enable_setuid_sandbox, setuid_sandbox_engaged);
 
-  Zygote zygote(sandbox_flags, forkdelegate);
+  Zygote zygote(sandbox_flags, fork_delegates.Pass());
   // This function call can return multiple times, once per fork().
   return zygote.ProcessRequests();
 }

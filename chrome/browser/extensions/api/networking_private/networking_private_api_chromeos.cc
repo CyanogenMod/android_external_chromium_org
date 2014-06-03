@@ -7,30 +7,31 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
-#include "base/command_line.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part_chromeos.h"
 #include "chrome/browser/chromeos/net/network_portal_detector.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
-#include "chrome/common/chrome_switches.h"
+#include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/common/extensions/api/networking_private.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/shill_manager_client.h"
+#include "chromeos/network/favorite_state.h"
 #include "chromeos/network/managed_network_configuration_handler.h"
 #include "chromeos/network/network_connection_handler.h"
 #include "chromeos/network/network_device_handler.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
+#include "chromeos/network/network_util.h"
 #include "chromeos/network/onc/onc_signature.h"
 #include "chromeos/network/onc/onc_translator.h"
 #include "chromeos/network/onc/onc_utils.h"
-#include "chromeos/network/shill_property_util.h"
 #include "components/onc/onc_constants.h"
 #include "extensions/browser/extension_function_registry.h"
 
 namespace api = extensions::api::networking_private;
 
 using chromeos::DBusThreadManager;
+using chromeos::FavoriteState;
 using chromeos::ManagedNetworkConfigurationHandler;
 using chromeos::NetworkHandler;
 using chromeos::NetworkPortalDetector;
@@ -40,6 +41,8 @@ using chromeos::NetworkTypePattern;
 using chromeos::ShillManagerClient;
 
 namespace {
+
+const int kDefaultNetworkListLimit = 1000;
 
 // Helper function that converts between the two types of verification
 // properties. They should always have the same fields, but we do this here to
@@ -62,13 +65,22 @@ ShillManagerClient::VerificationProperties ConvertVerificationProperties(
 }
 
 std::string GetUserIdHash(Profile* profile) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kMultiProfiles)) {
-    return g_browser_process->platform_part()->
-        profile_helper()->GetUserIdHashFromProfile(profile);
-  } else {
-    return g_browser_process->platform_part()->
-        profile_helper()->active_user_id_hash();
+  return g_browser_process->platform_part()->
+      profile_helper()->GetUserIdHashFromProfile(profile);
+}
+
+bool GetServicePathFromGuid(const std::string& guid,
+                            std::string* service_path,
+                            std::string* error) {
+  const FavoriteState* network =
+      NetworkHandler::Get()->network_state_handler()->GetFavoriteStateFromGuid(
+          guid);
+  if (!network) {
+    *error = "Error.InvalidNetworkGuid";
+    return false;
   }
+  *service_path = network->path();
+  return true;
 }
 
 }  // namespace
@@ -84,9 +96,12 @@ bool NetworkingPrivateGetPropertiesFunction::RunAsync() {
   scoped_ptr<api::GetProperties::Params> params =
       api::GetProperties::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
+  std::string service_path;
+  if (!GetServicePathFromGuid(params->network_guid, &service_path, &error_))
+    return false;
 
   NetworkHandler::Get()->managed_network_configuration_handler()->GetProperties(
-      params->network_guid,  // service path
+      service_path,
       base::Bind(&NetworkingPrivateGetPropertiesFunction::GetPropertiesSuccess,
                  this),
       base::Bind(&NetworkingPrivateGetPropertiesFunction::GetPropertiesFailed,
@@ -97,10 +112,7 @@ bool NetworkingPrivateGetPropertiesFunction::RunAsync() {
 void NetworkingPrivateGetPropertiesFunction::GetPropertiesSuccess(
     const std::string& service_path,
     const base::DictionaryValue& dictionary) {
-  base::DictionaryValue* network_properties = dictionary.DeepCopy();
-  network_properties->SetStringWithoutPathExpansion(onc::network_config::kGUID,
-                                                    service_path);
-  SetResult(network_properties);
+  SetResult(dictionary.DeepCopy());
   SendResponse(true);
 }
 
@@ -122,13 +134,16 @@ bool NetworkingPrivateGetManagedPropertiesFunction::RunAsync() {
   scoped_ptr<api::GetManagedProperties::Params> params =
       api::GetManagedProperties::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
+  std::string service_path;
+  if (!GetServicePathFromGuid(params->network_guid, &service_path, &error_))
+    return false;
 
   std::string user_id_hash;
   GetUserIdHash(GetProfile());
   NetworkHandler::Get()->managed_network_configuration_handler()->
       GetManagedProperties(
           user_id_hash,
-          params->network_guid,  // service path
+          service_path,
           base::Bind(&NetworkingPrivateGetManagedPropertiesFunction::Success,
                      this),
           base::Bind(&NetworkingPrivateGetManagedPropertiesFunction::Failure,
@@ -139,10 +154,7 @@ bool NetworkingPrivateGetManagedPropertiesFunction::RunAsync() {
 void NetworkingPrivateGetManagedPropertiesFunction::Success(
     const std::string& service_path,
     const base::DictionaryValue& dictionary) {
-  base::DictionaryValue* network_properties = dictionary.DeepCopy();
-  network_properties->SetStringWithoutPathExpansion(onc::network_config::kGUID,
-                                                    service_path);
-  SetResult(network_properties);
+  SetResult(dictionary.DeepCopy());
   SendResponse(true);
 }
 
@@ -164,22 +176,24 @@ bool NetworkingPrivateGetStateFunction::RunAsync() {
   scoped_ptr<api::GetState::Params> params =
       api::GetState::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
-  // The |network_guid| parameter is storing the service path.
-  std::string service_path = params->network_guid;
+  std::string service_path;
+  if (!GetServicePathFromGuid(params->network_guid, &service_path, &error_))
+    return false;
 
-  const NetworkState* state = NetworkHandler::Get()->network_state_handler()->
-      GetNetworkState(service_path);
-  if (!state) {
-    error_ = "Error.InvalidParameter";
+  const FavoriteState* favorite_state =
+      NetworkHandler::Get()
+          ->network_state_handler()
+          ->GetFavoriteStateFromServicePath(service_path,
+                                            false /* configured_only */);
+  if (!favorite_state) {
+    error_ = "Error.NetworkUnavailable";
     return false;
   }
 
-  scoped_ptr<base::DictionaryValue> result_dict(new base::DictionaryValue);
-  state->GetStateProperties(result_dict.get());
-  scoped_ptr<base::DictionaryValue> onc_network_part =
-      chromeos::onc::TranslateShillServiceToONCPart(*result_dict,
-          &chromeos::onc::kNetworkWithStateSignature);
-  SetResult(onc_network_part.release());
+  scoped_ptr<base::DictionaryValue> network_properties =
+      chromeos::network_util::TranslateFavoriteStateToONC(favorite_state);
+
+  SetResult(network_properties.release());
   SendResponse(true);
 
   return true;
@@ -196,12 +210,15 @@ bool NetworkingPrivateSetPropertiesFunction::RunAsync() {
   scoped_ptr<api::SetProperties::Params> params =
       api::SetProperties::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
+  std::string service_path;
+  if (!GetServicePathFromGuid(params->network_guid, &service_path, &error_))
+    return false;
 
   scoped_ptr<base::DictionaryValue> properties_dict(
       params->properties.ToValue());
 
   NetworkHandler::Get()->managed_network_configuration_handler()->SetProperties(
-      params->network_guid,  // service path
+      service_path,
       *properties_dict,
       base::Bind(&NetworkingPrivateSetPropertiesFunction::ResultCallback,
                  this),
@@ -265,6 +282,33 @@ void NetworkingPrivateCreateNetworkFunction::ResultCallback(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// NetworkingPrivateGetNetworksFunction
+
+NetworkingPrivateGetNetworksFunction::
+~NetworkingPrivateGetNetworksFunction() {
+}
+
+bool NetworkingPrivateGetNetworksFunction::RunAsync() {
+  scoped_ptr<api::GetNetworks::Params> params =
+      api::GetNetworks::Params::Create(*args_);
+  EXTENSION_FUNCTION_VALIDATE(params);
+  NetworkTypePattern pattern = chromeos::onc::NetworkTypePatternFromOncType(
+      api::ToString(params->filter.network_type));
+  const bool configured_only =
+      params->filter.configured ? *params->filter.configured : false;
+  const bool visible_only =
+      params->filter.visible ? *params->filter.visible : false;
+  const int limit =
+      params->filter.limit ? *params->filter.limit : kDefaultNetworkListLimit;
+  scoped_ptr<base::ListValue> network_properties_list =
+      chromeos::network_util::TranslateNetworkListToONC(
+          pattern, configured_only, visible_only, limit, false /* debugging */);
+  SetResult(network_properties_list.release());
+  SendResponse(true);
+  return true;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // NetworkingPrivateGetVisibleNetworksFunction
 
 NetworkingPrivateGetVisibleNetworksFunction::
@@ -275,30 +319,15 @@ bool NetworkingPrivateGetVisibleNetworksFunction::RunAsync() {
   scoped_ptr<api::GetVisibleNetworks::Params> params =
       api::GetVisibleNetworks::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
-  NetworkTypePattern type = chromeos::onc::NetworkTypePatternFromOncType(
-      api::GetVisibleNetworks::Params::ToString(params->type));
-
-  NetworkStateHandler::NetworkStateList network_states;
-  NetworkHandler::Get()->network_state_handler()->GetNetworkListByType(
-      type, &network_states);
-
-  base::ListValue* network_properties_list = new base::ListValue;
-  for (NetworkStateHandler::NetworkStateList::iterator it =
-           network_states.begin();
-       it != network_states.end(); ++it) {
-    base::DictionaryValue shill_dictionary;
-    (*it)->GetStateProperties(&shill_dictionary);
-
-    scoped_ptr<base::DictionaryValue> onc_network_part =
-        chromeos::onc::TranslateShillServiceToONCPart(
-            shill_dictionary, &chromeos::onc::kNetworkWithStateSignature);
-    // TODO(stevenjb): Fix this to always use GUID: crbug.com/284827
-    onc_network_part->SetStringWithoutPathExpansion(
-        onc::network_config::kGUID, (*it)->path());
-    network_properties_list->Append(onc_network_part.release());
-  }
-
-  SetResult(network_properties_list);
+  NetworkTypePattern pattern = chromeos::onc::NetworkTypePatternFromOncType(
+      api::ToString(params->network_type));
+  const bool configured_only = false;
+  const bool visible_only = true;
+  scoped_ptr<base::ListValue> network_properties_list =
+      chromeos::network_util::TranslateNetworkListToONC(
+          pattern, configured_only, visible_only, kDefaultNetworkListLimit,
+          false /* debugging */);
+  SetResult(network_properties_list.release());
   SendResponse(true);
   return true;
 }
@@ -317,11 +346,13 @@ bool NetworkingPrivateGetEnabledNetworkTypesFunction::RunSync() {
   base::ListValue* network_list = new base::ListValue;
 
   if (state_handler->IsTechnologyEnabled(NetworkTypePattern::Ethernet()))
-    network_list->AppendString("Ethernet");
+    network_list->AppendString(api::ToString(api::NETWORK_TYPE_ETHERNET));
   if (state_handler->IsTechnologyEnabled(NetworkTypePattern::WiFi()))
-    network_list->AppendString("WiFi");
+    network_list->AppendString(api::ToString(api::NETWORK_TYPE_WIFI));
+  if (state_handler->IsTechnologyEnabled(NetworkTypePattern::Wimax()))
+    network_list->AppendString(api::ToString(api::NETWORK_TYPE_WIMAX));
   if (state_handler->IsTechnologyEnabled(NetworkTypePattern::Cellular()))
-    network_list->AppendString("Cellular");
+    network_list->AppendString(api::ToString(api::NETWORK_TYPE_CELLULAR));
 
   SetResult(network_list);
   return true;
@@ -338,31 +369,13 @@ bool NetworkingPrivateEnableNetworkTypeFunction::RunSync() {
   scoped_ptr<api::EnableNetworkType::Params> params =
       api::EnableNetworkType::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
-  NetworkStateHandler* state_handler =
-      NetworkHandler::Get()->network_state_handler();
 
-  switch (params->network_type) {
-    case api::NETWORK_TYPE_ETHERNET:
-      state_handler->SetTechnologyEnabled(
-          NetworkTypePattern::Ethernet(), true,
-          chromeos::network_handler::ErrorCallback());
-      break;
+  NetworkTypePattern pattern = chromeos::onc::NetworkTypePatternFromOncType(
+      api::ToString(params->network_type));
 
-    case api::NETWORK_TYPE_WIFI:
-      state_handler->SetTechnologyEnabled(
-          NetworkTypePattern::WiFi(), true,
-          chromeos::network_handler::ErrorCallback());
-      break;
+  NetworkHandler::Get()->network_state_handler()->SetTechnologyEnabled(
+      pattern, true, chromeos::network_handler::ErrorCallback());
 
-    case api::NETWORK_TYPE_CELLULAR:
-      state_handler->SetTechnologyEnabled(
-          NetworkTypePattern::Cellular(), true,
-          chromeos::network_handler::ErrorCallback());
-      break;
-
-    default:
-      break;
-  }
   return true;
 }
 
@@ -376,31 +389,12 @@ NetworkingPrivateDisableNetworkTypeFunction::
 bool NetworkingPrivateDisableNetworkTypeFunction::RunSync() {
   scoped_ptr<api::DisableNetworkType::Params> params =
       api::DisableNetworkType::Params::Create(*args_);
-  NetworkStateHandler* state_handler =
-      NetworkHandler::Get()->network_state_handler();
 
-  switch (params->network_type) {
-    case api::NETWORK_TYPE_ETHERNET:
-      state_handler->SetTechnologyEnabled(
-          NetworkTypePattern::Ethernet(), false,
-          chromeos::network_handler::ErrorCallback());
-      break;
+  NetworkTypePattern pattern = chromeos::onc::NetworkTypePatternFromOncType(
+      api::ToString(params->network_type));
 
-    case api::NETWORK_TYPE_WIFI:
-      state_handler->SetTechnologyEnabled(
-          NetworkTypePattern::WiFi(), false,
-          chromeos::network_handler::ErrorCallback());
-      break;
-
-    case api::NETWORK_TYPE_CELLULAR:
-      state_handler->SetTechnologyEnabled(
-          NetworkTypePattern::Cellular(), false,
-          chromeos::network_handler::ErrorCallback());
-      break;
-
-    default:
-      break;
-  }
+  NetworkHandler::Get()->network_state_handler()->SetTechnologyEnabled(
+      pattern, false, chromeos::network_handler::ErrorCallback());
 
   return true;
 }
@@ -439,10 +433,13 @@ bool NetworkingPrivateStartConnectFunction::RunAsync() {
   scoped_ptr<api::StartConnect::Params> params =
       api::StartConnect::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
+  std::string service_path;
+  if (!GetServicePathFromGuid(params->network_guid, &service_path, &error_))
+    return false;
 
   const bool check_error_state = false;
   NetworkHandler::Get()->network_connection_handler()->ConnectToNetwork(
-      params->network_guid,  // service path
+      service_path,
       base::Bind(
           &NetworkingPrivateStartConnectFunction::ConnectionStartSuccess,
           this),
@@ -475,9 +472,12 @@ bool NetworkingPrivateStartDisconnectFunction::RunAsync() {
   scoped_ptr<api::StartDisconnect::Params> params =
       api::StartDisconnect::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
+  std::string service_path;
+  if (!GetServicePathFromGuid(params->network_guid, &service_path, &error_))
+    return false;
 
   NetworkHandler::Get()->network_connection_handler()->DisconnectNetwork(
-      params->network_guid,  // service path
+      service_path,
       base::Bind(
           &NetworkingPrivateStartDisconnectFunction::DisconnectionStartSuccess,
           this),
@@ -536,15 +536,18 @@ bool NetworkingPrivateVerifyAndEncryptCredentialsFunction::RunAsync() {
   scoped_ptr<api::VerifyAndEncryptCredentials::Params> params =
       api::VerifyAndEncryptCredentials::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
-  ShillManagerClient* shill_manager_client =
-      DBusThreadManager::Get()->GetShillManagerClient();
+  std::string service_path;
+  if (!GetServicePathFromGuid(params->network_guid, &service_path, &error_))
+    return false;
 
   ShillManagerClient::VerificationProperties verification_properties =
       ConvertVerificationProperties(params->properties);
 
+  ShillManagerClient* shill_manager_client =
+      DBusThreadManager::Get()->GetShillManagerClient();
   shill_manager_client->VerifyAndEncryptCredentials(
       verification_properties,
-      params->guid,
+      service_path,
       base::Bind(
           &NetworkingPrivateVerifyAndEncryptCredentialsFunction::ResultCallback,
           this),
@@ -694,6 +697,9 @@ bool NetworkingPrivateGetCaptivePortalStatusFunction::RunAsync() {
   scoped_ptr<api::GetCaptivePortalStatus::Params> params =
       api::GetCaptivePortalStatus::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
+  std::string service_path;
+  if (!GetServicePathFromGuid(params->network_guid, &service_path, &error_))
+    return false;
 
   NetworkPortalDetector* detector = NetworkPortalDetector::Get();
   if (!detector) {
@@ -702,7 +708,7 @@ bool NetworkingPrivateGetCaptivePortalStatusFunction::RunAsync() {
   }
 
   NetworkPortalDetector::CaptivePortalState state =
-      detector->GetCaptivePortalState(params->network_path);
+      detector->GetCaptivePortalState(service_path);
 
   SetResult(new base::StringValue(
       NetworkPortalDetector::CaptivePortalStatusString(state.status)));

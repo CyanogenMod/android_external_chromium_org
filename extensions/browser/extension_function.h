@@ -115,7 +115,7 @@ class ExtensionFunction
 
   // The result of a function call.
   //
-  // Use NoArguments(), SingleArgument(), MultipleArguments(), or Error()
+  // Use NoArguments(), OneArgument(), ArgumentList(), or Error()
   // rather than this class directly.
   class ResponseValueObject {
    public:
@@ -139,6 +139,17 @@ class ExtensionFunction
 
   // Runs the function and returns the action to take when the caller is ready
   // to respond.
+  //
+  // Typical return values might be:
+  //   * RespondNow(NoArguments())
+  //   * RespondNow(OneArgument(42))
+  //   * RespondNow(ArgumentList(my_result.ToValue()))
+  //   * RespondNow(Error("Warp core breach"))
+  //   * RespondNow(Error("Warp core breach on *", GetURL()))
+  //   * RespondLater(), then later,
+  //     * Respond(NoArguments())
+  //     * ... etc.
+  //
   //
   // Callers must call Execute() on the return ResponseAction at some point,
   // exactly once.
@@ -238,12 +249,34 @@ class ExtensionFunction
   //
   // Success, no arguments to pass to caller
   ResponseValue NoArguments();
-  // Success, a single argument |result| to pass to caller. TAKES OWNERSHIP.
-  ResponseValue SingleArgument(base::Value* result);
-  // Success, a list of arguments |results| to pass to caller. TAKES OWNERSHIP.
-  ResponseValue MultipleArguments(base::ListValue* results);
+  // Success, a single argument |arg| to pass to caller. TAKES OWNERSHIP -- a
+  // raw pointer for convenience, since callers usually construct the argument
+  // to this by hand.
+  ResponseValue OneArgument(base::Value* arg);
+  // Success, two arguments |arg1| and |arg2| to pass to caller. TAKES
+  // OWNERSHIP -- raw pointers for convenience, since callers usually construct
+  // the argument to this by hand. Note that use of this function may imply you
+  // should be using the generated Result struct and ArgumentList.
+  ResponseValue TwoArguments(base::Value* arg1, base::Value* arg2);
+  // Success, a list of arguments |results| to pass to caller. TAKES OWNERSHIP
+  // --
+  // a scoped_ptr<> for convenience, since callers usually get this from the
+  // result of a ToValue() call on the generated Result struct.
+  ResponseValue ArgumentList(scoped_ptr<base::ListValue> results);
   // Error. chrome.runtime.lastError.message will be set to |error|.
   ResponseValue Error(const std::string& error);
+  // Error with formatting. Args are processed using
+  // ErrorUtils::FormatErrorMessage, that is, each occurence of * is replaced
+  // by the corresponding |s*|:
+  // Error("Error in *: *", "foo", "bar") <--> // Error("Error in foo: bar").
+  ResponseValue Error(const std::string& format, const std::string& s1);
+  ResponseValue Error(const std::string& format,
+                      const std::string& s1,
+                      const std::string& s2);
+  ResponseValue Error(const std::string& format,
+                      const std::string& s1,
+                      const std::string& s2,
+                      const std::string& s3);
   // Bad message. A ResponseValue equivalent to EXTENSION_FUNCTION_VALIDATE().
   ResponseValue BadMessage();
 

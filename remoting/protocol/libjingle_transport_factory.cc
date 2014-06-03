@@ -4,15 +4,12 @@
 
 #include "remoting/protocol/libjingle_transport_factory.h"
 
-#include "base/base64.h"
 #include "base/callback.h"
-#include "base/rand_util.h"
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/timer/timer.h"
 #include "jingle/glue/channel_socket_adapter.h"
 #include "jingle/glue/pseudotcp_adapter.h"
-#include "jingle/glue/thread_wrapper.h"
 #include "jingle/glue/utils.h"
 #include "net/base/net_errors.h"
 #include "remoting/base/constants.h"
@@ -45,20 +42,6 @@ const int kReconnectDelaySeconds = 15;
 
 // Get fresh STUN/Relay configuration every hour.
 const int kJingleInfoUpdatePeriodSeconds = 3600;
-
-// TODO(sergeyu): Remove this function and use talk_base::CreateRandomString()
-// when it's fixed to work reliably. See crbug.com/364689 .
-std::string CreateRandomString(int length) {
-  // Number of random bytes to generate base64 string at least |length|
-  // characters long.
-  int raw_length = (length + 1) * 3 / 4;
-  std::string base64;
-  base::Base64Encode(base::RandBytesAsString(raw_length), &base64);
-  DCHECK(static_cast<int>(base64.size()) == length ||
-         static_cast<int>(base64.size()) == length + 1);
-  base64.resize(length);
-  return base64;
-}
 
 class LibjingleStreamTransport
     : public StreamTransport,
@@ -142,8 +125,9 @@ LibjingleStreamTransport::LibjingleStreamTransport(
     : port_allocator_(port_allocator),
       network_settings_(network_settings),
       event_handler_(NULL),
-      ice_username_fragment_(CreateRandomString(cricket::ICE_UFRAG_LENGTH)),
-      ice_password_(CreateRandomString(cricket::ICE_PWD_LENGTH)),
+      ice_username_fragment_(
+          talk_base::CreateRandomString(cricket::ICE_UFRAG_LENGTH)),
+      ice_password_(talk_base::CreateRandomString(cricket::ICE_PWD_LENGTH)),
       can_start_(false),
       channel_was_writable_(false),
       connect_attempts_left_(kMaxReconnectAttempts) {
@@ -386,7 +370,7 @@ void LibjingleStreamTransport::TryReconnect() {
   --connect_attempts_left_;
 
   // Restart ICE by resetting ICE password.
-  ice_password_ = CreateRandomString(cricket::ICE_PWD_LENGTH);
+  ice_password_ = talk_base::CreateRandomString(cricket::ICE_PWD_LENGTH);
   channel_->SetIceCredentials(ice_username_fragment_, ice_password_);
 }
 
@@ -424,7 +408,6 @@ LibjingleTransportFactory::LibjingleTransportFactory(
     : signal_strategy_(signal_strategy),
       port_allocator_(port_allocator.Pass()),
       network_settings_(network_settings) {
-  jingle_glue::JingleThreadWrapper::EnsureForCurrentMessageLoop();
 }
 
 LibjingleTransportFactory::~LibjingleTransportFactory() {

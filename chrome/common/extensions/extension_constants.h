@@ -41,8 +41,13 @@ GURL GetWebstoreJsonSearchUrl(const std::string& query, const std::string& hl);
 // Returns the URL of the web store search results page for |query|.
 GURL GetWebstoreSearchPageUrl(const std::string& query);
 
-// Return the update URL used by gallery/webstore extensions/apps.
+// Return the update URL used by gallery/webstore extensions/apps. This may
+// have been overridden by a command line flag for testing purposes.
 GURL GetWebstoreUpdateUrl();
+
+// This returns the compile-time constant webstore update url. Usually you
+// should prefer using GetWebstoreUpdateUrl.
+GURL GetDefaultWebstoreUpdateUrl();
 
 // Returns whether the URL is the webstore update URL (just considering host
 // and path, not scheme, query, etc.)
@@ -240,6 +245,10 @@ extern const char kChromeVoxExtensionId[];
 // Path to preinstalled ChromeVox screen reader extension (relative to
 // |chrome::DIR_RESOURCES|).
 extern const char kChromeVoxExtensionPath[];
+// Name of ChromeVox manifest file.
+extern const char kChromeVoxManifestFilename[];
+// Name of ChromeVox guest manifest file.
+extern const char kChromeVoxGuestManifestFilename[];
 // Extension id, path (relative to |chrome::DIR_RESOURCES|) and IME engine
 // id for the builtin-in Braille IME extension.
 extern const char kBrailleImeExtensionId[];
@@ -281,6 +290,10 @@ extern const char kAppStateReadyToRun[];
 
 // The path part of the file system url used for media file systems.
 extern const char kMediaFileSystemPathPart[];
+
+// The key used for signing some pieces of data from the webstore.
+extern const uint8 kWebstoreSignaturesPublicKey[];
+extern const int kWebstoreSignaturesPublicKeySize;
 
 }  // namespace extension_misc
 

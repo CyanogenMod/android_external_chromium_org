@@ -13,7 +13,6 @@
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_observer.h"
 #include "ui/views/window/dialog_client_view.h"
-#include "ui/wm/core/shadow_types.h"
 
 namespace views {
 
@@ -34,13 +33,10 @@ Widget* DialogDelegate::CreateDialogWidget(DialogDelegate* dialog,
     params.opacity = Widget::InitParams::TRANSLUCENT_WINDOW;
     params.remove_standard_frame = true;
   }
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
-  // Dialogs on Linux always have custom frames.
-  params.remove_standard_frame = true;
-#endif
   params.context = context;
   params.parent = parent;
-  params.top_level = true;
+  // TODO(msw): Add a matching shadow type and remove the bubble frame border?
+  params.shadow_type = views::Widget::InitParams::SHADOW_TYPE_NONE;
   widget->Init(params);
   return widget;
 }
@@ -166,8 +162,6 @@ NonClientFrameView* DialogDelegate::CreateDialogFrameView(Widget* widget) {
     if (titlebar_view)
       frame->SetTitlebarExtraView(titlebar_view);
   }
-  // TODO(msw): Add a matching shadow type and remove the bubble frame border?
-  wm::SetShadowType(widget->GetNativeWindow(), wm::SHADOW_TYPE_NONE);
   return frame;
 }
 

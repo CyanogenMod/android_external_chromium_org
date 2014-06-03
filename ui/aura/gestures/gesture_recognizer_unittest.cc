@@ -262,7 +262,7 @@ class GestureEventConsumeDelegate : public TestWindowDelegate {
       case ui::ET_GESTURE_SHOW_PRESS:
         show_press_ = true;
         break;
-      case ui::ET_GESTURE_MULTIFINGER_SWIPE:
+      case ui::ET_GESTURE_SWIPE:
         swipe_left_ = gesture->details().swipe_left();
         swipe_right_ = gesture->details().swipe_right();
         swipe_up_ = gesture->details().swipe_up();
@@ -681,12 +681,17 @@ class GestureRecognizerTest : public AuraTestBase,
 
   virtual void SetUp() OVERRIDE {
     // TODO(tdresser): Once unified GR has landed, only run these tests once.
-    if (UsingUnifiedGR()) {
-      CommandLine::ForCurrentProcess()->AppendSwitch(
-          switches::kUseUnifiedGestureDetector);
-    }
+    CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+        switches::kUnifiedGestureDetector,
+        UsingUnifiedGR() ? switches::kUnifiedGestureDetectorEnabled
+                         : switches::kUnifiedGestureDetectorDisabled);
 
     AuraTestBase::SetUp();
+  }
+
+  virtual void TearDown() OVERRIDE {
+    AuraTestBase::TearDown();
+    RunAllPendingInMessageLoop();
   }
 
   DISALLOW_COPY_AND_ASSIGN(GestureRecognizerTest);
@@ -1465,11 +1470,6 @@ TEST_P(GestureRecognizerTest, GestureEventLongTap) {
 
 // Check that second tap cancels a long press
 TEST_P(GestureRecognizerTest, GestureEventLongPressCancelledBySecondTap) {
-  // TODO(tdresser): enable this test with unified GR once two finger tap is
-  // supported. See crbug.com/354396.
-  if (UsingUnifiedGR())
-    return;
-
   scoped_ptr<GestureEventConsumeDelegate> delegate(
       new GestureEventConsumeDelegate());
   TimedEvents tes;
@@ -1752,10 +1752,6 @@ TEST_P(GestureRecognizerTest, GestureTapFollowedByScroll) {
 }
 
 TEST_P(GestureRecognizerTest, AsynchronousGestureRecognition) {
-  // TODO(tdresser): enable this test with unified GR once two finger tap is
-  // supported. See crbug.com/354396.
-  if (UsingUnifiedGR())
-    return;
   scoped_ptr<QueueTouchEventDelegate> queued_delegate(
       new QueueTouchEventDelegate(host()->dispatcher()));
   const int kWindowWidth = 123;
@@ -1888,7 +1884,7 @@ TEST_P(GestureRecognizerTest, AsynchronousGestureRecognition) {
   queued_delegate->Reset();
   delegate->Reset();
   int x_move = ui::GestureConfiguration::max_touch_move_in_pixels_for_click();
-  ui::TouchEvent move(ui::ET_TOUCH_MOVED, gfx::Point(103 + x_move, 203),
+  ui::TouchEvent move(ui::ET_TOUCH_MOVED, gfx::Point(203 + x_move, 303),
                           kTouchId2, GetTime());
   DispatchEventUsingWindowDispatcher(&move);
   EXPECT_FALSE(delegate->tap());
@@ -1939,7 +1935,8 @@ TEST_P(GestureRecognizerTest, AsynchronousGestureRecognition) {
   EXPECT_FALSE(queued_delegate->begin());
   EXPECT_FALSE(queued_delegate->end());
   EXPECT_TRUE(queued_delegate->scroll_begin());
-  EXPECT_FALSE(queued_delegate->scroll_update());
+  // TODO(tdresser): uncomment once we've switched to the unified GR.
+  //  EXPECT_TRUE(queued_delegate->scroll_update());
   EXPECT_FALSE(queued_delegate->scroll_end());
   EXPECT_TRUE(queued_delegate->pinch_begin());
   EXPECT_FALSE(queued_delegate->pinch_update());
@@ -2726,11 +2723,6 @@ TEST_P(GestureRecognizerTest, TwoFingerTapExpired) {
 }
 
 TEST_P(GestureRecognizerTest, TwoFingerTapChangesToPinch) {
-  // TODO(tdresser): enable this test with unified GR once two finger tap is
-  // supported. See crbug.com/354396.
-  if (UsingUnifiedGR())
-    return;
-
   scoped_ptr<GestureEventConsumeDelegate> delegate(
       new GestureEventConsumeDelegate());
   const int kWindowWidth = 123;
@@ -2755,7 +2747,7 @@ TEST_P(GestureRecognizerTest, TwoFingerTapChangesToPinch) {
                           kTouchId2, tes.Now());
     DispatchEventUsingWindowDispatcher(&press2);
 
-    tes.SendScrollEvent(event_processor(), 130, 230, kTouchId1, delegate.get());
+    tes.SendScrollEvent(event_processor(), 230, 330, kTouchId1, delegate.get());
     EXPECT_FALSE(delegate->two_finger_tap());
     EXPECT_TRUE(delegate->pinch_begin());
 
@@ -2786,7 +2778,7 @@ TEST_P(GestureRecognizerTest, TwoFingerTapChangesToPinch) {
                           kTouchId2, tes.Now());
     DispatchEventUsingWindowDispatcher(&press2);
 
-    tes.SendScrollEvent(event_processor(), 101, 230, kTouchId2, delegate.get());
+    tes.SendScrollEvent(event_processor(), 301, 230, kTouchId2, delegate.get());
     EXPECT_FALSE(delegate->two_finger_tap());
     EXPECT_TRUE(delegate->pinch_begin());
 
@@ -3374,11 +3366,6 @@ TEST_P(GestureRecognizerTest, GestureEventScrollTouchMovePartialConsumed) {
 
 // Check that appropriate touch events generate double tap gesture events.
 TEST_P(GestureRecognizerTest, GestureEventDoubleTap) {
-  // TODO(tdresser): enable this test with unified GR once double / triple tap
-  // gestures work. See crbug.com/357270.
-  if (UsingUnifiedGR())
-    return;
-
   scoped_ptr<GestureEventConsumeDelegate> delegate(
       new GestureEventConsumeDelegate());
   const int kWindowWidth = 123;
@@ -3420,11 +3407,6 @@ TEST_P(GestureRecognizerTest, GestureEventDoubleTap) {
 
 // Check that appropriate touch events generate triple tap gesture events.
 TEST_P(GestureRecognizerTest, GestureEventTripleTap) {
-  // TODO(tdresser): enable this test with unified GR once double / triple tap
-  // gestures work. See crbug.com/357270.
-  if (UsingUnifiedGR())
-    return;
-
   scoped_ptr<GestureEventConsumeDelegate> delegate(
       new GestureEventConsumeDelegate());
   const int kWindowWidth = 123;
@@ -3465,17 +3447,35 @@ TEST_P(GestureRecognizerTest, GestureEventTripleTap) {
                           kTouchId, tes.LeapForward(50));
   DispatchEventUsingWindowDispatcher(&release3);
 
+  // Third, Fourth and Fifth Taps. Taps after the third should have their
+  // |tap_count| wrap around back to 1.
+  for (int i = 3; i < 5; ++i) {
+    ui::TouchEvent press3(ui::ET_TOUCH_PRESSED,
+                          gfx::Point(102, 206),
+                          kTouchId,
+                          tes.LeapForward(200));
+    DispatchEventUsingWindowDispatcher(&press3);
+    ui::TouchEvent release3(ui::ET_TOUCH_RELEASED,
+                            gfx::Point(102, 206),
+                            kTouchId,
+                            tes.LeapForward(50));
+    DispatchEventUsingWindowDispatcher(&release3);
 
-  EXPECT_TRUE(delegate->tap());
-  EXPECT_TRUE(delegate->tap_down());
-  EXPECT_FALSE(delegate->tap_cancel());
-  EXPECT_TRUE(delegate->begin());
-  EXPECT_TRUE(delegate->end());
-  EXPECT_FALSE(delegate->scroll_begin());
-  EXPECT_FALSE(delegate->scroll_update());
-  EXPECT_FALSE(delegate->scroll_end());
+    EXPECT_TRUE(delegate->tap());
+    EXPECT_TRUE(delegate->tap_down());
+    EXPECT_FALSE(delegate->tap_cancel());
+    EXPECT_TRUE(delegate->begin());
+    EXPECT_TRUE(delegate->end());
+    EXPECT_FALSE(delegate->scroll_begin());
+    EXPECT_FALSE(delegate->scroll_update());
+    EXPECT_FALSE(delegate->scroll_end());
 
-  EXPECT_EQ(3, delegate->tap_count());
+    // The behavior for the Aura GR is incorrect.
+    if (UsingUnifiedGR())
+      EXPECT_EQ(1 + (i % 3), delegate->tap_count());
+    else
+      EXPECT_EQ(3, delegate->tap_count());
+  }
 }
 
 // Check that we don't get a double tap when the two taps are far apart.
@@ -3713,11 +3713,6 @@ TEST_P(GestureRecognizerTest, GestureEventConsumedTouchMoveCanFireTapCancel) {
 
 TEST_P(GestureRecognizerTest,
        TransferEventDispatchesTouchCancel) {
-  // TODO(tdresser): enable this test with unified GR once two finger tap is
-  // supported. See crbug.com/354396.
-  if (UsingUnifiedGR())
-    return;
-
   scoped_ptr<GestureEventConsumeDelegate> delegate(
       new GestureEventConsumeDelegate());
   TimedEvents tes;

@@ -283,9 +283,9 @@ net::URLRequestContextGetter* OffTheRecordProfileImpl::GetRequestContext() {
 
 net::URLRequestContextGetter* OffTheRecordProfileImpl::CreateRequestContext(
     content::ProtocolHandlerMap* protocol_handlers,
-    content::ProtocolHandlerScopedVector protocol_interceptors) {
+    content::URLRequestInterceptorScopedVector request_interceptors) {
   return io_data_->CreateMainRequestContextGetter(
-      protocol_handlers, protocol_interceptors.Pass()).get();
+      protocol_handlers, request_interceptors.Pass()).get();
 }
 
 net::URLRequestContextGetter*
@@ -348,18 +348,14 @@ void OffTheRecordProfileImpl::CancelMidiSysExPermissionRequest(
 void OffTheRecordProfileImpl::RequestProtectedMediaIdentifierPermission(
     int render_process_id,
     int render_view_id,
-    int bridge_id,
-    int group_id,
-    const GURL& requesting_frame,
+    const GURL& origin,
     const ProtectedMediaIdentifierPermissionCallback& callback) {
 #if defined(OS_ANDROID)
   ProtectedMediaIdentifierPermissionContext* context =
       ProtectedMediaIdentifierPermissionContextFactory::GetForProfile(this);
   context->RequestProtectedMediaIdentifierPermission(render_process_id,
                                                      render_view_id,
-                                                     bridge_id,
-                                                     group_id,
-                                                     requesting_frame,
+                                                     origin,
                                                      callback);
 #else
   NOTIMPLEMENTED();
@@ -368,11 +364,14 @@ void OffTheRecordProfileImpl::RequestProtectedMediaIdentifierPermission(
 }
 
 void OffTheRecordProfileImpl::CancelProtectedMediaIdentifierPermissionRequests(
-    int group_id) {
+    int render_process_id,
+    int render_view_id,
+    const GURL& origin) {
 #if defined(OS_ANDROID)
   ProtectedMediaIdentifierPermissionContext* context =
       ProtectedMediaIdentifierPermissionContextFactory::GetForProfile(this);
-  context->CancelProtectedMediaIdentifierPermissionRequests(group_id);
+  context->CancelProtectedMediaIdentifierPermissionRequests(
+      render_process_id, render_view_id, origin);
 #else
   NOTIMPLEMENTED();
 #endif  // defined(OS_ANDROID)
@@ -388,12 +387,12 @@ OffTheRecordProfileImpl::CreateRequestContextForStoragePartition(
     const base::FilePath& partition_path,
     bool in_memory,
     content::ProtocolHandlerMap* protocol_handlers,
-    content::ProtocolHandlerScopedVector protocol_interceptors) {
+    content::URLRequestInterceptorScopedVector request_interceptors) {
   return io_data_->CreateIsolatedAppRequestContextGetter(
       partition_path,
       in_memory,
       protocol_handlers,
-      protocol_interceptors.Pass()).get();
+      request_interceptors.Pass()).get();
 }
 
 content::ResourceContext* OffTheRecordProfileImpl::GetResourceContext() {
@@ -424,8 +423,8 @@ content::GeolocationPermissionContext*
   return ChromeGeolocationPermissionContextFactory::GetForProfile(this);
 }
 
-content::BrowserPluginGuestManagerDelegate*
-    OffTheRecordProfileImpl::GetGuestManagerDelegate() {
+content::BrowserPluginGuestManager*
+    OffTheRecordProfileImpl::GetGuestManager() {
   return GuestViewManager::FromBrowserContext(this);
 }
 
@@ -508,6 +507,16 @@ void OffTheRecordProfileImpl::ClearNetworkingHistorySince(
   // Still, fire the callback to indicate we have finished, otherwise the
   // BrowsingDataRemover will never be destroyed and the dialog will never be
   // closed. We must do this asynchronously in order to avoid reentrancy issues.
+  if (!completion.is_null()) {
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, completion);
+  }
+}
+
+void OffTheRecordProfileImpl::ClearDomainReliabilityMonitor(
+    domain_reliability::DomainReliabilityClearMode mode,
+    const base::Closure& completion) {
+  // Incognito profiles don't have Domain Reliability Monitors, so there's
+  // nothing to do here.
   if (!completion.is_null()) {
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, completion);
   }

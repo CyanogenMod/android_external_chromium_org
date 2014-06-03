@@ -12,7 +12,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/value_conversions.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "extensions/browser/admin_policy.h"
 #include "extensions/browser/app_sorting.h"
 #include "extensions/browser/event_router.h"
@@ -184,6 +184,9 @@ const char kPrefLastLaunchTime[] = "last_launch_time";
 // Their data is retained and garbage collected when inactive for a long period
 // of time.
 const char kPrefEvictedEphemeralApp[] = "evicted_ephemeral_app";
+
+// A preference indicating whether the extension is an ephemeral app.
+const char kPrefEphemeralApp[] = "ephemeral_app";
 
 // Am installation parameter bundled with an extension.
 const char kPrefInstallParam[] = "install_parameter";
@@ -795,6 +798,12 @@ int ExtensionPrefs::GetDisableReasons(const std::string& extension_id) const {
   return Extension::DISABLE_NONE;
 }
 
+bool ExtensionPrefs::HasDisableReason(
+    const std::string& extension_id,
+    Extension::DisableReason disable_reason) const {
+  return (GetDisableReasons(extension_id) & disable_reason) != 0;
+}
+
 void ExtensionPrefs::AddDisableReason(const std::string& extension_id,
                                       Extension::DisableReason disable_reason) {
   ModifyDisableReason(extension_id, disable_reason, DISABLE_REASON_ADD);
@@ -1226,6 +1235,7 @@ void ExtensionPrefs::OnExtensionInstalled(
     const Extension* extension,
     Extension::State initial_state,
     bool blacklisted_for_malware,
+    bool is_ephemeral,
     const syncer::StringOrdinal& page_ordinal,
     const std::string& install_parameter) {
   ScopedExtensionPrefUpdate update(prefs_, extension->id());
@@ -1235,6 +1245,7 @@ void ExtensionPrefs::OnExtensionInstalled(
                              install_time,
                              initial_state,
                              blacklisted_for_malware,
+                             is_ephemeral,
                              install_parameter,
                              extension_dict);
   FinishExtensionInfoPrefs(extension->id(), install_time,
@@ -1260,8 +1271,7 @@ void ExtensionPrefs::OnExtensionUninstalled(const std::string& extension_id,
                       observer_list_,
                       OnExtensionStateChanged(extension_id, false));
   } else {
-    int creation_flags = GetCreationFlags(extension_id);
-    if (creation_flags & Extension::IS_EPHEMERAL) {
+    if (IsEphemeralApp(extension_id)) {
       // Keep ephemeral apps around, but mark them as evicted.
       UpdateExtensionPref(extension_id, kPrefEvictedEphemeralApp,
                           new base::FundamentalValue(true));
@@ -1329,19 +1339,6 @@ void ExtensionPrefs::UpdateManifest(const Extension* extension) {
   }
 }
 
-base::FilePath ExtensionPrefs::GetExtensionPath(
-    const std::string& extension_id) {
-  const base::DictionaryValue* dict = GetExtensionPref(extension_id);
-  if (!dict)
-    return base::FilePath();
-
-  std::string path;
-  if (!dict->GetString(kPrefPath, &path))
-    return base::FilePath();
-
-  return install_directory_.Append(base::FilePath::FromUTF8Unsafe(path));
-}
-
 scoped_ptr<ExtensionInfo> ExtensionPrefs::GetInstalledInfoHelper(
     const std::string& extension_id,
     const base::DictionaryValue* extension) const {
@@ -1356,9 +1353,15 @@ scoped_ptr<ExtensionInfo> ExtensionPrefs::GetInstalledInfoHelper(
   // Make path absolute. Unpacked extensions will already have absolute paths,
   // otherwise make it so.
   Manifest::Location location = static_cast<Manifest::Location>(location_value);
+#if !defined(OS_CHROMEOS)
   if (!Manifest::IsUnpackedLocation(location)) {
     DCHECK(location == Manifest::COMPONENT ||
            !base::FilePath(path).IsAbsolute());
+#else
+  // On Chrome OS some extensions can be installed to shared location and
+  // thus use absolute paths in prefs.
+  if (!base::FilePath(path).IsAbsolute()) {
+#endif  // !defined(OS_CHROMEOS)
     path = install_directory_.Append(path).value();
   }
 
@@ -1457,6 +1460,7 @@ void ExtensionPrefs::SetDelayedInstallInfo(
     const Extension* extension,
     Extension::State initial_state,
     bool blacklisted_for_malware,
+    bool is_ephemeral,
     DelayReason delay_reason,
     const syncer::StringOrdinal& page_ordinal,
     const std::string& install_parameter) {
@@ -1465,6 +1469,7 @@ void ExtensionPrefs::SetDelayedInstallInfo(
                              time_provider_->GetCurrentTime(),
                              initial_state,
                              blacklisted_for_malware,
+                             is_ephemeral,
                              install_parameter,
                              extension_dict);
 
@@ -1623,12 +1628,31 @@ scoped_ptr<ExtensionInfo> ExtensionPrefs::GetEvictedEphemeralAppInfo(
 
 void ExtensionPrefs::RemoveEvictedEphemeralApp(
     const std::string& extension_id) {
-  bool evicted_ephemeral_app = false;
-  if (ReadPrefAsBoolean(extension_id,
-                        kPrefEvictedEphemeralApp,
-                        &evicted_ephemeral_app) && evicted_ephemeral_app) {
+  if (ReadPrefAsBooleanAndReturn(extension_id, kPrefEvictedEphemeralApp))
     DeleteExtensionPrefs(extension_id);
-  }
+}
+
+bool ExtensionPrefs::IsEphemeralApp(const std::string& extension_id) const {
+  // Hide the data of evicted ephemeral apps.
+  if (ReadPrefAsBooleanAndReturn(extension_id, kPrefEvictedEphemeralApp))
+    return false;
+
+  if (ReadPrefAsBooleanAndReturn(extension_id, kPrefEphemeralApp))
+    return true;
+
+  // Ephemerality was previously stored in the creation flags, so we must also
+  // check it for backcompatibility.
+  return (GetCreationFlags(extension_id) & Extension::IS_EPHEMERAL) != 0;
+}
+
+void ExtensionPrefs::OnEphemeralAppPromoted(const std::string& extension_id) {
+  DCHECK(IsEphemeralApp(extension_id));
+
+  ScopedExtensionPrefUpdate update(prefs_, extension_id);
+  update->Set(kPrefEphemeralApp, new base::FundamentalValue(false));
+
+  DCHECK(!IsEvictedEphemeralApp(update.Get()));
+  update->Remove(kPrefEvictedEphemeralApp, NULL);
 }
 
 bool ExtensionPrefs::WasAppDraggedByUser(const std::string& extension_id) {
@@ -2096,6 +2120,7 @@ void ExtensionPrefs::PopulateExtensionInfoPrefs(
     const base::Time install_time,
     Extension::State initial_state,
     bool blacklisted_for_malware,
+    bool is_ephemeral,
     const std::string& install_parameter,
     base::DictionaryValue* extension_dict) {
   // Leave the state blank for component extensions so that old chrome versions
@@ -2123,6 +2148,9 @@ void ExtensionPrefs::PopulateExtensionInfoPrefs(
                           base::Int64ToString(install_time.ToInternalValue())));
   if (blacklisted_for_malware)
     extension_dict->Set(kPrefBlacklist, new base::FundamentalValue(true));
+
+  extension_dict->Set(kPrefEphemeralApp,
+                      new base::FundamentalValue(is_ephemeral));
 
   base::FilePath::StringType path = MakePathRelative(install_directory_,
                                                      extension->path());

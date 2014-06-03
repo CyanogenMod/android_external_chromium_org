@@ -18,14 +18,13 @@
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/api/identity/oauth2_manifest_handler.h"
 #include "chrome/common/pref_names.h"
-#include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_util.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_icon_set.h"
@@ -53,75 +52,71 @@ using extensions::PermissionSet;
 namespace {
 
 static const int kTitleIds[ExtensionInstallPrompt::NUM_PROMPT_TYPES] = {
-  0,  // The regular install prompt depends on what's being installed.
-  IDS_EXTENSION_INLINE_INSTALL_PROMPT_TITLE,
-  IDS_EXTENSION_INSTALL_PROMPT_TITLE,
-  IDS_EXTENSION_RE_ENABLE_PROMPT_TITLE,
-  IDS_EXTENSION_PERMISSIONS_PROMPT_TITLE,
-  IDS_EXTENSION_EXTERNAL_INSTALL_PROMPT_TITLE,
-  IDS_EXTENSION_POST_INSTALL_PERMISSIONS_PROMPT_TITLE,
-  IDS_EXTENSION_LAUNCH_APP_PROMPT_TITLE,
+    0,  // The regular install prompt depends on what's being installed.
+    IDS_EXTENSION_INLINE_INSTALL_PROMPT_TITLE,
+    IDS_EXTENSION_INSTALL_PROMPT_TITLE,
+    IDS_EXTENSION_RE_ENABLE_PROMPT_TITLE,
+    IDS_EXTENSION_PERMISSIONS_PROMPT_TITLE,
+    IDS_EXTENSION_EXTERNAL_INSTALL_PROMPT_TITLE,
+    IDS_EXTENSION_POST_INSTALL_PERMISSIONS_PROMPT_TITLE,
+    IDS_EXTENSION_LAUNCH_APP_PROMPT_TITLE,
+    0,  // The remote install prompt depends on what's being installed.
 };
 static const int kHeadingIds[ExtensionInstallPrompt::NUM_PROMPT_TYPES] = {
-  IDS_EXTENSION_INSTALL_PROMPT_HEADING,
-  0,  // Inline installs use the extension name.
-  0,  // Heading for bundle installs depends on the bundle contents.
-  IDS_EXTENSION_RE_ENABLE_PROMPT_HEADING,
-  IDS_EXTENSION_PERMISSIONS_PROMPT_HEADING,
-  0,  // External installs use different strings for extensions/apps.
-  IDS_EXTENSION_POST_INSTALL_PERMISSIONS_PROMPT_HEADING,
-  IDS_EXTENSION_LAUNCH_APP_PROMPT_HEADING,
+    IDS_EXTENSION_INSTALL_PROMPT_HEADING,
+    0,  // Inline installs use the extension name.
+    0,  // Heading for bundle installs depends on the bundle contents.
+    IDS_EXTENSION_RE_ENABLE_PROMPT_HEADING,
+    IDS_EXTENSION_PERMISSIONS_PROMPT_HEADING,
+    0,  // External installs use different strings for extensions/apps.
+    IDS_EXTENSION_POST_INSTALL_PERMISSIONS_PROMPT_HEADING,
+    IDS_EXTENSION_LAUNCH_APP_PROMPT_HEADING,
+    IDS_EXTENSION_REMOTE_INSTALL_PROMPT_HEADING,
 };
 static const int kButtons[ExtensionInstallPrompt::NUM_PROMPT_TYPES] = {
-  ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL,
-  ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL,
-  ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL,
-  ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL,
-  ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL,
-  ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL,
-  ui::DIALOG_BUTTON_CANCEL,
-  ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL,
+    ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL,
+    ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL,
+    ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL,
+    ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL,
+    ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL,
+    ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL,
+    ui::DIALOG_BUTTON_CANCEL,
+    ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL,
+    ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL,
 };
 static const int kAcceptButtonIds[ExtensionInstallPrompt::NUM_PROMPT_TYPES] = {
-  IDS_EXTENSION_PROMPT_INSTALL_BUTTON,
-  IDS_EXTENSION_PROMPT_INSTALL_BUTTON,
-  IDS_EXTENSION_PROMPT_INSTALL_BUTTON,
-  IDS_EXTENSION_PROMPT_RE_ENABLE_BUTTON,
-  IDS_EXTENSION_PROMPT_PERMISSIONS_BUTTON,
-  0,  // External installs use different strings for extensions/apps.
-  IDS_EXTENSION_PROMPT_PERMISSIONS_CLEAR_RETAINED_FILES_BUTTON,
-  IDS_EXTENSION_PROMPT_LAUNCH_BUTTON,
+    IDS_EXTENSION_PROMPT_INSTALL_BUTTON,
+    IDS_EXTENSION_PROMPT_INSTALL_BUTTON,
+    IDS_EXTENSION_PROMPT_INSTALL_BUTTON,
+    IDS_EXTENSION_PROMPT_RE_ENABLE_BUTTON,
+    IDS_EXTENSION_PROMPT_PERMISSIONS_BUTTON,
+    0,  // External installs use different strings for extensions/apps.
+    IDS_EXTENSION_PROMPT_PERMISSIONS_CLEAR_RETAINED_FILES_BUTTON,
+    IDS_EXTENSION_PROMPT_LAUNCH_BUTTON,
+    IDS_EXTENSION_PROMPT_REMOTE_INSTALL_BUTTON,
 };
 static const int kAbortButtonIds[ExtensionInstallPrompt::NUM_PROMPT_TYPES] = {
-  0,  // These all use the platform's default cancel label.
-  0,
-  0,
-  0,
-  IDS_EXTENSION_PROMPT_PERMISSIONS_ABORT_BUTTON,
-  IDS_EXTENSION_EXTERNAL_INSTALL_PROMPT_ABORT_BUTTON,
-  IDS_CLOSE,
-  0,  // Platform dependent cancel button.
+    0,  // These all use the platform's default cancel label.
+    0,
+    0,
+    0,
+    IDS_EXTENSION_PROMPT_PERMISSIONS_ABORT_BUTTON,
+    IDS_EXTENSION_EXTERNAL_INSTALL_PROMPT_ABORT_BUTTON,
+    IDS_CLOSE,
+    0,  // Platform dependent cancel button.
+    0,
 };
-static const int kPermissionsHeaderIds[
-    ExtensionInstallPrompt::NUM_PROMPT_TYPES] = {
-  IDS_EXTENSION_PROMPT_WILL_HAVE_ACCESS_TO,
-  IDS_EXTENSION_PROMPT_WILL_HAVE_ACCESS_TO,
-  IDS_EXTENSION_PROMPT_THESE_WILL_HAVE_ACCESS_TO,
-  IDS_EXTENSION_PROMPT_WILL_NOW_HAVE_ACCESS_TO,
-  IDS_EXTENSION_PROMPT_WANTS_ACCESS_TO,
-  IDS_EXTENSION_PROMPT_WILL_HAVE_ACCESS_TO,
-  IDS_EXTENSION_PROMPT_CAN_ACCESS,
-  IDS_EXTENSION_PROMPT_WILL_HAVE_ACCESS_TO,
-};
-static const int kOAuthHeaderIds[ExtensionInstallPrompt::NUM_PROMPT_TYPES] = {
-  IDS_EXTENSION_PROMPT_OAUTH_HEADER,
-  0,  // Inline installs don't show OAuth permissions.
-  0,  // Bundle installs don't show OAuth permissions.
-  IDS_EXTENSION_PROMPT_OAUTH_REENABLE_HEADER,
-  IDS_EXTENSION_PROMPT_OAUTH_PERMISSIONS_HEADER,
-  0,
-  0,
-  IDS_EXTENSION_PROMPT_OAUTH_HEADER,
+static const int
+    kPermissionsHeaderIds[ExtensionInstallPrompt::NUM_PROMPT_TYPES] = {
+        IDS_EXTENSION_PROMPT_WILL_HAVE_ACCESS_TO,
+        IDS_EXTENSION_PROMPT_WILL_HAVE_ACCESS_TO,
+        IDS_EXTENSION_PROMPT_THESE_WILL_HAVE_ACCESS_TO,
+        IDS_EXTENSION_PROMPT_WILL_NOW_HAVE_ACCESS_TO,
+        IDS_EXTENSION_PROMPT_WANTS_ACCESS_TO,
+        IDS_EXTENSION_PROMPT_WILL_HAVE_ACCESS_TO,
+        IDS_EXTENSION_PROMPT_CAN_ACCESS,
+        IDS_EXTENSION_PROMPT_WILL_HAVE_ACCESS_TO,
+        IDS_EXTENSION_PROMPT_WILL_HAVE_ACCESS_TO,
 };
 
 // Size of extension icon in top left of dialog.
@@ -226,31 +221,9 @@ void ExtensionInstallPrompt::Prompt::SetIsShowingDetails(
     case PERMISSIONS_DETAILS:
       is_showing_details_for_permissions_[index] = is_showing_details;
       break;
-    case OAUTH_DETAILS:
-      is_showing_details_for_oauth_[index] = is_showing_details;
-      break;
     case RETAINED_FILES_DETAILS:
       is_showing_details_for_retained_files_ = is_showing_details;
       break;
-  }
-}
-
-void ExtensionInstallPrompt::Prompt::SetOAuthIssueAdvice(
-    const IssueAdviceInfo& issue_advice) {
-  is_showing_details_for_oauth_.clear();
-  for (size_t i = 0; i < issue_advice.size(); ++i)
-    is_showing_details_for_oauth_.push_back(false);
-
-  oauth_issue_advice_ = issue_advice;
-}
-
-void ExtensionInstallPrompt::Prompt::SetUserNameFromProfile(Profile* profile) {
-  // |profile| can be NULL in unit tests.
-  if (profile) {
-    oauth_user_name_ = base::UTF8ToUTF16(profile->GetPrefs()->GetString(
-        prefs::kGoogleServicesUsername));
-  } else {
-    oauth_user_name_.clear();
   }
 }
 
@@ -280,6 +253,11 @@ base::string16 ExtensionInstallPrompt::Prompt::GetDialogTitle() const {
   } else if (type_ == EXTERNAL_INSTALL_PROMPT) {
     return l10n_util::GetStringFUTF16(
         resource_id, base::UTF8ToUTF16(extension_->name()));
+  } else if (type_ == REMOTE_INSTALL_PROMPT) {
+    if (extension_->is_app())
+      resource_id = IDS_EXTENSION_REMOTE_INSTALL_APP_PROMPT_TITLE;
+    else
+      resource_id = IDS_EXTENSION_REMOTE_INSTALL_EXTENSION_PROMPT_TITLE;
   }
 
   return l10n_util::GetStringUTF16(resource_id);
@@ -360,10 +338,6 @@ base::string16 ExtensionInstallPrompt::Prompt::GetAbortButtonLabel() const {
 
 base::string16 ExtensionInstallPrompt::Prompt::GetPermissionsHeading() const {
   return l10n_util::GetStringUTF16(kPermissionsHeaderIds[type_]);
-}
-
-base::string16 ExtensionInstallPrompt::Prompt::GetOAuthHeading() const {
-  return l10n_util::GetStringFUTF16(kOAuthHeaderIds[type_], oauth_user_name_);
 }
 
 base::string16 ExtensionInstallPrompt::Prompt::GetRetainedFilesHeading() const {
@@ -457,23 +431,10 @@ bool ExtensionInstallPrompt::Prompt::GetIsShowingDetails(
     case PERMISSIONS_DETAILS:
       CHECK_LT(index, is_showing_details_for_permissions_.size());
       return is_showing_details_for_permissions_[index];
-    case OAUTH_DETAILS:
-      CHECK_LT(index, is_showing_details_for_oauth_.size());
-      return is_showing_details_for_oauth_[index];
     case RETAINED_FILES_DETAILS:
       return is_showing_details_for_retained_files_;
   }
   return false;
-}
-
-size_t ExtensionInstallPrompt::Prompt::GetOAuthIssueCount() const {
-  return oauth_issue_advice_.size();
-}
-
-const IssueAdviceInfoEntry& ExtensionInstallPrompt::Prompt::GetOAuthIssue(
-    size_t index) const {
-  CHECK_LT(index, oauth_issue_advice_.size());
-  return oauth_issue_advice_[index];
 }
 
 size_t ExtensionInstallPrompt::Prompt::GetRetainedFileCount() const {
@@ -536,33 +497,25 @@ scoped_refptr<Extension>
 }
 
 ExtensionInstallPrompt::ExtensionInstallPrompt(content::WebContents* contents)
-    : OAuth2TokenService::Consumer("extensions_install"),
-      record_oauth2_grant_(false),
-      ui_loop_(base::MessageLoop::current()),
+    : ui_loop_(base::MessageLoop::current()),
       extension_(NULL),
       bundle_(NULL),
       install_ui_(ExtensionInstallUI::Create(ProfileForWebContents(contents))),
       show_params_(contents),
       delegate_(NULL),
-      prompt_(UNSET_PROMPT_TYPE) {
-  prompt_.SetUserNameFromProfile(install_ui_->profile());
-}
+      prompt_(UNSET_PROMPT_TYPE) {}
 
 ExtensionInstallPrompt::ExtensionInstallPrompt(
     Profile* profile,
     gfx::NativeWindow native_window,
     content::PageNavigator* navigator)
-    : OAuth2TokenService::Consumer("extensions_install"),
-      record_oauth2_grant_(false),
-      ui_loop_(base::MessageLoop::current()),
+    : ui_loop_(base::MessageLoop::current()),
       extension_(NULL),
       bundle_(NULL),
       install_ui_(ExtensionInstallUI::Create(profile)),
       show_params_(native_window, navigator),
       delegate_(NULL),
-      prompt_(UNSET_PROMPT_TYPE) {
-  prompt_.SetUserNameFromProfile(install_ui_->profile());
-}
+      prompt_(UNSET_PROMPT_TYPE) {}
 
 ExtensionInstallPrompt::~ExtensionInstallPrompt() {
 }
@@ -641,9 +594,18 @@ void ExtensionInstallPrompt::ConfirmReEnable(Delegate* delegate,
   extension_ = extension;
   permissions_ = extension->GetActivePermissions();
   delegate_ = delegate;
-  prompt_.set_type(extension->is_ephemeral() ? LAUNCH_PROMPT :
-                                               RE_ENABLE_PROMPT);
-
+  bool is_remote_install =
+      install_ui_->profile() &&
+      extensions::ExtensionPrefs::Get(install_ui_->profile())->HasDisableReason(
+          extension->id(), extensions::Extension::DISABLE_REMOTE_INSTALL);
+  bool is_ephemeral =
+      extensions::util::IsEphemeralApp(extension->id(), install_ui_->profile());
+  if (is_ephemeral)
+    prompt_.set_type(LAUNCH_PROMPT);
+  else if (is_remote_install)
+    prompt_.set_type(REMOTE_INSTALL_PROMPT);
+  else
+    prompt_.set_type(RE_ENABLE_PROMPT);
   LoadImageIfNeeded();
 }
 
@@ -671,21 +633,6 @@ void ExtensionInstallPrompt::ConfirmPermissions(
   permissions_ = permissions;
   delegate_ = delegate;
   prompt_.set_type(PERMISSIONS_PROMPT);
-
-  LoadImageIfNeeded();
-}
-
-void ExtensionInstallPrompt::ConfirmIssueAdvice(
-    Delegate* delegate,
-    const Extension* extension,
-    const IssueAdviceInfo& issue_advice) {
-  DCHECK(ui_loop_ == base::MessageLoop::current());
-  extension_ = extension;
-  delegate_ = delegate;
-  prompt_.set_type(PERMISSIONS_PROMPT);
-
-  record_oauth2_grant_ = true;
-  prompt_.SetOAuthIssueAdvice(issue_advice);
 
   LoadImageIfNeeded();
 }
@@ -758,48 +705,6 @@ void ExtensionInstallPrompt::LoadImageIfNeeded() {
       base::Bind(&ExtensionInstallPrompt::OnImageLoaded, AsWeakPtr()));
 }
 
-void ExtensionInstallPrompt::OnGetTokenSuccess(
-    const OAuth2TokenService::Request* request,
-    const std::string& access_token,
-    const base::Time& expiration_time) {
-  DCHECK_EQ(login_token_request_.get(), request);
-  login_token_request_.reset();
-
-  const extensions::OAuth2Info& oauth2_info =
-      extensions::OAuth2Info::GetOAuth2Info(extension_);
-
-  token_flow_.reset(new OAuth2MintTokenFlow(
-      install_ui_->profile()->GetRequestContext(),
-      this,
-      OAuth2MintTokenFlow::Parameters(
-          access_token,
-          extension_->id(),
-          oauth2_info.client_id,
-          oauth2_info.scopes,
-          OAuth2MintTokenFlow::MODE_ISSUE_ADVICE)));
-  token_flow_->Start();
-}
-
-void ExtensionInstallPrompt::OnGetTokenFailure(
-    const OAuth2TokenService::Request* request,
-    const GoogleServiceAuthError& error) {
-  DCHECK_EQ(login_token_request_.get(), request);
-  login_token_request_.reset();
-  ShowConfirmation();
-}
-
-void ExtensionInstallPrompt::OnIssueAdviceSuccess(
-    const IssueAdviceInfo& advice_info) {
-  prompt_.SetOAuthIssueAdvice(advice_info);
-  record_oauth2_grant_ = true;
-  ShowConfirmation();
-}
-
-void ExtensionInstallPrompt::OnMintTokenFailure(
-    const GoogleServiceAuthError& error) {
-  ShowConfirmation();
-}
-
 void ExtensionInstallPrompt::ShowConfirmation() {
   if (prompt_.type() == INSTALL_PROMPT)
     prompt_.set_experiment(ExtensionInstallPromptExperiment::Find());
@@ -827,7 +732,8 @@ void ExtensionInstallPrompt::ShowConfirmation() {
     case EXTERNAL_INSTALL_PROMPT:
     case INSTALL_PROMPT:
     case LAUNCH_PROMPT:
-    case POST_INSTALL_PERMISSIONS_PROMPT: {
+    case POST_INSTALL_PERMISSIONS_PROMPT:
+    case REMOTE_INSTALL_PROMPT: {
       prompt_.set_extension(extension_);
       prompt_.set_icon(gfx::Image::CreateFrom1xBitmap(icon_));
       break;

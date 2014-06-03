@@ -13,8 +13,8 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_util.h"
 #include "base/sys_info.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
@@ -68,7 +68,7 @@ const struct ModifierRemapping {
       {input_method::kAltKey, ui::EF_ALT_DOWN, ui::VKEY_MENU,
        prefs::kLanguageRemapAltKeyTo},
       {input_method::kVoidKey, 0, ui::VKEY_UNKNOWN, NULL},
-      {input_method::kCapsLockKey, ui::EF_CAPS_LOCK_DOWN, ui::VKEY_CAPITAL,
+      {input_method::kCapsLockKey, ui::EF_MOD3_DOWN, ui::VKEY_CAPITAL,
        prefs::kLanguageRemapCapsLockKeyTo},
       {input_method::kEscapeKey, 0, ui::VKEY_ESCAPE, NULL},
       {0, 0, ui::VKEY_F15, prefs::kLanguageRemapDiamondKeyTo},
@@ -137,6 +137,7 @@ void UpdateX11EventMask(int ui_flags, unsigned int* x_flags) {
     {ui::EF_ALT_DOWN, Mod1Mask},
     {ui::EF_CAPS_LOCK_DOWN, LockMask},
     {ui::EF_ALTGR_DOWN, Mod5Mask},
+    {ui::EF_COMMAND_DOWN, Mod4Mask},
     {ui::EF_MOD3_DOWN, Mod3Mask},
     {ui::EF_NUMPAD_KEY, Mod2Mask},
     {ui::EF_LEFT_MOUSE_BUTTON, Button1Mask},
@@ -325,11 +326,16 @@ int EventRewriter::GetRemappedModifierMasks(const PrefService& pref_service,
           remapped_key = kModifierRemappingCtrl;
         }
         break;
-      case ui::EF_CAPS_LOCK_DOWN:
-        // If CapsLock is used by the current input method, don't allow the
-        // CapsLock pref to remap it, or the keyboard behavior will be broken.
+      case ui::EF_MOD3_DOWN:
+        // If EF_MOD3_DOWN is used by the current input method, leave it alone;
+        // it is not remappable.
         if (IsISOLevel5ShiftUsedByCurrentInputMethod())
           continue;
+        // Otherwise, Mod3Mask is set on X events when the Caps Lock key
+        // is down, but, if Caps Lock is remapped, CapsLock is NOT set,
+        // because pressing the key does not invoke caps lock. So, the
+        // kModifierRemappings[] table uses EF_MOD3_DOWN for the Caps
+        // Lock remapping.
         break;
       default:
         break;

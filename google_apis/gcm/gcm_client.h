@@ -10,8 +10,9 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/memory/scoped_ptr.h"
 #include "google_apis/gcm/base/gcm_export.h"
-#include "google_apis/gcm/monitoring/gcm_stats_recorder.h"
+#include "google_apis/gcm/gcm_activity.h"
 
 template <class T> class scoped_refptr;
 
@@ -20,15 +21,13 @@ class FilePath;
 class SequencedTaskRunner;
 }
 
-namespace checkin_proto {
-class ChromeBuildProto;
-}
-
 namespace net {
 class URLRequestContextGetter;
 }
 
 namespace gcm {
+
+class Encryptor;
 
 // Interface that encapsulates the network communications with the Google Cloud
 // Messaging server. This interface is not supposed to be thread-safe.
@@ -39,6 +38,8 @@ class GCM_EXPORT GCMClient {
     SUCCESS,
     // Invalid parameter.
     INVALID_PARAMETER,
+    // GCM is disabled.
+    GCM_DISABLED,
     // Profile not signed in.
     NOT_SIGNED_IN,
     // Previous asynchronous operation is still pending to finish. Certain
@@ -52,6 +53,33 @@ class GCM_EXPORT GCMClient {
     TTL_EXCEEDED,
     // Other errors.
     UNKNOWN_ERROR
+  };
+
+  enum ChromePlatform {
+    PLATFORM_WIN,
+    PLATFORM_MAC,
+    PLATFORM_LINUX,
+    PLATFORM_CROS,
+    PLATFORM_IOS,
+    PLATFORM_ANDROID,
+    PLATFORM_UNKNOWN
+  };
+
+  enum ChromeChannel {
+    CHANNEL_STABLE,
+    CHANNEL_BETA,
+    CHANNEL_DEV,
+    CHANNEL_CANARY,
+    CHANNEL_UNKNOWN
+  };
+
+  struct GCM_EXPORT ChromeBuildInfo {
+    ChromeBuildInfo();
+    ~ChromeBuildInfo();
+
+    ChromePlatform platform;
+    ChromeChannel channel;
+    std::string version;
   };
 
   // Message data consisting of key-value pairs.
@@ -107,7 +135,7 @@ class GCM_EXPORT GCMClient {
     int send_queue_size;
     int resend_queue_size;
 
-    GCMStatsRecorder::RecordedActivities recorded_activities;
+    RecordedActivities recorded_activities;
   };
 
   // A delegate interface that allows the GCMClient instance to interact with
@@ -158,6 +186,10 @@ class GCM_EXPORT GCMClient {
     // finished loading from the GCM store and retrieved the device check-in
     // from the server if it hadn't yet.
     virtual void OnGCMReady() = 0;
+
+    // Called when activities are being recorded and a new activity has just
+    // been recorded.
+    virtual void OnActivityRecorded() = 0;
   };
 
   GCMClient();
@@ -165,7 +197,7 @@ class GCM_EXPORT GCMClient {
 
   // Begins initialization of the GCM Client. This will not trigger a
   // connection.
-  // |chrome_build_proto|: chrome info, i.e., version, channel and etc.
+  // |chrome_build_info|: chrome info, i.e., version, channel and etc.
   // |store_path|: path to the GCM store.
   // |account_ids|: account IDs to be related to the device when checking in.
   // |blocking_task_runner|: for running blocking file tasks.
@@ -173,18 +205,19 @@ class GCM_EXPORT GCMClient {
   // |delegate|: the delegate whose methods will be called asynchronously in
   //             response to events and messages.
   virtual void Initialize(
-      const checkin_proto::ChromeBuildProto& chrome_build_proto,
+      const ChromeBuildInfo& chrome_build_info,
       const base::FilePath& store_path,
       const std::vector<std::string>& account_ids,
       const scoped_refptr<base::SequencedTaskRunner>& blocking_task_runner,
       const scoped_refptr<net::URLRequestContextGetter>&
           url_request_context_getter,
+      scoped_ptr<Encryptor> encryptor,
       Delegate* delegate) = 0;
 
-  // Loads the data from the persistent store. This will automatically kick off
-  // the check-in if the check-in info is not found in the store.
-  // TODO(jianli): consider renaming this name to Start.
-  virtual void Load() = 0;
+  // Starts the GCM service by first loading the data from the persistent store.
+  // This will then kick off the check-in if the check-in info is not found in
+  // the store.
+  virtual void Start() = 0;
 
   // Stops using the GCM service. This will not erase the persisted data.
   virtual void Stop() = 0;

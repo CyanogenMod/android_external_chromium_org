@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,14 +11,21 @@
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
+#include "base/memory/weak_ptr.h"
 #include "components/infobars/core/infobar_delegate.h"
 #include "components/translate/core/browser/translate_prefs.h"
+#include "components/translate/core/browser/translate_step.h"
 #include "components/translate/core/browser/translate_ui_delegate.h"
 #include "components/translate/core/common/translate_constants.h"
 #include "components/translate/core/common/translate_errors.h"
 
-class PrefService;
+class TranslateClient;
+class TranslateDriver;
+class TranslateManager;
+
+namespace infobars {
+class InfoBarManager;
+}
 
 class TranslateInfoBarDelegate : public infobars::InfoBarDelegate {
  public:
@@ -42,16 +49,17 @@ class TranslateInfoBarDelegate : public infobars::InfoBarDelegate {
   // |step| == TRANSLATING and |original_language| == kUnknownLanguageCode.
   //
   // If |replace_existing_infobar| is true, the infobar is created and added to
-  // the infobar service for |web_contents|, replacing any other translate
-  // infobar already present there.  Otherwise, the infobar will only be added
-  // if there is no other translate infobar already present.
+  // the infobar manager, replacing any other translate infobar already present
+  // there.  Otherwise, the infobar will only be added if there is no other
+  // translate infobar already present.
   static void Create(bool replace_existing_infobar,
-                     content::WebContents* web_contents,
+                     const base::WeakPtr<TranslateManager>& translate_manager,
+                     infobars::InfoBarManager* infobar_manager,
+                     bool is_off_the_record,
                      translate::TranslateStep step,
                      const std::string& original_language,
                      const std::string& target_language,
                      TranslateErrors::Type error_type,
-                     PrefService* prefs,
                      bool triggered_from_menu);
 
   // Returns the number of languages supported.
@@ -68,6 +76,8 @@ class TranslateInfoBarDelegate : public infobars::InfoBarDelegate {
   }
 
   translate::TranslateStep translate_step() const { return step_; }
+
+  bool is_off_the_record() { return is_off_the_record_; }
 
   TranslateErrors::Type error_type() const { return error_type_; }
 
@@ -144,14 +154,6 @@ class TranslateInfoBarDelegate : public infobars::InfoBarDelegate {
   bool ShouldShowNeverTranslateShortcut();
   bool ShouldShowAlwaysTranslateShortcut();
 
-  // Returns the WebContents associated with the TranslateInfoBarDelegate.
-  content::WebContents* GetWebContents();
-
-  // Convenience method that returns the displayable language name for
-  // |language_code| in the current application locale.
-  static base::string16 GetLanguageDisplayableName(
-      const std::string& language_code);
-
   // Adds the strings that should be displayed in the after translate infobar to
   // |strings|. If |autodetermined_source_language| is false, the text in that
   // infobar is:
@@ -168,15 +170,20 @@ class TranslateInfoBarDelegate : public infobars::InfoBarDelegate {
                                        bool* swap_languages,
                                        bool autodetermined_source_language);
 
+  // Gets the TranslateDriver associated with this object.
+  // May return NULL if the driver has been destroyed.
+  TranslateDriver* GetTranslateDriver();
+
  protected:
-  TranslateInfoBarDelegate(content::WebContents* web_contents,
-                           translate::TranslateStep step,
-                           TranslateInfoBarDelegate* old_delegate,
-                           const std::string& original_language,
-                           const std::string& target_language,
-                           TranslateErrors::Type error_type,
-                           PrefService* prefs,
-                           bool triggered_from_menu);
+  TranslateInfoBarDelegate(
+      const base::WeakPtr<TranslateManager>& translate_manager,
+      bool is_off_the_record,
+      translate::TranslateStep step,
+      TranslateInfoBarDelegate* old_delegate,
+      const std::string& original_language,
+      const std::string& target_language,
+      TranslateErrors::Type error_type,
+      bool triggered_from_menu);
 
  private:
   friend class TranslationInfoBarTest;
@@ -186,6 +193,10 @@ class TranslateInfoBarDelegate : public infobars::InfoBarDelegate {
   static scoped_ptr<infobars::InfoBar> CreateInfoBar(
       scoped_ptr<TranslateInfoBarDelegate> delegate);
 
+  // Gets the TranslateClient associated with this object.
+  // May return NULL if the client has been destroyed.
+  TranslateClient* GetTranslateClient();
+
   // InfoBarDelegate:
   virtual void InfoBarDismissed() OVERRIDE;
   virtual int GetIconID() const OVERRIDE;
@@ -193,6 +204,7 @@ class TranslateInfoBarDelegate : public infobars::InfoBarDelegate {
   virtual bool ShouldExpire(const NavigationDetails& details) const OVERRIDE;
   virtual TranslateInfoBarDelegate* AsTranslateInfoBarDelegate() OVERRIDE;
 
+  bool is_off_the_record_;
   translate::TranslateStep step_;
 
   // The type of fading animation if any that should be used when showing this
@@ -200,6 +212,7 @@ class TranslateInfoBarDelegate : public infobars::InfoBarDelegate {
   BackgroundAnimationType background_animation_;
 
   TranslateUIDelegate ui_delegate_;
+  base::WeakPtr<TranslateManager> translate_manager_;
 
   // The error that occurred when trying to translate (NONE if no error).
   TranslateErrors::Type error_type_;

@@ -19,8 +19,8 @@
 #include "chrome/browser/ui/views/bookmarks/bookmark_bubble_view_observer.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_menu_controller_observer.h"
 #include "chrome/browser/ui/views/detachable_toolbar_view.h"
-#include "components/bookmarks/core/browser/bookmark_model_observer.h"
-#include "components/bookmarks/core/browser/bookmark_node_data.h"
+#include "components/bookmarks/browser/bookmark_model_observer.h"
+#include "components/bookmarks/browser/bookmark_node_data.h"
 #include "ui/gfx/animation/animation_delegate.h"
 #include "ui/views/context_menu_controller.h"
 #include "ui/views/controls/button/button.h"
@@ -164,13 +164,14 @@ class BookmarkBarView : public DetachableToolbarView,
   virtual int GetToolbarOverlap() const OVERRIDE;
 
   // View methods:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual gfx::Size GetMinimumSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual gfx::Size GetMinimumSize() const OVERRIDE;
   virtual bool HitTestRect(const gfx::Rect& rect) const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual void ViewHierarchyChanged(
       const ViewHierarchyChangedDetails& details) OVERRIDE;
-  virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
+  virtual void PaintChildren(gfx::Canvas* canvas,
+                             const views::CullSet& cull_set) OVERRIDE;
   virtual bool GetDropFormats(
       int* formats,
       std::set<ui::OSExchangeData::CustomFormat>* custom_formats) OVERRIDE;
@@ -284,7 +285,7 @@ class BookmarkBarView : public DetachableToolbarView,
   // Returns the number of buttons corresponding to starred urls/folders. This
   // is equivalent to the number of children the bookmark bar node from the
   // bookmark bar model has.
-  int GetBookmarkButtonCount();
+  int GetBookmarkButtonCount() const;
 
   // Returns the button at the specified index.
   views::TextButton* GetBookmarkButton(int index);
@@ -368,11 +369,8 @@ class BookmarkBarView : public DetachableToolbarView,
   // Updates the visibility of |bookmarks_separator_view_|.
   void UpdateBookmarksSeparatorVisibility();
 
-  // This method computes the bounds for the bookmark bar items. If
-  // |compute_bounds_only| = TRUE, the bounds for the items are just computed,
-  // but are not set. This mode is used by GetPreferredSize() to obtain the
-  // desired bounds. If |compute_bounds_only| = FALSE, the bounds are set.
-  gfx::Size LayoutItems(bool compute_bounds_only);
+  // This method computes the bounds for the bookmark bar items.
+  void LayoutItems();
 
   // Updates the visibility of the apps shortcut based on the pref value.
   void OnAppsPageShortcutVisibilityPrefChanged();

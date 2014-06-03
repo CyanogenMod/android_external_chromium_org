@@ -654,8 +654,8 @@ def SetBuildSystemDefault(build_system):
     raise RuntimeError('%s build not supported.' % build_system)
 
 
-def BuildWithMake(threads, targets):
-  cmd = ['make', 'BUILDTYPE=Release']
+def BuildWithMake(threads, targets, build_type='Release'):
+  cmd = ['make', 'BUILDTYPE=%s' % build_type]
 
   if threads:
     cmd.append('-j%d' % threads)
@@ -667,8 +667,8 @@ def BuildWithMake(threads, targets):
   return not return_code
 
 
-def BuildWithNinja(threads, targets):
-  cmd = ['ninja', '-C', os.path.join('out', 'Release')]
+def BuildWithNinja(threads, targets, build_type='Release'):
+  cmd = ['ninja', '-C', os.path.join('out', build_type)]
 
   if threads:
     cmd.append('-j%d' % threads)
@@ -680,11 +680,11 @@ def BuildWithNinja(threads, targets):
   return not return_code
 
 
-def BuildWithVisualStudio(targets):
+def BuildWithVisualStudio(targets, build_type='Release'):
   path_to_devenv = os.path.abspath(
       os.path.join(os.environ['VS100COMNTOOLS'], '..', 'IDE', 'devenv.com'))
   path_to_sln = os.path.join(os.getcwd(), 'chrome', 'chrome.sln')
-  cmd = [path_to_devenv, '/build', 'Release', path_to_sln]
+  cmd = [path_to_devenv, '/build', build_type, path_to_sln]
 
   for t in targets:
     cmd.extend(['/Project', t])
@@ -797,12 +797,12 @@ class DesktopBuilder(Builder):
 
     build_success = False
     if opts.build_preference == 'make':
-      build_success = BuildWithMake(threads, targets)
+      build_success = BuildWithMake(threads, targets, opts.target_build_type)
     elif opts.build_preference == 'ninja':
-      build_success = BuildWithNinja(threads, targets)
+      build_success = BuildWithNinja(threads, targets, opts.target_build_type)
     elif opts.build_preference == 'msvs':
       assert IsWindows(), 'msvs is only supported on Windows.'
-      build_success = BuildWithVisualStudio(targets)
+      build_success = BuildWithVisualStudio(targets, opts.target_build_type)
     else:
       assert False, 'No build system defined.'
     return build_success
@@ -847,7 +847,8 @@ class AndroidBuilder(Builder):
 
     build_success = False
     if opts.build_preference == 'ninja':
-      build_success = BuildWithNinja(threads, self._GetTargets())
+      build_success = BuildWithNinja(
+          threads, self._GetTargets(), opts.target_build_type)
     else:
       assert False, 'No build system defined.'
 
@@ -912,7 +913,7 @@ class CrosBuilder(Builder):
     if depot != 'cros':
       cmd += ['CHROME_ORIGIN=LOCAL_SOURCE']
 
-    cmd += ['BUILDTYPE=Release', './build_packages',
+    cmd += ['BUILDTYPE=%s' % opts.target_build_type, './build_packages',
         '--board=%s' % opts.cros_board]
     return_code = RunProcess(cmd)
 
@@ -939,7 +940,7 @@ class CrosBuilder(Builder):
     if depot != 'cros':
       cmd += ['CHROME_ORIGIN=LOCAL_SOURCE']
 
-    cmd += ['BUILDTYPE=Release', '--', './build_image',
+    cmd += ['BUILDTYPE=%s' % opts.target_build_type, '--', './build_image',
         '--board=%s' % opts.cros_board, 'test']
 
     return_code = RunProcess(cmd)
@@ -980,8 +981,8 @@ class SourceControl(object):
     Returns:
       The return code of the call.
     """
-    return bisect_utils.RunGClient(['sync', '--revision',
-        revision, '--verbose', '--nohooks', '--reset', '--force'])
+    return bisect_utils.RunGClient(['sync', '--verbose', '--reset', '--force',
+        '--delete_unversioned_trees', '--nohooks', '--revision', revision])
 
   def SyncToRevisionWithRepo(self, timestamp):
     """Uses repo to sync all the underlying git depots to the specified
@@ -1414,45 +1415,34 @@ class BisectPerformanceMetrics(object):
       A dict in the format {depot:revision} if successful, otherwise None.
     """
     try:
-      locals = {'Var': lambda _: locals["vars"][_],
-                'From': lambda *args: None}
-      execfile(bisect_utils.FILE_DEPS_GIT, {}, locals)
-      locals = locals['deps']
-      results = {}
+      deps_data = {'Var': lambda _: deps_data["vars"][_],
+                   'From': lambda *args: None
+                  }
+      execfile(bisect_utils.FILE_DEPS_GIT, {}, deps_data)
+      deps_data = deps_data['deps']
 
       rxp = re.compile(".git@(?P<revision>[a-fA-F0-9]+)")
+      results = {}
+      for depot_name, depot_data in DEPOT_DEPS_NAME.iteritems():
+        if (depot_data.get('platform') and
+            depot_data.get('platform') != os.name):
+          continue
 
-      for d in DEPOT_NAMES:
-        if DEPOT_DEPS_NAME[d].has_key('platform'):
-          if DEPOT_DEPS_NAME[d]['platform'] != os.name:
-            continue
-
-        if (DEPOT_DEPS_NAME[d]['recurse'] and
-            depot in DEPOT_DEPS_NAME[d]['from']):
-          if (locals.has_key(DEPOT_DEPS_NAME[d]['src']) or
-              locals.has_key(DEPOT_DEPS_NAME[d]['src_old'])):
-            if locals.has_key(DEPOT_DEPS_NAME[d]['src']):
-              re_results = rxp.search(locals[DEPOT_DEPS_NAME[d]['src']])
-              self.depot_cwd[d] = \
-                  os.path.join(self.src_cwd, DEPOT_DEPS_NAME[d]['src'][4:])
-            elif (DEPOT_DEPS_NAME[d].has_key('src_old') and
-                locals.has_key(DEPOT_DEPS_NAME[d]['src_old'])):
-              re_results = \
-                  rxp.search(locals[DEPOT_DEPS_NAME[d]['src_old']])
-              self.depot_cwd[d] = \
-                  os.path.join(self.src_cwd, DEPOT_DEPS_NAME[d]['src_old'][4:])
-
+        if (depot_data.get('recurse') and depot in depot_data.get('from')):
+          src_dir = (deps_data.get(depot_data.get('src')) or
+                     deps_data.get(depot_data.get('src_old')))
+          if src_dir:
+            self.depot_cwd[depot_name] = os.path.join(self.src_cwd, src_dir[4:])
+            re_results = rxp.search(deps_data.get(src_dir, ''))
             if re_results:
-              results[d] = re_results.group('revision')
+              results[depot_name] = re_results.group('revision')
             else:
               warning_text = ('Couldn\'t parse revision for %s while bisecting '
-                  '%s' % (d, depot))
-              if not warningText in self.warnings:
-                self.warnings.append(warningText)
+                             '%s' % (depot_name, depot))
+              if not warning_text in self.warnings:
+                self.warnings.append(warning_text)
           else:
-            print 'Couldn\'t find %s while parsing .DEPS.git.' % d
-            print
-            return None
+            results[depot_name] = None
       return results
     except ImportError:
       deps_file_contents = ReadStringFromFile(bisect_utils.FILE_DEPS_GIT)
@@ -1637,12 +1627,17 @@ class BisectPerformanceMetrics(object):
 
     bot_name, build_timeout = GetBuilderNameAndBuildTime(self.opts.target_arch)
 
+    # Create a unique ID for each build request posted to try server builders.
+    # This ID is added to "Reason" property in build's json.
+    # TODO: Use this id to track the build status.
+    build_request_id = GetSHA1HexDigest('%s-%s' % (revision, patch))
+
     # Creates a try job description.
     job_args = {'host': self.opts.builder_host,
                 'port': self.opts.builder_port,
                 'revision': 'src@%s' % revision,
                 'bot': bot_name,
-                'name': 'Bisect Job-%s' % revision
+                'name': build_request_id
                }
     # Update patch information if supplied.
     if patch:
@@ -1940,31 +1935,42 @@ class BisectPerformanceMetrics(object):
       A list of floating point numbers found.
     """
     # Format is: RESULT <graph>: <trace>= <value> <units>
-    metric_formatted = re.escape('RESULT %s: %s=' % (metric[0], metric[1]))
+    metric_re = re.escape('RESULT %s: %s=' % (metric[0], metric[1]))
+
+    # The log will be parsed looking for format:
+    # <*>RESULT <graph_name>: <trace_name>= <value>
+    single_result_re = re.compile(
+        metric_re + '\s*(?P<VALUE>[-]?\d*(\.\d*)?)')
+
+    # The log will be parsed looking for format:
+    # <*>RESULT <graph_name>: <trace_name>= [<value>,value,value,...]
+    multi_results_re = re.compile(
+        metric_re + '\s*\[\s*(?P<VALUES>[-]?[\d\., ]+)\s*\]')
+
+    # The log will be parsed looking for format:
+    # <*>RESULT <graph_name>: <trace_name>= {<mean>, <std deviation>}
+    mean_stddev_re = re.compile(
+        metric_re +
+        '\s*\{\s*(?P<MEAN>[-]?\d*(\.\d*)?),\s*(?P<STDDEV>\d+(\.\d*)?)\s*\}')
 
     text_lines = text.split('\n')
     values_list = []
-
     for current_line in text_lines:
       # Parse the output from the performance test for the metric we're
       # interested in.
-      metric_re = metric_formatted +\
-                  "(\s)*(?P<values>[0-9]+(\.[0-9]*)?)"
-      metric_re = re.compile(metric_re)
-      regex_results = metric_re.search(current_line)
-
-      if not regex_results is None:
-        values_list += [regex_results.group('values')]
-      else:
-        metric_re = metric_formatted +\
-                    "(\s)*\[(\s)*(?P<values>[0-9,.]+)\]"
-        metric_re = re.compile(metric_re)
-        regex_results = metric_re.search(current_line)
-
-        if not regex_results is None:
-          metric_values = regex_results.group('values')
-
-          values_list += metric_values.split(',')
+      single_result_match = single_result_re.search(current_line)
+      multi_results_match = multi_results_re.search(current_line)
+      mean_stddev_match = mean_stddev_re.search(current_line)
+      if (not single_result_match is None and
+          single_result_match.group('VALUE')):
+        values_list += [single_result_match.group('VALUE')]
+      elif (not multi_results_match is None and
+            multi_results_match.group('VALUES')):
+        metric_values = multi_results_match.group('VALUES')
+        values_list += metric_values.split(',')
+      elif (not mean_stddev_match is None and
+            mean_stddev_match.group('MEAN')):
+        values_list += [mean_stddev_match.group('MEAN')]
 
     values_list = [float(v) for v in values_list if IsStringFloat(v)]
 
@@ -2077,10 +2083,10 @@ class BisectPerformanceMetrics(object):
       }
       return (fake_results, success_code)
 
-    if IsWindows():
-      command_to_run = command_to_run.replace('/', r'\\')
-
-    args = shlex.split(command_to_run)
+    # For Windows platform set posix=False, to parse windows paths correctly.
+    # On Windows, path separators '\' or '\\' are replace by '' when posix=True,
+    # refer to http://bugs.python.org/issue1724822. By default posix=True.
+    args = shlex.split(command_to_run, posix=not IsWindows())
 
     if not self._GenerateProfileIfNecessary(args):
       err_text = 'Failed to generate profile for performance test.'
@@ -2271,7 +2277,8 @@ class BisectPerformanceMetrics(object):
 
     if self.was_blink != is_blink:
       self.was_blink = is_blink
-      return bisect_utils.RemoveThirdPartyWebkitDirectory()
+      # Removes third_party/Webkit directory.
+      return bisect_utils.RemoveThirdPartyDirectory('Webkit')
     return True
 
   def PerformCrosChrootCleanup(self):
@@ -2307,7 +2314,13 @@ class BisectPerformanceMetrics(object):
       True if successful.
     """
     if depot == 'chromium':
-      if not bisect_utils.RemoveThirdPartyLibjingleDirectory():
+      # Removes third_party/libjingle. At some point, libjingle was causing
+      # issues syncing when using the git workflow (crbug.com/266324).
+      if not bisect_utils.RemoveThirdPartyDirectory('libjingle'):
+        return False
+      # Removes third_party/skia. At some point, skia was causing
+      #  issues syncing when using the git workflow (crbug.com/377951).
+      if not bisect_utils.RemoveThirdPartyDirectory('skia'):
         return False
       return self.PerformWebkitDirectoryCleanup(revision)
     elif depot == 'cros':
@@ -2533,12 +2546,12 @@ class BisectPerformanceMetrics(object):
         # backwards to try to match trunk revisions to bleeding_edge.
         self._FillInV8BleedingEdgeInfo(min_revision_data, max_revision_data)
 
-      if (min_revision_data['external'][next_depot] ==
-          max_revision_data['external'][next_depot]):
+      if (min_revision_data['external'].get(next_depot) ==
+          max_revision_data['external'].get(next_depot)):
         continue
 
-      if (min_revision_data['external'][next_depot] and
-          max_revision_data['external'][next_depot]):
+      if (min_revision_data['external'].get(next_depot) and
+          max_revision_data['external'].get(next_depot)):
         external_depot = next_depot
         break
 
@@ -3553,10 +3566,10 @@ def RmTreeAndMkDir(path_to_dir, skip_makedir=False):
   return True
 
 
-def RemoveBuildFiles():
+def RemoveBuildFiles(build_type):
   """Removes build files from previous runs."""
-  if RmTreeAndMkDir(os.path.join('out', 'Release')):
-    if RmTreeAndMkDir(os.path.join('build', 'Release')):
+  if RmTreeAndMkDir(os.path.join('out', build_type)):
+    if RmTreeAndMkDir(os.path.join('build', build_type)):
       return True
   return False
 
@@ -3587,6 +3600,7 @@ class BisectOptions(object):
     self.debug_ignore_perf_test = None
     self.gs_bucket = None
     self.target_arch = 'ia32'
+    self.target_build_type = 'Release'
     self.builder_host = None
     self.builder_port = None
     self.bisect_mode = BISECT_MODE_MEAN
@@ -3710,6 +3724,12 @@ class BisectOptions(object):
                      dest='target_arch',
                      help=('The target build architecture. Choices are "ia32" '
                      '(default), "x64" or "arm".'))
+    group.add_option('--target_build_type',
+                     type='choice',
+                     choices=['Release', 'Debug'],
+                     default='Release',
+                     help='The target build type. Choices are "Release" '
+                     '(default), or "Debug".')
     group.add_option('--builder_host',
                      dest='builder_host',
                      type='str',
@@ -3848,7 +3868,7 @@ def main():
 
       os.chdir(os.path.join(os.getcwd(), 'src'))
 
-      if not RemoveBuildFiles():
+      if not RemoveBuildFiles(opts.target_build_type):
         raise RuntimeError('Something went wrong removing the build files.')
 
     if not IsPlatformSupported(opts):

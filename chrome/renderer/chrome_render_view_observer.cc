@@ -235,6 +235,7 @@ bool ChromeRenderViewObserver::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ChromeViewMsg_WebUIJavaScript, OnWebUIJavaScript)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_SetClientSidePhishingDetection,
                         OnSetClientSidePhishingDetection)
+    IPC_MESSAGE_HANDLER(ChromeViewMsg_SetName, OnSetName)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_SetVisuallyDeemphasized,
                         OnSetVisuallyDeemphasized)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_GetFPS, OnGetFPS)
@@ -255,7 +256,7 @@ bool ChromeRenderViewObserver::OnMessageReceived(const IPC::Message& message) {
 
 void ChromeRenderViewObserver::OnWebUIJavaScript(
     const base::string16& javascript) {
-  webui_javascript_ = javascript;
+  webui_javascript_.push_back(javascript);
 }
 
 #if defined(OS_ANDROID)
@@ -358,6 +359,13 @@ void ChromeRenderViewObserver::OnSetClientSidePhishingDetection(
 #endif
 }
 
+void ChromeRenderViewObserver::OnSetName(const std::string& name) {
+  if (!render_view()->GetWebView())
+    return;
+
+  render_view()->GetWebView()->mainFrame()->setName(WebString::fromUTF8(name));
+}
+
 void ChromeRenderViewObserver::OnSetVisuallyDeemphasized(bool deemphasized) {
   bool already_deemphasized = !!dimmed_color_overlay_.get();
   if (already_deemphasized == deemphasized)
@@ -382,17 +390,20 @@ void ChromeRenderViewObserver::OnGetFPS() {
 void ChromeRenderViewObserver::DidStartLoading() {
   if ((render_view()->GetEnabledBindings() & content::BINDINGS_POLICY_WEB_UI) &&
       !webui_javascript_.empty()) {
-    render_view()->GetMainRenderFrame()->ExecuteJavaScript(webui_javascript_);
+    for (size_t i = 0; i < webui_javascript_.size(); ++i) {
+      render_view()->GetMainRenderFrame()->ExecuteJavaScript(
+          webui_javascript_[i]);
+    }
     webui_javascript_.clear();
   }
 }
 
 void ChromeRenderViewObserver::DidStopLoading() {
   WebFrame* main_frame = render_view()->GetWebView()->mainFrame();
-  GURL osd_url = main_frame->document().openSearchDescriptionURL();
-  if (!osd_url.is_empty()) {
+  GURL osdd_url = main_frame->document().openSearchDescriptionURL();
+  if (!osdd_url.is_empty()) {
     Send(new ChromeViewHostMsg_PageHasOSDD(
-        routing_id(), render_view()->GetPageId(), osd_url,
+        routing_id(), main_frame->document().url(), osdd_url,
         search_provider::AUTODETECTED_PROVIDER));
   }
 
@@ -558,9 +569,8 @@ void ChromeRenderViewObserver::CaptureText(WebFrame* frame,
   // terminate the string at the last space to ensure no words are clipped.
   if (contents->size() == kMaxIndexChars) {
     size_t last_space_index = contents->find_last_of(base::kWhitespaceUTF16);
-    if (last_space_index == base::string16::npos)
-      return;  // don't index if we got a huge block of text with no spaces
-    contents->resize(last_space_index);
+    if (last_space_index != base::string16::npos)
+      contents->resize(last_space_index);
   }
 }
 

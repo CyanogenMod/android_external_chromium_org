@@ -372,8 +372,8 @@ void AddCustomItemsToMenu(const std::vector<content::MenuItem>& items,
 
 // Helper function to escape "&" as "&&".
 void EscapeAmpersands(base::string16* text) {
-  const base::char16 ampersand[] = {'&', 0};
-  base::ReplaceChars(*text, ampersand, base::ASCIIToUTF16("&&"), text);
+  base::ReplaceChars(*text, base::ASCIIToUTF16("&"), base::ASCIIToUTF16("&&"),
+                     text);
 }
 
 }  // namespace
@@ -803,7 +803,7 @@ void RenderViewContextMenu::AppendLinkItems() {
 
   menu_model_.AddItemWithStringId(
       IDC_CONTENT_CONTEXT_COPYLINKLOCATION,
-      params_.link_url.SchemeIs(content::kMailToScheme) ?
+      params_.link_url.SchemeIs(url::kMailToScheme) ?
           IDS_CONTENT_CONTEXT_COPYEMAILADDRESS :
           IDS_CONTENT_CONTEXT_COPYLINKLOCATION);
 }
@@ -1064,7 +1064,7 @@ void RenderViewContextMenu::AppendProtocolHandlerSubMenu() {
   for (size_t i = 0; i < handlers.size() && i <= max; i++) {
     protocol_handler_submenu_model_.AddItem(
         IDC_CONTENT_CONTEXT_PROTOCOL_HANDLER_FIRST + i,
-        handlers[i].title());
+        base::UTF8ToUTF16(handlers[i].url().host()));
   }
   protocol_handler_submenu_model_.AddSeparator(ui::NORMAL_SEPARATOR);
   protocol_handler_submenu_model_.AddItem(
@@ -1159,7 +1159,7 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
       return IsDevCommandEnabled(id);
 
     case IDC_CONTENT_CONTEXT_VIEWPAGEINFO:
-      if (source_web_contents_->GetController().GetActiveEntry() == NULL)
+      if (source_web_contents_->GetController().GetVisibleEntry() == NULL)
         return false;
       // Disabled if no browser is associated (e.g. desktop notifications).
       if (chrome::FindBrowserWithWebContents(source_web_contents_) == NULL)
@@ -1298,15 +1298,11 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
       if (!local_state->GetBoolean(prefs::kAllowFileSelectionDialogs))
         return false;
 
-      // Instead of using GetURL here, we use url() (which is the "real" url of
-      // the page) from the NavigationEntry because its reflects their origin
-      // rather than the display one (returned by GetURL) which may be
-      // different (like having "view-source:" on the front).
-      // TODO(nasko): Audit all GetActiveEntry calls in this file.
-      NavigationEntry* active_entry =
-          source_web_contents_->GetController().GetActiveEntry();
-      return content::IsSavableURL(
-          (active_entry) ? active_entry->GetURL() : GURL());
+      // We save the last committed entry (which the user is looking at), as
+      // opposed to any pending URL that hasn't committed yet.
+      NavigationEntry* entry =
+          source_web_contents_->GetController().GetLastCommittedEntry();
+      return content::IsSavableURL(entry ? entry->GetURL() : GURL());
     }
 
     case IDC_CONTENT_CONTEXT_RELOADFRAME:
@@ -1420,6 +1416,8 @@ bool RenderViewContextMenu::IsCommandIdChecked(int id) const {
 
 void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
   command_executed_ = true;
+  RecordUsedItem(id);
+
   // If this command is is added by one of our observers, we dispatch it to the
   // observer.
   ObserverListBase<RenderViewContextMenuObserver>::Iterator it(observers_);
@@ -1428,8 +1426,6 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
     if (observer->IsCommandIdSupported(id))
       return observer->ExecuteCommand(id);
   }
-
-  RecordUsedItem(id);
 
   RenderFrameHost* render_frame_host =
       RenderFrameHost::FromID(render_process_id_, render_frame_id_);
@@ -1707,8 +1703,10 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
     case IDC_CONTENT_CONTEXT_VIEWPAGEINFO: {
       NavigationController* controller = &source_web_contents_->GetController();
       // Important to use GetVisibleEntry to match what's showing in the
-      // omnibox.
+      // omnibox.  This may return null.
       NavigationEntry* nav_entry = controller->GetVisibleEntry();
+      if (!nav_entry)
+        return;
       Browser* browser =
           chrome::FindBrowserWithWebContents(source_web_contents_);
       chrome::ShowWebsiteSettings(browser, source_web_contents_,

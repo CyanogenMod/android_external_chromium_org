@@ -54,6 +54,7 @@ class SyncEngineInitializerTest : public testing::Test {
     sync_context_.reset(new SyncEngineContext(
         fake_drive_service.Pass(),
         scoped_ptr<drive::DriveUploaderInterface>(),
+        NULL,
         base::MessageLoopProxy::current(),
         base::MessageLoopProxy::current(),
         base::MessageLoopProxy::current()));
@@ -77,11 +78,9 @@ class SyncEngineInitializerTest : public testing::Test {
 
   SyncStatusCode RunInitializer() {
     SyncEngineInitializer* initializer =
-        new SyncEngineInitializer(
-            sync_context_.get(),
-            base::MessageLoopProxy::current(),
-            database_path(),
-            in_memory_env_.get());
+        new SyncEngineInitializer(sync_context_.get(),
+                                  database_path(),
+                                  in_memory_env_.get());
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
 
     sync_task_manager_->ScheduleSyncTask(

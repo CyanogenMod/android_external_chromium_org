@@ -22,14 +22,14 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/metrics/variations/variations_util.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/variations/variations_util.h"
 #include "content/public/common/content_constants.h"
 #include "net/spdy/spdy_session.h"
 #include "ui/base/layout.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #endif
 
 namespace chrome {
@@ -115,16 +115,6 @@ void SetupPreReadFieldTrial() {
   trial->group();
 }
 
-#if defined(OS_CHROMEOS)
-void SetupChromeOSMultiProfilesAllowedTrial() {
-  const char kTrialName[] = "ChromeOSMultiProfilesAllowed";
-  if (chromeos::UserManager::IsMultipleProfilesAllowed())
-    base::FieldTrialList::CreateFieldTrial(kTrialName, "allowed")->group();
-  else
-    base::FieldTrialList::CreateFieldTrial(kTrialName, "not_allowed")->group();
-}
-#endif  // defined(OS_CHROMEOS)
-
 }  // namespace
 
 void SetupDesktopFieldTrials(const CommandLine& parsed_command_line,
@@ -137,9 +127,6 @@ void SetupDesktopFieldTrials(const CommandLine& parsed_command_line,
   DisableShowProfileSwitcherTrialIfNecessary();
   SetupShowAppLauncherPromoFieldTrial(local_state);
   SetupPreReadFieldTrial();
-#if defined(OS_CHROMEOS)
-  SetupChromeOSMultiProfilesAllowedTrial();
-#endif
 }
 
 }  // namespace chrome

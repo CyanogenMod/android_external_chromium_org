@@ -19,6 +19,7 @@
 #include "chrome/browser/sync_file_system/drive_backend/task_dependency_manager.h"
 #include "chrome/browser/sync_file_system/sync_callbacks.h"
 #include "chrome/browser/sync_file_system/sync_status_code.h"
+#include "chrome/browser/sync_file_system/task_logger.h"
 
 namespace tracked_objects {
 class Location;
@@ -61,6 +62,8 @@ class SyncTaskManager
     virtual void NotifyLastOperationStatus(
         SyncStatusCode last_operation_status,
         bool last_operation_used_network) = 0;
+
+    virtual void RecordTaskLog(scoped_ptr<TaskLogger::TaskLog> task_log) = 0;
   };
 
   // Runs at most |maximum_background_tasks| parallel as background tasks.
@@ -138,6 +141,7 @@ class SyncTaskManager
   // Non-static version of UpdateBlockingFactor.
   void UpdateBlockingFactorBody(scoped_ptr<SyncTaskToken> foreground_task_token,
                                 scoped_ptr<SyncTaskToken> background_task_token,
+                                scoped_ptr<TaskLogger::TaskLog> task_log,
                                 scoped_ptr<BlockingFactor> blocking_factor,
                                 const Continuation& continuation);
 

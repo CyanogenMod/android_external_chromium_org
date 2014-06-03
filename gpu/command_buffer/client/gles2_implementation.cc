@@ -144,6 +144,7 @@ bool GLES2Implementation::Initialize(
     unsigned int min_transfer_buffer_size,
     unsigned int max_transfer_buffer_size,
     unsigned int mapped_memory_limit) {
+  TRACE_EVENT0("gpu", "GLES2Implementation::Initialize");
   DCHECK_GE(starting_transfer_buffer_size, min_transfer_buffer_size);
   DCHECK_LE(starting_transfer_buffer_size, max_transfer_buffer_size);
   DCHECK_GE(min_transfer_buffer_size, kStartingOffset);
@@ -215,6 +216,7 @@ bool GLES2Implementation::Initialize(
 }
 
 bool GLES2Implementation::QueryAndCacheStaticState() {
+  TRACE_EVENT0("gpu", "GLES2Implementation::QueryAndCacheStaticState");
   // Setup query for multiple GetIntegerv's
   static const GLenum pnames[] = {
     GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS,
@@ -375,6 +377,8 @@ void GLES2Implementation::SignalQuery(uint32 query,
 }
 
 void GLES2Implementation::SetSurfaceVisible(bool visible) {
+  TRACE_EVENT1(
+      "gpu", "GLES2Implementation::SetSurfaceVisible", "visible", visible);
   // TODO(piman): This probably should be ShallowFlushCHROMIUM().
   Flush();
   gpu_control_->SetSurfaceVisible(visible);
@@ -1616,6 +1620,10 @@ void GLES2Implementation::CompressedTexImage2D(
     SetGLError(GL_INVALID_VALUE, "glCompressedTexImage2D", "dimension < 0");
     return;
   }
+  if (border != 0) {
+    SetGLError(GL_INVALID_VALUE, "glCompressedTexImage2D", "border != 0");
+    return;
+  }
   if (height == 0 || width == 0) {
     return;
   }
@@ -1628,7 +1636,7 @@ void GLES2Implementation::CompressedTexImage2D(
         "glCompressedTexImage2D", offset, image_size);
     if (buffer && buffer->shm_id() != -1) {
       helper_->CompressedTexImage2D(
-          target, level, internalformat, width, height, border, image_size,
+          target, level, internalformat, width, height, image_size,
           buffer->shm_id(), buffer->shm_offset() + offset);
       buffer->set_last_usage_token(helper_->InsertToken());
     }
@@ -1636,7 +1644,7 @@ void GLES2Implementation::CompressedTexImage2D(
   }
   SetBucketContents(kResultBucketId, data, image_size);
   helper_->CompressedTexImage2DBucket(
-      target, level, internalformat, width, height, border, kResultBucketId);
+      target, level, internalformat, width, height, kResultBucketId);
   // Free the bucket. This is not required but it does free up the memory.
   // and we don't have to wait for the result so from the client's perspective
   // it's cheap.
@@ -1738,6 +1746,10 @@ void GLES2Implementation::TexImage2D(
     SetGLError(GL_INVALID_VALUE, "glTexImage2D", "dimension < 0");
     return;
   }
+  if (border != 0) {
+    SetGLError(GL_INVALID_VALUE, "glTexImage2D", "border != 0");
+    return;
+  }
   uint32 size;
   uint32 unpadded_row_size;
   uint32 padded_row_size;
@@ -1756,7 +1768,7 @@ void GLES2Implementation::TexImage2D(
         "glTexImage2D", offset, size);
     if (buffer && buffer->shm_id() != -1) {
       helper_->TexImage2D(
-          target, level, internalformat, width, height, border, format, type,
+          target, level, internalformat, width, height, format, type,
           buffer->shm_id(), buffer->shm_offset() + offset);
       buffer->set_last_usage_token(helper_->InsertToken());
       CheckGLError();
@@ -1767,7 +1779,7 @@ void GLES2Implementation::TexImage2D(
   // If there's no data just issue TexImage2D
   if (!pixels) {
     helper_->TexImage2D(
-       target, level, internalformat, width, height, border, format, type,
+       target, level, internalformat, width, height, format, type,
        0, 0);
     CheckGLError();
     return;
@@ -1807,7 +1819,7 @@ void GLES2Implementation::TexImage2D(
         pixels, height, unpadded_row_size, src_padded_row_size, unpack_flip_y_,
         buffer.address(), padded_row_size);
     helper_->TexImage2D(
-        target, level, internalformat, width, height, border, format, type,
+        target, level, internalformat, width, height, format, type,
         buffer.shm_id(), buffer.offset());
     CheckGLError();
     return;
@@ -1815,7 +1827,7 @@ void GLES2Implementation::TexImage2D(
 
   // No, so send it using TexSubImage2D.
   helper_->TexImage2D(
-     target, level, internalformat, width, height, border, format, type,
+     target, level, internalformat, width, height, format, type,
      0, 0);
   TexSubImage2DImpl(
       target, level, 0, 0, width, height, format, type, unpadded_row_size,
@@ -3476,8 +3488,7 @@ void GLES2Implementation::GetQueryObjectuivEXT(
       if (!query->CheckResultsAvailable(helper_)) {
         helper_->WaitForToken(query->token());
         if (!query->CheckResultsAvailable(helper_)) {
-          // TODO(gman): Speed this up.
-          WaitForCmd();
+          FinishHelper();
           CHECK(query->CheckResultsAvailable(helper_));
         }
       }
@@ -3831,6 +3842,10 @@ void GLES2Implementation::AsyncTexImage2DCHROMIUM(
     SetGLError(GL_INVALID_VALUE, "glTexImage2D", "dimension < 0");
     return;
   }
+  if (border != 0) {
+    SetGLError(GL_INVALID_VALUE, "glTexImage2D", "border != 0");
+    return;
+  }
   uint32 size;
   uint32 unpadded_row_size;
   uint32 padded_row_size;
@@ -3844,7 +3859,7 @@ void GLES2Implementation::AsyncTexImage2DCHROMIUM(
   // If there's no data/buffer just issue the AsyncTexImage2D
   if (!pixels && !bound_pixel_unpack_transfer_buffer_id_) {
     helper_->AsyncTexImage2DCHROMIUM(
-       target, level, internalformat, width, height, border, format, type,
+       target, level, internalformat, width, height, format, type,
        0, 0, 0, 0, 0);
     return;
   }
@@ -3866,7 +3881,7 @@ void GLES2Implementation::AsyncTexImage2DCHROMIUM(
     uint32 async_token = NextAsyncUploadToken();
     buffer->set_last_async_upload_token(async_token);
     helper_->AsyncTexImage2DCHROMIUM(
-        target, level, internalformat, width, height, border, format, type,
+        target, level, internalformat, width, height, format, type,
         buffer->shm_id(), buffer->shm_offset() + offset,
         async_token,
         async_upload_sync_shm_id_, async_upload_sync_shm_offset_);

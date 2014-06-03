@@ -31,7 +31,8 @@ class SpecialStoragePolicy;
 
 namespace content {
 
-class BrowserPluginGuestManagerDelegate;
+class BlobHandle;
+class BrowserPluginGuestManager;
 class DownloadManager;
 class DownloadManagerDelegate;
 class GeolocationPermissionContext;
@@ -76,6 +77,13 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // Use GetStoragePartition() instead. Ask ajwong@ if you have problems.
   static content::StoragePartition* GetDefaultStoragePartition(
       BrowserContext* browser_context);
+
+  typedef base::Callback<void(scoped_ptr<BlobHandle>)> BlobCallback;
+
+  // |callback| returns a NULL scoped_ptr on failure.
+  static void CreateMemoryBackedBlob(BrowserContext* browser_context,
+                                     const char* data, size_t length,
+                                     const BlobCallback& callback);
 
   // Ensures that the corresponding ResourceContext is initialized. Normally the
   // BrowserContext initializs the corresponding getters when its objects are
@@ -149,14 +157,14 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   virtual void RequestProtectedMediaIdentifierPermission(
       int render_process_id,
       int render_view_id,
-      int bridge_id,
-      int group_id,
-      const GURL& requesting_frame,
+      const GURL& origin,
       const ProtectedMediaIdentifierPermissionCallback& callback) = 0;
 
   // Cancels pending protected media identifier permission requests.
   virtual void CancelProtectedMediaIdentifierPermissionRequests(
-      int group_id) = 0;
+      int render_process_id,
+      int render_view_id,
+      const GURL& origin) = 0;
 
   // Returns the resource context.
   virtual ResourceContext* GetResourceContext() = 0;
@@ -170,9 +178,8 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // return NULL, in which case geolocation requests will always be allowed.
   virtual GeolocationPermissionContext* GetGeolocationPermissionContext() = 0;
 
-  // Returns the guest manager delegate for this context.
-  virtual content::BrowserPluginGuestManagerDelegate*
-      GetGuestManagerDelegate() = 0;
+  // Returns the guest manager for this context.
+  virtual BrowserPluginGuestManager* GetGuestManager() = 0;
 
   // Returns a special storage policy implementation, or NULL.
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() = 0;

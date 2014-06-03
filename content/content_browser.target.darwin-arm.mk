@@ -24,7 +24,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_browser_speech_proto_speech_proto_gyp,,,$(GYP_VAR_PREFIX))/content_browser_speech_proto_speech_proto_gyp.a \
 	$(call intermediates-dir-for,GYP,content_browser_devtools_devtools_resources_gyp,,,$(GYP_VAR_PREFIX))/devtools_resources.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_common_mojo_bindings_gyp,,,$(GYP_VAR_PREFIX))/content_content_common_mojo_bindings_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_shell_bindings_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_shell_bindings_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_service_provider_bindings_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_service_provider_bindings_gyp.a \
 	$(call intermediates-dir-for,GYP,webkit_webkit_resources_gyp,,,$(GYP_VAR_PREFIX))/webkit_resources.stamp \
 	$(call intermediates-dir-for,GYP,webkit_webkit_strings_gyp,,,$(GYP_VAR_PREFIX))/webkit_strings.stamp \
 	$(call intermediates-dir-for,GYP,third_party_angle_src_commit_id_gyp,,,$(GYP_VAR_PREFIX))/commit_id.stamp \
@@ -63,7 +63,7 @@ LOCAL_SRC_FILES := \
 	content/public/browser/browser_main_parts.cc \
 	content/public/browser/browser_message_filter.cc \
 	content/public/browser/browser_plugin_guest_delegate.cc \
-	content/public/browser/browser_plugin_guest_manager_delegate.cc \
+	content/public/browser/browser_plugin_guest_manager.cc \
 	content/public/browser/content_browser_client.cc \
 	content/public/browser/desktop_media_id.cc \
 	content/public/browser/download_manager_delegate.cc \
@@ -127,6 +127,8 @@ LOCAL_SRC_FILES := \
 	content/browser/appcache/chrome_appcache_service.cc \
 	content/browser/appcache/view_appcache_internals_job.cc \
 	content/browser/battery_status/battery_status_manager_android.cc \
+	content/browser/battery_status/battery_status_message_filter.cc \
+	content/browser/battery_status/battery_status_service.cc \
 	content/browser/browser_child_process_host_impl.cc \
 	content/browser/browser_context.cc \
 	content/browser/browser_main.cc \
@@ -134,7 +136,6 @@ LOCAL_SRC_FILES := \
 	content/browser/browser_main_runner.cc \
 	content/browser/browser_plugin/browser_plugin_embedder.cc \
 	content/browser/browser_plugin/browser_plugin_guest.cc \
-	content/browser/browser_plugin/browser_plugin_guest_manager.cc \
 	content/browser/browser_plugin/browser_plugin_message_filter.cc \
 	content/browser/browser_process_sub_thread.cc \
 	content/browser/browser_shutdown_profile_dumper.cc \
@@ -148,7 +149,6 @@ LOCAL_SRC_FILES := \
 	content/browser/cross_site_request_manager.cc \
 	content/browser/devtools/devtools_agent_host_impl.cc \
 	content/browser/devtools/devtools_browser_target.cc \
-	content/browser/devtools/devtools_external_agent_proxy_impl.cc \
 	content/browser/devtools/devtools_frontend_host.cc \
 	content/browser/devtools/devtools_http_handler_impl.cc \
 	content/browser/devtools/devtools_manager_impl.cc \
@@ -157,6 +157,7 @@ LOCAL_SRC_FILES := \
 	content/browser/devtools/devtools_protocol.cc \
 	content/browser/devtools/devtools_system_info_handler.cc \
 	content/browser/devtools/devtools_tracing_handler.cc \
+	content/browser/devtools/forwarding_agent_host.cc \
 	content/browser/devtools/ipc_devtools_agent_host.cc \
 	content/browser/devtools/embedded_worker_devtools_manager.cc \
 	content/browser/devtools/render_view_devtools_agent_host.cc \
@@ -288,7 +289,6 @@ LOCAL_SRC_FILES := \
 	content/browser/loader/cross_site_resource_handler.cc \
 	content/browser/loader/detachable_resource_handler.cc \
 	content/browser/loader/layered_resource_handler.cc \
-	content/browser/loader/offline_policy.cc \
 	content/browser/loader/power_save_block_resource_throttle.cc \
 	content/browser/loader/redirect_to_file_resource_handler.cc \
 	content/browser/loader/resource_buffer.cc \
@@ -309,6 +309,7 @@ LOCAL_SRC_FILES := \
 	content/browser/media/android/browser_media_player_manager.cc \
 	content/browser/media/android/media_drm_credential_manager.cc \
 	content/browser/media/android/media_resource_getter_impl.cc \
+	content/browser/media/android/media_web_contents_observer.cc \
 	content/browser/media/capture/audio_mirroring_manager.cc \
 	content/browser/media/capture/content_video_capture_device_core.cc \
 	content/browser/media/capture/video_capture_oracle.cc \
@@ -445,11 +446,13 @@ LOCAL_SRC_FILES := \
 	content/browser/service_worker/service_worker_registration.cc \
 	content/browser/service_worker/service_worker_registration_status.cc \
 	content/browser/service_worker/service_worker_request_handler.cc \
+	content/browser/service_worker/service_worker_script_cache_map.cc \
 	content/browser/service_worker/service_worker_storage.cc \
 	content/browser/service_worker/service_worker_unregister_job.cc \
 	content/browser/service_worker/service_worker_url_request_job.cc \
 	content/browser/service_worker/service_worker_utils.cc \
 	content/browser/service_worker/service_worker_version.cc \
+	content/browser/service_worker/service_worker_write_to_cache_job.cc \
 	content/browser/shared_worker/shared_worker_host.cc \
 	content/browser/shared_worker/shared_worker_instance.cc \
 	content/browser/shared_worker/shared_worker_message_filter.cc \
@@ -528,7 +531,14 @@ MY_CFLAGS_Debug := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
+	-Wno-unused-local-typedefs \
 	-fno-tree-sra \
+	-fno-partial-inlining \
+	-fno-early-inlining \
+	-fno-tree-copy-prop \
+	-fno-tree-loop-optimize \
+	-fno-move-loop-invariants \
+	-fno-caller-saves \
 	-Wno-psabi \
 	-ffunction-sections \
 	-funwind-tables \
@@ -561,12 +571,17 @@ MY_DEFS_Debug := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
+	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
+	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
+	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DVIDEO_HOLE=1' \
 	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DPOSIX_AVOID_MMAP' \
@@ -577,10 +592,12 @@ MY_DEFS_Debug := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
+	'-DSK_SUPPORT_LEGACY_ASIMAGEINFO' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
+	'-DSK_IGNORE_CORRECT_HIGH_QUALITY_IMAGE_SCALE' \
+	'-DSK_SUPPORT_LEGACY_INSTALLPIXELSPARAMS' \
+	'-DSK_SUPPORT_LEGACY_IMAGEGENERATORAPI' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
@@ -667,6 +684,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/libyuv \
 	$(LOCAL_PATH)/third_party/libjingle/overrides \
 	$(LOCAL_PATH)/third_party/libjingle/source \
+	$(LOCAL_PATH)/third_party/webrtc/overrides \
 	$(LOCAL_PATH)/testing/gtest/include \
 	$(LOCAL_PATH)/third_party \
 	$(LOCAL_PATH)/third_party/webrtc \
@@ -700,7 +718,14 @@ MY_CFLAGS_Release := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
+	-Wno-unused-local-typedefs \
 	-fno-tree-sra \
+	-fno-partial-inlining \
+	-fno-early-inlining \
+	-fno-tree-copy-prop \
+	-fno-tree-loop-optimize \
+	-fno-move-loop-invariants \
+	-fno-caller-saves \
 	-Wno-psabi \
 	-ffunction-sections \
 	-funwind-tables \
@@ -733,12 +758,17 @@ MY_DEFS_Release := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
+	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
+	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
+	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DVIDEO_HOLE=1' \
 	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DPOSIX_AVOID_MMAP' \
@@ -749,10 +779,12 @@ MY_DEFS_Release := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
+	'-DSK_SUPPORT_LEGACY_ASIMAGEINFO' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
+	'-DSK_IGNORE_CORRECT_HIGH_QUALITY_IMAGE_SCALE' \
+	'-DSK_SUPPORT_LEGACY_INSTALLPIXELSPARAMS' \
+	'-DSK_SUPPORT_LEGACY_IMAGEGENERATORAPI' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
@@ -840,6 +872,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/libyuv \
 	$(LOCAL_PATH)/third_party/libjingle/overrides \
 	$(LOCAL_PATH)/third_party/libjingle/source \
+	$(LOCAL_PATH)/third_party/webrtc/overrides \
 	$(LOCAL_PATH)/testing/gtest/include \
 	$(LOCAL_PATH)/third_party \
 	$(LOCAL_PATH)/third_party/webrtc \
@@ -913,7 +946,7 @@ LOCAL_STATIC_LIBRARIES := \
 	content_browser_service_worker_database_proto_gyp \
 	content_browser_speech_proto_speech_proto_gyp \
 	content_content_common_mojo_bindings_gyp \
-	mojo_mojo_shell_bindings_gyp
+	mojo_mojo_service_provider_bindings_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

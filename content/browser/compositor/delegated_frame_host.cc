@@ -12,6 +12,7 @@
 #include "cc/resources/single_release_callback.h"
 #include "cc/resources/texture_mailbox.h"
 #include "content/browser/compositor/resize_lock.h"
+#include "content/common/gpu/client/gl_helper.h"
 #include "content/public/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/public/common/content_switches.h"
 #include "media/base/video_frame.h"
@@ -24,7 +25,17 @@ namespace content {
 // DelegatedFrameHostClient
 
 bool DelegatedFrameHostClient::ShouldCreateResizeLock() {
+  // On Windows and Linux, holding pointer moves will not help throttling
+  // resizes.
+  // TODO(piman): on Windows we need to block (nested message loop?) the
+  // WM_SIZE event. On Linux we need to throttle at the WM level using
+  // _NET_WM_SYNC_REQUEST.
+  // TODO(ccameron): Mac browser window resizing is incompletely implemented.
+#if !defined(OS_CHROMEOS)
+  return false;
+#else
   return GetDelegatedFrameHost()->ShouldCreateResizeLock();
+#endif
 }
 
 void DelegatedFrameHostClient::RequestCopyOfOutput(
@@ -40,17 +51,15 @@ DelegatedFrameHost::DelegatedFrameHost(DelegatedFrameHostClient* client)
       last_output_surface_id_(0),
       pending_delegated_ack_count_(0),
       skipped_frames_(false),
-      can_lock_compositor_(YES),
+      can_lock_compositor_(YES_CAN_LOCK),
       delegated_frame_evictor_(new DelegatedFrameEvictor(this)) {
   ImageTransportFactory::GetInstance()->AddObserver(this);
 }
 
 void DelegatedFrameHost::WasShown() {
-  RenderWidgetHostImpl* host = client_->GetHost();
   delegated_frame_evictor_->SetVisible(true);
 
-  if (host->is_accelerated_compositing_active() &&
-      !released_front_lock_.get()) {
+  if (!released_front_lock_.get()) {
     ui::Compositor* compositor = client_->GetCompositor();
     if (compositor)
       released_front_lock_ = compositor->GetCompositorLock();
@@ -76,7 +85,7 @@ void DelegatedFrameHost::MaybeCreateResizeLock() {
       can_lock_compositor_ == NO_PENDING_RENDERER_FRAME ||
       can_lock_compositor_ == NO_PENDING_COMMIT;
 
-  if (can_lock_compositor_ == YES)
+  if (can_lock_compositor_ == YES_CAN_LOCK)
     can_lock_compositor_ = YES_DID_LOCK;
 
   resize_lock_ = client_->CreateResizeLock(defer_compositor_lock);
@@ -85,26 +94,14 @@ void DelegatedFrameHost::MaybeCreateResizeLock() {
 bool DelegatedFrameHost::ShouldCreateResizeLock() {
   RenderWidgetHostImpl* host = client_->GetHost();
 
-  // On Windows while resizing, the the resize locks makes us mis-paint a white
-  // vertical strip (including the non-client area) if the content composition
-  // is lagging the UI composition. So here we disable the throttling so that
-  // the UI bits can draw ahead of the content thereby reducing the amount of
-  // whiteout. Because this causes the content to be drawn at wrong sizes while
-  // resizing we compensate by blocking the UI thread in Compositor::Draw() by
-  // issuing a FinishAllRendering() if we are resizing.
-#if defined(OS_WIN)
-  return false;
-#else
   if (resize_lock_)
     return false;
 
   if (host->should_auto_resize())
     return false;
-  if (!host->is_accelerated_compositing_active())
-    return false;
 
   gfx::Size desired_size = client_->DesiredFrameSize();
-  if (desired_size == current_frame_size_in_dip_)
+  if (desired_size == current_frame_size_in_dip_ || desired_size.IsEmpty())
     return false;
 
   ui::Compositor* compositor = client_->GetCompositor();
@@ -112,20 +109,11 @@ bool DelegatedFrameHost::ShouldCreateResizeLock() {
     return false;
 
   return true;
-#endif
 }
 
 void DelegatedFrameHost::RequestCopyOfOutput(
     scoped_ptr<cc::CopyOutputRequest> request) {
   client_->GetLayer()->RequestCopyOfOutput(request.Pass());
-}
-
-gfx::Rect DelegatedFrameHost::GetViewBoundsWithResizeLock(
-    const gfx::Rect& bounds) const {
-  if (resize_lock_.get())
-    return gfx::Rect(bounds.origin(), resize_lock_->expected_size());
-  else
-    return bounds;
 }
 
 void DelegatedFrameHost::CopyFromCompositingSurface(
@@ -209,10 +197,8 @@ bool DelegatedFrameHost::CanCopyToBitmap() const {
 }
 
 bool DelegatedFrameHost::CanCopyToVideoFrame() const {
-  RenderWidgetHostImpl* host = client_->GetHost();
   return client_->GetCompositor() &&
-         client_->GetLayer()->has_external_content() &&
-         host->is_accelerated_compositing_active();
+         client_->GetLayer()->has_external_content();
 }
 
 bool DelegatedFrameHost::CanSubscribeFrame() const {
@@ -230,6 +216,9 @@ void DelegatedFrameHost::EndFrameSubscription() {
 }
 
 bool DelegatedFrameHost::ShouldSkipFrame(gfx::Size size_in_dip) const {
+  // Should skip a frame only when another frame from the renderer is guaranteed
+  // to replace it. Otherwise may cause hangs when the renderer is waiting for
+  // the completion of latency infos (such as when taking a Snapshot.)
   if (can_lock_compositor_ == NO_PENDING_RENDERER_FRAME ||
       can_lock_compositor_ == NO_PENDING_COMMIT ||
       !resize_lock_.get())
@@ -240,6 +229,13 @@ bool DelegatedFrameHost::ShouldSkipFrame(gfx::Size size_in_dip) const {
 
 void DelegatedFrameHost::WasResized() {
   MaybeCreateResizeLock();
+}
+
+gfx::Size DelegatedFrameHost::GetRequestedRendererSize() const {
+  if (resize_lock_)
+    return resize_lock_->expected_size();
+  else
+    return client_->DesiredFrameSize();
 }
 
 void DelegatedFrameHost::CheckResizeLock() {
@@ -296,6 +292,10 @@ void DelegatedFrameHost::SwapDelegatedFrame(
     cc::CompositorFrameAck ack;
     cc::TransferableResource::ReturnResources(frame_data->resource_list,
                                               &ack.resources);
+
+    skipped_latency_info_list_.insert(skipped_latency_info_list_.end(),
+        latency_info.begin(), latency_info.end());
+
     RenderWidgetHostImpl::SendSwapCompositorFrameAck(
         host->GetRoutingID(), output_surface_id,
         host->GetProcess()->GetID(), ack);
@@ -370,8 +370,15 @@ void DelegatedFrameHost::SwapDelegatedFrame(
   if (!compositor) {
     SendDelegatedFrameAck(output_surface_id);
   } else {
-    for (size_t i = 0; i < latency_info.size(); i++)
-      compositor->SetLatencyInfo(latency_info[i]);
+    std::vector<ui::LatencyInfo>::const_iterator it;
+    for (it = latency_info.begin(); it != latency_info.end(); ++it)
+      compositor->SetLatencyInfo(*it);
+    // If we've previously skipped any latency infos add them.
+    for (it = skipped_latency_info_list_.begin();
+        it != skipped_latency_info_list_.end();
+        ++it)
+      compositor->SetLatencyInfo(*it);
+    skipped_latency_info_list_.clear();
     AddOnCommitCallbackAndDisableLocks(
         base::Bind(&DelegatedFrameHost::SendDelegatedFrameAck,
                    AsWeakPtr(),
@@ -514,7 +521,8 @@ void DelegatedFrameHost::PrepareTextureCopyOutputResult(
                  callback,
                  base::Passed(&release_callback),
                  base::Passed(&bitmap),
-                 base::Passed(&bitmap_pixels_lock)));
+                 base::Passed(&bitmap_pixels_lock)),
+      GLHelper::SCALER_QUALITY_FAST);
 }
 
 // static
@@ -724,7 +732,7 @@ void DelegatedFrameHost::OnCompositingDidCommit(
     ui::Compositor* compositor) {
   RenderWidgetHostImpl* host = client_->GetHost();
   if (can_lock_compositor_ == NO_PENDING_COMMIT) {
-    can_lock_compositor_ = YES;
+    can_lock_compositor_ = YES_CAN_LOCK;
     if (resize_lock_.get() && resize_lock_->GrabDeferredLock())
       can_lock_compositor_ = YES_DID_LOCK;
   }
