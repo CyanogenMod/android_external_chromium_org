@@ -27,9 +27,7 @@ scoped_refptr<GLImage> GLImage::CreateGLImage(gfx::PluginWindowHandle window) {
 }
 
 scoped_refptr<GLImage> GLImage::CreateGLImageForGpuMemoryBuffer(
-    gfx::GpuMemoryBufferHandle buffer,
-    gfx::Size size,
-    unsigned internalformat) {
+    gfx::GpuMemoryBufferHandle buffer, gfx::Size size) {
   TRACE_EVENT0("gpu", "GLImage::CreateGLImageForGpuMemoryBuffer");
   switch (GetGLImplementation()) {
     case kGLImplementationOSMesaGL:

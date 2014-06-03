@@ -5,6 +5,8 @@
 #ifndef GPU_COMMAND_BUFFER_CLIENT_GPU_MEMORY_BUFFER_TRACKER_H_
 #define GPU_COMMAND_BUFFER_CLIENT_GPU_MEMORY_BUFFER_TRACKER_H_
 
+#include <GLES2/gl2.h>
+
 #include "base/basictypes.h"
 #include "gles2_impl_export.h"
 #include "gpu/command_buffer/client/hash_tables.h"
@@ -14,24 +16,25 @@ class GpuMemoryBuffer;
 }
 
 namespace gpu {
-class GpuControl;
-
 namespace gles2 {
+class ImageFactory;
 
 // Tracks GPU memory buffer objects on the client side.
 class GLES2_IMPL_EXPORT GpuMemoryBufferTracker {
  public:
-  explicit GpuMemoryBufferTracker(GpuControl* gpu_control);
+  // Ownership of |factory| remains with caller.
+  explicit GpuMemoryBufferTracker(ImageFactory* factory);
   virtual ~GpuMemoryBufferTracker();
 
-  int32 CreateBuffer(size_t width, size_t height, int32 internalformat);
-  gfx::GpuMemoryBuffer* GetBuffer(int32 image_id);
-  void RemoveBuffer(int32 image_id);
+  GLuint CreateBuffer(
+      GLsizei width, GLsizei height, GLenum internalformat);
+  gfx::GpuMemoryBuffer* GetBuffer(GLuint image_id);
+  void RemoveBuffer(GLuint image_id);
 
  private:
-  typedef gpu::hash_map<int32, gfx::GpuMemoryBuffer*> BufferMap;
+  typedef gpu::hash_map<GLuint, gfx::GpuMemoryBuffer*> BufferMap;
   BufferMap buffers_;
-  GpuControl* gpu_control_;
+  ImageFactory* factory_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuMemoryBufferTracker);
 };

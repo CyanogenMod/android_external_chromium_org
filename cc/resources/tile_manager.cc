@@ -144,7 +144,8 @@ scoped_ptr<TileManager> TileManager::Create(
                       PixelBufferRasterWorkerPool::Create(
                           resource_provider, num_raster_threads),
                       num_raster_threads,
-                      rendering_stats_instrumentation));
+                      rendering_stats_instrumentation,
+                      resource_provider->best_texture_format()));
 }
 
 TileManager::TileManager(
@@ -152,7 +153,8 @@ TileManager::TileManager(
     ResourceProvider* resource_provider,
     scoped_ptr<RasterWorkerPool> raster_worker_pool,
     size_t num_raster_threads,
-    RenderingStatsInstrumentation* rendering_stats_instrumentation)
+    RenderingStatsInstrumentation* rendering_stats_instrumentation,
+    GLenum texture_format)
     : client_(client),
       resource_pool_(ResourcePool::Create(resource_provider)),
       raster_worker_pool_(raster_worker_pool.Pass()),
@@ -161,7 +163,8 @@ TileManager::TileManager(
       all_tiles_required_for_activation_have_been_initialized_(true),
       ever_exceeded_memory_budget_(false),
       rendering_stats_instrumentation_(rendering_stats_instrumentation),
-      did_initialize_visible_tile_(false) {
+      did_initialize_visible_tile_(false),
+      texture_format_(texture_format) {
   raster_worker_pool_->SetClient(this);
 }
 
@@ -738,9 +741,8 @@ RasterWorkerPool::RasterTask TileManager::CreateRasterTask(Tile* tile) {
   ManagedTileState& mts = tile->managed_state();
 
   scoped_ptr<ResourcePool::Resource> resource =
-      resource_pool_->AcquireResource(
-          tile->tile_size_.size(),
-          raster_worker_pool_->GetResourceFormat());
+      resource_pool_->AcquireResource(tile->tile_size_.size(),
+                                      texture_format_);
   const Resource* const_resource = resource.get();
 
   // Create and queue all image decode tasks that this tile depends on.

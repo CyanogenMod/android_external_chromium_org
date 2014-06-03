@@ -12,7 +12,7 @@ namespace gfx {
 
 class GL_EXPORT GLImageShm : public GLImage {
  public:
-  GLImageShm(gfx::Size size, unsigned internalformat);
+  explicit GLImageShm(gfx::Size size);
 
   bool Initialize(gfx::GpuMemoryBufferHandle buffer);
 
@@ -30,7 +30,6 @@ class GL_EXPORT GLImageShm : public GLImage {
  private:
   scoped_ptr<base::SharedMemory> shared_memory_;
   gfx::Size size_;
-  unsigned internalformat_;
 
   DISALLOW_COPY_AND_ASSIGN(GLImageShm);
 };

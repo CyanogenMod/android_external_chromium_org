@@ -8,7 +8,6 @@
 #include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
-#include "gpu/command_buffer/service/gpu_memory_buffer_manager.h"
 #include "gpu/gpu_export.h"
 
 namespace gfx {
@@ -19,19 +18,9 @@ namespace gpu {
 namespace gles2 {
 
 // Interface used by the cmd decoder to lookup images.
-class GPU_EXPORT ImageManager
-    : public GpuMemoryBufferManagerInterface,
-      public base::RefCounted<ImageManager> {
+class GPU_EXPORT ImageManager : public base::RefCounted<ImageManager> {
  public:
   ImageManager();
-
-  // Overridden from GpuMemoryBufferManagerInterface:
-  virtual bool RegisterGpuMemoryBuffer(int32 id,
-                                       gfx::GpuMemoryBufferHandle buffer,
-                                       size_t width,
-                                       size_t height,
-                                       unsigned internalformat) OVERRIDE;
-  virtual void DestroyGpuMemoryBuffer(int32 id) OVERRIDE;
 
   void AddImage(gfx::GLImage* gl_image, int32 service_id);
   void RemoveImage(int32 service_id);
@@ -40,7 +29,7 @@ class GPU_EXPORT ImageManager
  private:
   friend class base::RefCounted<ImageManager>;
 
-  virtual ~ImageManager();
+  ~ImageManager();
 
   typedef base::hash_map<uint32, scoped_refptr<gfx::GLImage> > GLImageMap;
   GLImageMap gl_images_;

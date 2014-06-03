@@ -11,8 +11,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/process/process_handle.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
-#include "gpu/command_buffer/client/gpu_memory_buffer_factory.h"
-#include "gpu/command_buffer/service/command_buffer_service.h"
 #include "gpu/command_buffer/service/image_manager.h"
 #include "gpu/command_buffer/tests/gl_manager.h"
 #include "gpu/command_buffer/tests/gl_test_utils.h"
@@ -53,16 +51,24 @@ class MockGpuMemoryBuffer : public gfx::GpuMemoryBuffer {
   DISALLOW_COPY_AND_ASSIGN(MockGpuMemoryBuffer);
 };
 
-class MockGpuMemoryBufferFactory : public GpuMemoryBufferFactory {
+class MockImageFactory : public ImageFactory {
  public:
-  MockGpuMemoryBufferFactory() {}
-  virtual ~MockGpuMemoryBufferFactory() {}
+  MockImageFactory(ImageManager* image_manager) {}
+  virtual ~MockImageFactory() {}
 
-  MOCK_METHOD3(CreateGpuMemoryBuffer,
-               gfx::GpuMemoryBuffer*(size_t, size_t, unsigned));
+  MOCK_METHOD4(CreateGpuMemoryBufferMock, gfx::GpuMemoryBuffer*(
+      int width, int height, GLenum internalformat, unsigned* image_id));
+  MOCK_METHOD1(DeleteGpuMemoryBuffer, void(unsigned));
+  // Workaround for mocking methods that return scoped_ptrs
+  virtual scoped_ptr<gfx::GpuMemoryBuffer> CreateGpuMemoryBuffer(
+      int width, int height, GLenum internalformat,
+      unsigned* image_id) OVERRIDE {
+    return scoped_ptr<gfx::GpuMemoryBuffer>(CreateGpuMemoryBufferMock(
+        width, height, internalformat, image_id));
+  }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(MockGpuMemoryBufferFactory);
+  DISALLOW_COPY_AND_ASSIGN(MockImageFactory);
 };
 
 class MockGpuMemoryBufferTest : public testing::Test {
@@ -70,9 +76,10 @@ class MockGpuMemoryBufferTest : public testing::Test {
   virtual void SetUp() {
     GLManager::Options options;
     image_manager_ = new ImageManager;
-    gpu_memory_buffer_factory_.reset(new MockGpuMemoryBufferFactory);
+    image_factory_.reset(
+        new StrictMock<MockImageFactory>(image_manager_.get()));
     options.image_manager = image_manager_.get();
-    options.gpu_memory_buffer_factory = gpu_memory_buffer_factory_.get();
+    options.image_factory = image_factory_.get();
 
     gl_.Initialize(options);
     gl_.MakeCurrent();
@@ -101,8 +108,8 @@ class MockGpuMemoryBufferTest : public testing::Test {
     gl_.Destroy();
   }
 
+  scoped_ptr<StrictMock<MockImageFactory> > image_factory_;
   scoped_refptr<ImageManager> image_manager_;
-  scoped_ptr<MockGpuMemoryBufferFactory> gpu_memory_buffer_factory_;
   GLManager gl_;
   GLuint texture_ids_[2];
   GLuint framebuffer_id_;
@@ -126,21 +133,29 @@ TEST_F(MockGpuMemoryBufferTest, Lifecycle) {
   handle.type = gfx::SHARED_MEMORY_BUFFER;
   handle.handle = duped_shared_memory_handle;
 
-  EXPECT_CALL(*gpu_memory_buffer_factory_.get(), CreateGpuMemoryBuffer(
-      kImageWidth, kImageHeight, GL_RGBA8_OES))
+  const GLuint kImageId = 345u;
+
+  EXPECT_CALL(*image_factory_.get(), CreateGpuMemoryBufferMock(
+      kImageWidth, kImageHeight, GL_RGBA8_OES, _))
       .Times(1)
-      .WillOnce(Return(gpu_memory_buffer))
+      .WillOnce(DoAll(SetArgPointee<3>(kImageId), Return(gpu_memory_buffer)))
       .RetiresOnSaturation();
+
+  // Create the GLImage and insert it into the ImageManager, which
+  // would be done within CreateGpuMemoryBufferMock if it weren't a mock.
+  GLuint image_id = glCreateImageCHROMIUM(
+      kImageWidth, kImageHeight, GL_RGBA8_OES);
+  EXPECT_EQ(kImageId, image_id);
+
   EXPECT_CALL(*gpu_memory_buffer, GetHandle())
-      .Times(1)
       .WillOnce(Return(handle))
       .RetiresOnSaturation();
 
-  // Create the image. This should add the image ID to the ImageManager.
-  GLuint image_id = glCreateImageCHROMIUM(
-      kImageWidth, kImageHeight, GL_RGBA8_OES);
-  EXPECT_NE(0u, image_id);
-  EXPECT_TRUE(image_manager_->LookupImage(image_id) != NULL);
+  gfx::Size size(kImageWidth, kImageHeight);
+  scoped_refptr<gfx::GLImage> gl_image(
+      gfx::GLImage::CreateGLImageForGpuMemoryBuffer(
+          gpu_memory_buffer->GetHandle(), size));
+  image_manager_->AddImage(gl_image.get(), image_id);
 
   EXPECT_CALL(*gpu_memory_buffer, IsMapped())
       .WillOnce(Return(false))
@@ -202,6 +217,11 @@ TEST_F(MockGpuMemoryBufferTest, Lifecycle) {
   EXPECT_CALL(*gpu_memory_buffer, Die())
       .Times(1)
       .RetiresOnSaturation();
+
+  EXPECT_CALL(*image_factory_.get(), DeleteGpuMemoryBuffer(image_id))
+      .Times(1)
+      .RetiresOnSaturation();
+
   glDestroyImageCHROMIUM(image_id);
 }
 

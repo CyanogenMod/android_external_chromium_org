@@ -366,8 +366,6 @@ class GLES2ImplementationTest : public testing::Test {
     helper_.reset(new GLES2CmdHelper(command_buffer()));
     helper_->Initialize(kCommandBufferSizeBytes);
 
-    gpu_control_.reset(new StrictMock<MockClientGpuControl>());
-
     GLES2Implementation::GLStaticState state;
     GLES2Implementation::GLStaticState::IntState& int_state = state.int_state;
     int_state.max_combined_texture_image_units = kMaxCombinedTextureImageUnits;
@@ -403,7 +401,7 @@ class GLES2ImplementationTest : public testing::Test {
           NULL,
           transfer_buffer_.get(),
           bind_generates_resource,
-          gpu_control_.get()));
+          NULL));
       ASSERT_TRUE(gl_->Initialize(
           kTransferBufferSize,
           kTransferBufferSize,
@@ -475,7 +473,6 @@ class GLES2ImplementationTest : public testing::Test {
 
   Sequence sequence_;
   scoped_ptr<MockClientCommandBuffer> command_buffer_;
-  scoped_ptr<MockClientGpuControl> gpu_control_;
   scoped_ptr<GLES2CmdHelper> helper_;
   scoped_ptr<MockTransferBuffer> transfer_buffer_;
   scoped_ptr<GLES2Implementation> gl_;
@@ -2479,8 +2476,7 @@ TEST_F(GLES2ImplementationTest, GetString) {
       "GL_CHROMIUM_flipy "
       "GL_CHROMIUM_map_sub "
       "GL_CHROMIUM_shallow_flush "
-      "GL_EXT_unpack_subimage "
-      "GL_CHROMIUM_map_image";
+      "GL_EXT_unpack_subimage";
   const char kBad = 0x12;
   struct Cmds {
     cmd::SetBucketSize set_bucket_size1;

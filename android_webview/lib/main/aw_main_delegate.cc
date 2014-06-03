@@ -48,7 +48,7 @@ AwMainDelegate::~AwMainDelegate() {
 bool AwMainDelegate::BasicStartupComplete(int* exit_code) {
   content::SetContentClient(&content_client_);
 
-  gpu::InProcessCommandBuffer::SetGpuMemoryBufferFactory(
+  gpu::GLInProcessContext::SetGpuMemoryBufferFactory(
       gpu_memory_buffer_factory_.get());
   gpu::InProcessCommandBuffer::EnableVirtualizedContext();
 

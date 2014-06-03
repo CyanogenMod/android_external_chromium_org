@@ -84,7 +84,8 @@ class CC_EXPORT TileManager : public RasterWorkerPoolClient {
               ResourceProvider* resource_provider,
               scoped_ptr<RasterWorkerPool> raster_worker_pool,
               size_t num_raster_threads,
-              RenderingStatsInstrumentation* rendering_stats_instrumentation);
+              RenderingStatsInstrumentation* rendering_stats_instrumentation,
+              GLenum texture_format);
 
   // Methods called by Tile
   friend class Tile;
@@ -152,6 +153,8 @@ class CC_EXPORT TileManager : public RasterWorkerPoolClient {
   RenderingStatsInstrumentation* rendering_stats_instrumentation_;
 
   bool did_initialize_visible_tile_;
+
+  GLenum texture_format_;
 
   typedef base::hash_map<uint32_t, RasterWorkerPool::Task> PixelRefTaskMap;
   typedef base::hash_map<int, PixelRefTaskMap> LayerPixelRefTaskMap;

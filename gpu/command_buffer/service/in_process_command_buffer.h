@@ -14,7 +14,6 @@
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
 #include "gpu/command_buffer/common/command_buffer.h"
-#include "gpu/command_buffer/common/gpu_control.h"
 #include "gpu/gpu_export.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 #include "ui/gfx/native_widget_types.h"
@@ -27,6 +26,7 @@ class SequenceChecker;
 
 namespace gfx {
 class GLContext;
+class GLImage;
 class GLSurface;
 class Size;
 }
@@ -46,7 +46,6 @@ namespace gles2 {
 class GLES2Decoder;
 }
 
-class GpuMemoryBufferFactory;
 class GpuScheduler;
 class TransferBufferManagerInterface;
 
@@ -54,8 +53,7 @@ class TransferBufferManagerInterface;
 // example GPU thread) when being run in single process mode.
 // However, the behavior for accessing one context (i.e. one instance of this
 // class) from different client threads is undefined.
-class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
-                                          public GpuControl {
+class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer {
  public:
   InProcessCommandBuffer();
   virtual ~InProcessCommandBuffer();
@@ -72,7 +70,6 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   static void ProcessGpuWorkOnCurrentThread();
 
   static void EnableVirtualizedContext();
-  static void SetGpuMemoryBufferFactory(GpuMemoryBufferFactory* factory);
 
   // If |surface| is not NULL, use it directly; in this case, the command
   // buffer gpu thread must be the same as the client thread. Otherwise create
@@ -90,6 +87,10 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   void Destroy();
   void SignalSyncPoint(unsigned sync_point,
                        const base::Closure& callback);
+  unsigned int CreateImageForGpuMemoryBuffer(
+      gfx::GpuMemoryBufferHandle buffer,
+      gfx::Size size);
+  void RemoveImage(unsigned int image_id);
 
   // CommandBuffer implementation:
   virtual bool Initialize() OVERRIDE;
@@ -109,14 +110,6 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
       gpu::error::ContextLostReason reason) OVERRIDE;
   virtual uint32 InsertSyncPoint() OVERRIDE;
   virtual gpu::error::Error GetLastError() OVERRIDE;
-
-  // GpuControl implementation:
-  virtual gfx::GpuMemoryBuffer* CreateGpuMemoryBuffer(
-      size_t width,
-      size_t height,
-      unsigned internalformat,
-      int32* id) OVERRIDE;
-  virtual void DestroyGpuMemoryBuffer(int32 id) OVERRIDE;
 
   // The serializer interface to the GPU service (i.e. thread).
   class SchedulerClient {
@@ -139,6 +132,10 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
                              gfx::GpuPreference gpu_preference);
   bool DestroyOnGpuThread();
   void FlushOnGpuThread(int32 put_offset);
+  void CreateImageOnGpuThread(gfx::GpuMemoryBufferHandle buffer,
+                              gfx::Size size,
+                              unsigned int image_id);
+  void RemoveImageOnGpuThread(unsigned int image_id);
   bool MakeCurrent();
   bool IsContextLost();
   base::Closure WrapCallback(const base::Closure& callback);
@@ -175,7 +172,6 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   scoped_ptr<SchedulerClient> queue_;
   State state_after_last_flush_;
   base::Lock state_after_last_flush_lock_;
-  scoped_ptr<GpuControl> gpu_control_;
 
 #if defined(OS_ANDROID)
   scoped_refptr<StreamTextureManagerInProcess> stream_texture_manager_;
