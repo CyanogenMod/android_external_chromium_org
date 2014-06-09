@@ -140,6 +140,16 @@ class HistoryBackendDBTest : public HistoryUnitTestBase {
             chrome::kHistoryFilename)));
   }
 
+  void CreateArchivedDB() {
+    base::FilePath data_path;
+    ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &data_path));
+    data_path = data_path.AppendASCII("History");
+    data_path = data_path.AppendASCII("archived_history.4.sql");
+    ASSERT_NO_FATAL_FAILURE(
+        ExecuteSQLScript(data_path, history_dir_.Append(
+            chrome::kArchivedHistoryFilename)));
+  }
+
   // testing::Test
   virtual void SetUp() {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
@@ -619,6 +629,22 @@ TEST_F(HistoryBackendDBTest, MigrateDownloadValidators) {
   }
 }
 
+TEST_F(HistoryBackendDBTest, PurgeArchivedDatabase) {
+  ASSERT_NO_FATAL_FAILURE(CreateDBVersion(27));
+  ASSERT_NO_FATAL_FAILURE(CreateArchivedDB());
+
+  ASSERT_TRUE(base::PathExists(
+      history_dir_.Append(chrome::kArchivedHistoryFilename)));
+
+  CreateBackendAndDatabase();
+  DeleteBackend();
+
+  // We do not retain expired history entries in an archived database as of M37.
+  // Verify that any legacy archived database is deleted on start-up.
+  ASSERT_FALSE(base::PathExists(
+      history_dir_.Append(chrome::kArchivedHistoryFilename)));
+}
+
 TEST_F(HistoryBackendDBTest, ConfirmDownloadRowCreateAndDelete) {
   // Create the DB.
   CreateBackendAndDatabase();
@@ -917,7 +943,7 @@ class HistoryTest : public testing::Test {
     history_dir_ = temp_dir_.path().AppendASCII("HistoryTest");
     ASSERT_TRUE(base::CreateDirectory(history_dir_));
     history_service_.reset(new HistoryService);
-    if (!history_service_->Init(history_dir_, NULL)) {
+    if (!history_service_->Init(history_dir_)) {
       history_service_.reset();
       ADD_FAILURE();
     }

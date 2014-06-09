@@ -31,6 +31,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/media_stream_request.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
@@ -40,6 +41,7 @@
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "grit/theme_resources.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -238,6 +240,8 @@ AppWindow::AppWindow(BrowserContext* context,
       fullscreen_types_(FULLSCREEN_TYPE_NONE),
       show_on_first_paint_(false),
       first_paint_complete_(false),
+      has_been_shown_(false),
+      can_send_events_(false),
       is_hidden_(false),
       cached_always_on_top_(false) {
   extensions::ExtensionsBrowserClient* client =
@@ -429,7 +433,8 @@ bool AppWindow::PreHandleKeyboardEvent(
   if (event.windowsKeyCode == ui::VKEY_ESCAPE &&
       (fullscreen_types_ != FULLSCREEN_TYPE_NONE) &&
       ((fullscreen_types_ & FULLSCREEN_TYPE_FORCED) == 0) &&
-      !extension->HasAPIPermission(APIPermission::kOverrideEscFullscreen)) {
+      !extension->permissions_data()->HasAPIPermission(
+          APIPermission::kOverrideEscFullscreen)) {
     Restore();
     return true;
   }
@@ -697,6 +702,9 @@ void AppWindow::Show(ShowType show_type) {
       break;
   }
   AppWindowRegistry::Get(browser_context_)->AppWindowShown(this);
+
+  has_been_shown_ = true;
+  SendOnWindowShownIfShown();
 }
 
 void AppWindow::Hide() {
@@ -726,6 +734,11 @@ void AppWindow::SetAlwaysOnTop(bool always_on_top) {
 }
 
 bool AppWindow::IsAlwaysOnTop() const { return cached_always_on_top_; }
+
+void AppWindow::WindowEventsReady() {
+  can_send_events_ = true;
+  SendOnWindowShownIfShown();
+}
 
 void AppWindow::GetSerializedState(base::DictionaryValue* properties) const {
   DCHECK(properties);
@@ -880,6 +893,15 @@ void AppWindow::UpdateNativeAlwaysOnTop() {
     // When exiting fullscreen and moving away from the taskbar, reinstate
     // always-on-top.
     native_app_window_->SetAlwaysOnTop(true);
+  }
+}
+
+void AppWindow::SendOnWindowShownIfShown() {
+  if (!can_send_events_ || !has_been_shown_)
+    return;
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kTestType)) {
+    app_window_contents_->DispatchWindowShownForTests();
   }
 }
 

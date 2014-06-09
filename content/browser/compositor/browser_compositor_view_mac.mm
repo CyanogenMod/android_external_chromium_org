@@ -9,8 +9,39 @@
 #include "content/browser/renderer_host/compositing_iosurface_context_mac.h"
 #include "content/browser/renderer_host/compositing_iosurface_mac.h"
 #include "content/browser/renderer_host/software_layer_mac.h"
+#include "content/public/browser/context_factory.h"
 #include "ui/base/cocoa/animation_utils.h"
 #include "ui/gl/scoped_cgl.h"
+
+@interface BrowserCompositorViewMac (Private)
+- (void)layerDidDrawFrame;
+- (void)gotAcceleratedLayerError;
+@end  // BrowserCompositorViewMac (Private)
+
+namespace content {
+
+// The CompositingIOSurfaceLayerClient interface needs to be implemented as a
+// C++ class to operate on, rather than Objective C class. This helper class
+// provides a bridge between the two.
+class BrowserCompositorViewMacHelper : public CompositingIOSurfaceLayerClient {
+ public:
+  BrowserCompositorViewMacHelper(BrowserCompositorViewMac* view)
+      : view_(view) {}
+  virtual ~BrowserCompositorViewMacHelper() {}
+
+ private:
+  // CompositingIOSurfaceLayerClient implementation:
+  virtual void AcceleratedLayerDidDrawFrame(bool succeeded) OVERRIDE {
+    [view_ layerDidDrawFrame];
+    if (!succeeded)
+      [view_ gotAcceleratedLayerError];
+  }
+
+  BrowserCompositorViewMac* view_;
+};
+
+}  // namespace content
+
 
 // The default implementation of additions to the NSView interface for browser
 // compositing should never be called. Log an error if they are.
@@ -33,8 +64,12 @@
 
 @implementation BrowserCompositorViewMac : NSView
 
-- (id)initWithSuperview:(NSView*)view {
+- (id)initWithSuperview:(NSView*)view
+             withClient:(content::BrowserCompositorViewMacClient*)client {
   if (self = [super init]) {
+    client_ = client;
+    helper_.reset(new content::BrowserCompositorViewMacHelper(self));
+
     // Disable the fade-in animation as the layer and view are added.
     ScopedCAActionDisabler disabler;
 
@@ -44,10 +79,18 @@
     [self setLayer:background_layer_];
     [self setWantsLayer:YES];
 
-    compositor_.reset(new ui::Compositor(self));
+    compositor_.reset(new ui::Compositor(self, content::GetContextFactory()));
     [view addSubview:self];
   }
   return self;
+}
+
+- (void)gotAcceleratedLayerError {
+  if (!accelerated_layer_)
+    return;
+
+  [accelerated_layer_ context]->PoisonContextAndSharegroup();
+  compositor_->ScheduleFullRedraw();
 }
 
 // This function closely mirrors RenderWidgetHostViewMac::LayoutLayers. When
@@ -96,6 +139,11 @@
   [software_layer_ setBounds:new_background_frame];
 }
 
+- (void)resetClient {
+  [accelerated_layer_ resetClient];
+  client_ = NULL;
+}
+
 - (ui::Compositor*)compositor {
   return compositor_.get();
 }
@@ -105,6 +153,16 @@
                      withScaleFactor:(float)scale_factor {
   ScopedCAActionDisabler disabler;
 
+  // If there is already an accelerated layer, but it has the wrong scale
+  // factor or it was poisoned, remove the old layer and replace it.
+  base::scoped_nsobject<CompositingIOSurfaceLayer> old_accelerated_layer;
+  if (accelerated_layer_ && (
+          [accelerated_layer_ context]->HasBeenPoisoned() ||
+          [accelerated_layer_ iosurface]->scale_factor() != scale_factor)) {
+    old_accelerated_layer = accelerated_layer_;
+    accelerated_layer_.reset();
+  }
+
   // If there is not a layer for accelerated frames, create one.
   if (!accelerated_layer_) {
     // Disable the fade-in animation as the layer is added.
@@ -113,7 +171,8 @@
         content::CompositingIOSurfaceMac::Create();
     accelerated_layer_.reset([[CompositingIOSurfaceLayer alloc]
         initWithIOSurface:iosurface
-               withClient:NULL]);
+          withScaleFactor:scale_factor
+               withClient:helper_.get()]);
     [[self layer] addSublayer:accelerated_layer_];
   }
 
@@ -123,19 +182,21 @@
         [accelerated_layer_ context]->cgl_context());
     result = [accelerated_layer_ iosurface]->SetIOSurfaceWithContextCurrent(
         [accelerated_layer_ context], surface_handle, pixel_size, scale_factor);
-    // TODO(ccameron): On failure, poison the GL context, tear down the layers,
-    // and request a new frame.
-    ignore_result(result);
+    if (!result)
+      LOG(ERROR) << "Failed SetIOSurface on CompositingIOSurfaceMac";
   }
   [accelerated_layer_ gotNewFrame];
   [self layoutLayers];
 
-  // If there was a software layer, remove it.
-  if (software_layer_) {
-    // Disable the fade-out animation as the layer is removed.
+  // If there was a software layer or an old accelerated layer, remove it.
+  // Disable the fade-out animation as the layer is removed.
+  {
     ScopedCAActionDisabler disabler;
     [software_layer_ removeFromSuperlayer];
     software_layer_.reset();
+    [old_accelerated_layer resetClient];
+    [old_accelerated_layer removeFromSuperlayer];
+    old_accelerated_layer.reset();
   }
 }
 
@@ -163,12 +224,25 @@
   [self layoutLayers];
 
   // If there was an accelerated layer, remove it.
-  if (accelerated_layer_) {
-    // Disable the fade-out animation as the layer is removed.
+  // Disable the fade-out animation as the layer is removed.
+  {
     ScopedCAActionDisabler disabler;
+    [accelerated_layer_ resetClient];
     [accelerated_layer_ removeFromSuperlayer];
     accelerated_layer_.reset();
   }
+
+  // This call can be nested insider ui::Compositor commit calls, and can also
+  // make additional ui::Compositor commit calls. Avoid the potential recursion
+  // by acknowledging the frame asynchronously.
+  [self performSelector:@selector(layerDidDrawFrame)
+             withObject:nil
+             afterDelay:0];
+}
+
+- (void)layerDidDrawFrame {
+  if (client_)
+    client_->BrowserCompositorDidDrawFrame();
 }
 
 @end  // BrowserCompositorViewMac

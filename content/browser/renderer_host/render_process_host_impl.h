@@ -14,6 +14,7 @@
 #include "base/process/process.h"
 #include "base/timer/timer.h"
 #include "content/browser/child_process_launcher.h"
+#include "content/browser/dom_storage/session_storage_namespace_impl.h"
 #include "content/browser/power_monitor_message_broadcaster.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/gpu_data_manager_observer.h"
@@ -21,6 +22,11 @@
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_platform_file.h"
 #include "mojo/public/cpp/bindings/interface_ptr.h"
+
+#if defined(OS_MACOSX)
+#include <IOSurface/IOSurfaceAPI.h>
+#include "base/mac/scoped_cftyperef.h"
+#endif
 
 struct ViewHostMsg_CompositorSurfaceBuffersSwapped_Params;
 
@@ -31,6 +37,7 @@ class MessageLoop;
 
 namespace gfx {
 class Size;
+struct GpuMemoryBufferHandle;
 }
 
 namespace content {
@@ -39,6 +46,9 @@ class BrowserDemuxerAndroid;
 class GpuMessageFilter;
 class MessagePortMessageFilter;
 class MojoApplicationHost;
+#if defined(ENABLE_WEBRTC)
+class P2PSocketDispatcherHost;
+#endif
 class PeerConnectionTrackerHost;
 class RendererMainThread;
 class RenderProcessHostMojoImpl;
@@ -126,6 +136,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual void DisableAecDump() OVERRIDE;
   virtual void SetWebRtcLogMessageCallback(
       base::Callback<void(const std::string&)> callback) OVERRIDE;
+  virtual WebRtcStopRtpDumpCallback StartRtpDump(
+      bool incoming,
+      bool outgoing,
+      const WebRtcRtpPacketCallback& packet_callback) OVERRIDE;
 #endif
   virtual void ResumeDeferredNavigation(const GlobalRequestID& request_id)
       OVERRIDE;
@@ -169,6 +183,14 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   scoped_refptr<ScreenOrientationDispatcherHost>
       screen_orientation_dispatcher_host() const;
+
+  // Used to extend the lifetime of the sessions until the render view
+  // in the renderer is fully closed. This is static because its also called
+  // with mock hosts as input in test cases.
+  static void ReleaseOnCloseACK(
+      RenderProcessHost* host,
+      const SessionStorageNamespaceMap& sessions,
+      int view_route_id);
 
   // Register/unregister the host identified by the host id in the global host
   // list.
@@ -280,6 +302,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void SuddenTerminationChanged(bool enabled);
   void OnUserMetricsRecordAction(const std::string& action);
   void OnSavedPageAsMHTML(int job_id, int64 mhtml_file_size);
+  void OnCloseACK(int old_route_id);
 
   // CompositorSurfaceBuffersSwapped handler when there's no RWH.
   void OnCompositorSurfaceBuffersSwappedNoHost(
@@ -309,6 +332,15 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void SendAecDumpFileToRenderer(IPC::PlatformFileForTransit file_for_transit);
   void SendDisableAecDumpToRenderer();
 #endif
+
+  // GpuMemoryBuffer allocation handler.
+  void OnAllocateGpuMemoryBuffer(uint32 width,
+                                 uint32 height,
+                                 uint32 internalformat,
+                                 uint32 usage,
+                                 IPC::Message* reply);
+  void GpuMemoryBufferAllocated(IPC::Message* reply,
+                                const gfx::GpuMemoryBufferHandle& handle);
 
   scoped_ptr<MojoApplicationHost> mojo_application_host_;
   bool mojo_activation_required_;
@@ -413,6 +445,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
 #if defined(ENABLE_WEBRTC)
   base::Callback<void(const std::string&)> webrtc_log_message_callback_;
+
+  scoped_refptr<P2PSocketDispatcherHost> p2p_socket_dispatcher_host_;
+
+  WebRtcStopRtpDumpCallback stop_rtp_dump_callback_;
 #endif
 
   // Message filter and dispatcher for screen orientation.
@@ -424,6 +460,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
   base::TimeTicks survive_for_worker_start_time_;
 
   base::WeakPtrFactory<RenderProcessHostImpl> weak_factory_;
+
+#if defined(OS_MACOSX)
+  base::ScopedCFTypeRef<IOSurfaceRef> last_io_surface_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(RenderProcessHostImpl);
 };

@@ -357,6 +357,7 @@
           'message_loop/message_pump_default.h',
           'message_loop/message_pump_win.cc',
           'message_loop/message_pump_win.h',
+          'message_loop/timer_slack.h',
           'metrics/sample_map.cc',
           'metrics/sample_map.h',
           'metrics/sample_vector.cc',
@@ -772,7 +773,7 @@
               ['include', '^threading/platform_thread_linux\\.cc$'],
             ],
           }],
-          ['OS == "android" and _toolset == "target"', {
+          ['OS == "android" and _toolset == "target" and >(nacl_untrusted_build)==0', {
            'sources': [
              'memory/discardable_memory_ashmem_allocator.cc',
              'memory/discardable_memory_ashmem_allocator.h',

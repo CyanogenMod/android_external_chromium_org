@@ -30,7 +30,6 @@
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/url_constants.h"
-#include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/user_metrics.h"
@@ -40,6 +39,10 @@
 #include "ui/app_list/search_box_model.h"
 #include "ui/app_list/speech_ui_model.h"
 #include "ui/base/resource/resource_bundle.h"
+
+#if defined(TOOLKIT_VIEWS)
+#include "ui/views/controls/webview/webview.h"
+#endif
 
 #if defined(USE_AURA)
 #include "ui/keyboard/keyboard_util.h"
@@ -91,7 +94,6 @@ void PopulateUsers(const ProfileInfoCache& profile_info,
     user.name = profile_info.GetNameOfProfileAtIndex(i);
     user.email = profile_info.GetUserNameOfProfileAtIndex(i);
     user.profile_path = profile_info.GetPathOfProfileAtIndex(i);
-    user.signin_required = profile_info.ProfileIsSigninRequiredAtIndex(i);
     user.active = active_profile_path == user.profile_path;
     users->push_back(user);
   }
@@ -101,27 +103,10 @@ void PopulateUsers(const ProfileInfoCache& profile_info,
 
 AppListViewDelegate::AppListViewDelegate(Profile* profile,
                                          AppListControllerDelegate* controller)
-    : controller_(controller),
-      profile_(profile),
-      model_(NULL),
-      scoped_observer_(this) {
+    : controller_(controller), profile_(profile), model_(NULL) {
   CHECK(controller_);
-  SigninManagerFactory::GetInstance()->AddObserver(this);
 
-  // Start observing all already-created SigninManagers.
   ProfileManager* profile_manager = g_browser_process->profile_manager();
-  std::vector<Profile*> profiles = profile_manager->GetLoadedProfiles();
-  for (std::vector<Profile*>::iterator i = profiles.begin();
-       i != profiles.end();
-       ++i) {
-    SigninManagerBase* manager =
-        SigninManagerFactory::GetForProfileIfExists(*i);
-    if (manager) {
-      DCHECK(!scoped_observer_.IsObserving(manager));
-      scoped_observer_.Add(manager);
-    }
-  }
-
   profile_manager->GetProfileInfoCache().AddObserver(this);
 
   app_list::StartPageService* service =
@@ -148,10 +133,6 @@ AppListViewDelegate::~AppListViewDelegate() {
   g_browser_process->
       profile_manager()->GetProfileInfoCache().RemoveObserver(this);
 
-  SigninManagerFactory* factory = SigninManagerFactory::GetInstance();
-  if (factory)
-    factory->RemoveObserver(this);
-
   // Ensure search controller is released prior to speech_ui_.
   search_controller_.reset();
 }
@@ -174,29 +155,6 @@ void AppListViewDelegate::OnHotwordRecognized() {
   ToggleSpeechRecognition();
 }
 
-void AppListViewDelegate::SigninManagerCreated(SigninManagerBase* manager) {
-  scoped_observer_.Add(manager);
-}
-
-void AppListViewDelegate::SigninManagerShutdown(SigninManagerBase* manager) {
-  if (scoped_observer_.IsObserving(manager))
-    scoped_observer_.Remove(manager);
-}
-
-void AppListViewDelegate::GoogleSigninFailed(
-    const GoogleServiceAuthError& error) {
-  OnProfileChanged();
-}
-
-void AppListViewDelegate::GoogleSigninSucceeded(const std::string& username,
-                                                const std::string& password) {
-  OnProfileChanged();
-}
-
-void AppListViewDelegate::GoogleSignedOut(const std::string& username) {
-  OnProfileChanged();
-}
-
 void AppListViewDelegate::OnProfileChanged() {
   model_ = app_list::AppListSyncableServiceFactory::GetForProfile(
       profile_)->model();
@@ -204,8 +162,6 @@ void AppListViewDelegate::OnProfileChanged() {
   search_controller_.reset(new app_list::SearchController(
       profile_, model_->search_box(), model_->results(),
       speech_ui_.get(), controller_));
-
-  signin_delegate_.SetProfile(profile_);
 
 #if defined(USE_ASH)
   app_sync_ui_state_watcher_.reset(new AppSyncUIStateWatcher(profile_, model_));
@@ -246,10 +202,6 @@ void AppListViewDelegate::SetProfileByPath(const base::FilePath& profile_path) {
 
 app_list::AppListModel* AppListViewDelegate::GetModel() {
   return model_;
-}
-
-app_list::SigninDelegate* AppListViewDelegate::GetSigninDelegate() {
-  return &signin_delegate_;
 }
 
 app_list::SpeechUIModel* AppListViewDelegate::GetSpeechUI() {
@@ -434,22 +386,30 @@ void AppListViewDelegate::OnProfileNameChanged(
   OnProfileChanged();
 }
 
-content::WebContents* AppListViewDelegate::GetStartPageContents() {
+#if defined(TOOLKIT_VIEWS)
+views::View* AppListViewDelegate::CreateStartPageWebView(
+    const gfx::Size& size) {
   app_list::StartPageService* service =
       app_list::StartPageService::Get(profile_);
   if (!service)
     return NULL;
 
-  return service->GetStartPageContents();
+  content::WebContents* web_contents = service->GetStartPageContents();
+  if (!web_contents)
+    return NULL;
+
+  views::WebView* web_view = new views::WebView(
+      web_contents->GetBrowserContext());
+  web_view->SetPreferredSize(size);
+  web_view->SetWebContents(web_contents);
+  return web_view;
 }
+#endif
 
-content::WebContents* AppListViewDelegate::GetSpeechRecognitionContents() {
+bool AppListViewDelegate::IsSpeechRecognitionEnabled() {
   app_list::StartPageService* service =
       app_list::StartPageService::Get(profile_);
-  if (!service)
-    return NULL;
-
-  return service->GetSpeechRecognitionContents();
+  return service && service->GetSpeechRecognitionContents();
 }
 
 const app_list::AppListViewDelegate::Users&

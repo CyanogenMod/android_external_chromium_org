@@ -329,7 +329,6 @@ class TestPageHandler(testserver_base.BasePageHandler):
       self.NoContentHandler,
       self.ServerRedirectHandler,
       self.ClientRedirectHandler,
-      self.MultipartHandler,
       self.GetSSLSessionCacheHandler,
       self.SSLManySmallRecords,
       self.GetChannelID,
@@ -1439,29 +1438,6 @@ class TestPageHandler(testserver_base.BasePageHandler):
 
     return True
 
-  def MultipartHandler(self):
-    """Send a multipart response (10 text/html pages)."""
-
-    test_name = '/multipart'
-    if not self._ShouldHandleRequest(test_name):
-      return False
-
-    num_frames = 10
-    bound = '12345'
-    self.send_response(200)
-    self.send_header('Content-Type',
-                     'multipart/x-mixed-replace;boundary=' + bound)
-    self.end_headers()
-
-    for i in xrange(num_frames):
-      self.wfile.write('--' + bound + '\r\n')
-      self.wfile.write('Content-Type: text/html\r\n\r\n')
-      self.wfile.write('<title>page ' + str(i) + '</title>')
-      self.wfile.write('page ' + str(i))
-
-    self.wfile.write('--' + bound + '--')
-    return True
-
   def GetSSLSessionCacheHandler(self):
     """Send a reply containing a log of the session cache operations."""
 
@@ -2010,10 +1986,12 @@ class ServerRunner(testserver_base.TestServerRunner):
                                  "base64"),
                              self.options.fallback_scsv,
                              stapled_ocsp_response)
-        print 'HTTPS server started on %s:%d...' % (host, server.server_port)
+        print 'HTTPS server started on https://%s:%d...' % \
+            (host, server.server_port)
       else:
         server = HTTPServer((host, port), TestPageHandler)
-        print 'HTTP server started on %s:%d...' % (host, server.server_port)
+        print 'HTTP server started on http://%s:%d...' % \
+            (host, server.server_port)
 
       server.data_dir = self.__make_data_dir()
       server.file_root_url = self.options.file_root_url
@@ -2026,7 +2004,9 @@ class ServerRunner(testserver_base.TestServerRunner):
       # is required to work correctly. It should be fixed from pywebsocket side.
       os.chdir(self.__make_data_dir())
       websocket_options = WebSocketOptions(host, port, '.')
+      scheme = "ws"
       if self.options.cert_and_key_file:
+        scheme = "wss"
         websocket_options.use_tls = True
         websocket_options.private_key = self.options.cert_and_key_file
         websocket_options.certificate = self.options.cert_and_key_file
@@ -2041,7 +2021,8 @@ class ServerRunner(testserver_base.TestServerRunner):
               self.options.ssl_client_ca[0] + ' exiting...')
         websocket_options.tls_client_ca = self.options.ssl_client_ca[0]
       server = WebSocketServer(websocket_options)
-      print 'WebSocket server started on %s:%d...' % (host, server.server_port)
+      print 'WebSocket server started on %s://%s:%d...' % \
+          (scheme, host, server.server_port)
       server_data['port'] = server.server_port
     elif self.options.server_type == SERVER_TCP_ECHO:
       # Used for generating the key (randomly) that encodes the "echo request"

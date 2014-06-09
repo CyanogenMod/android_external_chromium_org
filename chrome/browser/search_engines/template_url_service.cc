@@ -23,9 +23,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/google/google_url_tracker_factory.h"
-#include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -39,10 +37,8 @@
 #include "chrome/browser/webdata/web_data_service.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/env_vars.h"
-#include "chrome/common/extensions/api/omnibox/omnibox_handler.h"
 #include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/url_constants.h"
 #include "content/public/browser/notification_service.h"
 #include "extensions/common/constants.h"
 #include "net/base/net_util.h"
@@ -1567,8 +1563,12 @@ void TemplateURLService::Init(const Initializer* initializers,
   if (profile_ && default_search_provider &&
       default_search_provider->HasGoogleBaseURLs()) {
     scoped_ptr<base::Environment> env(base::Environment::Create());
-    if (!env->HasVar(env_vars::kHeadless))
-      GoogleURLTracker::RequestServerCheck(profile_, false);
+    if (!env->HasVar(env_vars::kHeadless)) {
+      GoogleURLTracker* tracker =
+          GoogleURLTrackerFactory::GetForProfile(profile_);
+      if (tracker)
+        tracker->RequestServerCheck(false);
+    }
   }
 }
 
@@ -2064,8 +2064,12 @@ bool TemplateURLService::ApplyDefaultSearchChangeNoMetrics(
   bool changed = default_search_provider_ != previous_default_search_engine;
 
   if (profile_ && changed && default_search_provider_ &&
-      default_search_provider_->HasGoogleBaseURLs())
-    GoogleURLTracker::RequestServerCheck(profile_, false);
+      default_search_provider_->HasGoogleBaseURLs()) {
+    GoogleURLTracker* tracker =
+        GoogleURLTrackerFactory::GetForProfile(profile_);
+    if (tracker)
+      tracker->RequestServerCheck(false);
+  }
 
   NotifyObservers();
 

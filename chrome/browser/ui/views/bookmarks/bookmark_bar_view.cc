@@ -611,8 +611,8 @@ base::string16 BookmarkBarView::CreateToolTipForURLAndTitle(
   if (!title.empty()) {
     base::string16 localized_title = title;
     base::i18n::AdjustStringForLocaleDirection(&localized_title);
-    result.append(ElideText(localized_title, tt_fonts, max_width,
-                            gfx::ELIDE_AT_END));
+    result.append(gfx::ElideText(localized_title, tt_fonts, max_width,
+                                 gfx::ELIDE_TAIL));
   }
 
   // Only show the URL if the url and title differ.
@@ -679,17 +679,17 @@ gfx::Size BookmarkBarView::GetPreferredSize() const {
   return prefsize;
 }
 
-bool BookmarkBarView::HitTestRect(const gfx::Rect& rect) const {
-  // If bookmark bar is attached and omnibox popup is open (on top of the bar),
-  // force hit-testing to fail.  This prevents hovers/clicks just above the
-  // omnibox popup from activating the top few pixels of items on the bookmark
-  // bar.
+bool BookmarkBarView::CanProcessEventsWithinSubtree() const {
+  // If the bookmark bar is attached and the omnibox popup is open (on top of
+  // the bar), prevent events from targeting the bookmark bar or any of its
+  // descendants. This will prevent hovers/clicks just above the omnibox popup
+  // from activating the top few pixels of items on the bookmark bar.
   if (!IsDetached() && browser_view_ &&
       browser_view_->GetLocationBar()->GetOmniboxView()->model()->
           popup_model()->IsOpen()) {
     return false;
   }
-  return DetachableToolbarView::HitTestRect(rect);
+  return true;
 }
 
 gfx::Size BookmarkBarView::GetMinimumSize() const {
@@ -974,7 +974,7 @@ void BookmarkBarView::ShowImportDialog() {
 
 void BookmarkBarView::OnBookmarkBubbleShown(const GURL& url) {
   StopThrobbing(true);
-  const BookmarkNode* node = model_->GetMostRecentlyAddedNodeForURL(url);
+  const BookmarkNode* node = model_->GetMostRecentlyAddedUserNodeForURL(url);
   if (!node)
     return;  // Generally shouldn't happen.
   StartThrobbing(node, false);

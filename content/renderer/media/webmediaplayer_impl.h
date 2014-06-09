@@ -177,7 +177,7 @@ class WebMediaPlayerImpl
                   uint32 system_code);
   void OnKeyMessage(const std::string& session_id,
                     const std::vector<uint8>& message,
-                    const std::string& default_url);
+                    const GURL& destination_url);
   void OnNeedKey(const std::string& type,
                  const std::vector<uint8>& init_data);
   void OnAddTextTrack(const media::TextTrackConfig& config,
@@ -191,7 +191,7 @@ class WebMediaPlayerImpl
               CORSMode cors_mode);
 
   // Called after asynchronous initialization of a data source completed.
-  void DataSourceInitialized(const GURL& gurl, bool success);
+  void DataSourceInitialized(bool success);
 
   // Called when the data source is downloading or paused.
   void NotifyDownloading(bool is_downloading);
@@ -310,7 +310,6 @@ class WebMediaPlayerImpl
   // Routes audio playback to either AudioRendererSink or WebAudio.
   scoped_refptr<WebAudioSourceProviderImpl> audio_source_provider_;
 
-  bool is_local_source_;
   bool supports_save_;
 
   bool starting_;

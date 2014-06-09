@@ -78,7 +78,6 @@
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 #include "content/renderer/drop_data_builder.h"
 #include "content/renderer/external_popup_menu.h"
-#include "content/renderer/geolocation_dispatcher.h"
 #include "content/renderer/gpu/render_widget_compositor.h"
 #include "content/renderer/history_controller.h"
 #include "content/renderer/history_serialization.h"
@@ -649,7 +648,6 @@ RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
       cached_is_main_frame_pinned_to_right_(false),
       has_scrolled_focused_editable_node_into_rect_(false),
       push_messaging_dispatcher_(NULL),
-      geolocation_dispatcher_(NULL),
       speech_recognition_dispatcher_(NULL),
       media_stream_dispatcher_(NULL),
       browser_plugin_manager_(NULL),
@@ -683,19 +681,19 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
   // Ensure we start with a valid next_page_id_ from the browser.
   DCHECK_GE(next_page_id_, 0);
 
-  RenderFrameImpl* main_render_frame = RenderFrameImpl::Create(
-      this, params->main_frame_routing_id);
+  main_render_frame_.reset(RenderFrameImpl::Create(
+      this, params->main_frame_routing_id));
   // The main frame WebLocalFrame object is closed by
   // RenderFrameImpl::frameDetached().
-  WebLocalFrame* web_frame = WebLocalFrame::create(main_render_frame);
-  main_render_frame->SetWebFrame(web_frame);
+  WebLocalFrame* web_frame = WebLocalFrame::create(main_render_frame_.get());
+  main_render_frame_->SetWebFrame(web_frame);
 
   if (params->proxy_routing_id != MSG_ROUTING_NONE) {
     CHECK(params->swapped_out);
     RenderFrameProxy* proxy =
         RenderFrameProxy::CreateFrameProxy(params->proxy_routing_id,
                                            params->main_frame_routing_id);
-    main_render_frame->set_render_frame_proxy(proxy);
+    main_render_frame_->set_render_frame_proxy(proxy);
   }
 
   webwidget_ = WebView::create(this);
@@ -757,7 +755,6 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
   webview()->settings()->setAllowConnectingInsecureWebSocket(
       command_line.HasSwitch(switches::kAllowInsecureWebSocketFromHttpsOrigin));
 
-  main_render_frame_.reset(main_render_frame);
   webview()->setMainFrame(main_render_frame_->GetWebFrame());
   main_render_frame_->Initialize();
 
@@ -1737,10 +1734,6 @@ void RenderViewImpl::focusedNodeChanged(const WebNode& node) {
   FOR_EACH_OBSERVER(RenderViewObserver, observers_, FocusedNodeChanged(node));
 }
 
-void RenderViewImpl::numberOfWheelEventHandlersChanged(unsigned num_handlers) {
-  Send(new ViewHostMsg_DidChangeNumWheelEvents(routing_id_, num_handlers));
-}
-
 void RenderViewImpl::didUpdateLayout() {
   FOR_EACH_OBSERVER(RenderViewObserver, observers_, DidUpdateLayout());
 
@@ -2034,6 +2027,7 @@ void RenderViewImpl::didCreateDataSource(WebLocalFrame* frame,
         document_state->set_load_type(DocumentState::LINK_LOAD_NORMAL);
         break;
       case WebURLRequest::ReloadIgnoringCacheData:  // reload.
+      case WebURLRequest::ReloadBypassingCache:  // end-to-end reload.
         document_state->set_load_type(DocumentState::LINK_LOAD_RELOAD);
         break;
       case WebURLRequest::ReturnCacheDataElseLoad:  // allow stale data.
@@ -2043,6 +2037,8 @@ void RenderViewImpl::didCreateDataSource(WebLocalFrame* frame,
       case WebURLRequest::ReturnCacheDataDontLoad:  // Don't re-post.
         document_state->set_load_type(DocumentState::LINK_LOAD_CACHE_ONLY);
         break;
+      default:
+        NOTREACHED();
     }
   }
 
@@ -3226,12 +3222,19 @@ void RenderViewImpl::OnPluginImeCompositionCompleted(const base::string16& text,
 }
 #endif  // OS_MACOSX
 
+void RenderViewImpl::OnClose() {
+  if (closing_)
+    RenderThread::Get()->Send(new ViewHostMsg_Close_ACK(routing_id_));
+  RenderWidget::OnClose();
+}
+
 void RenderViewImpl::Close() {
   // We need to grab a pointer to the doomed WebView before we destroy it.
   WebView* doomed = webview();
   RenderWidget::Close();
   g_view_map.Get().erase(doomed);
   g_routing_id_view_map.Get().erase(routing_id_);
+  RenderThread::Get()->Send(new ViewHostMsg_Close_ACK(routing_id_));
 }
 
 void RenderViewImpl::DidHandleKeyEvent() {
@@ -3631,12 +3634,6 @@ bool RenderViewImpl::ScheduleFileChooser(
     Send(new ViewHostMsg_RunFileChooser(routing_id_, params));
   }
   return true;
-}
-
-blink::WebGeolocationClient* RenderViewImpl::geolocationClient() {
-  if (!geolocation_dispatcher_)
-    geolocation_dispatcher_ = new GeolocationDispatcher(this);
-  return geolocation_dispatcher_;
 }
 
 blink::WebSpeechRecognizer* RenderViewImpl::speechRecognizer() {

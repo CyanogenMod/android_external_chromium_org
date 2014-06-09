@@ -48,6 +48,18 @@ class WebViewGuest : public GuestView<WebViewGuest>,
                content::WebContents* guest_web_contents,
                const std::string& embedder_extension_id);
 
+  // For WebViewGuest, we create special guest processes, which host the
+  // tag content separately from the main application that embeds the tag.
+  // A <webview> can specify both the partition name and whether the storage
+  // for that partition should be persisted. Each tag gets a SiteInstance with
+  // a specially formatted URL, based on the application it is hosted by and
+  // the partition requested by it. The format for that URL is:
+  // chrome-guest://partition_domain/persist?partition_name
+  static bool GetGuestPartitionConfigForSite(const GURL& site,
+                                             std::string* partition_domain,
+                                             std::string* partition_name,
+                                             bool* in_memory);
+
   // Returns guestview::kInstanceIDNone if |contents| does not correspond to a
   // WebViewGuest.
   static int GetViewInstanceId(content::WebContents* contents);
@@ -63,10 +75,17 @@ class WebViewGuest : public GuestView<WebViewGuest>,
   // Sets the frame name of the guest.
   void SetName(const std::string& name);
 
+  // Set the zoom factor.
+  void SetZoom(double zoom_factor);
+
   // GuestViewBase implementation.
   virtual void Attach(content::WebContents* embedder_web_contents,
                       const base::DictionaryValue& args) OVERRIDE;
+  virtual void DidStopLoading() OVERRIDE;
   virtual void EmbedderDestroyed() OVERRIDE;
+  virtual void GuestDestroyed() OVERRIDE;
+  virtual bool IsDragAndDropEnabled() const OVERRIDE;
+  virtual void WillDestroy() OVERRIDE;
 
   // WebContentsDelegate implementation.
   virtual bool AddMessageToConsole(content::WebContents* source,
@@ -124,7 +143,6 @@ class WebViewGuest : public GuestView<WebViewGuest>,
 
   // BrowserPluginGuestDelegate implementation.
   virtual void DidAttach() OVERRIDE;
-  virtual bool IsDragAndDropEnabled() OVERRIDE;
   virtual void SizeChanged(const gfx::Size& old_size, const gfx::Size& new_size)
       OVERRIDE;
   virtual void RequestPointerLockPermission(
@@ -132,15 +150,11 @@ class WebViewGuest : public GuestView<WebViewGuest>,
       bool last_unlocked_by_target,
       const base::Callback<void(bool)>& callback) OVERRIDE;
   virtual void NavigateGuest(const std::string& src) OVERRIDE;
-  virtual void Destroy() OVERRIDE;
 
   // NotificationObserver implementation.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
-
-  // Set the zoom factor.
-  virtual void SetZoom(double zoom_factor) OVERRIDE;
 
   // Returns the current zoom factor.
   double GetZoom();
@@ -294,13 +308,10 @@ class WebViewGuest : public GuestView<WebViewGuest>,
   virtual void DocumentLoadedInFrame(
       int64 frame_id,
       content::RenderViewHost* render_view_host) OVERRIDE;
-  virtual void DidStopLoading(
-      content::RenderViewHost* render_view_host) OVERRIDE;
   virtual bool OnMessageReceived(
       const IPC::Message& message,
       content::RenderFrameHost* render_frame_host) OVERRIDE;
   virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
-  virtual void WebContentsDestroyed() OVERRIDE;
   virtual void UserAgentOverrideSet(const std::string& user_agent) OVERRIDE;
   virtual void RenderViewReady() OVERRIDE;
 

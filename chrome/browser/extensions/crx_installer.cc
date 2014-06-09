@@ -296,8 +296,8 @@ CrxInstallerError CrxInstaller::AllowInstall(const Extension* extension) {
         WebstoreInstaller::MANIFEST_CHECK_LEVEL_NONE) {
         // To skip manifest checking, the extension must be a shared module
         // and not request any permissions.
-        if (SharedModuleInfo::IsSharedModule(extension) &&
-            PermissionsData::GetActivePermissions(extension)->IsEmpty()) {
+      if (SharedModuleInfo::IsSharedModule(extension) &&
+          extension->permissions_data()->active_permissions()->IsEmpty()) {
           valid = true;
         }
     } else {
@@ -313,11 +313,11 @@ CrxInstallerError CrxInstaller::AllowInstall(const Extension* extension) {
                               &error);
         if (error.empty()) {
           scoped_refptr<const PermissionSet> expected_permissions =
-              PermissionsData::GetActivePermissions(dummy_extension.get());
+              dummy_extension->permissions_data()->active_permissions();
           valid = !(PermissionMessageProvider::Get()->IsPrivilegeIncrease(
-                        expected_permissions,
-                        PermissionsData::GetActivePermissions(extension),
-                        extension->GetType()));
+              expected_permissions,
+              extension->permissions_data()->active_permissions(),
+              extension->GetType()));
         }
       }
     }
@@ -659,9 +659,9 @@ void CrxInstaller::InstallUIAbort(bool user_initiated) {
   // and if it is false, this function is called in response to
   // ExtensionInstallPrompt::ConfirmInstall().
   if (!update_from_settings_page_) {
-    std::string histogram_name = user_initiated ?
-        "Extensions.Permissions_InstallCancel" :
-        "Extensions.Permissions_InstallAbort";
+    std::string histogram_name = user_initiated
+                                     ? "Extensions.Permissions_InstallCancel2"
+                                     : "Extensions.Permissions_InstallAbort2";
     ExtensionService::RecordPermissionMessagesHistogram(
         extension(), histogram_name.c_str());
 

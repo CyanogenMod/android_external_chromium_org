@@ -29,7 +29,6 @@
         'bluetooth/bluetooth_device_win_unittest.cc',
         'bluetooth/bluetooth_chromeos_unittest.cc',
         'bluetooth/bluetooth_gatt_chromeos_unittest.cc',
-        'bluetooth/bluetooth_service_record_mac_unittest.mm',
         'bluetooth/bluetooth_service_record_win_unittest.cc',
         'bluetooth/bluetooth_socket_chromeos_unittest.cc',
         'bluetooth/bluetooth_task_manager_win_unittest.cc',
@@ -65,6 +64,16 @@
                 '../base/allocator/allocator.gyp:allocator',
               ],
             }],
+          ],
+        }],
+        ['OS=="linux" and use_udev==0', {
+          # Udev is the only Linux implementation. If we're compiling without
+          # Udev, disable these unittests.
+          'dependencies!': [
+            'hid/hid.gyp:device_hid',
+          ],
+          'sources/': [
+            ['exclude', '^hid/'],
           ],
         }],
       ],

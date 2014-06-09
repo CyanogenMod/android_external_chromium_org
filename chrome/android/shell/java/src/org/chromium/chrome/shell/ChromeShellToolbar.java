@@ -47,6 +47,8 @@ public class ChromeShellToolbar extends LinearLayout {
     private AppMenuHandler mMenuHandler;
     private AppMenuButtonHelper mAppMenuButtonHelper;
 
+    private SuggestionPopup mSuggestionPopup;
+
     /**
      * @param context The Context the view is running in.
      * @param attrs   The attributes of the XML tag that is inflating the view.
@@ -74,6 +76,13 @@ public class ChromeShellToolbar extends LinearLayout {
         removeCallbacks(mClearProgressRunnable);
         mProgressDrawable.setLevel(100 * progress);
         if (progress == 100) postDelayed(mClearProgressRunnable, COMPLETED_PROGRESS_TIMEOUT_MS);
+    }
+
+    /**
+     * Closes the suggestion popup.
+     */
+    public void hideSuggestions() {
+        if (mSuggestionPopup != null) mSuggestionPopup.hideSuggestions();
     }
 
     @Override
@@ -115,10 +124,13 @@ public class ChromeShellToolbar extends LinearLayout {
                 setKeyboardVisibilityForUrl(hasFocus);
                 if (!hasFocus) {
                     mUrlTextView.setText(mTab.getContentViewCore().getUrl());
+                    mSuggestionPopup.dismissPopup();
                 }
             }
         });
-        mUrlTextView.addTextChangedListener(new SuggestionPopup(getContext(), mUrlTextView, this));
+
+        mSuggestionPopup = new SuggestionPopup(getContext(), mUrlTextView, this);
+        mUrlTextView.addTextChangedListener(mSuggestionPopup);
     }
 
     private void initializeMenuButton() {

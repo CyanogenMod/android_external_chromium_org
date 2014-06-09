@@ -19,12 +19,10 @@
 #include "base/synchronization/waitable_event.h"
 #include "components/bookmarks/browser/bookmark_client.h"
 #include "components/bookmarks/browser/bookmark_node.h"
-#include "components/bookmarks/browser/bookmark_service.h"
 #include "ui/gfx/image/image.h"
 #include "url/gurl.h"
 
 class BookmarkExpandedStateTracker;
-class BookmarkIndex;
 class BookmarkModelObserver;
 struct BookmarkMatch;
 class PrefService;
@@ -36,6 +34,7 @@ class SequencedTaskRunner;
 }
 
 namespace bookmarks {
+class BookmarkIndex;
 class BookmarkLoadDetails;
 class BookmarkStorage;
 class ScopedGroupBookmarkActions;
@@ -59,12 +58,17 @@ class TestBookmarkClient;
 //
 // You should NOT directly create a BookmarkModel, instead go through the
 // BookmarkModelFactory.
-class BookmarkModel : public BookmarkService {
+class BookmarkModel {
  public:
+  struct URLAndTitle {
+    GURL url;
+    base::string16 title;
+  };
+
   // |index_urls| says whether URLs should be stored in the BookmarkIndex
   // in addition to bookmark titles.
   BookmarkModel(BookmarkClient* client, bool index_urls);
-  virtual ~BookmarkModel();
+  ~BookmarkModel();
 
   // Invoked prior to destruction to release any necessary resources.
   void Shutdown();
@@ -98,12 +102,10 @@ class BookmarkModel : public BookmarkService {
   bool is_root_node(const BookmarkNode* node) const { return node == &root_; }
 
   // Returns whether the given |node| is one of the permanent nodes - root node,
-  // 'bookmark bar' node, 'other' node or 'mobile' node.
+  // 'bookmark bar' node, 'other' node or 'mobile' node, or one of the root
+  // nodes supplied by the |client_|.
   bool is_permanent_node(const BookmarkNode* node) const {
-    return node == &root_ ||
-           node == bookmark_bar_node_ ||
-           node == other_node_ ||
-           node == mobile_node_;
+    return node && (node == &root_ || node->parent() == &root_);
   }
 
   // Returns the parent the last node was added to. This never returns NULL
@@ -129,9 +131,9 @@ class BookmarkModel : public BookmarkService {
   // recursively removes all nodes. Observers are notified immediately.
   void Remove(const BookmarkNode* parent, int index);
 
-  // Removes all the non-permanent bookmark nodes. Observers are only notified
-  // when all nodes have been removed. There is no notification for individual
-  // node removals.
+  // Removes all the non-permanent bookmark nodes that are editable by the user.
+  // Observers are only notified when all nodes have been removed. There is no
+  // notification for individual node removals.
   void RemoveAll();
 
   // Moves |node| to |new_parent| and inserts it at the given |index|.
@@ -164,28 +166,31 @@ class BookmarkModel : public BookmarkService {
   // Returns the set of nodes with the |url|.
   void GetNodesByURL(const GURL& url, std::vector<const BookmarkNode*>* nodes);
 
-  // Returns the most recently added node for the |url|. Returns NULL if |url|
-  // is not bookmarked.
-  const BookmarkNode* GetMostRecentlyAddedNodeForURL(const GURL& url);
+  // Returns the most recently added user node for the |url|; urls from any
+  // nodes that are not editable by the user are never returned by this call.
+  // Returns NULL if |url| is not bookmarked.
+  const BookmarkNode* GetMostRecentlyAddedUserNodeForURL(const GURL& url);
 
   // Returns true if there are bookmarks, otherwise returns false.
   // This method is thread safe.
   bool HasBookmarks();
 
-  // Returns true if there is a bookmark with the |url|.
-  // This method is thread safe.
-  // See BookmarkService for more details on this.
-  virtual bool IsBookmarked(const GURL& url) OVERRIDE;
+  // Returns true if the specified URL is bookmarked.
+  //
+  // If not on the main thread you *must* invoke BlockTillLoaded first.
+  bool IsBookmarked(const GURL& url);
 
-  // Returns all the bookmarked urls and their titles.
-  // This method is thread safe.
-  // See BookmarkService for more details on this.
-  virtual void GetBookmarks(
-      std::vector<BookmarkService::URLAndTitle>* urls) OVERRIDE;
+  // Returns, by reference in |bookmarks|, the set of bookmarked urls and their
+  // titles. This returns the unique set of URLs. For example, if two bookmarks
+  // reference the same URL only one entry is added not matter the titles are
+  // same or not.
+  //
+  // If not on the main thread you *must* invoke BlockTillLoaded first.
+  void GetBookmarks(std::vector<BookmarkModel::URLAndTitle>* urls);
 
-  // Blocks until loaded; this is NOT invoked on the main thread.
-  // See BookmarkService for more details on this.
-  virtual void BlockTillLoaded() OVERRIDE;
+  // Blocks until loaded. This is intended for usage on a thread other than
+  // the main thread.
+  void BlockTillLoaded();
 
   // Adds a new folder node at the specified position.
   const BookmarkNode* AddFolder(const BookmarkNode* parent,
@@ -409,7 +414,7 @@ class BookmarkModel : public BookmarkService {
   // Reads/writes bookmarks to disk.
   scoped_refptr<bookmarks::BookmarkStorage> store_;
 
-  scoped_ptr<BookmarkIndex> index_;
+  scoped_ptr<bookmarks::BookmarkIndex> index_;
 
   // True if URLs are stored in the BookmarkIndex in addition to bookmark
   // titles.

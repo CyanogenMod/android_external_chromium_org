@@ -52,6 +52,7 @@
 #include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "components/invalidation/invalidation_switches.h"
 #include "components/invalidation/p2p_invalidation_service.h"
+#include "components/invalidation/p2p_invalidator.h"
 #include "components/os_crypt/os_crypt.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/web_contents.h"
@@ -70,7 +71,6 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "sync/engine/sync_scheduler_impl.h"
-#include "sync/notifier/p2p_invalidator.h"
 #include "sync/protocol/sync.pb.h"
 #include "sync/test/fake_server/fake_server.h"
 #include "sync/test/fake_server/fake_server_network_resources.h"
@@ -914,16 +914,6 @@ void SyncTest::TriggerMigrationDoneError(syncer::ModelTypeSet model_types) {
                     GetTitle()));
 }
 
-void SyncTest::TriggerBirthdayError() {
-  ASSERT_TRUE(ServerSupportsErrorTriggering());
-  std::string path = "chromiumsync/birthdayerror";
-  ui_test_utils::NavigateToURL(browser(), sync_server_.GetURL(path));
-  ASSERT_EQ("Birthday error",
-            base::UTF16ToASCII(
-                browser()->tab_strip_model()->GetActiveWebContents()->
-                    GetTitle()));
-}
-
 void SyncTest::TriggerTransientError() {
   ASSERT_TRUE(ServerSupportsErrorTriggering());
   std::string path = "chromiumsync/transienterror";
@@ -932,14 +922,6 @@ void SyncTest::TriggerTransientError() {
             base::UTF16ToASCII(
                 browser()->tab_strip_model()->GetActiveWebContents()->
                     GetTitle()));
-}
-
-void SyncTest::TriggerAuthState(PythonServerAuthState auth_state) {
-  ASSERT_TRUE(ServerSupportsErrorTriggering());
-  std::string path = "chromiumsync/cred";
-  path.append(auth_state == AUTHENTICATED_TRUE ? "?valid=True" :
-                                                 "?valid=False");
-  ui_test_utils::NavigateToURL(browser(), sync_server_.GetURL(path));
 }
 
 void SyncTest::TriggerXmppAuthError() {

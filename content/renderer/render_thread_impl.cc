@@ -809,17 +809,10 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
 
   webkit::SetSharedMemoryAllocationFunction(AllocateSharedMemoryFunction);
 
-  // Limit use of the scaled image cache to when deferred image decoding
-  // is enabled.
-  // TODO(reveman): Allow use of this cache on Android once
-  // SkDiscardablePixelRef is used for decoded images. crbug.com/330041
-  bool use_skia_scaled_image_cache = false;
-#if !defined(OS_ANDROID)
-  use_skia_scaled_image_cache =
-      command_line.HasSwitch(switches::kEnableDeferredImageDecoding) ||
-      is_impl_side_painting_enabled_;
-#endif
-  if (!use_skia_scaled_image_cache)
+  // Limit use of the scaled image cache to when deferred image decoding is
+  // enabled.
+  if (!command_line.HasSwitch(switches::kEnableDeferredImageDecoding) &&
+      !is_impl_side_painting_enabled_)
     SkGraphics::SetImageCacheByteLimit(0u);
 }
 
@@ -1181,10 +1174,12 @@ scoped_ptr<gfx::GpuMemoryBuffer> RenderThreadImpl::AllocateGpuMemoryBuffer(
 }
 
 void RenderThreadImpl::ConnectToService(
+    const mojo::String& service_url,
     const mojo::String& service_name,
-    mojo::ScopedMessagePipeHandle message_pipe) {
+    mojo::ScopedMessagePipeHandle message_pipe,
+    const mojo::String& requestor_url) {
   // TODO(darin): Invent some kind of registration system to use here.
-  if (service_name.To<base::StringPiece>() == kRendererService_WebUISetup) {
+  if (service_url.To<base::StringPiece>() == kRendererService_WebUISetup) {
     WebUISetupImpl::Bind(message_pipe.Pass());
   } else {
     NOTREACHED() << "Unknown service name";

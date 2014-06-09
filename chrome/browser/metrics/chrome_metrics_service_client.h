@@ -43,11 +43,16 @@ class ChromeMetricsServiceClient : public metrics::MetricsServiceClient,
   virtual bool GetBrand(std::string* brand_code) OVERRIDE;
   virtual metrics::SystemProfileProto::Channel GetChannel() OVERRIDE;
   virtual std::string GetVersionString() OVERRIDE;
+  virtual int64 GetInstallDate() OVERRIDE;
   virtual void OnLogUploadComplete() OVERRIDE;
   virtual void StartGatheringMetrics(
       const base::Closure& done_callback) OVERRIDE;
   virtual void CollectFinalMetrics(const base::Closure& done_callback)
       OVERRIDE;
+  virtual scoped_ptr<metrics::MetricsLogUploader> CreateUploader(
+      const std::string& server_url,
+      const std::string& mime_type,
+      const base::Callback<void(int)>& on_upload_complete) OVERRIDE;
 
   MetricsService* metrics_service() { return metrics_service_.get(); }
 

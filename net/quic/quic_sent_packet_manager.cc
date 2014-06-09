@@ -62,6 +62,7 @@ QuicSentPacketManager::QuicSentPacketManager(bool is_server,
       is_server_(is_server),
       clock_(clock),
       stats_(stats),
+      debug_delegate_(NULL),
       send_algorithm_(
           SendAlgorithmInterface::Create(clock, &rtt_stats_, type, stats)),
       loss_algorithm_(LossDetectionInterface::Create(loss_type)),
@@ -69,6 +70,7 @@ QuicSentPacketManager::QuicSentPacketManager(bool is_server,
       consecutive_rto_count_(0),
       consecutive_tlp_count_(0),
       consecutive_crypto_retransmission_count_(0),
+      pending_tlp_transmission_(false),
       max_tail_loss_probes_(kDefaultMaxTailLossProbes),
       using_pacing_(false) {
 }
@@ -82,7 +84,13 @@ void QuicSentPacketManager::SetFromConfig(const QuicConfig& config) {
     rtt_stats_.set_initial_rtt_us(min(kMaxInitialRoundTripTimeUs,
                                       config.ReceivedInitialRoundTripTimeUs()));
   }
-  if (config.congestion_control() == kPACE) {
+  // TODO(ianswett): BBR is currently a server only feature.
+  if (config.HasReceivedCongestionOptions() &&
+      ContainsQuicTag(config.ReceivedCongestionOptions(), kTBBR)) {
+    send_algorithm_.reset(
+        SendAlgorithmInterface::Create(clock_, &rtt_stats_, kTCPBBR, stats_));
+  }
+  if (config.congestion_feedback() == kPACE) {
     MaybeEnablePacing();
   }
   if (config.HasReceivedLossDetection() &&
@@ -106,9 +114,17 @@ void QuicSentPacketManager::OnSerializedPacket(
 void QuicSentPacketManager::OnRetransmittedPacket(
     QuicPacketSequenceNumber old_sequence_number,
     QuicPacketSequenceNumber new_sequence_number) {
-  DCHECK(ContainsKey(pending_retransmissions_, old_sequence_number));
-
-  pending_retransmissions_.erase(old_sequence_number);
+  TransmissionType transmission_type;
+  PendingRetransmissionMap::iterator it =
+      pending_retransmissions_.find(old_sequence_number);
+  if (it != pending_retransmissions_.end()) {
+    transmission_type = it->second;
+    pending_retransmissions_.erase(it);
+  } else {
+    DLOG(DFATAL) << "Expected sequence number to be in "
+        "pending_retransmissions_.  sequence_number: " << old_sequence_number;
+    transmission_type = NOT_RETRANSMISSION;
+  }
 
   // A notifier may be waiting to hear about ACKs for the original sequence
   // number. Inform them that the sequence number has changed.
@@ -116,7 +132,8 @@ void QuicSentPacketManager::OnRetransmittedPacket(
                                              new_sequence_number);
 
   unacked_packets_.OnRetransmittedPacket(old_sequence_number,
-                                         new_sequence_number);
+                                         new_sequence_number,
+                                         transmission_type);
 }
 
 void QuicSentPacketManager::OnIncomingAck(
@@ -269,6 +286,27 @@ void QuicSentPacketManager::MarkForRetransmission(
   pending_retransmissions_[sequence_number] = transmission_type;
 }
 
+void QuicSentPacketManager::RecordSpuriousRetransmissions(
+    const SequenceNumberSet& all_transmissions,
+    QuicPacketSequenceNumber acked_sequence_number) {
+  for (SequenceNumberSet::const_iterator
+           it = all_transmissions.upper_bound(acked_sequence_number),
+           end = all_transmissions.end();
+       it != end;
+       ++it) {
+    const TransmissionInfo& retransmit_info =
+        unacked_packets_.GetTransmissionInfo(*it);
+
+    stats_->bytes_spuriously_retransmitted += retransmit_info.bytes_sent;
+    ++stats_->packets_spuriously_retransmitted;
+    if (debug_delegate_ != NULL) {
+      debug_delegate_->OnSpuriousPacketRetransmition(
+          retransmit_info.transmission_type,
+          retransmit_info.bytes_sent);
+    }
+  }
+}
+
 bool QuicSentPacketManager::HasPendingRetransmissions() const {
   return !pending_retransmissions_.empty();
 }
@@ -341,19 +379,22 @@ QuicUnackedPacketMap::const_iterator QuicSentPacketManager::MarkPacketHandled(
   // Remove the most recent packet, if it is pending retransmission.
   pending_retransmissions_.erase(newest_transmission);
 
+  // Notify observers about the ACKed packet.
+  {
+    // The AckNotifierManager needs to be notified about the most recent
+    // transmission, since that's the one only one it tracks.
+    ack_notifier_manager_.OnPacketAcked(newest_transmission,
+                                        delta_largest_observed);
+    if (newest_transmission != sequence_number) {
+      RecordSpuriousRetransmissions(*transmission_info.all_transmissions,
+                                    sequence_number);
+    }
+  }
+
   // Two cases for MarkPacketHandled:
   // 1) Handle the most recent or a crypto packet, so remove all transmissions.
   // 2) Handle old transmission, keep all other pending transmissions,
   //    but disassociate them from one another.
-  if (newest_transmission != sequence_number) {
-    stats_->bytes_spuriously_retransmitted += transmission_info.bytes_sent;
-    ++stats_->packets_spuriously_retransmitted;
-  }
-
-  // The AckNotifierManager needs to be notified about the most recent
-  // transmission, since that's the one only one it tracks.
-  ack_notifier_manager_.OnPacketAcked(newest_transmission,
-                                      delta_largest_observed);
 
   // If it's a crypto handshake packet, discard it and all retransmissions,
   // since they won't be acked now that one has been processed.
@@ -396,6 +437,7 @@ bool QuicSentPacketManager::OnPacketSent(
     HasRetransmittableData has_retransmittable_data) {
   DCHECK_LT(0u, sequence_number);
   LOG_IF(DFATAL, bytes == 0) << "Cannot send empty packets.";
+  pending_tlp_transmission_ = false;
   // In rare circumstances, the packet could be serialized, sent, and then acked
   // before OnPacketSent is called.
   if (!unacked_packets_.IsUnacked(sequence_number)) {
@@ -446,6 +488,7 @@ void QuicSentPacketManager::OnRetransmissionTimeout() {
       // If no tail loss probe can be sent, because there are no retransmittable
       // packets, execute a conventional RTO to abandon old packets.
       ++stats_->tlp_count;
+      pending_tlp_transmission_ = true;
       RetransmitOldestPacket();
       return;
     case RTO_MODE:
@@ -497,12 +540,8 @@ void QuicSentPacketManager::RetransmitOldestPacket() {
 }
 
 void QuicSentPacketManager::RetransmitAllPackets() {
-  // Abandon all retransmittable packets and packets older than the
-  // retransmission delay.
-
-  DVLOG(1) << "OnRetransmissionTimeout() fired with "
+  DVLOG(1) << "RetransmitAllPackets() called with "
            << unacked_packets_.GetNumUnackedPackets() << " unacked packets.";
-
   // Request retransmission of all retransmittable packets when the RTO
   // fires, and let the congestion manager decide how many to send
   // immediately and the remaining packets will be queued.
@@ -605,11 +644,10 @@ bool QuicSentPacketManager::MaybeUpdateRTT(
 
 QuicTime::Delta QuicSentPacketManager::TimeUntilSend(
     QuicTime now,
-    TransmissionType transmission_type,
     HasRetransmittableData retransmittable) {
   // The TLP logic is entirely contained within QuicSentPacketManager, so the
   // send algorithm does not need to be consulted.
-  if (transmission_type == TLP_RETRANSMISSION) {
+  if (pending_tlp_transmission_) {
     return QuicTime::Delta::Zero();
   }
   return send_algorithm_->TimeUntilSend(
@@ -731,10 +769,11 @@ void QuicSentPacketManager::MaybeEnablePacing() {
     return;
   }
 
+  // Set up a pacing sender with a 5 millisecond alarm granularity.
   using_pacing_ = true;
   send_algorithm_.reset(
       new PacingSender(send_algorithm_.release(),
-                       QuicTime::Delta::FromMicroseconds(1)));
+                       QuicTime::Delta::FromMilliseconds(5)));
 }
 
 }  // namespace net

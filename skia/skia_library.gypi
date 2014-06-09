@@ -51,15 +51,19 @@
     '../third_party/skia/src/ports/SkFontConfigParser_android.cpp',
     '../third_party/skia/src/ports/SkFontHost_mac.cpp',
     '../third_party/skia/src/ports/SkFontHost_win.cpp',
-    '../third_party/skia/src/ports/SkFontHost_win_dw.cpp',
     '../third_party/skia/src/ports/SkFontMgr_default_gdi.cpp',
+    '../third_party/skia/src/ports/SkFontMgr_win_dw.cpp',
     '../third_party/skia/src/ports/SkGlobalInitialization_chromium.cpp',
     '../third_party/skia/src/ports/SkOSFile_posix.cpp',
     '../third_party/skia/src/ports/SkOSFile_stdio.cpp',
     '../third_party/skia/src/ports/SkOSFile_win.cpp',
+    '../third_party/skia/src/ports/SkScalerContext_win_dw.cpp',
+    '../third_party/skia/src/ports/SkScalerContext_win_dw.h',
     '../third_party/skia/src/ports/SkTime_Unix.cpp',
     '../third_party/skia/src/ports/SkTLS_pthread.cpp',
     '../third_party/skia/src/ports/SkTLS_win.cpp',
+    '../third_party/skia/src/ports/SkTypeface_win_dw.cpp',
+    '../third_party/skia/src/ports/SkTypeface_win_dw.h',
 
     '../third_party/skia/src/sfnt/SkOTTable_name.cpp',
     '../third_party/skia/src/sfnt/SkOTTable_name.h',
@@ -103,8 +107,6 @@
     '../third_party/skia/src/utils/win/SkDWriteGeometrySink.h',
     '../third_party/skia/src/utils/win/SkHRESULT.cpp',
 
-    '../third_party/skia/include/images/SkImageRef.h',
-    '../third_party/skia/include/images/SkImageRef_GlobalPool.h',
     '../third_party/skia/include/images/SkMovie.h',
     '../third_party/skia/include/images/SkPageFlipper.h',
 
@@ -294,9 +296,13 @@
       ],
     },{ # not 'OS == "win"'
       'sources!': [
-        '../third_party/skia/src/ports/SkFontHost_win_dw.cpp',
         '../third_party/skia/src/ports/SkFontMgr_default_gdi.cpp',
+        '../third_party/skia/src/ports/SkFontMgr_win_dw.cpp',
         '../third_party/skia/src/ports/SkRemotableFontMgr_win_dw.cpp',
+        '../third_party/skia/src/ports/SkScalerContext_win_dw.cpp',
+        '../third_party/skia/src/ports/SkScalerContext_win_dw.h',
+        '../third_party/skia/src/ports/SkTypeface_win_dw.cpp',
+        '../third_party/skia/src/ports/SkTypeface_win_dw.h',
 
         '../third_party/skia/src/utils/win/SkDWrite.h',
         '../third_party/skia/src/utils/win/SkDWrite.cpp',

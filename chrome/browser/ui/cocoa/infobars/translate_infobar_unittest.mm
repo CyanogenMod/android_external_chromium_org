@@ -7,15 +7,15 @@
 #import "base/mac/scoped_nsobject.h"
 #import "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#import "chrome/app/chrome_command_ids.h"  // For translate menu command ids.
 #include "chrome/browser/infobars/infobar_service.h"
-#import "chrome/browser/translate/translate_infobar_delegate.h"
-#import "chrome/browser/translate/translate_tab_helper.h"
+#import "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #import "chrome/browser/ui/cocoa/infobars/before_translate_infobar_controller.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_cocoa.h"
 #import "chrome/browser/ui/cocoa/infobars/translate_infobar_base.h"
 #include "chrome/test/base/testing_profile.h"
+#import "components/translate/core/browser/options_menu_model.h"
+#import "components/translate/core/browser/translate_infobar_delegate.h"
 #include "components/translate/core/browser/translate_language_list.h"
 #include "components/translate/core/browser/translate_manager.h"
 #import "content/public/browser/web_contents.h"
@@ -41,8 +41,8 @@ class MockTranslateInfoBarDelegate : public TranslateInfoBarDelegate {
                                translate::TranslateStep step,
                                TranslateErrors::Type error)
       : TranslateInfoBarDelegate(
-            TranslateTabHelper::GetManagerFromWebContents(
-                web_contents)->GetWeakPtr(),
+            ChromeTranslateClient::GetManagerFromWebContents(web_contents)
+                ->GetWeakPtr(),
             false,
             step,
             NULL,
@@ -79,7 +79,7 @@ class TranslationInfoBarTest : public CocoaProfileTest {
     web_contents_.reset(
         WebContents::Create(WebContents::CreateParams(profile())));
     InfoBarService::CreateForWebContents(web_contents_.get());
-    TranslateTabHelper::CreateForWebContents(web_contents_.get());
+    ChromeTranslateClient::CreateForWebContents(web_contents_.get());
   }
 
   virtual void TearDown() OVERRIDE {
@@ -96,10 +96,12 @@ class TranslationInfoBarTest : public CocoaProfileTest {
       error = TranslateErrors::NETWORK;
     [[infobar_controller_ view] removeFromSuperview];
 
+    ChromeTranslateClient* chrome_translate_client =
+        ChromeTranslateClient::FromWebContents(web_contents_.get());
     scoped_ptr<TranslateInfoBarDelegate> delegate(
         new MockTranslateInfoBarDelegate(web_contents_.get(), type, error));
     scoped_ptr<infobars::InfoBar> infobar(
-        TranslateInfoBarDelegate::CreateInfoBar(delegate.Pass()));
+        chrome_translate_client->CreateInfoBar(delegate.Pass()));
     if (infobar_)
       infobar_->CloseSoon();
     infobar_ = static_cast<InfoBarCocoa*>(infobar.release());
@@ -203,9 +205,9 @@ TEST_F(TranslationInfoBarTest, OptionsMenuItemsHookedUp) {
   {
     // Can't mock these effectively, so just check that the tag is set
     // correctly.
-    EXPECT_EQ(IDC_TRANSLATE_REPORT_BAD_LANGUAGE_DETECTION,
+    EXPECT_EQ(OptionsMenuModel::REPORT_BAD_DETECTION,
               [reportBadLanguageItem tag]);
-    EXPECT_EQ(IDC_TRANSLATE_OPTIONS_ABOUT, [aboutTranslateItem tag]);
+    EXPECT_EQ(OptionsMenuModel::ABOUT_TRANSLATE, [aboutTranslateItem tag]);
   }
 }
 
@@ -240,7 +242,7 @@ TEST_F(TranslationInfoBarTest, Bug36895) {
 // after doing 3 translations.
 TEST_F(TranslationInfoBarTest, TriggerShowAlwaysTranslateButton) {
   scoped_ptr<TranslatePrefs> translate_prefs(
-      TranslateTabHelper::CreateTranslatePrefs(profile()->GetPrefs()));
+      ChromeTranslateClient::CreateTranslatePrefs(profile()->GetPrefs()));
   translate_prefs->ResetTranslationAcceptedCount("en");
   for (int i = 0; i < 4; ++i) {
     translate_prefs->IncrementTranslationAcceptedCount("en");
@@ -256,7 +258,7 @@ TEST_F(TranslationInfoBarTest, TriggerShowAlwaysTranslateButton) {
 // after denying 3 translations.
 TEST_F(TranslationInfoBarTest, TriggerShowNeverTranslateButton) {
   scoped_ptr<TranslatePrefs> translate_prefs(
-      TranslateTabHelper::CreateTranslatePrefs(profile()->GetPrefs()));
+      ChromeTranslateClient::CreateTranslatePrefs(profile()->GetPrefs()));
   translate_prefs->ResetTranslationDeniedCount("en");
   for (int i = 0; i < 4; ++i) {
     translate_prefs->IncrementTranslationDeniedCount("en");

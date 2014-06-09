@@ -2,12 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <limits>
-
 #include "skia/ext/paint_simplifier.h"
 #include "third_party/skia/include/core/SkPaint.h"
+#include "third_party/skia/include/core/SkShader.h"
 
 namespace skia {
+namespace {
+
+bool PaintHasBitmap(const SkPaint &paint) {
+  SkShader* shader = paint.getShader();
+  if (!shader)
+    return false;
+
+  if (shader->asAGradient(NULL) == SkShader::kNone_GradientType)
+    return false;
+
+  return shader->asABitmap(NULL, NULL, NULL) != SkShader::kNone_BitmapType;
+}
+
+}  // namespace
 
 PaintSimplifier::PaintSimplifier()
   : INHERITED() {
@@ -19,6 +32,9 @@ PaintSimplifier::~PaintSimplifier() {
 }
 
 bool PaintSimplifier::filter(SkPaint* paint, Type type) {
+  // Bitmaps are expensive. Skip draw if type has a bitmap.
+  if (type == kBitmap_Type || PaintHasBitmap(*paint))
+    return false;
 
   // Preserve a modicum of text quality; black & white text is
   // just too blocky, even during a fling.
@@ -27,12 +43,6 @@ bool PaintSimplifier::filter(SkPaint* paint, Type type) {
   }
   paint->setSubpixelText(false);
   paint->setLCDRenderText(false);
-
-  // Reduce filter level to medium or less. Note that reducing the filter to
-  // less than medium can have a negative effect on performance as the filtered
-  // image is not cached in this case.
-  paint->setFilterLevel(
-      std::min(paint->getFilterLevel(), SkPaint::kMedium_FilterLevel));
 
   paint->setMaskFilter(NULL);
 

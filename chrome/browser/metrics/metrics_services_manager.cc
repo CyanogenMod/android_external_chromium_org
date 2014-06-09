@@ -9,10 +9,10 @@
 #include "chrome/browser/metrics/chrome_metrics_service_client.h"
 #include "chrome/browser/metrics/extensions_metrics_provider.h"
 #include "chrome/browser/metrics/metrics_service.h"
-#include "chrome/browser/metrics/metrics_state_manager.h"
 #include "chrome/browser/metrics/variations/variations_service.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "components/metrics/metrics_state_manager.h"
 #include "components/rappor/rappor_service.h"
 
 #if defined(OS_CHROMEOS)
@@ -56,6 +56,11 @@ MetricsServicesManager::GetVariationsService() {
                                                      GetMetricsStateManager());
   }
   return variations_service_.get();
+}
+
+void MetricsServicesManager::OnPluginLoadingError(
+    const base::FilePath& plugin_path) {
+  GetMetricsService()->LogPluginLoadingError(plugin_path);
 }
 
 metrics::MetricsStateManager* MetricsServicesManager::GetMetricsStateManager() {

@@ -55,6 +55,7 @@ LOCAL_SRC_FILES := \
 	google_apis/gaia/oauth2_api_call_flow.cc \
 	google_apis/gaia/oauth2_mint_token_flow.cc \
 	google_apis/gaia/oauth2_token_service.cc \
+	google_apis/gaia/oauth2_token_service_request.cc \
 	google_apis/gaia/ubertoken_fetcher.cc \
 	google_apis/google_api_keys.cc
 
@@ -106,7 +107,6 @@ MY_DEFS_Debug := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
@@ -207,7 +207,6 @@ MY_DEFS_Release := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \

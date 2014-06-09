@@ -529,7 +529,7 @@ remoting.ClientSession.prototype.onPluginInitialized_ = function(initialized) {
   this.plugin_.onOutgoingIqHandler = this.sendIq_.bind(this);
   /** @param {string} msg The message to log. */
   this.plugin_.onDebugMessageHandler = function(msg) {
-    console.log('plugin: ' + msg);
+    console.log('plugin: ' + msg.trimRight());
   };
 
   this.plugin_.onConnectionStatusUpdateHandler =
@@ -716,6 +716,10 @@ remoting.ClientSession.prototype.applyRemapKeys_ = function(apply) {
   var remapKeys = this.remapKeys_;
   if (remapKeys == '' && remoting.runningOnChromeOS()) {
     remapKeys = '0x0700e4>0x0700e7';
+  }
+
+  if (remapKeys == '') {
+    return;
   }
 
   var remappings = remapKeys.split(',');

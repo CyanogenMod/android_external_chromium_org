@@ -19,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "5.8",
+  "version": "5.9",
   "entries": [
     {
       "id": 1,
@@ -1057,6 +1057,17 @@ LONG_STRING_CONST(
       },
       "features": [
         "disable_egl_khr_fence_sync"
+      ]
+    },
+    {
+      "id": 79,
+      "cr_bugs": [371530],
+      "description": "Testing ARB sync fences is broken on MacOSX",
+      "os": {
+        "type": "macosx"
+      },
+      "features": [
+        "disable_arb_sync"
       ]
     }
   ]

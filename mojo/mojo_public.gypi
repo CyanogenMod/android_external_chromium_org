@@ -132,6 +132,7 @@
       ],
       'sources': [
         'public/cpp/bindings/tests/array_unittest.cc',
+        'public/cpp/bindings/tests/bounds_checker_unittest.cc',
         'public/cpp/bindings/tests/buffer_unittest.cc',
         'public/cpp/bindings/tests/connector_unittest.cc',
         'public/cpp/bindings/tests/handle_passing_unittest.cc',
@@ -243,6 +244,8 @@
         'public/cpp/bindings/lib/bindings_internal.h',
         'public/cpp/bindings/lib/bindings_serialization.cc',
         'public/cpp/bindings/lib/bindings_serialization.h',
+        'public/cpp/bindings/lib/bounds_checker.cc',
+        'public/cpp/bindings/lib/bounds_checker.h',
         'public/cpp/bindings/lib/buffer.h',
         'public/cpp/bindings/lib/callback_internal.h',
         'public/cpp/bindings/lib/connector.cc',
@@ -270,6 +273,8 @@
         'public/cpp/bindings/lib/string_serialization.h',
         'public/cpp/bindings/lib/string_serialization.cc',
         'public/cpp/bindings/lib/sync_dispatcher.cc',
+        'public/cpp/bindings/lib/validation_errors.cc',
+        'public/cpp/bindings/lib/validation_errors.h',
       ],
     },
     {
@@ -375,32 +380,6 @@
       ],
       'export_dependent_settings': [
         'mojo_service_provider_bindings',
-      ],
-    },
-    {
-      'target_name': 'mojo_main_standalone',
-      'type': 'static_library',
-      'sources': [
-        'public/cpp/application/lib/mojo_main_standalone.cc',
-      ],
-      'dependencies': [
-        'mojo_application',
-      ],
-      'export_dependent_settings': [
-        'mojo_application',
-      ],
-    },
-    {
-      'target_name': 'mojo_main_chromium',
-      'type': 'static_library',
-      'sources': [
-        'public/cpp/application/lib/mojo_main_chromium.cc',
-      ],
-      'dependencies': [
-        'mojo_application',
-      ],
-      'export_dependent_settings': [
-        'mojo_application',
       ],
     },
   ],

@@ -599,8 +599,9 @@
         'corewm/tooltip_controller_test_helper.h',
         'test/capture_tracking_view.cc',
         'test/capture_tracking_view.h',
-        'test/desktop_test_views_delegate.cc',
         'test/desktop_test_views_delegate.h',
+        'test/desktop_test_views_delegate_aura.cc',
+        'test/desktop_test_views_delegate_mac.mm',
         'test/menu_runner_test_api.cc',
         'test/menu_runner_test_api.h',
         'test/test_views.cc',
@@ -732,11 +733,7 @@
         'window/dialog_delegate_unittest.cc',
       ],
       'conditions': [
-        ['chromeos==0', {
-          'sources!': [
-            'touchui/touch_selection_controller_impl_unittest.cc',
-          ],
-        }, { # use_chromeos==1
+        ['chromeos==1', {
           'sources/': [
             ['exclude', 'ime/input_method_bridge_unittest.cc'],
             ['exclude', 'widget/desktop_aura'],

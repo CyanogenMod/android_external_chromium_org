@@ -4,13 +4,20 @@
 
 #include "athena/main/athena_launcher.h"
 
+#include "athena/activity/public/activity_factory.h"
+#include "athena/activity/public/activity_manager.h"
 #include "athena/home/public/home_card.h"
+#include "athena/input/public/input_manager.h"
 #include "athena/main/placeholder.h"
 #include "athena/screen/public/screen_manager.h"
 #include "athena/wm/public/window_manager.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/aura/window_property.h"
 #include "ui/wm/core/visibility_controller.h"
+
+#if defined(USE_X11)
+#include "ui/events/x/touch_factory_x11.h"
+#endif
 
 namespace athena {
 struct RootWindowState;
@@ -29,7 +36,11 @@ DEFINE_OWNED_WINDOW_PROPERTY_KEY(athena::RootWindowState,
                                  kRootWindowStateKey,
                                  NULL);
 
-void StartAthena(aura::Window* root_window) {
+void StartAthena(aura::Window* root_window,
+                 athena::ActivityFactory* activity_factory) {
+#if defined(USE_X11)
+  ui::TouchFactory::SetTouchDeviceListFromCommandLine();
+#endif
   RootWindowState* root_window_state = new RootWindowState;
   root_window->SetProperty(kRootWindowStateKey, root_window_state);
 
@@ -37,17 +48,22 @@ void StartAthena(aura::Window* root_window) {
   aura::client::SetVisibilityClient(root_window,
                                     root_window_state->visibility_client.get());
 
+  athena::InputManager::Create()->OnRootWindowCreated(root_window);
   athena::ScreenManager::Create(root_window);
   athena::WindowManager::Create();
   athena::HomeCard::Create();
-
+  athena::ActivityManager::Create();
+  athena::ActivityFactory::RegisterActivityFactory(activity_factory);
   SetupBackgroundImage();
 }
 
 void ShutdownAthena() {
+  athena::ActivityFactory::Shutdown();
+  athena::ActivityManager::Shutdown();
   athena::HomeCard::Shutdown();
   athena::WindowManager::Shutdown();
   athena::ScreenManager::Shutdown();
+  athena::InputManager::Shutdown();
 }
 
 }  // namespace athena

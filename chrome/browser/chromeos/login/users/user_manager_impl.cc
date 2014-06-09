@@ -235,10 +235,6 @@ UserManagerImpl::UserManagerImpl()
       kAccountsPrefDeviceLocalAccounts,
       base::Bind(&UserManagerImpl::RetrieveTrustedDevicePolicies,
                  base::Unretained(this)));
-  supervised_users_subscription_ = cros_settings_->AddSettingsObserver(
-      kAccountsPrefSupervisedUsersEnabled,
-      base::Bind(&UserManagerImpl::RetrieveTrustedDevicePolicies,
-                 base::Unretained(this)));
   multi_profile_user_controller_.reset(new MultiProfileUserController(
       this, g_browser_process->local_state()));
 
@@ -279,7 +275,6 @@ UserManagerImpl::~UserManagerImpl() {
 void UserManagerImpl::Shutdown() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   local_accounts_subscription_.reset();
-  supervised_users_subscription_.reset();
   // Stop the session length limiter.
   session_length_limiter_.reset();
 
@@ -1024,6 +1019,9 @@ void UserManagerImpl::OnExternalDataFetched(const std::string& policy,
 }
 
 void UserManagerImpl::OnPolicyUpdated(const std::string& user_id) {
+  const User* user = FindUserInList(user_id);
+  if (!user || user->GetType() != User::USER_TYPE_PUBLIC_ACCOUNT)
+    return;
   UpdatePublicAccountDisplayName(user_id);
   NotifyUserListChanged();
 }
@@ -1876,9 +1874,7 @@ bool UserManagerImpl::AreLocallyManagedUsersAllowed() const {
   bool locally_managed_users_allowed = false;
   cros_settings_->GetBoolean(kAccountsPrefSupervisedUsersEnabled,
                              &locally_managed_users_allowed);
-  policy::BrowserPolicyConnectorChromeOS* connector =
-      g_browser_process->platform_part()->browser_policy_connector_chromeos();
-  return locally_managed_users_allowed || !connector->IsEnterpriseManaged();
+  return locally_managed_users_allowed;
 }
 
 base::FilePath UserManagerImpl::GetUserProfileDir(

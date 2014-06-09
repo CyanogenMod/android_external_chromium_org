@@ -10,12 +10,12 @@
 #include "base/prefs/testing_pref_service.h"
 #include "base/threading/platform_thread.h"
 #include "chrome/browser/google/google_util.h"
-#include "chrome/browser/metrics/metrics_state_manager.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/scoped_testing_local_state.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "components/metrics/metrics_log_base.h"
+#include "components/metrics/metrics_log.h"
 #include "components/metrics/metrics_service_observer.h"
+#include "components/metrics/metrics_state_manager.h"
 #include "components/metrics/test_metrics_service_client.h"
 #include "components/variations/metrics_util.h"
 #include "content/public/test/test_browser_thread_bundle.h"
@@ -81,6 +81,11 @@ class MetricsServiceTest : public testing::Test {
   virtual ~MetricsServiceTest() {
     MetricsService::SetExecutionPhase(MetricsService::UNINITIALIZED_PHASE,
                                       GetLocalState());
+#if defined(OS_CHROMEOS)
+    // TODO(blundell): Remove this code once MetricsService no longer creates
+    // ChromeOSMetricsProvider.
+    chromeos::LoginState::Shutdown();
+#endif  // defined(OS_CHROMEOS)
   }
 
   metrics::MetricsStateManager* GetMetricsStateManager() {
@@ -234,7 +239,7 @@ TEST_F(MetricsServiceTest, RegisterSyntheticTrial) {
   // Ensure that time has advanced by at least a tick before proceeding.
   WaitUntilTimeChanges(base::TimeTicks::Now());
 
-  service.log_manager_.BeginLoggingWithLog(scoped_ptr<metrics::MetricsLogBase>(
+  service.log_manager_.BeginLoggingWithLog(scoped_ptr<MetricsLog>(
       new MetricsLog("clientID",
                      1,
                      MetricsLog::INITIAL_STABILITY_LOG,
@@ -276,7 +281,7 @@ TEST_F(MetricsServiceTest, RegisterSyntheticTrial) {
   // Start a new log and ensure all three trials appear in it.
   service.log_manager_.FinishCurrentLog();
   service.log_manager_.BeginLoggingWithLog(
-      scoped_ptr<metrics::MetricsLogBase>(new MetricsLog(
+      scoped_ptr<MetricsLog>(new MetricsLog(
           "clientID", 1, MetricsLog::ONGOING_LOG, &client, GetLocalState())));
   service.GetCurrentSyntheticFieldTrials(&synthetic_trials);
   EXPECT_EQ(3U, synthetic_trials.size());

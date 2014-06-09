@@ -21,17 +21,6 @@ std::string NodeIdToString(TransportNodeId id) {
 
 namespace {
 
-void INodesToTestNodes(const Array<INodePtr>& data,
-                       std::vector<TestNode>* test_nodes) {
-  for (size_t i = 0; i < data.size(); ++i) {
-    TestNode node;
-    node.parent_id = data[i]->parent_id;
-    node.node_id = data[i]->node_id;
-    node.view_id = data[i]->view_id;
-    test_nodes->push_back(node);
-  }
-}
-
 std::string RectToString(const gfx::Rect& rect) {
   return base::StringPrintf("%d,%d %dx%d", rect.x(), rect.y(), rect.width(),
                             rect.height());
@@ -41,6 +30,9 @@ std::string ChangeToDescription1(const Change& change) {
   switch (change.type) {
     case CHANGE_TYPE_CONNECTION_ESTABLISHED:
       return "OnConnectionEstablished";
+
+    case CHANGE_TYPE_ROOTS_ADDED:
+      return "OnRootsAdded";
 
     case CHANGE_TYPE_SERVER_CHANGE_ID_ADVANCED:
       return base::StringPrintf(
@@ -77,6 +69,12 @@ std::string ChangeToDescription1(const Change& change) {
           NodeIdToString(change.node_id).c_str(),
           NodeIdToString(change.view_id).c_str(),
           NodeIdToString(change.view_id2).c_str());
+
+    case CHANGE_TYPE_INPUT_EVENT:
+      return base::StringPrintf(
+          "InputEvent view=%s event_action=%d",
+          NodeIdToString(change.view_id).c_str(),
+          change.event_action);
   }
   return std::string();
 }
@@ -100,6 +98,17 @@ std::string ChangeNodeDescription(const std::vector<Change>& changes) {
   return JoinString(node_strings, ',');
 }
 
+void INodesToTestNodes(const Array<INodePtr>& data,
+                       std::vector<TestNode>* test_nodes) {
+  for (size_t i = 0; i < data.size(); ++i) {
+    TestNode node;
+    node.parent_id = data[i]->parent_id;
+    node.node_id = data[i]->node_id;
+    node.view_id = data[i]->view_id;
+    test_nodes->push_back(node);
+  }
+}
+
 Change::Change()
     : type(CHANGE_TYPE_CONNECTION_ESTABLISHED),
       connection_id(0),
@@ -108,7 +117,8 @@ Change::Change()
       node_id2(0),
       node_id3(0),
       view_id(0),
-      view_id2(0) {}
+      view_id2(0),
+      event_action(0) {}
 
 Change::~Change() {
 }
@@ -128,6 +138,13 @@ void TestChangeTracker::OnViewManagerConnectionEstablished(
   change.type = CHANGE_TYPE_CONNECTION_ESTABLISHED;
   change.connection_id = connection_id;
   change.change_id = next_server_change_id;
+  INodesToTestNodes(nodes, &change.nodes);
+  AddChange(change);
+}
+
+void TestChangeTracker::OnRootsAdded(Array<INodePtr> nodes) {
+  Change change;
+  change.type = CHANGE_TYPE_ROOTS_ADDED;
   INodesToTestNodes(nodes, &change.nodes);
   AddChange(change);
 }
@@ -193,6 +210,14 @@ void TestChangeTracker::OnNodeViewReplaced(TransportNodeId node_id,
   change.view_id = new_view_id;
   change.view_id2 = old_view_id;
   AddChange(change);
+}
+
+void TestChangeTracker::OnViewInputEvent(TransportViewId view_id,
+                                         EventPtr event) {
+  Change change;
+  change.type = CHANGE_TYPE_INPUT_EVENT;
+  change.view_id = view_id;
+  change.event_action = event->action;
 }
 
 void TestChangeTracker::AddChange(const Change& change) {

@@ -69,6 +69,7 @@ LOCAL_SRC_FILES := \
 	content/public/common/page_transition_types.cc \
 	content/public/common/pepper_plugin_info.cc \
 	content/public/common/renderer_preferences.cc \
+	content/public/common/resource_devtools_info.cc \
 	content/public/common/resource_response_info.cc \
 	content/public/common/sandboxed_process_launcher_delegate.cc \
 	content/public/common/show_desktop_notification_params.cc \
@@ -149,6 +150,7 @@ LOCAL_SRC_FILES := \
 	content/common/input/synthetic_smooth_scroll_gesture_params.cc \
 	content/common/input/synthetic_tap_gesture_params.cc \
 	content/common/input/synthetic_web_input_event_builders.cc \
+	content/common/input/touch_event_stream_validator.cc \
 	content/common/input/web_input_event_traits.cc \
 	content/common/input/web_touch_event_traits.cc \
 	content/common/inter_process_time_ticks_converter.cc \
@@ -237,7 +239,6 @@ MY_DEFS_Debug := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
@@ -260,11 +261,11 @@ MY_DEFS_Debug := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_ASIMAGEINFO' \
+	'-DSK_SUPPORT_LEGACY_SETCONFIG_INFO' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_IGNORE_CORRECT_HIGH_QUALITY_IMAGE_SCALE' \
+	'-DSK_IGNORE_ETC1_SUPPORT' \
 	'-DSK_SUPPORT_LEGACY_INSTALLPIXELSPARAMS' \
-	'-DSK_SUPPORT_LEGACY_IMAGEGENERATORAPI' \
+	'-DSK_SUPPORT_LEGACY_DRAWPICTURE_API' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
@@ -415,7 +416,6 @@ MY_DEFS_Release := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
@@ -438,11 +438,11 @@ MY_DEFS_Release := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_ASIMAGEINFO' \
+	'-DSK_SUPPORT_LEGACY_SETCONFIG_INFO' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_IGNORE_CORRECT_HIGH_QUALITY_IMAGE_SCALE' \
+	'-DSK_IGNORE_ETC1_SUPPORT' \
 	'-DSK_SUPPORT_LEGACY_INSTALLPIXELSPARAMS' \
-	'-DSK_SUPPORT_LEGACY_IMAGEGENERATORAPI' \
+	'-DSK_SUPPORT_LEGACY_DRAWPICTURE_API' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \

@@ -28,6 +28,7 @@
 #include "chrome/browser/extensions/api/omnibox/omnibox_api.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/google/google_url_tracker.h"
+#include "chrome/browser/google/google_url_tracker_factory.h"
 #include "chrome/browser/net/predictor.h"
 #include "chrome/browser/omnibox/omnibox_log.h"
 #include "chrome/browser/predictors/autocomplete_action_predictor.h"
@@ -488,7 +489,7 @@ void OmniboxEditModel::AdjustTextForCopy(int sel_min,
       url->SchemeIs(url::kHttpScheme) && perm_url.host() == url->host()) {
     *write_url = true;
     base::string16 http = base::ASCIIToUTF16(url::kHttpScheme) +
-        base::ASCIIToUTF16(content::kStandardSchemeSeparator);
+        base::ASCIIToUTF16(url::kStandardSchemeSeparator);
     if (text->compare(0, http.length(), http) != 0)
       *text = http + *text;
   }
@@ -522,6 +523,7 @@ void OmniboxEditModel::SetInputInProgress(bool in_progress) {
     controller()->GetToolbarModel()->set_origin_chip_enabled(false);
 
   controller_->GetToolbarModel()->set_input_in_progress(in_progress);
+  controller_->EndOriginChipAnimations(true);
   controller_->Update(NULL);
 
   if (user_input_in_progress_ || !in_revert_)
@@ -687,8 +689,12 @@ void OmniboxEditModel::AcceptInput(WindowOpenDisposition disposition,
   }
 
   const TemplateURL* template_url = match.GetTemplateURL(profile_, false);
-  if (template_url && template_url->url_ref().HasGoogleBaseURLs())
-    GoogleURLTracker::GoogleURLSearchCommitted(profile_);
+  if (template_url && template_url->url_ref().HasGoogleBaseURLs()) {
+    GoogleURLTracker* tracker =
+        GoogleURLTrackerFactory::GetForProfile(profile_);
+    if (tracker)
+      tracker->SearchCommitted();
+  }
 
   DCHECK(popup_model());
   view_->OpenMatch(match, disposition, alternate_nav_url, base::string16(),

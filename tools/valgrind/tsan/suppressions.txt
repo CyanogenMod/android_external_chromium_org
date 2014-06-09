@@ -828,26 +828,6 @@
   fun:_vsnprintf_helper
 }
 {
-  bug_137973_a
-  ThreadSanitizer:Race
-  fun:media::Pipeline::OnVideoTimeUpdate
-  fun:base::internal::RunnableAdapter::Run
-}
-{
-  bug_137973_b
-  ThreadSanitizer:Race
-  fun:media::Pipeline::SetState
-  fun:media::Pipeline::StopTask
-  fun:base::internal::RunnableAdapter::Run
-}
-{
-  bug_137973_c
-  ThreadSanitizer:Race
-  fun:media::Pipeline::SetState
-  fun:media::Pipeline::SeekTask
-  fun:base::internal::RunnableAdapter::Run
-}
-{
   bug_144894
   ThreadSanitizer:Race
   fun:av_parser_close
@@ -1051,13 +1031,24 @@
   fun:base::internal::RunnableAdapter::Run
 }
 {
-  bug_344704
+  bug_344704_a
   ThreadSanitizer:Race
   fun:base::Thread::message_loop
   fun:printing::PrintJob::UpdatePrintedDocument
   fun:printing::PrintJob::ControlledWorkerShutdown
   fun:printing::PrintJob::Stop
   fun:PrintJobTest_SimplePrint_Test::TestBody
+}
+{
+  bug_344704_b
+  ThreadSanitizer:Race
+  fun:scoped_refptr::operator=
+  fun:base::MessageLoop::~MessageLoop
+  fun:base::MessageLoop::~MessageLoop
+  fun:base::DefaultDeleter::operator*
+  fun:base::internal::scoped_ptr_impl::~scoped_ptr_impl
+  fun:scoped_ptr::~scoped_ptr
+  fun:base::Thread::ThreadMain
 }
 {
   bug_350982

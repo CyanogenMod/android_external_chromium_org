@@ -45,6 +45,9 @@ TEST_PPAPI_OUT_OF_PROCESS(CharSet)
 TEST_PPAPI_IN_PROCESS(Console)
 TEST_PPAPI_OUT_OF_PROCESS(Console)
 
+TEST_PPAPI_IN_PROCESS(Core)
+TEST_PPAPI_OUT_OF_PROCESS(Core)
+
 TEST_PPAPI_IN_PROCESS(Crypto)
 TEST_PPAPI_OUT_OF_PROCESS(Crypto)
 
@@ -86,8 +89,29 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest,
 TEST_PPAPI_IN_PROCESS(Instance_LeakedObjectDestructors)
 TEST_PPAPI_OUT_OF_PROCESS(Instance_LeakedObjectDestructors)
 
+// We run and reload the RecursiveObjects test to ensure that the
+// InstanceObject (and others) are properly cleaned up after the first run.
+IN_PROC_BROWSER_TEST_F(PPAPITest, Instance_RecursiveObjects) {
+  RunTestAndReload("Instance_RecursiveObjects");
+}
+// TODO(dmichael): Make it work out-of-process (or at least see whether we
+// care).
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest,
+                       DISABLED_Instance_RecursiveObjects) {
+  RunTestAndReload("Instance_RecursiveObjects");
+}
+
+TEST_PPAPI_OUT_OF_PROCESS(MediaStreamAudioTrack)
+
+TEST_PPAPI_OUT_OF_PROCESS(MediaStreamVideoTrack)
+
 TEST_PPAPI_IN_PROCESS(Memory)
 TEST_PPAPI_OUT_OF_PROCESS(Memory)
+
+TEST_PPAPI_OUT_OF_PROCESS(MessageLoop_Basics)
+TEST_PPAPI_OUT_OF_PROCESS(MessageLoop_Post)
+
+TEST_PPAPI_OUT_OF_PROCESS(NetworkProxy)
 
 // TODO(danakj): http://crbug.com/115286
 TEST_PPAPI_IN_PROCESS(DISABLED_Scrollbar)
@@ -96,6 +120,8 @@ TEST_PPAPI_OUT_OF_PROCESS(DISABLED_Scrollbar)
 
 TEST_PPAPI_IN_PROCESS(TraceEvent)
 TEST_PPAPI_OUT_OF_PROCESS(TraceEvent)
+
+TEST_PPAPI_OUT_OF_PROCESS(TrueTypeFont)
 
 TEST_PPAPI_IN_PROCESS(URLUtil)
 TEST_PPAPI_OUT_OF_PROCESS(URLUtil)

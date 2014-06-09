@@ -83,37 +83,34 @@ class JobScheduler
   // |callback| must not be null.
   void GetAboutResource(const google_apis::AboutResourceCallback& callback);
 
-  // Adds a GetAllResourceList operation to the queue.
+  // Adds a GetAllFileList operation to the queue.
   // |callback| must not be null.
-  void GetAllResourceList(const google_apis::GetResourceListCallback& callback);
+  void GetAllFileList(const google_apis::FileListCallback& callback);
 
-  // Adds a GetResourceListInDirectory operation to the queue.
+  // Adds a GetFileListInDirectory operation to the queue.
   // |callback| must not be null.
-  void GetResourceListInDirectory(
-      const std::string& directory_resource_id,
-      const google_apis::GetResourceListCallback& callback);
+  void GetFileListInDirectory(const std::string& directory_resource_id,
+                              const google_apis::FileListCallback& callback);
 
   // Adds a Search operation to the queue.
   // |callback| must not be null.
   void Search(const std::string& search_query,
-              const google_apis::GetResourceListCallback& callback);
+              const google_apis::FileListCallback& callback);
 
   // Adds a GetChangeList operation to the queue.
   // |callback| must not be null.
   void GetChangeList(int64 start_changestamp,
-                     const google_apis::GetResourceListCallback& callback);
+                     const google_apis::ChangeListCallback& callback);
 
   // Adds GetRemainingChangeList operation to the queue.
   // |callback| must not be null.
-  void GetRemainingChangeList(
-      const GURL& next_link,
-      const google_apis::GetResourceListCallback& callback);
+  void GetRemainingChangeList(const GURL& next_link,
+                              const google_apis::ChangeListCallback& callback);
 
   // Adds GetRemainingFileList operation to the queue.
   // |callback| must not be null.
-  void GetRemainingFileList(
-      const GURL& next_link,
-      const google_apis::GetResourceListCallback& callback);
+  void GetRemainingFileList(const GURL& next_link,
+                            const google_apis::FileListCallback& callback);
 
   // Adds a GetResourceEntry operation to the queue.
   void GetResourceEntry(const std::string& resource_id,
@@ -275,26 +272,26 @@ class JobScheduler
   // Retries the job if needed and returns false. Otherwise returns true.
   bool OnJobDone(JobID job_id, google_apis::GDataErrorCode error);
 
+  // Callback for job finishing with a FileListCallback.
+  void OnGetFileListJobDone(
+      JobID job_id,
+      const google_apis::FileListCallback& callback,
+      google_apis::GDataErrorCode error,
+      scoped_ptr<google_apis::FileList> file_list);
+
   // Callback for job finishing with a ChangeListCallback.
   void OnGetChangeListJobDone(
       JobID job_id,
-      const google_apis::GetResourceListCallback& callback,
+      const google_apis::ChangeListCallback& callback,
       google_apis::GDataErrorCode error,
       scoped_ptr<google_apis::ChangeList> change_list);
 
-  // Callback for job finishing with a GetResourceListCallback.
-  void OnGetResourceListJobDone(
-      JobID job_id,
-      const google_apis::GetResourceListCallback& callback,
-      google_apis::GDataErrorCode error,
-      scoped_ptr<google_apis::ResourceList> resource_list);
-
-  // Callback for job finishing with a GetResourceEntryCallback.
-  void OnGetResourceEntryJobDone(
+  // Callback for job finishing with a FileResourceCallback.
+  void OnGetFileResourceJobDone(
       JobID job_id,
       const google_apis::GetResourceEntryCallback& callback,
       google_apis::GDataErrorCode error,
-      scoped_ptr<google_apis::ResourceEntry> entry);
+      scoped_ptr<google_apis::FileResource> entry);
 
   // Callback for job finishing with a AboutResourceCallback.
   void OnGetAboutResourceJobDone(
@@ -336,7 +333,7 @@ class JobScheduler
       const google_apis::GetResourceEntryCallback& callback,
       google_apis::GDataErrorCode error,
       const GURL& upload_location,
-      scoped_ptr<google_apis::ResourceEntry> resource_entry);
+      scoped_ptr<google_apis::FileResource> entry);
 
   // Callback for DriveUploader::ResumeUploadFile().
   void OnResumeUploadFileDone(
@@ -345,7 +342,7 @@ class JobScheduler
       const google_apis::GetResourceEntryCallback& callback,
       google_apis::GDataErrorCode error,
       const GURL& upload_location,
-      scoped_ptr<google_apis::ResourceEntry> resource_entry);
+      scoped_ptr<google_apis::FileResource> entry);
 
   // Updates the progress status of the specified job.
   void UpdateProgress(JobID job_id, int64 progress, int64 total);

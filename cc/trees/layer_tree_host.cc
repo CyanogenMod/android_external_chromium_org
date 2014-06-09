@@ -395,8 +395,6 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   }
 
   micro_benchmark_controller_.ScheduleImplBenchmarks(host_impl);
-
-  source_frame_number_++;
 }
 
 void LayerTreeHost::WillCommit() {
@@ -417,6 +415,7 @@ void LayerTreeHost::UpdateHudLayer() {
 }
 
 void LayerTreeHost::CommitComplete() {
+  source_frame_number_++;
   client_->DidCommit();
 }
 
@@ -617,6 +616,18 @@ bool LayerTreeHost::UseGpuRasterization() const {
   } else {
     return false;
   }
+}
+
+void LayerTreeHost::SetHasGpuRasterizationTrigger(bool has_trigger) {
+  if (has_trigger == has_gpu_rasterization_trigger_)
+    return;
+
+  has_gpu_rasterization_trigger_ = has_trigger;
+  TRACE_EVENT_INSTANT1("cc",
+                       "LayerTreeHost::SetHasGpuRasterizationTrigger",
+                       TRACE_EVENT_SCOPE_THREAD,
+                       "has_trigger",
+                       has_gpu_rasterization_trigger_);
 }
 
 void LayerTreeHost::SetViewportSize(const gfx::Size& device_viewport_size) {

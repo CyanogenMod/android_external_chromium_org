@@ -11,6 +11,7 @@
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/google/google_url_tracker.h"
+#include "chrome/browser/google/google_url_tracker_factory.h"
 #include "chrome/browser/profile_resetter/brandcoded_default_settings.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/search_terms_data.h"
@@ -22,6 +23,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/installer/util/browser_distribution.h"
+#include "components/google/core/browser/google_pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/management_policy.h"
@@ -171,8 +173,12 @@ void ProfileResetter::ResetDefaultSearchEngine() {
     const TemplateURL* default_search_provider =
         template_url_service_->GetDefaultSearchProvider();
     if (default_search_provider &&
-        default_search_provider->HasGoogleBaseURLs())
-      GoogleURLTracker::RequestServerCheck(profile_, true);
+        default_search_provider->HasGoogleBaseURLs()) {
+      GoogleURLTracker* tracker =
+          GoogleURLTrackerFactory::GetForProfile(profile_);
+      if (tracker)
+        tracker->RequestServerCheck(true);
+    }
 
     MarkAsDone(DEFAULT_SEARCH_ENGINE);
   } else {

@@ -30,6 +30,7 @@ namespace content {
 class GestureNavSimple;
 class OverscrollNavigationOverlay;
 class RenderWidgetHostImpl;
+class RenderWidgetHostViewAura;
 class ShadowLayerDelegate;
 class TouchEditableImplAura;
 class WebContentsViewDelegate;
@@ -48,8 +49,6 @@ class WebContentsViewAura
   WebContentsViewAura(WebContentsImpl* web_contents,
                       WebContentsViewDelegate* delegate);
 
-  CONTENT_EXPORT void SetupOverlayWindowForTesting();
-
   CONTENT_EXPORT void SetTouchEditableForTest(
       TouchEditableImplAura* touch_editable);
 
@@ -62,7 +61,7 @@ class WebContentsViewAura
 
   void EndDrag(blink::WebDragOperationsMask ops);
 
-  void InstallOverscrollControllerDelegate(RenderWidgetHostImpl* host);
+  void InstallOverscrollControllerDelegate(RenderWidgetHostViewAura* view);
 
   // Creates and sets up the overlay window that will be displayed during the
   // overscroll gesture.

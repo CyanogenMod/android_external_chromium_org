@@ -48,6 +48,7 @@ import android.widget.FrameLayout;
 
 import com.google.common.annotations.VisibleForTesting;
 
+import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.base.CalledByNative;
 import org.chromium.base.CommandLine;
 import org.chromium.base.JNINamespace;
@@ -59,6 +60,7 @@ import org.chromium.content.browser.ScreenOrientationListener.ScreenOrientationO
 import org.chromium.content.browser.accessibility.AccessibilityInjector;
 import org.chromium.content.browser.accessibility.BrowserAccessibilityManager;
 import org.chromium.content.browser.input.AdapterInputConnection;
+import org.chromium.content.browser.input.GamepadList;
 import org.chromium.content.browser.input.HandleView;
 import org.chromium.content.browser.input.ImeAdapter;
 import org.chromium.content.browser.input.ImeAdapter.AdapterInputConnectionFactory;
@@ -439,12 +441,19 @@ public class ContentViewCore
                 int scaledWidth = Math.round(width * scale);
                 // ContentViewCore currently only supports these two container view types.
                 if (mContainerView instanceof FrameLayout) {
-                    if (scaledWidth + leftMargin > mContainerView.getWidth()) {
-                        scaledWidth = mContainerView.getWidth() - leftMargin;
+                    int startMargin;
+                    if (ApiCompatibilityUtils.isLayoutRtl(mContainerView)) {
+                        startMargin = mContainerView.getMeasuredWidth()
+                                - Math.round((width + x) * scale);
+                    } else {
+                        startMargin = leftMargin;
+                    }
+                    if (scaledWidth + startMargin > mContainerView.getWidth()) {
+                        scaledWidth = mContainerView.getWidth() - startMargin;
                     }
                     FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                         scaledWidth, Math.round(height * scale));
-                    lp.leftMargin = leftMargin;
+                    ApiCompatibilityUtils.setMarginStart(lp, startMargin);
                     lp.topMargin = topMargin;
                     view.setLayoutParams(lp);
                 } else if (mContainerView instanceof android.widget.AbsoluteLayout) {
@@ -539,7 +548,7 @@ public class ContentViewCore
                                     // always be called, crbug.com/294908.
                                     getContainerView().getWindowVisibleDisplayFrame(
                                             mFocusPreOSKViewportRect);
-                                } else if (resultCode ==
+                                } else if (hasFocus() && resultCode ==
                                         InputMethodManager.RESULT_UNCHANGED_SHOWN) {
                                     // If the OSK was already there, focus the form immediately.
                                     scrollFocusedEditableNodeIntoView();
@@ -618,7 +627,7 @@ public class ContentViewCore
         mWebContentsObserver = new WebContentsObserverAndroid(this) {
             @Override
             public void didNavigateMainFrame(String url, String baseUrl,
-                    boolean isNavigationToDifferentPage, boolean isNavigationInPage) {
+                    boolean isNavigationToDifferentPage, boolean isFragmentNavigation) {
                 if (!isNavigationToDifferentPage) return;
                 hidePopups();
                 resetScrollInProgress();
@@ -1386,6 +1395,7 @@ public class ContentViewCore
         setAccessibilityState(mAccessibilityManager.isEnabled());
 
         ScreenOrientationListener.getInstance().addObserver(this, mContext);
+        GamepadList.onAttachedToWindow(mContext);
     }
 
     /**
@@ -1400,6 +1410,7 @@ public class ContentViewCore
         unregisterAccessibilityContentObserver();
 
         ScreenOrientationListener.getInstance().removeObserver(this);
+        GamepadList.onDetachedFromWindow();
     }
 
     /**
@@ -1570,6 +1581,7 @@ public class ContentViewCore
     public void onFocusChanged(boolean gainFocus) {
         if (!gainFocus) {
             hideImeIfNeeded();
+            cancelRequestToScrollFocusedEditableNodeIntoView();
         }
         if (mNativeContentViewCore != 0) nativeSetFocus(mNativeContentViewCore, gainFocus);
     }
@@ -1601,6 +1613,7 @@ public class ContentViewCore
      * @see View#dispatchKeyEvent(KeyEvent)
      */
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if (GamepadList.dispatchKeyEvent(event)) return true;
         if (getContentViewClient().shouldOverrideKeyEvent(event)) {
             return mContainerViewInternals.super_dispatchKeyEvent(event);
         }
@@ -1646,6 +1659,7 @@ public class ContentViewCore
      * @see View#onGenericMotionEvent(MotionEvent)
      */
     public boolean onGenericMotionEvent(MotionEvent event) {
+        if (GamepadList.onGenericMotionEvent(event)) return true;
         if ((event.getSource() & InputDevice.SOURCE_CLASS_POINTER) != 0) {
             switch (event.getAction()) {
                 case MotionEvent.ACTION_SCROLL:
@@ -3014,6 +3028,12 @@ public class ContentViewCore
         mSmartClipDataListener = listener;
     }
 
+    public void setBackgroundOpaque(boolean opaque) {
+        if (mNativeContentViewCore != 0) {
+            nativeSetBackgroundOpaque(mNativeContentViewCore, opaque);
+        }
+    }
+
     /**
      * Offer a long press gesture to the embedding View, primarily for WebView compatibility.
      *
@@ -3224,4 +3244,5 @@ public class ContentViewCore
 
     private native void nativeExtractSmartClipData(long nativeContentViewCoreImpl,
             int x, int y, int w, int h);
+    private native void nativeSetBackgroundOpaque(long nativeContentViewCoreImpl, boolean opaque);
 }

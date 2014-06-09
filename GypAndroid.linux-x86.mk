@@ -4,6 +4,8 @@
 LOCAL_PATH := $(call my-dir)
 GYP_CONFIGURATION ?= Debug
 GYP_VAR_PREFIX ?=
+GYP_HOST_VAR_PREFIX ?=
+GYP_HOST_MULTILIB ?=
 
 include $(LOCAL_PATH)/android_webview/android_webview_common.target.linux-x86.mk
 include $(LOCAL_PATH)/android_webview/android_webview_pak.target.linux-x86.mk
@@ -23,6 +25,7 @@ include $(LOCAL_PATH)/base/base_prefs.target.linux-x86.mk
 include $(LOCAL_PATH)/base/base_static.target.linux-x86.mk
 include $(LOCAL_PATH)/base/third_party/dynamic_annotations/dynamic_annotations.target.linux-x86.mk
 include $(LOCAL_PATH)/cc/cc.target.linux-x86.mk
+include $(LOCAL_PATH)/cc/cc_surfaces.target.linux-x86.mk
 include $(LOCAL_PATH)/components/auto_login_parser.target.linux-x86.mk
 include $(LOCAL_PATH)/components/autofill_content_browser.target.linux-x86.mk
 include $(LOCAL_PATH)/components/autofill_content_common.target.linux-x86.mk
@@ -60,6 +63,7 @@ include $(LOCAL_PATH)/content/content_browser.target.linux-x86.mk
 include $(LOCAL_PATH)/content/content_child.target.linux-x86.mk
 include $(LOCAL_PATH)/content/content_common.target.linux-x86.mk
 include $(LOCAL_PATH)/content/content_common_mojo_bindings.target.linux-x86.mk
+include $(LOCAL_PATH)/content/content_gamepad_mapping.target.linux-x86.mk
 include $(LOCAL_PATH)/content/content_gpu.target.linux-x86.mk
 include $(LOCAL_PATH)/content/content_jni_headers.target.linux-x86.mk
 include $(LOCAL_PATH)/content/content_renderer.target.linux-x86.mk
@@ -98,11 +102,9 @@ include $(LOCAL_PATH)/media/media_android_imageformat_list.target.linux-x86.mk
 include $(LOCAL_PATH)/media/media_android_jni_headers.target.linux-x86.mk
 include $(LOCAL_PATH)/media/media_asm.target.linux-x86.mk
 include $(LOCAL_PATH)/media/media_mmx.target.linux-x86.mk
-include $(LOCAL_PATH)/media/media_sse.target.linux-x86.mk
 include $(LOCAL_PATH)/media/media_sse2.target.linux-x86.mk
 include $(LOCAL_PATH)/media/player_android.target.linux-x86.mk
 include $(LOCAL_PATH)/media/shared_memory_support.target.linux-x86.mk
-include $(LOCAL_PATH)/media/shared_memory_support_sse.target.linux-x86.mk
 include $(LOCAL_PATH)/media/video_capture_android_jni_headers.target.linux-x86.mk
 include $(LOCAL_PATH)/mojo/mojo_common_lib.target.linux-x86.mk
 include $(LOCAL_PATH)/mojo/mojo_cpp_bindings.target.linux-x86.mk
@@ -138,21 +140,25 @@ include $(LOCAL_PATH)/skia/skia_opts.target.linux-x86.mk
 include $(LOCAL_PATH)/skia/skia_opts_ssse3.target.linux-x86.mk
 include $(LOCAL_PATH)/sql/sql.target.linux-x86.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/core_global_constructors_idls.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/core_global_objects.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/interfaces_info_individual_core.target.linux-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/v8/bindings_core_generated.target.linux-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/v8/bindings_core_generated_aggregate.target.linux-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/v8/bindings_core_generated_individual.target.linux-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/generated_idls.target.linux-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/global_constructors_idls.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/v8/bindings_core_v8_generated.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/v8/bindings_core_v8_generated_aggregate.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/v8/bindings_core_v8_generated_individual.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/interfaces_info.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/interfaces_info_individual_modules.target.linux-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/v8/bindings_modules_generated.target.linux-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/v8/bindings_modules_generated_aggregate.target.linux-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/v8/bindings_modules_generated_individual.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/modules_core_global_constructors_idls.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/modules_event_generated.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/modules_global_constructors_idls.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/modules_global_objects.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/v8/bindings_modules_v8_generated.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/v8/bindings_modules_v8_generated_aggregate.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/v8/bindings_modules_v8_generated_individual.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/scripts/cached_jinja_templates.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/scripts/cached_lex_yacc_tables.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/config.target.linux-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/core/core_bindings_generated.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/core/core_event_interfaces.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/debugger_script_source.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/generate_inspector_protocol_version.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/generated_testing_idls.target.linux-x86.mk
@@ -198,7 +204,6 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/generate_devtools_grd.t
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/supported_css_properties.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/modules/make_modules_generated.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/modules/modules.target.linux-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/modules/modules_bindings_generated.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_common.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_heap_asm_stubs.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_platform.target.linux-x86.mk

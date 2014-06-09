@@ -569,6 +569,7 @@ bool SourceState::OnNewConfigs(
       }
     }
 
+    frame_processor_->OnPossibleAudioConfigUpdate(audio_config);
     success &= audio_->UpdateAudioConfig(audio_config, log_cb_);
   }
 
@@ -858,15 +859,13 @@ bool ChunkDemuxerStream::UpdateAudioConfig(const AudioDecoderConfig& config,
     DCHECK_EQ(state_, UNINITIALIZED);
 
     // On platforms which support splice frames, enable splice frames and
-    // partial append window support for a limited set of codecs.
-    // TODO(dalecurtis): Verify this works for codecs other than MP3 and Vorbis.
-    // Right now we want to be extremely conservative to ensure we don't break
-    // the world.
-    const bool mp3_or_vorbis =
-        config.codec() == kCodecMP3 || config.codec() == kCodecVorbis;
-    splice_frames_enabled_ = splice_frames_enabled_ && mp3_or_vorbis;
+    // partial append window support for most codecs (notably: not opus).
+    const bool codec_supported = config.codec() == kCodecMP3 ||
+                                 config.codec() == kCodecAAC ||
+                                 config.codec() == kCodecVorbis;
+    splice_frames_enabled_ = splice_frames_enabled_ && codec_supported;
     partial_append_window_trimming_enabled_ =
-        splice_frames_enabled_ && mp3_or_vorbis;
+        splice_frames_enabled_ && codec_supported;
 
     stream_.reset(
         new SourceBufferStream(config, log_cb, splice_frames_enabled_));
@@ -1323,6 +1322,16 @@ void ChunkDemuxer::Remove(const std::string& id, TimeDelta start,
 
   DCHECK(!id.empty());
   CHECK(IsValidId(id));
+  DCHECK(start >= base::TimeDelta()) << start.InSecondsF();
+  DCHECK(start < end) << "start " << start.InSecondsF()
+                      << " end " << end.InSecondsF();
+  DCHECK(duration_ != kNoTimestamp());
+  DCHECK(start <= duration_) << "start " << start.InSecondsF()
+                             << " duration " << duration_.InSecondsF();
+
+  if (start == duration_)
+    return;
+
   source_state_map_[id]->Remove(start, end, duration_);
 }
 

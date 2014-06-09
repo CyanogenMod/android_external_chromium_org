@@ -112,10 +112,11 @@ Status PrepareCommandLine(int port,
   switches.SetSwitch("disable-component-update");
   switches.SetSwitch("disable-default-apps");
   switches.SetSwitch("enable-logging");
-  switches.SetSwitch("logging-level", "1");
+  switches.SetSwitch("log-level", "0");
   switches.SetSwitch("password-store", "basic");
   switches.SetSwitch("use-mock-keychain");
   switches.SetSwitch("remote-debugging-port", base::IntToString(port));
+  switches.SetSwitch("test-type", "webdriver");
 
   for (std::set<std::string>::const_iterator iter =
            capabilities.exclude_switches.begin();

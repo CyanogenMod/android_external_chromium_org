@@ -98,9 +98,6 @@ const char kDisableLayerSquashing[] =
 const char kDisableAcceleratedVideoDecode[] =
     "disable-accelerated-video-decode";
 
-// Disables the alternate window station for the renderer.
-const char kDisableAltWinstation[]          = "disable-winsta";
-
 // Disable the ApplicationCache.
 const char kDisableApplicationCache[]       = "disable-application-cache";
 
@@ -411,23 +408,6 @@ const char kEnableLowResTiling[] = "enable-low-res-tiling";
 // See comment for kEnableCompositingForFixedPosition.
 const char kEnableHighDpiCompositingForFixedPosition[] =
      "enable-high-dpi-fixed-position-compositing";
-
-#if defined(OS_WIN)
-// Disable the Legacy Window which corresponds to the size of the WebContents.
-const char kDisableLegacyIntermediateWindow[] = "disable-legacy-window";
-
-// Enables the DirectWrite font rendering system on windows.
-const char kEnableDirectWrite[]             = "enable-direct-write";
-
-// Use high resolution timers for TimeTicks.
-const char kEnableHighResolutionTime[]      = "enable-high-resolution-time";
-
-// Enable the Win32K process mitigation policy for renderer processes which
-// prevents them from invoking user32 and gdi32 system calls which enter
-// the kernel. This is only supported on Windows 8 and beyond.
-const char kEnableWin32kRendererLockDown[]
-    = "enable_win32k_renderer_lockdown";
-#endif
 
 // Paint content on the compositor thread instead of the main thread.
 const char kEnableImplSidePainting[]        = "enable-impl-side-painting";
@@ -818,9 +798,6 @@ const char kTabCaptureUpscaleQuality[]      = "tab-capture-upscale-quality";
 const char kTestingFixedHttpPort[]          = "testing-fixed-http-port";
 const char kTestingFixedHttpsPort[]         = "testing-fixed-https-port";
 
-// Runs the security test for the renderer sandbox.
-const char kTestSandbox[]                   = "test-sandbox";
-
 // Type of the current test harness ("browser" or "ui").
 const char kTestType[]                      = "test-type";
 
@@ -880,6 +857,9 @@ const char kUseFakeUIForMediaStream[]     = "use-fake-ui-for-media-stream";
 
 // Set when Chromium should use a mobile user agent.
 const char kUseMobileUserAgent[] = "use-mobile-user-agent";
+
+// Use the new surfaces system to handle compositor delegation.
+const char kUseSurfaces[] = "use-surfaces";
 
 // On POSIX only: the contents of this flag are prepended to the utility
 // process command line. Useful values might be "valgrind" or "xterm -e gdb
@@ -980,6 +960,26 @@ const char kEnableCarbonInterposing[]       = "enable-carbon-interposing";
 // accelerated compositing is disabled. See http://crbug.com/122430 .
 const char kDisableCoreAnimationPlugins[] =
     "disable-core-animation-plugins";
+#endif
+
+#if defined(OS_WIN)
+// Device scale factor passed to certain processes like renderers, etc.
+const char kDeviceScaleFactor[]     = "device-scale-factor";
+
+// Disable the Legacy Window which corresponds to the size of the WebContents.
+const char kDisableLegacyIntermediateWindow[] = "disable-legacy-window";
+
+// Enables the DirectWrite font rendering system on windows.
+const char kEnableDirectWrite[]             = "enable-direct-write";
+
+// Use high resolution timers for TimeTicks.
+const char kEnableHighResolutionTime[]      = "enable-high-resolution-time";
+
+// Enable the Win32K process mitigation policy for renderer processes which
+// prevents them from invoking user32 and gdi32 system calls which enter
+// the kernel. This is only supported on Windows 8 and beyond.
+const char kEnableWin32kRendererLockDown[]
+    = "enable_win32k_renderer_lockdown";
 #endif
 
 // Don't dump stuff here, follow the same order as the header.

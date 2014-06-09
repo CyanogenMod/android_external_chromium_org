@@ -114,8 +114,6 @@
         'gl_version_info.h',
         'gpu_switching_manager.cc',
         'gpu_switching_manager.h',
-        'io_surface_support_mac.cc',
-        'io_surface_support_mac.h',
         'scoped_binders.cc',
         'scoped_binders.h',
         'scoped_make_current.cc',
@@ -138,7 +136,7 @@
           'variables': {
             'generator_path': 'generate_bindings.py',
             # Prefer khronos EGL/GLES headers by listing that path first.
-            'header_paths': '../../third_party/khronos:../../third_party/mesa/src/include',
+            'header_paths': '../../third_party/khronos:../../third_party/mesa/src/include:.:../../gpu',
           },
           'inputs': [
             '<(generator_path)',
@@ -268,6 +266,7 @@
           ],
           'link_settings': {
             'libraries': [
+              '$(SDKROOT)/System/Library/Frameworks/IOSurface.framework',
               '$(SDKROOT)/System/Library/Frameworks/OpenGL.framework',
             ],
           },

@@ -128,13 +128,15 @@ class CONTENT_EXPORT MediaStreamManager
   // and video devices and also start monitoring device changes, such as
   // plug/unplug. The new device lists will be delivered via media observer to
   // MediaCaptureDevicesDispatcher.
+  // If |have_permission| is false, we remove the device label from the result.
   virtual std::string EnumerateDevices(MediaStreamRequester* requester,
                                        int render_process_id,
                                        int render_view_id,
                                        const ResourceContext::SaltCallback& sc,
                                        int page_request_id,
                                        MediaStreamType type,
-                                       const GURL& security_origin);
+                                       const GURL& security_origin,
+                                       bool have_permission);
 
   // Open a device identified by |device_id|.  |type| must be either
   // MEDIA_DEVICE_AUDIO_CAPTURE or MEDIA_DEVICE_VIDEO_CAPTURE.
@@ -244,6 +246,11 @@ class CONTENT_EXPORT MediaStreamManager
 
   void DoEnumerateDevices(const std::string& label);
 
+  // Enumerates audio output devices. No caching.
+  void EnumerateAudioOutputDevices(const std::string& label);
+
+  void AudioOutputDevicesEnumerated(const StreamDeviceInfoArray& devices);
+
   // Helpers.
   // Checks if all devices that was requested in the request identififed by
   // |label| has been opened and set the request state accordingly.
@@ -351,7 +358,8 @@ class CONTENT_EXPORT MediaStreamManager
                                StreamDeviceInfoArray devices,
                                gfx::NativeViewId window_id);
 
-  // Task runner shared by VideoCaptureManager and AudioInputDeviceManager.
+  // Task runner shared by VideoCaptureManager and AudioInputDeviceManager and
+  // used for enumerating audio output devices.
   // Note: Enumeration tasks may take seconds to complete so must never be run
   // on any of the BrowserThreads (UI, IO, etc).  See http://crbug.com/256945.
   scoped_refptr<base::SingleThreadTaskRunner> device_task_runner_;

@@ -4,6 +4,8 @@
 LOCAL_PATH := $(call my-dir)
 GYP_CONFIGURATION ?= Debug
 GYP_VAR_PREFIX ?=
+GYP_HOST_VAR_PREFIX ?=
+GYP_HOST_MULTILIB ?=
 
 include $(LOCAL_PATH)/android_webview/android_webview_common.target.linux-arm64.mk
 include $(LOCAL_PATH)/android_webview/android_webview_pak.target.linux-arm64.mk
@@ -23,6 +25,7 @@ include $(LOCAL_PATH)/base/base_prefs.target.linux-arm64.mk
 include $(LOCAL_PATH)/base/base_static.target.linux-arm64.mk
 include $(LOCAL_PATH)/base/third_party/dynamic_annotations/dynamic_annotations.target.linux-arm64.mk
 include $(LOCAL_PATH)/cc/cc.target.linux-arm64.mk
+include $(LOCAL_PATH)/cc/cc_surfaces.target.linux-arm64.mk
 include $(LOCAL_PATH)/components/auto_login_parser.target.linux-arm64.mk
 include $(LOCAL_PATH)/components/autofill_content_browser.target.linux-arm64.mk
 include $(LOCAL_PATH)/components/autofill_content_common.target.linux-arm64.mk
@@ -60,6 +63,7 @@ include $(LOCAL_PATH)/content/content_browser.target.linux-arm64.mk
 include $(LOCAL_PATH)/content/content_child.target.linux-arm64.mk
 include $(LOCAL_PATH)/content/content_common.target.linux-arm64.mk
 include $(LOCAL_PATH)/content/content_common_mojo_bindings.target.linux-arm64.mk
+include $(LOCAL_PATH)/content/content_gamepad_mapping.target.linux-arm64.mk
 include $(LOCAL_PATH)/content/content_gpu.target.linux-arm64.mk
 include $(LOCAL_PATH)/content/content_jni_headers.target.linux-arm64.mk
 include $(LOCAL_PATH)/content/content_renderer.target.linux-arm64.mk
@@ -129,21 +133,25 @@ include $(LOCAL_PATH)/skia/skia_library.target.linux-arm64.mk
 include $(LOCAL_PATH)/skia/skia_opts.target.linux-arm64.mk
 include $(LOCAL_PATH)/sql/sql.target.linux-arm64.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.linux-arm64.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/core_global_constructors_idls.target.linux-arm64.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/core_global_objects.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/interfaces_info_individual_core.target.linux-arm64.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/v8/bindings_core_generated.target.linux-arm64.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/v8/bindings_core_generated_aggregate.target.linux-arm64.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/v8/bindings_core_generated_individual.target.linux-arm64.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/generated_idls.target.linux-arm64.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/global_constructors_idls.target.linux-arm64.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/v8/bindings_core_v8_generated.target.linux-arm64.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/v8/bindings_core_v8_generated_aggregate.target.linux-arm64.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/v8/bindings_core_v8_generated_individual.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/interfaces_info.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/interfaces_info_individual_modules.target.linux-arm64.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/v8/bindings_modules_generated.target.linux-arm64.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/v8/bindings_modules_generated_aggregate.target.linux-arm64.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/v8/bindings_modules_generated_individual.target.linux-arm64.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/modules_core_global_constructors_idls.target.linux-arm64.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/modules_event_generated.target.linux-arm64.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/modules_global_constructors_idls.target.linux-arm64.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/modules_global_objects.target.linux-arm64.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/v8/bindings_modules_v8_generated.target.linux-arm64.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/v8/bindings_modules_v8_generated_aggregate.target.linux-arm64.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/v8/bindings_modules_v8_generated_individual.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/scripts/cached_jinja_templates.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/scripts/cached_lex_yacc_tables.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/config.target.linux-arm64.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/core/core_bindings_generated.target.linux-arm64.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/core/core_event_interfaces.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/debugger_script_source.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/generate_inspector_protocol_version.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/generated_testing_idls.target.linux-arm64.mk
@@ -189,7 +197,6 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/generate_devtools_grd.t
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/supported_css_properties.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/modules/make_modules_generated.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/modules/modules.target.linux-arm64.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/modules/modules_bindings_generated.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_common.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_heap_asm_stubs.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_platform.target.linux-arm64.mk

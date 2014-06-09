@@ -161,6 +161,7 @@ EVENTS_EXPORT bool IsMouseEventFromTouch(UINT message);
 // representing an extended key contains 0xE000 bits.
 EVENTS_EXPORT uint16 GetScanCodeFromLParam(LPARAM lParam);
 EVENTS_EXPORT LPARAM GetLParamFromScanCode(uint16 scan_code);
+
 #endif
 
 // Registers a custom event type.

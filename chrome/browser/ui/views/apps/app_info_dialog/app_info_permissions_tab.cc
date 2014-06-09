@@ -11,6 +11,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/manifest_handlers/permissions_parser.h"
 #include "extensions/common/permissions/api_permission.h"
 #include "extensions/common/permissions/permission_message_provider.h"
 #include "extensions/common/permissions/permissions_data.h"
@@ -444,7 +445,7 @@ void AppInfoPermissionsTab::RevokeFilePermissions() {
 
 const extensions::PermissionSet* AppInfoPermissionsTab::GetRequiredPermissions()
     const {
-  return extensions::PermissionsData::GetRequiredPermissions(app_);
+  return extensions::PermissionsParser::GetRequiredPermissions(app_);
 }
 
 const std::vector<base::string16>
@@ -455,7 +456,7 @@ AppInfoPermissionsTab::GetRequiredPermissionMessages() const {
 
 const extensions::PermissionSet* AppInfoPermissionsTab::GetOptionalPermissions()
     const {
-  return extensions::PermissionsData::GetOptionalPermissions(app_);
+  return extensions::PermissionsParser::GetOptionalPermissions(app_);
 }
 
 const std::vector<base::string16>
@@ -467,7 +468,8 @@ AppInfoPermissionsTab::GetOptionalPermissionMessages() const {
 const std::vector<base::FilePath>
 AppInfoPermissionsTab::GetRetainedFilePermissions() const {
   std::vector<base::FilePath> retained_file_paths;
-  if (app_->HasAPIPermission(extensions::APIPermission::kFileSystem)) {
+  if (app_->permissions_data()->HasAPIPermission(
+          extensions::APIPermission::kFileSystem)) {
     std::vector<apps::SavedFileEntry> retained_file_entries =
         apps::SavedFilesService::Get(profile_)->GetAllFileEntries(app_->id());
     for (std::vector<apps::SavedFileEntry>::const_iterator it =

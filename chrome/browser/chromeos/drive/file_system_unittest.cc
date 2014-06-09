@@ -329,16 +329,15 @@ TEST_F(FileSystemTest, Copy) {
   ASSERT_TRUE(entry);
 
   google_apis::GDataErrorCode status = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceEntry> resource_entry;
-  fake_drive_service_->GetResourceEntry(
+  scoped_ptr<google_apis::FileResource> server_entry;
+  fake_drive_service_->GetFileResource(
       entry->resource_id(),
-      google_apis::test_util::CreateCopyResultCallback(&status,
-                                                       &resource_entry));
+      google_apis::test_util::CreateCopyResultCallback(&status, &server_entry));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(google_apis::HTTP_SUCCESS, status);
-  ASSERT_TRUE(resource_entry);
-  EXPECT_EQ(entry->title(), resource_entry->title());
-  EXPECT_TRUE(resource_entry->is_file());
+  ASSERT_TRUE(server_entry);
+  EXPECT_EQ(entry->title(), server_entry->title());
+  EXPECT_FALSE(server_entry->IsDirectory());
 }
 
 TEST_F(FileSystemTest, Move) {
@@ -363,21 +362,17 @@ TEST_F(FileSystemTest, Move) {
   ASSERT_TRUE(entry);
 
   google_apis::GDataErrorCode status = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceEntry> resource_entry;
-  fake_drive_service_->GetResourceEntry(
+  scoped_ptr<google_apis::FileResource> server_entry;
+  fake_drive_service_->GetFileResource(
       entry->resource_id(),
-      google_apis::test_util::CreateCopyResultCallback(&status,
-                                                       &resource_entry));
+      google_apis::test_util::CreateCopyResultCallback(&status, &server_entry));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(google_apis::HTTP_SUCCESS, status);
-  ASSERT_TRUE(resource_entry);
-  EXPECT_EQ(entry->title(), resource_entry->title());
+  ASSERT_TRUE(server_entry);
+  EXPECT_EQ(entry->title(), server_entry->title());
 
-  const google_apis::Link* parent_link =
-      resource_entry->GetLinkByType(google_apis::Link::LINK_PARENT);
-  ASSERT_TRUE(parent_link);
-  EXPECT_EQ(parent->resource_id(),
-            util::ExtractResourceIdFromUrl(parent_link->href()));
+  ASSERT_FALSE(server_entry->parents().empty());
+  EXPECT_EQ(parent->resource_id(), server_entry->parents()[0].file_id());
 }
 
 TEST_F(FileSystemTest, Remove) {
@@ -395,15 +390,14 @@ TEST_F(FileSystemTest, Remove) {
 
   // Entry is removed on the server.
   google_apis::GDataErrorCode status = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceEntry> resource_entry;
-  fake_drive_service_->GetResourceEntry(
+  scoped_ptr<google_apis::FileResource> server_entry;
+  fake_drive_service_->GetFileResource(
       entry->resource_id(),
-      google_apis::test_util::CreateCopyResultCallback(&status,
-                                                       &resource_entry));
+      google_apis::test_util::CreateCopyResultCallback(&status, &server_entry));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(google_apis::HTTP_SUCCESS, status);
-  ASSERT_TRUE(resource_entry);
-  EXPECT_TRUE(resource_entry->deleted());
+  ASSERT_TRUE(server_entry);
+  EXPECT_TRUE(server_entry->labels().is_trashed());
 }
 
 TEST_F(FileSystemTest, CreateDirectory) {
@@ -424,16 +418,15 @@ TEST_F(FileSystemTest, CreateDirectory) {
   ASSERT_TRUE(entry);
 
   google_apis::GDataErrorCode status = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceEntry> resource_entry;
-  fake_drive_service_->GetResourceEntry(
+  scoped_ptr<google_apis::FileResource> server_entry;
+  fake_drive_service_->GetFileResource(
       entry->resource_id(),
-      google_apis::test_util::CreateCopyResultCallback(&status,
-                                                       &resource_entry));
+      google_apis::test_util::CreateCopyResultCallback(&status, &server_entry));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(google_apis::HTTP_SUCCESS, status);
-  ASSERT_TRUE(resource_entry);
-  EXPECT_EQ(entry->title(), resource_entry->title());
-  EXPECT_TRUE(resource_entry->is_folder());
+  ASSERT_TRUE(server_entry);
+  EXPECT_EQ(entry->title(), server_entry->title());
+  EXPECT_TRUE(server_entry->IsDirectory());
 }
 
 TEST_F(FileSystemTest, CreateFile) {
@@ -454,16 +447,15 @@ TEST_F(FileSystemTest, CreateFile) {
   ASSERT_TRUE(entry);
 
   google_apis::GDataErrorCode status = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceEntry> resource_entry;
-  fake_drive_service_->GetResourceEntry(
+  scoped_ptr<google_apis::FileResource> server_entry;
+  fake_drive_service_->GetFileResource(
       entry->resource_id(),
-      google_apis::test_util::CreateCopyResultCallback(&status,
-                                                       &resource_entry));
+      google_apis::test_util::CreateCopyResultCallback(&status, &server_entry));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(google_apis::HTTP_SUCCESS, status);
-  ASSERT_TRUE(resource_entry);
-  EXPECT_EQ(entry->title(), resource_entry->title());
-  EXPECT_TRUE(resource_entry->is_file());
+  ASSERT_TRUE(server_entry);
+  EXPECT_EQ(entry->title(), server_entry->title());
+  EXPECT_FALSE(server_entry->IsDirectory());
 }
 
 TEST_F(FileSystemTest, TouchFile) {
@@ -489,16 +481,15 @@ TEST_F(FileSystemTest, TouchFile) {
 
   // File is touched on the server.
   google_apis::GDataErrorCode status = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceEntry> resource_entry;
-  fake_drive_service_->GetResourceEntry(
+  scoped_ptr<google_apis::FileResource> server_entry;
+  fake_drive_service_->GetFileResource(
       entry->resource_id(),
-      google_apis::test_util::CreateCopyResultCallback(&status,
-                                                       &resource_entry));
+      google_apis::test_util::CreateCopyResultCallback(&status, &server_entry));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(google_apis::HTTP_SUCCESS, status);
-  ASSERT_TRUE(resource_entry);
-  EXPECT_EQ(last_accessed, resource_entry->last_viewed_time());
-  EXPECT_EQ(last_modified, resource_entry->updated_time());
+  ASSERT_TRUE(server_entry);
+  EXPECT_EQ(last_accessed, server_entry->last_viewed_by_me_date());
+  EXPECT_EQ(last_modified, server_entry->modified_date());
 }
 
 TEST_F(FileSystemTest, TruncateFile) {
@@ -518,15 +509,14 @@ TEST_F(FileSystemTest, TruncateFile) {
 
   // File is touched on the server.
   google_apis::GDataErrorCode status = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceEntry> resource_entry;
-  fake_drive_service_->GetResourceEntry(
+  scoped_ptr<google_apis::FileResource> server_entry;
+  fake_drive_service_->GetFileResource(
       entry->resource_id(),
-      google_apis::test_util::CreateCopyResultCallback(&status,
-                                                       &resource_entry));
+      google_apis::test_util::CreateCopyResultCallback(&status, &server_entry));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(google_apis::HTTP_SUCCESS, status);
-  ASSERT_TRUE(resource_entry);
-  EXPECT_EQ(kLength, resource_entry->file_size());
+  ASSERT_TRUE(server_entry);
+  EXPECT_EQ(kLength, server_entry->file_size());
 }
 
 TEST_F(FileSystemTest, DuplicatedAsyncInitialization) {
@@ -543,7 +533,7 @@ TEST_F(FileSystemTest, DuplicatedAsyncInitialization) {
   loop.Run();  // Wait to get our result
   EXPECT_EQ(2, counter);
 
-  EXPECT_EQ(1, fake_drive_service_->resource_list_load_count());
+  EXPECT_EQ(1, fake_drive_service_->file_list_load_count());
 }
 
 TEST_F(FileSystemTest, GetGrandRootEntry) {
@@ -567,13 +557,13 @@ TEST_F(FileSystemTest, GetMyDriveRoot) {
   EXPECT_EQ(fake_drive_service_->GetRootResourceId(), entry->resource_id());
 
   // After "fast fetch" is done, full resource list is fetched.
-  EXPECT_EQ(1, fake_drive_service_->resource_list_load_count());
+  EXPECT_EQ(1, fake_drive_service_->file_list_load_count());
 }
 
 TEST_F(FileSystemTest, GetExistingFile) {
   // Simulate the situation that full feed fetching takes very long time,
   // to test the recursive "fast fetch" feature is properly working.
-  fake_drive_service_->set_never_return_all_resource_list(true);
+  fake_drive_service_->set_never_return_all_file_list(true);
 
   const base::FilePath kFilePath(
       FILE_PATH_LITERAL("drive/root/Directory 1/SubDirectory File 1.txt"));
@@ -583,7 +573,7 @@ TEST_F(FileSystemTest, GetExistingFile) {
 
   EXPECT_EQ(1, fake_drive_service_->about_resource_load_count());
   EXPECT_EQ(2, fake_drive_service_->directory_load_count());
-  EXPECT_EQ(1, fake_drive_service_->blocked_resource_list_load_count());
+  EXPECT_EQ(1, fake_drive_service_->blocked_file_list_load_count());
 }
 
 TEST_F(FileSystemTest, GetExistingDocument) {
@@ -661,7 +651,7 @@ TEST_F(FileSystemTest, LoadFileSystemFromUpToDateCache) {
   // SetUpTestFileSystem and FakeDriveService have the same
   // changestamp (i.e. the local metadata is up-to-date), so no request for
   // new resource list (i.e., call to GetResourceList) should happen.
-  EXPECT_EQ(0, fake_drive_service_->resource_list_load_count());
+  EXPECT_EQ(0, fake_drive_service_->file_list_load_count());
 
   // Since the file system has verified that it holds the latest snapshot,
   // it should change its state to "loaded", which admits periodic refresh.

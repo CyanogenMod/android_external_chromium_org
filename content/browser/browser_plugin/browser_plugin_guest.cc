@@ -9,7 +9,6 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/browser_plugin/browser_plugin_embedder.h"
-#include "content/browser/browser_plugin/browser_plugin_host_factory.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
@@ -39,9 +38,6 @@
 #endif
 
 namespace content {
-
-// static
-BrowserPluginHostFactory* BrowserPluginGuest::factory_ = NULL;
 
 class BrowserPluginGuest::EmbedderWebContentsObserver
     : public WebContentsObserver {
@@ -262,14 +258,8 @@ BrowserPluginGuest* BrowserPluginGuest::Create(
     scoped_ptr<base::DictionaryValue> extra_params,
     BrowserPluginGuest* opener) {
   RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.Create"));
-  BrowserPluginGuest* guest = NULL;
-  if (factory_) {
-    guest = factory_->CreateBrowserPluginGuest(instance_id, web_contents);
-  } else {
-    guest = new BrowserPluginGuest(instance_id,
-                                   web_contents->opener() != NULL,
-                                   web_contents);
-  }
+  BrowserPluginGuest* guest = new BrowserPluginGuest(
+      instance_id, web_contents->opener() != NULL, web_contents);
   web_contents->SetBrowserPluginGuest(guest);
   WebContents* opener_web_contents = NULL;
   if (opener) {
@@ -342,11 +332,6 @@ void BrowserPluginGuest::EmbedderVisibilityChanged(bool visible) {
   UpdateVisibility();
 }
 
-void BrowserPluginGuest::SetZoom(double zoom_factor) {
-  if (delegate_)
-    delegate_->SetZoom(zoom_factor);
-}
-
 void BrowserPluginGuest::PointerLockPermissionResponse(bool allow) {
   SendMessageToEmbedder(
       new BrowserPluginMsg_SetMouseLock(instance_id(), allow));
@@ -413,20 +398,6 @@ void BrowserPluginGuest::DidCommitProvisionalLoadForFrame(
     PageTransition transition_type,
     RenderViewHost* render_view_host) {
   RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.DidNavigate"));
-}
-
-void BrowserPluginGuest::DidStopLoading(RenderViewHost* render_view_host) {
-  bool enable_dragdrop = delegate_ && delegate_->IsDragAndDropEnabled();
-  if (!enable_dragdrop) {
-    // Initiating a drag from inside a guest is currently not supported without
-    // the kEnableBrowserPluginDragDrop flag on a linux platform. So inject some
-    // JS to disable it. http://crbug.com/161112
-    const char script[] = "window.addEventListener('dragstart', function() { "
-                          "  window.event.preventDefault(); "
-                          "});";
-    render_view_host->GetMainFrame()->ExecuteJavaScript(
-        base::ASCIIToUTF16(script));
-  }
 }
 
 void BrowserPluginGuest::RenderViewReady() {

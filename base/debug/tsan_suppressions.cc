@@ -278,6 +278,7 @@ char kTSanDefaultSuppressions[] =
 "race:SandboxIPCHandler::HandleFontMatchRequest\n"
 "race:SkFontConfigInterfaceDirect::matchFamilyName\n"
 "race:SkFontConfigInterface::GetSingletonDirectInterface\n"
+"race:FcStrStaticName\n"
 
 // http://crbug.com/372807
 "deadlock:net::X509Certificate::CreateCertificateListFromBytes\n"
@@ -289,11 +290,11 @@ char kTSanDefaultSuppressions[] =
 "deadlock:media::AudioOutputDispatcherImpl::StopStream\n"
 "deadlock:media::AudioStreamHandler::AudioStreamContainer::OnMoreData\n"
 
-// http://crbug.com/374151
-"deadlock:media::FakeAudioConsumer::Worker::DoRead\n"
+// False positive in libc's tzset_internal, http://crbug.com/379738.
+"race:tzset_internal\n"
 
-// http://crbug.com/377420
-"deadlock:media::AudioRendererMixerInput::Play\n"
+// http://crbug.com/380554
+"deadlock:g_type_add_interface_static\n"
 
 // End of suppressions.
 ;  // Please keep this semicolon.

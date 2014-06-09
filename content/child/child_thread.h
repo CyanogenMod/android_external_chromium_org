@@ -170,10 +170,12 @@ class CONTENT_EXPORT ChildThread
   virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
   virtual void OnChannelError() OVERRIDE;
 
-  // mojo::ShellClient implementation:
+  // mojo::ServiceProvider implementation:
   virtual void ConnectToService(
+      const mojo::String& service_url,
       const mojo::String& service_name,
-      mojo::ScopedMessagePipeHandle message_pipe) OVERRIDE;
+      mojo::ScopedMessagePipeHandle message_pipe,
+      const mojo::String& requestor_url) OVERRIDE;
 
  private:
   class ChildThreadMessageRouter : public MessageRouter {
@@ -193,6 +195,7 @@ class CONTENT_EXPORT ChildThread
   void OnSetProfilerStatus(tracked_objects::ThreadData::Status status);
   void OnGetChildProfilerData(int sequence_number);
   void OnDumpHandles();
+  void OnProcessBackgrounded(bool background);
 #ifdef IPC_MESSAGE_LOG_ENABLED
   void OnSetIPCLoggingEnabled(bool enable);
 #endif

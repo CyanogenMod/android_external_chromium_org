@@ -26,6 +26,10 @@
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_status.h"
 
+#if defined(OS_ANDROID)
+#include "net/base/network_change_notifier.h"
+#endif
+
 using base::Time;
 using base::TimeDelta;
 
@@ -124,7 +128,8 @@ SafeBrowsingProtocolManager::SafeBrowsingProtocolManager(
       url_prefix_(config.url_prefix),
       backup_update_reason_(BACKUP_UPDATE_REASON_MAX),
       disable_auto_update_(config.disable_auto_update),
-      url_fetcher_id_(0) {
+      url_fetcher_id_(0),
+      app_in_foreground_(true) {
   DCHECK(!url_prefix_.empty());
 
   backup_url_prefixes_[BACKUP_UPDATE_REASON_CONNECT] =
@@ -197,8 +202,19 @@ void SafeBrowsingProtocolManager::GetFullHash(
 
 void SafeBrowsingProtocolManager::GetNextUpdate() {
   DCHECK(CalledOnValidThread());
-  if (!request_.get() && request_type_ == NO_REQUEST)
-    IssueUpdateRequest();
+  if (request_.get() || request_type_ != NO_REQUEST)
+    return;
+
+#if defined(OS_ANDROID)
+  net::NetworkChangeNotifier::ConnectionType type =
+    net::NetworkChangeNotifier::GetConnectionType();
+  if (type != net::NetworkChangeNotifier::CONNECTION_WIFI) {
+    ScheduleNextUpdate(false /* no back off */);
+    return;
+  }
+#endif
+
+  IssueUpdateRequest();
 }
 
 // net::URLFetcherDelegate implementation ----------------------------------
@@ -706,6 +722,12 @@ void SafeBrowsingProtocolManager::UpdateFinished(bool success) {
 
 void SafeBrowsingProtocolManager::UpdateFinished(bool success, bool back_off) {
   DCHECK(CalledOnValidThread());
+#if defined(OS_ANDROID)
+  if (app_in_foreground_)
+    UMA_HISTOGRAM_COUNTS("SB2.UpdateSizeForeground", update_size_);
+  else
+    UMA_HISTOGRAM_COUNTS("SB2.UpdateSizeBackground", update_size_);
+#endif
   UMA_HISTOGRAM_COUNTS("SB2.UpdateSize", update_size_);
   update_size_ = 0;
   bool update_success = success || request_type_ == CHUNK_REQUEST;

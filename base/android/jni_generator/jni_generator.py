@@ -408,6 +408,7 @@ def GetStaticCastForReturnType(return_type):
                'short[]': 'jshortArray',
                'int[]': 'jintArray',
                'long[]': 'jlongArray',
+               'float[]': 'jfloatArray',
                'double[]': 'jdoubleArray' }
   ret = type_map.get(return_type, None)
   if ret:
@@ -1338,7 +1339,7 @@ declarations and print the header file to stdout (or a file).
 See SampleForTests.java for more details.
   """
   option_parser = optparse.OptionParser(usage=usage)
-  option_parser.add_option('-j', dest='jar_file',
+  option_parser.add_option('-j', '--jar_file', dest='jar_file',
                            help='Extract the list of input files from'
                            ' a specified jar file.'
                            ' Uses javap to extract the methods from a'

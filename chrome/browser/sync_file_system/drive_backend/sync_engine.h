@@ -13,6 +13,7 @@
 #include "base/observer_list.h"
 #include "chrome/browser/drive/drive_notification_observer.h"
 #include "chrome/browser/drive/drive_service_interface.h"
+#include "chrome/browser/sync_file_system/drive_backend/callback_tracker.h"
 #include "chrome/browser/sync_file_system/local_change_processor.h"
 #include "chrome/browser/sync_file_system/remote_file_sync_service.h"
 #include "chrome/browser/sync_file_system/sync_action.h"
@@ -121,8 +122,6 @@ class SyncEngine : public RemoteFileSyncService,
 
   drive::DriveServiceInterface* GetDriveService();
   drive::DriveUploaderInterface* GetDriveUploader();
-  MetadataDatabase* GetMetadataDatabase();
-  SyncTaskManager* GetSyncTaskManagerForTesting();
 
   void OnPendingFileListUpdated(int item_count);
   void OnFileStatusChanged(const fileapi::FileSystemURL& url,
@@ -145,7 +144,12 @@ class SyncEngine : public RemoteFileSyncService,
              ExtensionServiceInterface* extension_service,
              SigninManagerBase* signin_manager);
 
-  void UpdateRegisteredApps();
+  // TODO(peria): Migrate this method into test code.
+  // This method is not thread safe, because it requires to access metadata
+  // database which may live in another thread.
+  void UpdateRegisteredAppsForTesting();
+
+  SyncStatusCallback TrackCallback(const SyncStatusCallback& callback);
 
   scoped_ptr<drive::DriveServiceInterface> drive_service_;
   scoped_ptr<DriveServiceWrapper> drive_service_wrapper_;
@@ -172,6 +176,8 @@ class SyncEngine : public RemoteFileSyncService,
   scoped_ptr<WorkerObserver> worker_observer_;
   scoped_ptr<SyncWorker> sync_worker_;
   scoped_refptr<base::SequencedTaskRunner> worker_task_runner_;
+
+  CallbackTracker callback_tracker_;
 
   base::WeakPtrFactory<SyncEngine> weak_ptr_factory_;
   DISALLOW_COPY_AND_ASSIGN(SyncEngine);

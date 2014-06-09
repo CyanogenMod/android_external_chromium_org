@@ -9,11 +9,26 @@ namespace metrics {
 namespace prefs {
 
 // Alphabetical list of preference names specific to the metrics
-// component. Keep alphabetized, and document each in the .cc file.
+// component. Document each in the .cc file.
+extern const char kMetricsClientID[];
 extern const char kMetricsInitialLogs[];
+extern const char kMetricsLowEntropySource[];
 extern const char kMetricsMachineId[];
+extern const char kMetricsOldClientID[];
+extern const char kMetricsOldLowEntropySource[];
 extern const char kMetricsOngoingLogs[];
 extern const char kMetricsResetIds[];
+extern const char kMetricsReportingEnabledTimestamp[];
+extern const char kMetricsSessionID[];
+extern const char kStabilityBreakpadRegistrationSuccess[];
+extern const char kStabilityBreakpadRegistrationFail[];
+extern const char kStabilityCrashCount[];
+extern const char kStabilityDebuggerPresent[];
+extern const char kStabilityDebuggerNotPresent[];
+extern const char kStabilityIncompleteSessionEndCount[];
+extern const char kStabilityLaunchCount[];
+extern const char kStabilitySavedSystemProfile[];
+extern const char kStabilitySavedSystemProfileHash[];
 
 }  // namespace prefs
 }  // namespace metrics

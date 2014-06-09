@@ -26,6 +26,7 @@
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
+#include "base/numerics/safe_math.h"
 #include "base/path_service.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
@@ -111,6 +112,8 @@
 #include "content/common/child_process_host_impl.h"
 #include "content/common/child_process_messages.h"
 #include "content/common/content_switches_internal.h"
+#include "content/common/gpu/client/gpu_memory_buffer_impl.h"
+#include "content/common/gpu/client/gpu_memory_buffer_impl_shm.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/mojo/mojo_messages.h"
 #include "content/common/resource_messages.h"
@@ -152,12 +155,20 @@
 
 #if defined(OS_ANDROID)
 #include "content/browser/media/android/browser_demuxer_android.h"
+#include "content/browser/renderer_host/compositor_impl_android.h"
+#include "content/common/gpu/client/gpu_memory_buffer_impl_surface_texture.h"
+#endif
+
+#if defined(OS_MACOSX)
+#include "content/common/gpu/client/gpu_memory_buffer_impl_io_surface.h"
 #endif
 
 #if defined(OS_WIN)
+#include "base/strings/string_number_conversions.h"
 #include "base/win/scoped_com_initializer.h"
 #include "content/common/font_cache_dispatcher_win.h"
 #include "content/common/sandbox_win.h"
+#include "ui/gfx/win/dpi.h"
 #endif
 
 #if defined(ENABLE_WEBRTC)
@@ -324,6 +335,44 @@ class RendererSandboxedProcessLauncherDelegate
 #if defined(OS_POSIX)
   int ipc_fd_;
 #endif  // OS_POSIX
+};
+
+#if defined(OS_MACOSX)
+void AddBooleanValue(CFMutableDictionaryRef dictionary,
+                     const CFStringRef key,
+                     bool value) {
+  CFDictionaryAddValue(
+      dictionary, key, value ? kCFBooleanTrue : kCFBooleanFalse);
+}
+
+void AddIntegerValue(CFMutableDictionaryRef dictionary,
+                     const CFStringRef key,
+                     int32 value) {
+  base::ScopedCFTypeRef<CFNumberRef> number(
+      CFNumberCreate(NULL, kCFNumberSInt32Type, &value));
+  CFDictionaryAddValue(dictionary, key, number.get());
+}
+#endif
+
+const char kSessionStorageHolderKey[] = "kSessionStorageHolderKey";
+
+class SessionStorageHolder : public base::SupportsUserData::Data {
+ public:
+  SessionStorageHolder() {}
+  virtual ~SessionStorageHolder() {}
+
+  void Hold(const SessionStorageNamespaceMap& sessions, int view_route_id) {
+    session_storage_namespaces_awaiting_close_[view_route_id] = sessions;
+  }
+
+  void Release(int old_route_id) {
+    session_storage_namespaces_awaiting_close_.erase(old_route_id);
+  }
+
+ private:
+  std::map<int, SessionStorageNamespaceMap >
+      session_storage_namespaces_awaiting_close_;
+  DISALLOW_COPY_AND_ASSIGN(SessionStorageHolder);
 };
 
 }  // namespace
@@ -500,6 +549,10 @@ RenderProcessHostImpl::~RenderProcessHostImpl() {
     BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
                             base::Bind(&RemoveShaderInfo, GetID()));
   }
+
+#if defined(OS_ANDROID)
+  CompositorImpl::DestroyAllSurfaceTextures(GetID());
+#endif
 }
 
 void RenderProcessHostImpl::EnableSendQueue() {
@@ -537,12 +590,11 @@ bool RenderProcessHostImpl::Init() {
   // Setup the IPC channel.
   const std::string channel_id =
       IPC::Channel::GenerateVerifiedChannelID(std::string());
-  channel_.reset(
-          new IPC::ChannelProxy(channel_id,
-                                IPC::Channel::MODE_SERVER,
-                                this,
-                                BrowserThread::GetMessageLoopProxyForThread(
-                                    BrowserThread::IO).get()));
+  channel_ = IPC::ChannelProxy::Create(
+      channel_id,
+      IPC::Channel::MODE_SERVER,
+      this,
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO).get());
 
   // Setup the Mojo channel.
   mojo_application_host_.reset(new MojoApplicationHost());
@@ -714,7 +766,8 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   AddFilter(new MediaStreamDispatcherHost(
       GetID(),
       browser_context->GetResourceContext()->GetMediaDeviceIDSalt(),
-      media_stream_manager));
+      media_stream_manager,
+      resource_context));
   AddFilter(new DeviceRequestMessageFilter(
       resource_context, media_stream_manager, GetID()));
   AddFilter(new MediaStreamTrackMetricsHost());
@@ -807,9 +860,10 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   }
 
 #if defined(ENABLE_WEBRTC)
-  AddFilter(new P2PSocketDispatcherHost(
+  p2p_socket_dispatcher_host_ = new P2PSocketDispatcherHost(
       resource_context,
-      browser_context->GetRequestContextForRenderProcess(GetID())));
+      browser_context->GetRequestContextForRenderProcess(GetID()));
+  AddFilter(p2p_socket_dispatcher_host_);
 #endif
 
   AddFilter(new TraceMessageFilter());
@@ -1005,6 +1059,11 @@ void RenderProcessHostImpl::AppendRendererCommandLine(
   if (content::IsPinchToZoomEnabled())
     command_line->AppendSwitch(switches::kEnablePinch);
 
+#if defined(OS_WIN)
+  command_line->AppendSwitchASCII(switches::kDeviceScaleFactor,
+                                  base::DoubleToString(gfx::GetDPIScale()));
+#endif
+
   AppendCompositorCommandLineFlags(command_line);
 }
 
@@ -1129,7 +1188,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kShowPaintRects,
     switches::kSitePerProcess,
     switches::kStatsCollectionController,
-    switches::kTestSandbox,
     switches::kTestType,
     switches::kTouchEvents,
     switches::kTraceToConsole,
@@ -1313,6 +1371,10 @@ bool RenderProcessHostImpl::OnMessageReceived(const IPC::Message& msg) {
       IPC_MESSAGE_HANDLER(ViewHostMsg_UserMetricsRecordAction,
                           OnUserMetricsRecordAction)
       IPC_MESSAGE_HANDLER(ViewHostMsg_SavedPageAsMHTML, OnSavedPageAsMHTML)
+      IPC_MESSAGE_HANDLER_DELAY_REPLY(
+          ChildProcessHostMsg_SyncAllocateGpuMemoryBuffer,
+          OnAllocateGpuMemoryBuffer)
+      IPC_MESSAGE_HANDLER(ViewHostMsg_Close_ACK, OnCloseACK)
       // Adding single handlers for your service here is fine, but once your
       // service needs more than one handler, please extract them into a new
       // message filter and add that filter to CreateMessageFilters().
@@ -1444,6 +1506,7 @@ void RenderProcessHostImpl::Cleanup() {
     gpu_message_filter_ = NULL;
     message_port_message_filter_ = NULL;
     screen_orientation_dispatcher_host_ = NULL;
+    RemoveUserData(kSessionStorageHolderKey);
 
     // Remove ourself from the list of renderer processes so that we can't be
     // reused in between now and when the Delete task runs.
@@ -1505,6 +1568,30 @@ void RenderProcessHostImpl::DisableAecDump() {
 void RenderProcessHostImpl::SetWebRtcLogMessageCallback(
     base::Callback<void(const std::string&)> callback) {
   webrtc_log_message_callback_ = callback;
+}
+
+RenderProcessHostImpl::WebRtcStopRtpDumpCallback
+RenderProcessHostImpl::StartRtpDump(
+    bool incoming,
+    bool outgoing,
+    const WebRtcRtpPacketCallback& packet_callback) {
+  if (!p2p_socket_dispatcher_host_)
+    return WebRtcStopRtpDumpCallback();
+
+  BrowserThread::PostTask(BrowserThread::IO,
+                          FROM_HERE,
+                          base::Bind(&P2PSocketDispatcherHost::StartRtpDump,
+                                     p2p_socket_dispatcher_host_,
+                                     incoming,
+                                     outgoing,
+                                     packet_callback));
+
+  if (stop_rtp_dump_callback_.is_null()) {
+    stop_rtp_dump_callback_ =
+        base::Bind(&P2PSocketDispatcherHost::StopRtpDumpOnUIThread,
+                   p2p_socket_dispatcher_host_);
+  }
+  return stop_rtp_dump_callback_;
 }
 #endif
 
@@ -1833,6 +1920,7 @@ void RenderProcessHostImpl::ProcessDied(bool already_dead) {
   gpu_message_filter_ = NULL;
   message_port_message_filter_ = NULL;
   screen_orientation_dispatcher_host_ = NULL;
+  RemoveUserData(kSessionStorageHolderKey);
 
   IDMap<IPC::Listener>::iterator iter(&listeners_);
   while (!iter.IsAtEnd()) {
@@ -1901,6 +1989,24 @@ RenderProcessHostImpl::screen_orientation_dispatcher_host() const {
   return make_scoped_refptr(screen_orientation_dispatcher_host_);
 }
 
+void RenderProcessHostImpl::ReleaseOnCloseACK(
+    RenderProcessHost* host,
+    const SessionStorageNamespaceMap& sessions,
+    int view_route_id) {
+  DCHECK(host);
+  if (sessions.empty())
+    return;
+  SessionStorageHolder* holder = static_cast<SessionStorageHolder*>
+      (host->GetUserData(kSessionStorageHolderKey));
+  if (!holder) {
+    holder = new SessionStorageHolder();
+    host->SetUserData(
+        kSessionStorageHolderKey,
+        holder);
+  }
+  holder->Hold(sessions, view_route_id);
+}
+
 void RenderProcessHostImpl::OnShutdownRequest() {
   // Don't shut down if there are active RenderViews, or if there are pending
   // RenderViews being swapped back in.
@@ -1935,6 +2041,10 @@ void RenderProcessHostImpl::SetBackgrounded(bool backgrounded) {
   if (!child_process_launcher_.get() || child_process_launcher_->IsStarting())
     return;
 
+  // Don't background processes which have active audio streams.
+  if (backgrounded_ && audio_renderer_host_->HasActiveAudio())
+    return;
+
 #if defined(OS_WIN)
   // The cbstext.dll loads as a global GetMessage hook in the browser process
   // and intercepts/unintercepts the kernel32 API SetPriorityClass in a
@@ -1946,7 +2056,17 @@ void RenderProcessHostImpl::SetBackgrounded(bool backgrounded) {
     return;
 #endif  // OS_WIN
 
+  // Notify the child process of background state.
+  Send(new ChildProcessMsg_SetProcessBackgrounded(backgrounded));
+
+#if !defined(OS_WIN)
+  // Backgrounding may require elevated privileges not available to renderer
+  // processes, so control backgrounding from the process host.
+
+  // Windows Vista+ has a fancy process backgrounding mode that can only be set
+  // from within the process.
   child_process_launcher_->SetProcessBackgrounded(backgrounded);
+#endif  // !OS_WIN
 }
 
 void RenderProcessHostImpl::OnProcessLaunched() {
@@ -1963,7 +2083,7 @@ void RenderProcessHostImpl::OnProcessLaunched() {
       return;
     }
 
-    child_process_launcher_->SetProcessBackgrounded(backgrounded_);
+    SetBackgrounded(backgrounded_);
   }
 
   // NOTE: This needs to be before sending queued messages because
@@ -2002,6 +2122,14 @@ RenderProcessHostImpl::audio_renderer_host() const {
 void RenderProcessHostImpl::OnUserMetricsRecordAction(
     const std::string& action) {
   RecordComputedAction(action);
+}
+
+void RenderProcessHostImpl::OnCloseACK(int old_route_id) {
+  SessionStorageHolder* holder = static_cast<SessionStorageHolder*>
+      (GetUserData(kSessionStorageHolderKey));
+  if (!holder)
+    return;
+  holder->Release(old_route_id);
 }
 
 void RenderProcessHostImpl::OnSavedPageAsMHTML(int job_id, int64 data_size) {
@@ -2072,7 +2200,111 @@ void RenderProcessHostImpl::ConnectTo(
   MaybeActivateMojo();
 
   mojo_application_host_->service_provider()->ConnectToService(
-      mojo::String::From(service_name), handle.Pass());
+      mojo::String::From(service_name),
+      std::string(),
+      handle.Pass(),
+      mojo::String());
+}
+
+void RenderProcessHostImpl::OnAllocateGpuMemoryBuffer(uint32 width,
+                                                      uint32 height,
+                                                      uint32 internalformat,
+                                                      uint32 usage,
+                                                      IPC::Message* reply) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  if (!GpuMemoryBufferImpl::IsFormatValid(internalformat) ||
+      !GpuMemoryBufferImpl::IsUsageValid(usage)) {
+    GpuMemoryBufferAllocated(reply, gfx::GpuMemoryBufferHandle());
+    return;
+  }
+  base::CheckedNumeric<int> size = width;
+  size *= height;
+  if (!size.IsValid()) {
+    GpuMemoryBufferAllocated(reply, gfx::GpuMemoryBufferHandle());
+    return;
+  }
+
+#if defined(OS_MACOSX)
+  // TODO(reveman): This should be moved to
+  // GpuMemoryBufferImpl::AllocateForChildProcess and
+  // GpuMemoryBufferImplIOSurface. crbug.com/325045, crbug.com/323304
+  if (GpuMemoryBufferImplIOSurface::IsConfigurationSupported(internalformat,
+                                                             usage)) {
+    base::ScopedCFTypeRef<CFMutableDictionaryRef> properties;
+    properties.reset(
+        CFDictionaryCreateMutable(kCFAllocatorDefault,
+                                  0,
+                                  &kCFTypeDictionaryKeyCallBacks,
+                                  &kCFTypeDictionaryValueCallBacks));
+    AddIntegerValue(properties, kIOSurfaceWidth, width);
+    AddIntegerValue(properties, kIOSurfaceHeight, height);
+    AddIntegerValue(properties,
+                    kIOSurfaceBytesPerElement,
+                    GpuMemoryBufferImpl::BytesPerPixel(internalformat));
+    AddIntegerValue(
+        properties,
+        kIOSurfacePixelFormat,
+        GpuMemoryBufferImplIOSurface::PixelFormat(internalformat));
+    // TODO(reveman): Remove this when using a mach_port_t to transfer
+    // IOSurface to renderer process. crbug.com/323304
+    AddBooleanValue(
+        properties, kIOSurfaceIsGlobal, true);
+
+    base::ScopedCFTypeRef<IOSurfaceRef> io_surface(IOSurfaceCreate(properties));
+    if (io_surface) {
+      gfx::GpuMemoryBufferHandle handle;
+      handle.type = gfx::IO_SURFACE_BUFFER;
+      handle.io_surface_id = IOSurfaceGetID(io_surface);
+
+      // TODO(reveman): This makes the assumption that the renderer will
+      // grab a reference to the surface before sending another message.
+      // crbug.com/325045
+      last_io_surface_ = io_surface;
+      GpuMemoryBufferAllocated(reply, handle);
+      return;
+    }
+  }
+#endif
+
+#if defined(OS_ANDROID)
+  // TODO(reveman): This should be moved to
+  // GpuMemoryBufferImpl::AllocateForChildProcess and
+  // GpuMemoryBufferImplSurfaceTexture when adding support for out-of-process
+  // GPU service. crbug.com/368716
+  if (GpuMemoryBufferImplSurfaceTexture::IsConfigurationSupported(
+          internalformat, usage)) {
+    // Each surface texture is associated with a render process id. This allows
+    // the GPU service and Java Binder IPC to verify that a renderer is not
+    // trying to use a surface texture it doesn't own.
+    int surface_texture_id = CompositorImpl::CreateSurfaceTexture(GetID());
+    if (surface_texture_id != -1) {
+      gfx::GpuMemoryBufferHandle handle;
+      handle.type = gfx::SURFACE_TEXTURE_BUFFER;
+      handle.surface_texture_id =
+          gfx::SurfaceTextureId(surface_texture_id, GetID());
+      GpuMemoryBufferAllocated(reply, handle);
+      return;
+    }
+  }
+#endif
+
+  GpuMemoryBufferImpl::AllocateForChildProcess(
+      gfx::Size(width, height),
+      internalformat,
+      usage,
+      GetHandle(),
+      base::Bind(&RenderProcessHostImpl::GpuMemoryBufferAllocated,
+                 weak_factory_.GetWeakPtr(),
+                 reply));
+}
+
+void RenderProcessHostImpl::GpuMemoryBufferAllocated(
+    IPC::Message* reply,
+    const gfx::GpuMemoryBufferHandle& handle) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  ChildProcessHostMsg_SyncAllocateGpuMemoryBuffer::WriteReplyParams(reply,
+                                                                    handle);
+  Send(reply);
 }
 
 }  // namespace content

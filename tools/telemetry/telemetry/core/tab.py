@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -109,7 +109,9 @@ class Tab(web_contents.WebContents):
         screen.style.zIndex = '2147483638';
         document.body.appendChild(screen);
         requestAnimationFrame(function() {
-          window.__telemetry_screen_%d = screen;
+          requestAnimationFrame(function() {
+            window.__telemetry_screen_%d = screen;
+          });
         });
       })();
     """ % (color.r, color.g, color.b, color.a, int(color)))
@@ -122,7 +124,11 @@ class Tab(web_contents.WebContents):
       (function() {
         document.body.removeChild(window.__telemetry_screen_%d);
         requestAnimationFrame(function() {
-          window.__telemetry_screen_%d = null;
+          requestAnimationFrame(function() {
+            window.__telemetry_screen_%d = null;
+            console.time('__ClearHighlight.video_capture_start');
+            console.timeEnd('__ClearHighlight.video_capture_start');
+          });
         });
       })();
     """ % (int(color), int(color)))
@@ -231,16 +237,14 @@ class Tab(web_contents.WebContents):
     for timestamp, bmp in frame_generator:
       yield timestamp - start_time, bmp.Crop(*content_box)
 
-  def PerformActionAndWaitForNavigate(
-      self, action_function, timeout=DEFAULT_TAB_TIMEOUT):
-    """Executes action_function, and waits for the navigation to complete.
+  def WaitForNavigate(self, timeout=DEFAULT_TAB_TIMEOUT):
+    """Waits for the navigation to complete.
 
-    action_function must be a Python function that results in a navigation.
+    The current page is expect to be in a navigation.
     This function returns when the navigation is complete or when
     the timeout has been exceeded.
     """
-    self._inspector_backend.PerformActionAndWaitForNavigate(
-        action_function, timeout)
+    self._inspector_backend.WaitForNavigate(timeout)
 
   def Navigate(self, url, script_to_evaluate_on_commit=None,
                timeout=DEFAULT_TAB_TIMEOUT):

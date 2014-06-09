@@ -326,10 +326,6 @@ enum NotificationType {
   // Profile, and the details the id of the TemplateURL being removed.
   NOTIFICATION_TEMPLATE_URL_REMOVED,
 
-  // Sent when the prefs relating to the default search engine have changed due
-  // to policy.  Source and details are unused.
-  NOTIFICATION_DEFAULT_SEARCH_POLICY_CHANGED,
-
   // The state of a web resource has been changed. A resource may have been
   // added, removed, or altered. Source is WebResourceService, and the
   // details are NoDetails.
@@ -387,11 +383,6 @@ enum NotificationType {
   // testing scenarios this can happen multiple times if extensions are
   // unloaded and reloaded. The source is a Profile.
   NOTIFICATION_EXTENSIONS_READY,
-
-  // Sent when an extension icon being displayed in the location bar is updated.
-  // The source is the Profile and the details are the WebContents for
-  // the tab.
-  NOTIFICATION_EXTENSION_LOCATION_BAR_UPDATED,
 
   // DEPRECATED: Use ExtensionRegistry::AddObserver instead.
   //

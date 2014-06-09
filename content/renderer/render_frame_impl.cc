@@ -26,6 +26,7 @@
 #include "content/child/service_worker/web_service_worker_provider_impl.h"
 #include "content/child/web_socket_stream_handle_impl.h"
 #include "content/child/webmessageportchannel_impl.h"
+#include "content/child/websocket_bridge.h"
 #include "content/common/clipboard_messages.h"
 #include "content/common/frame_messages.h"
 #include "content/common/input_messages.h"
@@ -51,6 +52,7 @@
 #include "content/renderer/context_menu_params_builder.h"
 #include "content/renderer/devtools/devtools_agent.h"
 #include "content/renderer/dom_automation_controller.h"
+#include "content/renderer/geolocation_dispatcher.h"
 #include "content/renderer/history_controller.h"
 #include "content/renderer/history_serialization.h"
 #include "content/renderer/image_loading_helper.h"
@@ -166,6 +168,11 @@ using webkit_glue::WebURLResponseExtraDataImpl;
 namespace content {
 
 namespace {
+
+const char kDefaultAcceptHeader[] =
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/"
+    "*;q=0.8";
+const char kAcceptHeader[] = "Accept";
 
 const size_t kExtraCharsBeforeAndAfterSelection = 100;
 
@@ -411,6 +418,7 @@ RenderFrameImpl::RenderFrameImpl(RenderViewImpl* render_view, int routing_id)
       media_player_manager_(NULL),
       cdm_manager_(NULL),
 #endif
+      geolocation_dispatcher_(NULL),
       weak_factory_(this) {
   RenderThread::Get()->AddRoute(routing_id_, this);
 
@@ -1631,13 +1639,6 @@ void RenderFrameImpl::didAddMessageToConsole(
 
   if (shouldReportDetailedMessageForSource(source_name)) {
     FOR_EACH_OBSERVER(
-        RenderViewObserver, render_view_->observers(),
-        DetailedConsoleMessageAdded(message.text,
-                                    source_name,
-                                    stack_trace,
-                                    source_line,
-                                    static_cast<int32>(log_severity)));
-    FOR_EACH_OBSERVER(
         RenderFrameObserver, observers_,
         DetailedConsoleMessageAdded(message.text,
                                     source_name,
@@ -2357,6 +2358,17 @@ void RenderFrameImpl::willSendRequest(
   if (request.url().isEmpty())
     return;
 
+  // Set the first party for cookies url if it has not been set yet (new
+  // requests). For redirects, it is updated by WebURLLoaderImpl.
+  if (request.firstPartyForCookies().isEmpty()) {
+    if (request.targetType() == blink::WebURLRequest::TargetIsMainFrame) {
+      request.setFirstPartyForCookies(request.url());
+    } else {
+      request.setFirstPartyForCookies(
+          frame->top()->document().firstPartyForCookies());
+    }
+  }
+
   WebFrame* top_frame = frame->top();
   if (!top_frame)
     top_frame = frame;
@@ -2406,6 +2418,15 @@ void RenderFrameImpl::willSendRequest(
       else
         request.setHTTPHeaderField("User-Agent", custom_user_agent);
     }
+  }
+
+  // Add the default accept header for frame request if it has not been set
+  // already.
+  if ((request.targetType() == blink::WebURLRequest::TargetIsMainFrame ||
+       request.targetType() == blink::WebURLRequest::TargetIsSubframe) &&
+      request.httpHeaderField(WebString::fromUTF8(kAcceptHeader)).isEmpty()) {
+    request.setHTTPHeaderField(WebString::fromUTF8(kAcceptHeader),
+                               WebString::fromUTF8(kDefaultAcceptHeader));
   }
 
   // Attach |should_replace_current_entry| state to requests so that, should
@@ -2741,8 +2762,15 @@ void RenderFrameImpl::willOpenSocketStream(
   impl->SetUserData(handle, new SocketStreamHandleData(routing_id_));
 }
 
+void RenderFrameImpl::willOpenWebSocket(blink::WebSocketHandle* handle) {
+  WebSocketBridge* impl = static_cast<WebSocketBridge*>(handle);
+  impl->set_render_frame_id(routing_id_);
+}
+
 blink::WebGeolocationClient* RenderFrameImpl::geolocationClient() {
-  return render_view_->geolocationClient();
+  if (!geolocation_dispatcher_)
+    geolocation_dispatcher_ = new GeolocationDispatcher(this);
+  return geolocation_dispatcher_;
 }
 
 void RenderFrameImpl::willStartUsingPeerConnectionHandler(
@@ -2911,6 +2939,10 @@ void RenderFrameImpl::WasHidden() {
 
 void RenderFrameImpl::WasShown() {
   FOR_EACH_OBSERVER(RenderFrameObserver, observers_, WasShown());
+}
+
+bool RenderFrameImpl::IsHidden() {
+  return GetRenderWidget()->is_hidden();
 }
 
 // Tell the embedding application that the URL of the active page has changed.

@@ -240,10 +240,10 @@ interface PPB_NaCl_Private {
                                 [in] uint32_t desired_access,
                                 [in] uint32_t options);
 
-  /* Returns a read-only file descriptor of a file rooted in the Pnacl
-   * component directory, or an invalid handle on failure.
+  /* Returns a read-only file descriptor for a url for pnacl translator tools,
+   * or an invalid handle on failure.
    */
-  PP_FileHandle GetReadonlyPnaclFd([in] str_t filename);
+  PP_FileHandle GetReadonlyPnaclFd([in] str_t url);
 
   /* This creates a temporary file that will be deleted by the time
    * the last handle is closed (or earlier on POSIX systems), and
@@ -310,8 +310,7 @@ interface PPB_NaCl_Private {
   /* Report an error that occured while attempting to load a nexe. */
   void ReportLoadError([in] PP_Instance instance,
                        [in] PP_NaClError error,
-                       [in] str_t error_message,
-                       [in] str_t console_message);
+                       [in] str_t error_message);
 
   /* Reports that loading a nexe was aborted. */
   void ReportLoadAbort([in] PP_Instance instance);
@@ -343,9 +342,6 @@ interface PPB_NaCl_Private {
   /* Returns the NaCl readiness status for this instance. */
   PP_NaClReadyState GetNaClReadyState([in] PP_Instance instance);
 
-  /* Returns true if the plugin is an installed app. */
-  PP_Bool GetIsInstalled([in] PP_Instance instance);
-
   /* Returns the exit status of the plugin process. */
   int32_t GetExitStatus([in] PP_Instance instance);
 
@@ -365,9 +361,8 @@ interface PPB_NaCl_Private {
   /* Returns the size of the nexe. */
   int64_t GetNexeSize([in] PP_Instance instance);
 
-  /* Performs accounting for requesting the NaCl manifest at the given URL. */
+  /* Requests the NaCl manifest specified in the plugin arguments. */
   void RequestNaClManifest([in] PP_Instance instance,
-                           [in] str_t manifest_url,
                            [in] PP_CompletionCallback callback);
 
   PP_Var GetManifestBaseURL([in] PP_Instance instance);
@@ -378,9 +373,6 @@ interface PPB_NaCl_Private {
    */
   void ProcessNaClManifest([in] PP_Instance instance,
                            [in] str_t program_url);
-
-  /* Returns the manifest url as passed as a plugin argument. */
-  PP_Var GetManifestURLArgument([in] PP_Instance instance);
 
   PP_Bool DevInterfacesEnabled([in] PP_Instance instance);
 
@@ -431,4 +423,12 @@ interface PPB_NaCl_Private {
                     [in] str_t url,
                     [out] PP_NaClFileInfo file_info,
                     [in] PP_CompletionCallback callback);
+
+  /* Reports the status of sel_ldr for UMA reporting.
+   * |max_status| has to be provided because the implementation of this
+   * interface can't access the NaClErrorCode enum.
+   */
+  void ReportSelLdrStatus([in] PP_Instance instance,
+                          [in] int32_t load_status,
+                          [in] int32_t max_status);
 };

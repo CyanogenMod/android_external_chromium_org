@@ -202,7 +202,7 @@ class KeyProvidingApp : public FakeEncryptedMedia::AppBase {
 
   virtual void OnSessionMessage(uint32 session_id,
                                 const std::vector<uint8>& message,
-                                const GURL& default_url) OVERRIDE {
+                                const GURL& destination_url) OVERRIDE {
     EXPECT_GT(session_id, 0u);
     EXPECT_FALSE(message.empty());
 
@@ -919,24 +919,35 @@ TEST_P(PipelineIntegrationTest, MediaSource_ADTS) {
 
 TEST_P(PipelineIntegrationTest, MediaSource_ADTS_TimestampOffset) {
   MockMediaSource source("sfx.adts", kADTS, kAppendWholeFile, GetParam());
-  StartPipelineWithMediaSource(&source);
+  StartHashedPipelineWithMediaSource(&source);
   EXPECT_EQ(325, source.last_timestamp_offset().InMilliseconds());
 
+  // Trim off multiple frames off the beginning of the segment which will cause
+  // the first decoded frame to be incorrect if preroll isn't implemented.
+  const base::TimeDelta adts_preroll_duration =
+      base::TimeDelta::FromSecondsD(2.5 * 1024 / 44100);
+  const base::TimeDelta append_time =
+      source.last_timestamp_offset() - adts_preroll_duration;
+
   scoped_refptr<DecoderBuffer> second_file = ReadTestDataFile("sfx.adts");
-  source.AppendAtTime(
-      source.last_timestamp_offset() - base::TimeDelta::FromMilliseconds(10),
-      second_file->data(),
-      second_file->data_size());
+  source.AppendAtTimeWithWindow(append_time,
+                                append_time + adts_preroll_duration,
+                                kInfiniteDuration(),
+                                second_file->data(),
+                                second_file->data_size());
   source.EndOfStream();
 
-  EXPECT_EQ(640, source.last_timestamp_offset().InMilliseconds());
+  EXPECT_EQ(592, source.last_timestamp_offset().InMilliseconds());
   EXPECT_EQ(1u, pipeline_->GetBufferedTimeRanges().size());
   EXPECT_EQ(0, pipeline_->GetBufferedTimeRanges().start(0).InMilliseconds());
-  EXPECT_EQ(640, pipeline_->GetBufferedTimeRanges().end(0).InMilliseconds());
+  EXPECT_EQ(592, pipeline_->GetBufferedTimeRanges().end(0).InMilliseconds());
 
   Play();
 
   EXPECT_TRUE(WaitUntilOnEnded());
+
+  // Verify preroll is stripped.
+  EXPECT_EQ("-0.06,0.97,-0.90,-0.70,-0.53,-0.34,", GetAudioHash());
 }
 
 TEST_F(PipelineIntegrationTest, BasicPlaybackHashed_MP3) {
@@ -963,9 +974,8 @@ TEST_P(PipelineIntegrationTest, MediaSource_MP3) {
 
   EXPECT_TRUE(WaitUntilOnEnded());
 
-  // Verify that codec delay was stripped, if it wasn't the hash would be:
-  // "5.16,1.25,7.78,4.29,8.98,2.76,"
-  EXPECT_EQ("5.81,2.71,8.97,4.32,7.83,1.12,", GetAudioHash());
+  // Verify that codec delay was stripped.
+  EXPECT_EQ("1.01,2.71,4.18,4.32,3.04,1.12,", GetAudioHash());
 }
 
 TEST_P(PipelineIntegrationTest, MediaSource_MP3_TimestampOffset) {
@@ -1442,6 +1452,15 @@ TEST_F(PipelineIntegrationTest,
                     PIPELINE_OK));
   Play();
   ASSERT_TRUE(WaitUntilOnEnded());
+}
+
+// Verify that VP9 video with 4:4:4 subsampling can be played back.
+TEST_F(PipelineIntegrationTest, P444_VP9_WebM) {
+  ASSERT_TRUE(Start(GetTestDataFilePath("bear-320x240-P444.webm"),
+                    PIPELINE_OK));
+  Play();
+  ASSERT_TRUE(WaitUntilOnEnded());
+  EXPECT_EQ(last_video_frame_format_, VideoFrame::YV24);
 }
 
 // For MediaSource tests, generate two sets of tests: one using FrameProcessor,

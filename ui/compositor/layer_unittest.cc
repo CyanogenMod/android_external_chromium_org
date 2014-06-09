@@ -673,8 +673,7 @@ TEST_F(LayerWithNullDelegateTest, SwitchLayerPreservesCCLayerState) {
   l1->SetForceRenderSurface(true);
   l1->SetVisible(false);
 
-  EXPECT_EQ(gfx::PointF().ToString(),
-            l1->cc_layer()->anchor_point().ToString());
+  EXPECT_EQ(gfx::Point3F(), l1->cc_layer()->transform_origin());
   EXPECT_TRUE(l1->cc_layer()->DrawsContent());
   EXPECT_TRUE(l1->cc_layer()->contents_opaque());
   EXPECT_TRUE(l1->cc_layer()->force_render_surface());
@@ -691,8 +690,7 @@ TEST_F(LayerWithNullDelegateTest, SwitchLayerPreservesCCLayerState) {
 
   EXPECT_NE(before_layer, l1->cc_layer());
 
-  EXPECT_EQ(gfx::PointF().ToString(),
-            l1->cc_layer()->anchor_point().ToString());
+  EXPECT_EQ(gfx::Point3F(), l1->cc_layer()->transform_origin());
   EXPECT_TRUE(l1->cc_layer()->DrawsContent());
   EXPECT_TRUE(l1->cc_layer()->contents_opaque());
   EXPECT_TRUE(l1->cc_layer()->force_render_surface());
@@ -709,8 +707,7 @@ TEST_F(LayerWithNullDelegateTest, SwitchLayerPreservesCCLayerState) {
   EXPECT_FALSE(callback2_run);
 
   l1->SetShowPaintedContent();
-  EXPECT_EQ(gfx::PointF().ToString(),
-            l1->cc_layer()->anchor_point().ToString());
+  EXPECT_EQ(gfx::Point3F(), l1->cc_layer()->transform_origin());
   EXPECT_TRUE(l1->cc_layer()->DrawsContent());
   EXPECT_TRUE(l1->cc_layer()->contents_opaque());
   EXPECT_TRUE(l1->cc_layer()->force_render_surface());
@@ -1505,6 +1502,56 @@ TEST_F(LayerWithRealCompositorTest, SwitchCCLayerAnimations) {
 
   // Ensure that the opacity animation completed.
   EXPECT_FLOAT_EQ(l1->opacity(), 0.5f);
+}
+
+// Tests that the animators in the layer tree is added to the
+// animator-collection when the root-layer is set to the compositor.
+TEST_F(LayerWithDelegateTest, RootLayerAnimatorsInCompositor) {
+  scoped_ptr<Layer> root(CreateLayer(LAYER_SOLID_COLOR));
+  scoped_ptr<Layer> child(CreateColorLayer(SK_ColorRED, gfx::Rect(10, 10)));
+  child->SetAnimator(LayerAnimator::CreateImplicitAnimator());
+  child->SetOpacity(0.5f);
+  root->Add(child.get());
+
+  EXPECT_FALSE(compositor()->layer_animator_collection()->HasActiveAnimators());
+  compositor()->SetRootLayer(root.get());
+  EXPECT_TRUE(compositor()->layer_animator_collection()->HasActiveAnimators());
+}
+
+// Tests that adding/removing a layer adds/removes the animator from its entire
+// subtree from the compositor's animator-collection.
+TEST_F(LayerWithDelegateTest, AddRemoveLayerUpdatesAnimatorsFromSubtree) {
+  scoped_ptr<Layer> root(CreateLayer(LAYER_TEXTURED));
+  scoped_ptr<Layer> child(CreateLayer(LAYER_TEXTURED));
+  scoped_ptr<Layer> grandchild(CreateColorLayer(SK_ColorRED,
+                                                gfx::Rect(10, 10)));
+  root->Add(child.get());
+  child->Add(grandchild.get());
+  compositor()->SetRootLayer(root.get());
+
+  grandchild->SetAnimator(LayerAnimator::CreateImplicitAnimator());
+  grandchild->SetOpacity(0.5f);
+  EXPECT_TRUE(compositor()->layer_animator_collection()->HasActiveAnimators());
+
+  root->Remove(child.get());
+  EXPECT_FALSE(compositor()->layer_animator_collection()->HasActiveAnimators());
+
+  root->Add(child.get());
+  EXPECT_TRUE(compositor()->layer_animator_collection()->HasActiveAnimators());
+}
+
+TEST_F(LayerWithDelegateTest, DestroyingLayerRemovesTheAnimatorFromCollection) {
+  scoped_ptr<Layer> root(CreateLayer(LAYER_TEXTURED));
+  scoped_ptr<Layer> child(CreateLayer(LAYER_TEXTURED));
+  root->Add(child.get());
+  compositor()->SetRootLayer(root.get());
+
+  child->SetAnimator(LayerAnimator::CreateImplicitAnimator());
+  child->SetOpacity(0.5f);
+  EXPECT_TRUE(compositor()->layer_animator_collection()->HasActiveAnimators());
+
+  child.reset();
+  EXPECT_FALSE(compositor()->layer_animator_collection()->HasActiveAnimators());
 }
 
 }  // namespace ui

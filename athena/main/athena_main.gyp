@@ -12,10 +12,12 @@
       'type': 'executable',
       'dependencies': [
         '../athena.gyp:athena_lib',
+        '../athena.gyp:athena_content_lib',
         '../../apps/shell/app_shell.gyp:app_shell_lib',
         '../../skia/skia.gyp:skia',
         '../../ui/accessibility/accessibility.gyp:ax_gen',
         '../../ui/views/views.gyp:views',
+        '../../url/url.gyp:url_lib',
       ],
       'include_dirs': [
         '../..',

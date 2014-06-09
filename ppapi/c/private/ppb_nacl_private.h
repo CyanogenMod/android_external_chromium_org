@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From private/ppb_nacl_private.idl modified Thu May 29 08:25:29 2014. */
+/* From private/ppb_nacl_private.idl modified Thu Jun  5 08:59:03 2014. */
 
 #ifndef PPAPI_C_PRIVATE_PPB_NACL_PRIVATE_H_
 #define PPAPI_C_PRIVATE_PPB_NACL_PRIVATE_H_
@@ -288,10 +288,10 @@ struct PPB_NaCl_Private_1_0 {
                                    PP_FileHandle* target_handle,
                                    uint32_t desired_access,
                                    uint32_t options);
-  /* Returns a read-only file descriptor of a file rooted in the Pnacl
-   * component directory, or an invalid handle on failure.
+  /* Returns a read-only file descriptor for a url for pnacl translator tools,
+   * or an invalid handle on failure.
    */
-  PP_FileHandle (*GetReadonlyPnaclFd)(const char* filename);
+  PP_FileHandle (*GetReadonlyPnaclFd)(const char* url);
   /* This creates a temporary file that will be deleted by the time
    * the last handle is closed (or earlier on POSIX systems), and
    * returns a posix handle to that temporary file.
@@ -349,8 +349,7 @@ struct PPB_NaCl_Private_1_0 {
   /* Report an error that occured while attempting to load a nexe. */
   void (*ReportLoadError)(PP_Instance instance,
                           PP_NaClError error,
-                          const char* error_message,
-                          const char* console_message);
+                          const char* error_message);
   /* Reports that loading a nexe was aborted. */
   void (*ReportLoadAbort)(PP_Instance instance);
   /* Reports that the nexe has crashed. */
@@ -371,8 +370,6 @@ struct PPB_NaCl_Private_1_0 {
   void (*LogToConsole)(PP_Instance instance, const char* message);
   /* Returns the NaCl readiness status for this instance. */
   PP_NaClReadyState (*GetNaClReadyState)(PP_Instance instance);
-  /* Returns true if the plugin is an installed app. */
-  PP_Bool (*GetIsInstalled)(PP_Instance instance);
   /* Returns the exit status of the plugin process. */
   int32_t (*GetExitStatus)(PP_Instance instance);
   /* Sets the exit status of the plugin process. */
@@ -386,9 +383,8 @@ struct PPB_NaCl_Private_1_0 {
                            const char* argv[]);
   /* Returns the size of the nexe. */
   int64_t (*GetNexeSize)(PP_Instance instance);
-  /* Performs accounting for requesting the NaCl manifest at the given URL. */
+  /* Requests the NaCl manifest specified in the plugin arguments. */
   void (*RequestNaClManifest)(PP_Instance instance,
-                              const char* manifest_url,
                               struct PP_CompletionCallback callback);
   struct PP_Var (*GetManifestBaseURL)(PP_Instance instance);
   /* Processes the NaCl manifest once it's been retrieved.
@@ -396,8 +392,6 @@ struct PPB_NaCl_Private_1_0 {
    * plugin.
    */
   void (*ProcessNaClManifest)(PP_Instance instance, const char* program_url);
-  /* Returns the manifest url as passed as a plugin argument. */
-  struct PP_Var (*GetManifestURLArgument)(PP_Instance instance);
   PP_Bool (*DevInterfacesEnabled)(PP_Instance instance);
   PP_Bool (*GetManifestProgramURL)(PP_Instance instance,
                                    struct PP_Var* full_url,
@@ -439,6 +433,13 @@ struct PPB_NaCl_Private_1_0 {
                        const char* url,
                        struct PP_NaClFileInfo* file_info,
                        struct PP_CompletionCallback callback);
+  /* Reports the status of sel_ldr for UMA reporting.
+   * |max_status| has to be provided because the implementation of this
+   * interface can't access the NaClErrorCode enum.
+   */
+  void (*ReportSelLdrStatus)(PP_Instance instance,
+                             int32_t load_status,
+                             int32_t max_status);
 };
 
 typedef struct PPB_NaCl_Private_1_0 PPB_NaCl_Private;

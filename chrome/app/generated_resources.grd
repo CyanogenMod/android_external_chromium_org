@@ -1451,7 +1451,13 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
         <message name="IDS_OPTIONS" desc="The text label of the Options menu item">
           &amp;Options
         </message>
-        <message name="IDS_HELP_PAGE" desc="The text label of the Help menu item">
+        <message name="IDS_HELP_PAGE" desc="The text label of the Help Center menu item">
+          H&amp;elp center
+        </message>
+        <message name="IDS_GET_HELP" desc="The text label of the Get Help menu item">
+          Get H&amp;elp
+        </message>
+        <message name="IDS_HELP_MENU" desc="The text label of the Help sub-menu item">
           H&amp;elp
         </message>
         <if expr="is_win">
@@ -1491,7 +1497,13 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
         <message name="IDS_OPTIONS" desc="In Title Case: The text label of the Options menu item">
           &amp;Options
         </message>
-        <message name="IDS_HELP_PAGE" desc="In Title Case: The text label of the Help menu item">
+        <message name="IDS_HELP_PAGE" desc="The text label of the Help Center menu item">
+          H&amp;elp Center
+        </message>
+        <message name="IDS_GET_HELP" desc="The text label of the Get Help menu item">
+          Get H&amp;elp
+        </message>
+        <message name="IDS_HELP_MENU" desc="The text label of the Help sub-menu item">
           H&amp;elp
         </message>
         <message name="IDS_EXIT" desc="In Title Case: The text label of the Exit menu item">
@@ -3398,12 +3410,7 @@ Even if you have downloaded files from this website before, the website might ha
         </message>
       </if>
 
-      <!-- Add Client Certificate Dialog -->
-      <if expr="is_macosx">
-        <message name="IDS_ADD_CERT_DIALOG_ADD" desc="Title of the button that adds the certificate in the Add Client Certificate dialog">
-          Add Certificate
-        </message>
-      </if>
+      <!-- Client certificate enrollment failure infobar -->
       <message name="IDS_ADD_CERT_ERR_INVALID_CERT" desc="Error message when the server returns an invalid client certificate after key generation">
         The server returned an invalid client certificate. Error <ph name="ERROR_number">$1<ex>207</ex></ph> (<ph name="ERROR_NAME">$2<ex>net::ERR_CERT_INVALID</ex></ph>).
       </message>
@@ -3411,7 +3418,7 @@ Even if you have downloaded files from this website before, the website might ha
         There was an error while trying to store the client certificate. Error <ph name="ERROR_number">$1<ex>207</ex></ph> (<ph name="ERROR_NAME">$2<ex>net::ERR_CERT_INVALID</ex></ph>).
       </message>
 
-      <!-- Certificate success infobar -->
+      <!-- Client certificate enrollment infobar -->
       <message name="IDS_ADD_CERT_SUCCESS_INFOBAR_LABEL" desc="Label displayed in an infobar when the browser successfully imports a certificate">
         Successfully stored client certificate issued by <ph name="ISSUER">$1<ex>VeriSign</ex></ph>.
       </message>
@@ -5163,8 +5170,18 @@ Keep your key file in a safe place. You will need it to create new versions of y
           Is this the new tab page you were expecting?
         </message>
       </if>
+      <if expr="use_titlecase">
+        <message name="IDS_EXTENSIONS_PROXY_CONTROLLED_TITLE_HOME_PAGE_BUBBLE" desc="In Title Case: Title of a bubble warning users that an extension has overridden their proxy setting">
+        Your Internet Connection is Being Controlled
+        </message>
+      </if>
+      <if expr="not use_titlecase">
+        <message name="IDS_EXTENSIONS_PROXY_CONTROLLED_TITLE_HOME_PAGE_BUBBLE" desc="Title of a bubble warning users that an extension has overridden their proxy setting">
+          Your Internet connection is being controlled
+        </message>
+      </if>
 
-      <message name="IDS_EXTENSIONS_SETTINGS_API_FIRST_LINE_SEARCH_ENGINE" desc="Text displayed in the Settings API bubble as first line when an extension has changed the search engine.">
+      <message name="IDS_EXTENSIONS_SETTINGS_API_FIRST_LINE_SEARCH_ENGINE" desc="Text displayed as the first line in the Settings API bubble when an extension has changed the search engine.">
         An extension has changed what page is shown when you search from the Omnibox.
       </message>
       <message name="IDS_EXTENSIONS_SETTINGS_API_FIRST_LINE_HOME_PAGE" desc="Text displayed in the Settings API bubble as first line when an extension has changed the home page.">
@@ -5181,8 +5198,15 @@ Keep your key file in a safe place. You will need it to create new versions of y
         ''' It also controls what page is shown when you click the Home button or search from the Omnibox. '''
       </message>
 
-      <message name="IDS_EXTENSIONS_NTP_CONTROLLED_FIRST_LINE" desc="Text displayed in the Settings API bubble as first line when an extension has changed the new tab page.">
+      <message name="IDS_EXTENSIONS_NTP_CONTROLLED_FIRST_LINE" desc="Text displayed as the first line in the NTP bubble when an extension has changed the new tab page.">
         An extension has changed what page is shown when you open a new tab.
+      </message>
+
+      <message name="IDS_EXTENSIONS_PROXY_CONTROLLED_FIRST_LINE" desc="Text displayed as the first line in the proxy bubble when an extension has changed the proxy but we are not pointing at it's icon (because it doesn't have one).">
+        An extension has taken control of your proxy settings, which means it can change, break, or eavesdrop on anything you do online. If you aren't sure why this change happened, you probably don't want it.
+      </message>
+      <message name="IDS_EXTENSIONS_PROXY_CONTROLLED_FIRST_LINE_EXTENSION_SPECIFIC" desc="Text displayed as the first line in the proxy bubble when an extension has changed the proxy and we are pointing at that extension's icon.">
+        This extension has taken control of your proxy settings, which means it can change, break, or eavesdrop on anything you do online. If you aren't sure why this change happened, you probably don't want it.
       </message>
 
       <message name="IDS_EXTENSIONS_SETTINGS_API_THIRD_LINE_CONFIRMATION" desc="Third line in the Settings API bubble, always appended after the first (and optional second) line to make one paragraph. See IDS_EXTENSIONS_SETTINGS_API_SECOND_LINE_SEARCH_ENGINE for reason for triple quotes.">
@@ -5229,6 +5253,66 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_COMPONENTS_CHECK_FOR_UPDATE" desc="The button label for triggering update check.">
         Check for update
+      </message>
+      <message name="IDS_COMPONENTS_STATUS_LABEL" desc="Status label">
+        Status
+      </message>
+      <message name="IDS_COMPONENTS_CHECKING_LABEL" desc="Checking label">
+        Checking for status...
+      </message>
+      <message name="IDS_COMPONENTS_SVC_STATUS_NEW" desc="Service Status">
+        New
+      </message>
+      <message name="IDS_COMPONENTS_SVC_STATUS_CHECKING" desc="Service Status">
+        Checking
+      </message>
+      <message name="IDS_COMPONENTS_SVC_STATUS_UPDATE" desc="Service Status">
+        Update
+      </message>
+      <message name="IDS_COMPONENTS_SVC_STATUS_DNL_DIFF" desc="Service Status">
+        Downloading diff
+      </message>
+      <message name="IDS_COMPONENTS_SVC_STATUS_DNL" desc="Service Status">
+        Downloading
+      </message>
+      <message name="IDS_COMPONENTS_SVC_STATUS_UPDT_DIFF" desc="Service Status">
+        Updating diff
+      </message>
+      <message name="IDS_COMPONENTS_SVC_STATUS_UPDATING" desc="Service Status">
+        Updating
+      </message>
+      <message name="IDS_COMPONENTS_SVC_STATUS_UPDATED" desc="Service Status">
+        Updated
+      </message>
+      <message name="IDS_COMPONENTS_SVC_STATUS_UPTODATE" desc="Service Status">
+        Up-to-date
+      </message>
+      <message name="IDS_COMPONENTS_SVC_STATUS_NOUPDATE" desc="Service Status">
+        No update
+      </message>
+      <message name="IDS_COMPONENTS_UNKNOWN" desc="Service Status">
+        Unknown
+      </message>
+      <message name="IDS_COMPONENTS_EVT_STATUS_STARTED" desc="Service Status">
+        Updater started
+      </message>
+      <message name="IDS_COMPONENTS_EVT_STATUS_SLEEPING" desc="Service Status">
+        Updater sleeping
+      </message>
+      <message name="IDS_COMPONENTS_EVT_STATUS_FOUND" desc="Service Status">
+        Update found
+      </message>
+      <message name="IDS_COMPONENTS_EVT_STATUS_READY" desc="Service Status">
+        Update ready
+      </message>
+      <message name="IDS_COMPONENTS_EVT_STATUS_UPDATED" desc="Service Status">
+        Component updated
+      </message>
+      <message name="IDS_COMPONENTS_EVT_STATUS_NOTUPDATED" desc="Service Status">
+        Component not updated
+      </message>
+      <message name="IDS_COMPONENTS_EVT_STATUS_DOWNLOADING" desc="Service Status">
+        Component downloading
       </message>
 
       <!-- Plugins -->
@@ -5433,10 +5517,10 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <if expr="is_win">
         <message name="IDS_FLAGS_ENABLE_CLOUD_PRINT_XPS_NAME">
-          Enable XPS in <ph name="CLOUD_PRINT_NAME">$1<ex>Google Cloud Print</ex></ph>
+          Enable XPS in Google Cloud Print
         </message>
         <message name="IDS_FLAGS_ENABLE_CLOUD_PRINT_XPS_DESCRIPTION">
-          Fallback to XPS. By default <ph name="CLOUD_PRINT_NAME">$1<ex>Google Cloud Print</ex></ph> uses CDD.
+          Fallback to XPS. By default Google Cloud Print uses CDD.
         </message>
       </if>
       <message name="IDS_FLAGS_ENABLE_PRINT_PREVIEW_REGISTER_PROMOS_NAME">
@@ -5846,12 +5930,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
           Enable Ctrl+Alt+Shift+8 to toggle the TouchView maximizing mode.
         </message>
       </if>
-      <message name="IDS_FLAGS_ENABLE_NATIVE_FRAMES_FOR_APPS_NAME" desc="Title for the flag to enable native style frames for apps.">
-        Native style window frames for packaged apps
-      </message>
-      <message name="IDS_FLAGS_ENABLE_NATIVE_FRAMES_FOR_APPS_DESCRIPTION" desc="Description for the flag to enable native style frames for apps.">
-        Use native-style window decorations for packaged app windows.
-      </message>
 
       <message name="IDS_GENERIC_EXPERIMENT_CHOICE_AUTOMATIC" desc="Generic 'Automatic' experiment choice option name.">
         Automatic
@@ -6422,6 +6500,14 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_HARFBUZZ_RENDERTEXT_DESCRIPTION" desc="Description of the about:flags HarfBuzz RenderText experiment.">
         Use the cross-platform HarfBuzz engine for UI text. Doesn't affect web content.
       </message>
+      <if expr="is_android">
+        <message name="IDS_FLAGS_ENABLE_ANSWERS_IN_SUGGEST_NAME" desc="Name of the about:flags Answers in Suggest experiment.">
+          Enable Answers in Suggest
+        </message>
+        <message name="IDS_FLAGS_ENABLE_ANSWERS_IN_SUGGEST_DESCRIPTION" desc="Description of the about:flags Answers in Suggest experiment.">
+         If enabled, responses to certain types of queries will appear directly in the Omnibox suggestion list.
+        </message>
+      </if>
 
       <!-- Crashes -->
       <message name="IDS_CRASHES_TITLE" desc="Title for the chrome://crashes page.">
@@ -7185,7 +7271,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
           Save password
         </message>
         <message name="IDS_PASSWORD_MANAGER_UNBLACKLIST_BUTTON" desc="Buton text to re-enable the password manager after blacklisting.">
-          Enable password manager
+          Undo
         </message>
         <message name="IDS_PASSWORD_MANAGER_BLACKLIST_BUTTON" desc="Button text for the 'Save Password' infobar's 'Never remember for this site' option">
           Never for this site
@@ -9121,27 +9207,53 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Stop sharing
       </message>
 
-      <!-- SSL Overridable Page v2 -->
-      <message name="IDS_SSL_OVERRIDABLE_TITLE" desc="The tab title for the overridable SSL interstitial.">
+      <!-- SSL Interstitial V2 -->
+      <message name="IDS_SSL_V2_TITLE" desc="The tab title for the SSL interstitial.">
         Privacy error
       </message>
-      <message name="IDS_SSL_OVERRIDABLE_HEADING" desc="The large heading at the top of the overridable SSL interstitial.">
-        Your connection to <ph name="SITE">$1<ex>example.com</ex></ph> is not private
+      <message name="IDS_SSL_V2_HEADING" desc="The large heading at the top of the SSL interstitial.">
+        Your connection is not private
       </message>
-      <message name="IDS_SSL_OVERRIDABLE_PRIMARY_PARAGRAPH" desc="The primary explanatory paragraph for the overridable SSL interstitial.">
-        Attackers might be trying to steal your information from <ph name="SITE">$1<ex>google.com</ex></ph> (for example, passwords, messages, or credit cards).
+      <message name="IDS_SSL_V2_PRIMARY_PARAGRAPH" desc="The primary explanatory paragraph for the SSL interstitial.">
+        Attackers might be trying to steal your information from <ph name="BEGIN_BOLD">&lt;strong&gt;</ph><ph name="SITE">$1<ex>google.com</ex></ph><ph name="END_BOLD">&lt;/strong&gt;</ph> (for example, passwords, messages, or credit cards).
       </message>
+      <message name="IDS_SSL_V2_OPEN_DETAILS_BUTTON" desc="The text for the button that expands the details.">
+        Details
+      </message>
+      <message name="IDS_SSL_V2_CLOSE_DETAILS_BUTTON" desc="The text for the button that hides the details.">
+        Hide details
+      </message>
+
+      <!-- SSL Interstitial V2: Overridable -->
       <message name="IDS_SSL_OVERRIDABLE_SAFETY_BUTTON" desc="The text for the button that takes the user back to the previous page.">
         Back to safety
       </message>
-      <message name="IDS_SSL_OVERRIDABLE_DETAILS_BUTTON" desc="The text for the button that expands the details.">
-        Details
-      </message>
       <message name="IDS_SSL_OVERRIDABLE_PROCEED_PARAGRAPH" desc="The text for the paragraph at the bottom with the proceed link.">
-        To stay safe, try again later when this temporary problem has been resolved. If you understand the privacy risks, you may <ph name="BEGIN_LINK">&lt;a id="proceed-link"&gt;</ph>use an unsafe connection<ph name="END_LINK">&lt;/a&gt;</ph> to visit <ph name="SITE">$1<ex>example.com</ex></ph>.
+        To stay safe, try again later when this temporary problem has been resolved. If you understand the privacy risks, you may <ph name="BEGIN_LINK">&lt;a href="#" id="proceed-link"&gt;</ph>use an unsafe connection<ph name="END_LINK">&lt;/a&gt;</ph> to visit <ph name="SITE">$1<ex>example.com</ex></ph>.
       </message>
 
-      <!-- SSL Road Block (Overridable) Page -->
+      <!-- SSL Interstitial V2: Non-overridable -->
+      <message name="IDS_SSL_NONOVERRIDABLE_RELOAD_BUTTON" desc="The text for the button that reloads the page.">
+        Reload
+      </message>
+      <message name="IDS_SSL_NONOVERRIDABLE_MORE" desc="Body text for the explanation shown if user clicks on the Details button.">
+        <ph name="SITE">$1<ex>google.com</ex></ph> normally uses encryption to protect your information. When Chrome tried to connect to <ph name="SITE">$1<ex>google.com</ex></ph> this time, the website sent back unusual
+and incorrect credentials. Either an attacker is trying to pretend to be <ph name="SITE">$1<ex>google.com</ex></ph>, or a Wi-Fi sign-in screen has interrupted the connection. Your information is still secure because Chrome stopped the connection before any data was exchanged.
+      </message>
+      <message name="IDS_SSL_NONOVERRIDABLE_PINNED" desc="A sentence to explain why the user can't proceed, plus a link to a help page about certificate pinning.">
+      You cannot visit <ph name="SITE">$1<ex>google.com</ex></ph> right now because the website <ph name="BEGIN_LINK">&lt;a href="#" id="help-link"&gt;</ph>uses certificate pinning<ph name="END_LINK">&lt;/a&gt;</ph>. Network errors and attacks are usually temporary, so this page will probably work later.
+      </message>
+      <message name="IDS_SSL_NONOVERRIDABLE_HSTS" desc="A sentence to explain why the user can't proceed, plus a link to a help page about HSTS.">
+      You cannot visit <ph name="SITE">$1<ex>google.com</ex></ph> right now because the website <ph name="BEGIN_LINK">&lt;a href="#" id="help-link"&gt;</ph>uses HSTS<ph name="END_LINK">&lt;/a&gt;</ph>.
+      </message>
+      <message name="IDS_SSL_NONOVERRIDABLE_REVOKED" desc="A sentence to explain why the user can't proceed, plus a link to a help page about certificate revocation.">
+      You cannot visit <ph name="SITE">$1<ex>google.com</ex></ph> right now because <ph name="BEGIN_LINK">&lt;a href="#" id="help-link"&gt;</ph>this certificate has been revoked<ph name="END_LINK">&lt;/a&gt;</ph>.
+      </message>
+      <message name="IDS_SSL_NONOVERRIDABLE_INVALID" desc="A sentence to explain why the user can't proceed.">
+      You cannot visit <ph name="SITE">$1<ex>google.com</ex></ph> right now because the website sent scrambled credentials that Chrome cannot process.
+      </message>
+
+      <!-- SSL Interstitial V1: Overridable -->
       <message name="IDS_SSL_OVERRIDABLE_PAGE_TITLE" desc="The title of the overridable SSL interstitial.">
         SSL Error
       </message>
@@ -9155,7 +9267,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
         You should not proceed, &lt;strong&gt;especially&lt;/strong&gt; if you have never seen this warning before for this site.
       </message>
 
-      <!-- SSL Blocking (Non-Overridable) Page -->
+      <!-- SSL Interstitial V1: Non-overridable -->
       <message name="IDS_SSL_BLOCKING_PAGE_TITLE" desc="The title of the non-overridable SSL error.">
         SSL Error
       </message>
@@ -9549,6 +9661,9 @@ Chrome ran out of memory.
         <message name="IDS_OPTIONS_STARTUP_USE_CURRENT" desc="The label of the 'Use Current' button for the custom startup urls list">
           Use current pages
         </message>
+        <message name="IDS_OPTIONS_PROXY_GROUP_NAME" desc="The title of the Proxy group">
+          Proxy
+        </message>
         <message name="IDS_OPTIONS_DEFAULTSEARCH_MANAGE_ENGINES" desc="The label of the 'Manage search engines' button">
           Manage search engines...
         </message>
@@ -9670,8 +9785,8 @@ Chrome ran out of memory.
           Autofill settings
         </message>
         <if expr="is_macosx">
-          <message name="IDS_AUTOFILL_USE_MAC_ADDRESS_BOOK" desc="Checkbox label to enable Address Book on Mac.">
-            Include addresses from your Address Book card
+          <message name="IDS_AUTOFILL_USE_MAC_ADDRESS_BOOK" desc="Checkbox label to enable access to the user's Address Book on Mac. On Mac 10.8+ the application that manages the Address Book is called Contacts.">
+            Include addresses from your Contacts card
           </message>
         </if>
         <message name="IDS_AUTOFILL_ADDRESSES_GROUP_NAME" desc="The name of the Addresses group of the Autofill dialog.">
@@ -10494,6 +10609,9 @@ Chrome ran out of memory.
       </message>
       <message name="IDS_COOKIES_REMOVE_ALL_LABEL" desc="The label of the 'Remove All' button in the Cookies Window">
         Remove all
+      </message>
+      <message name="IDS_COOKIES_REMOVE_ALL_SHOWN_LABEL" desc="The label of the 'Remove All Shown' button after a query search string is entered in the Cookies Window">
+        Remove all shown
       </message>
       <message name="IDS_COOKIES_COOKIE_NAME_LABEL" desc="The Cookie Name label">
         Name:
@@ -12716,11 +12834,14 @@ Some features may be unavailable.  Please check that the profile exists and you 
     <message name="IDS_SAVE_PASSWORD" desc="The status text that is used as tooltip text for the save password icon and as status text of the save password bubble when a password can be saved.">
       Would you like to save this password?
     </message>
-    <message name="IDS_MANAGE_PASSWORDS" desc="The title text that is used in the manage passwords bubble when a password is autofilled or after a user has stored a password.">
+    <message name="IDS_MANAGE_PASSWORDS_TITLE" desc="The title text that is used in the manage passwords bubble when a password is autofilled or after a user has stored a password.">
       Saved passwords for this site:
     </message>
     <message name="IDS_MANAGE_PASSWORDS_BLACKLISTED" desc="The text that is used in the manage passwords bubble when the current site is blacklisted.">
-      The password manager is disabled for this site; no passwords are saved.
+      You chose not to allow passwords to be saved on this site.
+    </message>
+    <message name="IDS_MANAGE_PASSWORDS_BLACKLISTED_TITLE" desc="The title text that is used in the manage passwords bubble when the current site is blacklisted.">
+      Passwords won't be saved
     </message>
     <message name="IDS_MANAGE_PASSWORDS_NO_PASSWORDS" desc="The text that is used in the manage passwords bubble when all passwords have been deleted.">
       No passwords saved.
@@ -13299,11 +13420,9 @@ After you create a new supervised user, you can manage their settings at any tim
           This icon appears when you and your phone are nearby and Easy Unlock is available. Just click to enter, no password needed.
         </message>
       </if>
-      <if expr="chromeos">
-        <message name="IDS_LOGIN_POD_USER_REMOVE_WARNING" desc="Text shown as a warning when attempting to remove supervised user.">
-          All files and local data associated with the supervised user will be permanently deleted once this supervised user is removed. Visited websites and settings for this supervised user may still be visible by the manager at <ph name="MANAGEMENT_URL">$1<ex>www.example.com</ex></ph>.
-        </message>
-      </if>
+      <message name="IDS_LOGIN_POD_SUPERVISED_USER_REMOVE_WARNING" desc="Text shown as a warning when attempting to remove supervised user.">
+        All files and local data associated with the supervised user will be permanently deleted once this supervised user is removed. Visited websites and settings for this supervised user may still be visible by the manager at <ph name="MANAGEMENT_URL">$1<ex>www.example.com</ex></ph>.
+      </message>
       <if expr="not chromeos">
         <message name="IDS_LOGIN_POD_USER_REMOVE_WARNING" desc="Text shown as a warning when attempting to remove an user.">
           Are you sure you want to delete this user and all the data associated with it from this computer? This cannot be undone!
@@ -13494,6 +13613,13 @@ Do you accept?
       </message>
       <message name="IDS_FLAGS_ENABLE_INPUT_VIEW_DESCRIPTION" desc="Description of about::flags option to enable IME extensions to override the virtual keyboard view">
         Enable IME extensions to supply custom views for user input such as  virtual keyboards.
+      </message>
+
+      <message name="IDS_FLAGS_ENABLE_EXPERIMENTAL_INPUT_VIEW_FEATURES_NAME" desc="Name of about::flags option to enable experimental features for IME input-views">
+        Experimental input view features.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_EXPERIMENTAL_INPUT_VIEW_FEATURES_DESCRIPTION" desc="Description of about::flags option to enable experimental features for IME input-views">
+        Enable experimental features for IME input views.
       </message>
     </if>
 
@@ -13884,6 +14010,12 @@ Do you accept?
     <message name="IDS_EXTENSION_STORAGE_MONITOR_BUTTON_DISMISS_EXTENSION" desc="Caption for the button to suppress high disk usage notifications for an extension.">
       Don't warn again for this extension
     </message>
+    <message name="IDS_EXTENSION_STORAGE_MONITOR_BUTTON_UNINSTALL_APP" desc="Caption for the button to uninstall an app when high disk usage is detected.">
+      Remove app
+    </message>
+    <message name="IDS_EXTENSION_STORAGE_MONITOR_BUTTON_UNINSTALL_EXTENSION" desc="Caption for the button to uninstall an extension when high disk usage is detected.">
+      Remove extension
+    </message>
 
     <!-- Desktop media picker UI for Desktop Capture API -->
     <message name="IDS_DESKTOP_MEDIA_PICKER_TITLE" desc="Title for the window picker dialog shown when desktop capture is requested by an app.">
@@ -14168,6 +14300,38 @@ Do you accept?
     <message name="IDS_FLAGS_EXTENSION_CONTENT_VERIFICATION_ENFORCE_STRICT" desc="Description of the 'Extension Content Verification' enforce strict mode">
       Enforce strict (hard fail if we can't get hashes)
     </message>
+
+    <!-- SSL interstitial V3 experiment -->
+    <message name="IDS_FLAGS_SSL_INTERSTITIAL_TRIAL_NAME" desc="Name of the about:flags SSL interstitial v2 experiment">
+      TLS/SSL Warning Experiment
+    </message>
+    <message name="IDS_FLAGS_SSL_INTERSTITIAL_TRIAL_DESCRIPTION" desc="Description of the about:flags SSL interstitial v2 experiment">
+      Switch between different versions of the TLS/SSL warning.
+    </message>
+    <message name="IDS_FLAGS_SSL_INTERSTITIAL_VERSION_V1" desc="Go back to the old (V1) version">
+      Old version
+    </message>
+    <message name="IDS_FLAGS_SSL_INTERSTITIAL_VERSION_V2_GRAY" desc="The new interstitial, with a gray background (also default)">
+      New version, with gray background
+    </message>
+    <message name="IDS_FLAGS_SSL_INTERSTITIAL_VERSION_V2_COLORFUL" desc="The new interstitial, with a colorful background">
+      New version, with colorful background
+    </message>
+
+    <!-- Malware interstitial V3 experiment -->
+    <message name="IDS_FLAGS_MALWARE_INTERSTITIAL_TRIAL_NAME" desc="Name of the about:flags malware interstitial v3 experiment">
+      Malware Warning Experiment
+    </message>
+    <message name="IDS_FLAGS_MALWARE_INTERSTITIAL_TRIAL_DESCRIPTION" desc="Description of the about:flags malware interstitial v3 experiment">
+      Switch between different versions of the malware and phishing interstitials.
+    </message>
+    <message name="IDS_FLAGS_MALWARE_INTERSTITIAL_VERSION_V2" desc="Go back to the old (V1) version">
+      Last version
+    </message>
+    <message name="IDS_FLAGS_MALWARE_INTERSTITIAL_VERSION_V3" desc="The new interstitial, with a gray background (also default)">
+      Newest version
+    </message>
+
   </messages>
   </release>
 </grit>

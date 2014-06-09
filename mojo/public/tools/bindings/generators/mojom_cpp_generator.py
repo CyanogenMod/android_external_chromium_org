@@ -29,6 +29,13 @@ _kind_to_cpp_type = {
   mojom.DOUBLE:       "double",
 }
 
+def DefaultValue(field):
+  if field.default:
+    if isinstance(field.kind, mojom.Struct):
+      assert field.default == "default"
+      return "%s::New()" % GetNameForKind(field.kind)
+    return ExpressionToText(field.default)
+  return ""
 
 def NamespaceToArray(namespace):
   return namespace.split('.') if namespace else []
@@ -186,7 +193,7 @@ def IsStructWithHandles(struct):
       return True
   return False
 
-def TranslateConstants(token, module):
+def TranslateConstants(token):
   if isinstance(token, (mojom.NamedValue, mojom.EnumValue)):
     # Both variable and enum constants are constructed like:
     # Namespace::Struct::CONSTANT_NAME
@@ -199,11 +206,8 @@ def TranslateConstants(token, module):
     return "::".join(name)
   return token
 
-def ExpressionToText(value, module):
-  if value[0] != "EXPRESSION":
-    raise Exception("Expected EXPRESSION, got" + value)
-  return "".join(generator.ExpressionMapper(value,
-      lambda token: TranslateConstants(token, module)))
+def ExpressionToText(value):
+  return TranslateConstants(value)
 
 def HasCallbacks(interface):
   for method in interface.methods:
@@ -231,6 +235,7 @@ class Generator(generator.Generator):
     "cpp_result_type": GetCppResultWrapperType,
     "cpp_type": GetCppType,
     "cpp_wrapper_type": GetCppWrapperType,
+    "default_value": DefaultValue,
     "expression_to_text": ExpressionToText,
     "get_pad": pack.GetPad,
     "has_callbacks": HasCallbacks,
@@ -242,13 +247,11 @@ class Generator(generator.Generator):
     "is_interface_request_kind": generator.IsInterfaceRequestKind,
     "is_object_kind": generator.IsObjectKind,
     "is_string_kind": generator.IsStringKind,
-    "is_array_kind": lambda kind: isinstance(kind, mojom.Array),
     "is_struct_with_handles": IsStructWithHandles,
     "struct_size": lambda ps: ps.GetTotalSize() + _HEADER_SIZE,
     "struct_from_method": generator.GetStructFromMethod,
     "response_struct_from_method": generator.GetResponseStructFromMethod,
     "stylize_method": generator.StudlyCapsToCamel,
-    "verify_token_type": generator.VerifyTokenType,
   }
 
   def GetJinjaExports(self):

@@ -87,7 +87,10 @@ class ScriptInjection {
   // to be destroyed).
   void FrameDetached(blink::WebFrame* frame);
 
+  void SetScript(scoped_ptr<UserScript> script);
+
   const std::string& extension_id() { return extension_id_; }
+  const UserScript* script() { return script_.get(); }
 
  private:
   struct PendingInjection;
@@ -119,9 +122,8 @@ class ScriptInjection {
   // The UserScript this is injecting.
   scoped_ptr<UserScript> script_;
 
-  // The associated extension's id. This is a safe const&, since it is owned by
-  // the |user_script_|.
-  const std::string& extension_id_;
+  // The associated extension's id.
+  std::string extension_id_;
 
   // The associated UserScriptSlave.
   // It's unfortunate that this is needed, but we use it to get the isolated

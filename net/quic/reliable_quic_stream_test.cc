@@ -11,6 +11,7 @@
 #include "net/quic/quic_write_blocked_list.h"
 #include "net/quic/spdy_utils.h"
 #include "net/quic/test_tools/quic_config_peer.h"
+#include "net/quic/test_tools/quic_connection_peer.h"
 #include "net/quic/test_tools/quic_flow_controller_peer.h"
 #include "net/quic/test_tools/quic_session_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
@@ -150,13 +151,14 @@ class ReliableQuicStreamTest : public ::testing::TestWithParam<bool> {
 TEST_F(ReliableQuicStreamTest, WriteAllData) {
   Initialize(kShouldProcessData);
 
-  connection_->options()->max_packet_length =
-      1 + QuicPacketCreator::StreamFramePacketOverhead(
-              connection_->version(), PACKET_8BYTE_CONNECTION_ID,
-              !kIncludeVersion, PACKET_6BYTE_SEQUENCE_NUMBER, 0u,
-              NOT_IN_FEC_GROUP);
-  EXPECT_CALL(*session_, WritevData(kHeadersStreamId, _, _, _, _))
-      .WillOnce(Return(QuicConsumedData(kDataLen, true)));
+  size_t length = 1 + QuicPacketCreator::StreamFramePacketOverhead(
+      connection_->version(), PACKET_8BYTE_CONNECTION_ID, !kIncludeVersion,
+      PACKET_6BYTE_SEQUENCE_NUMBER, 0u, NOT_IN_FEC_GROUP);
+  QuicConnectionPeer::GetPacketCreator(connection_)->set_max_packet_length(
+      length);
+
+  EXPECT_CALL(*session_, WritevData(kHeadersStreamId, _, _, _, _)).WillOnce(
+      Return(QuicConsumedData(kDataLen, true)));
   stream_->WriteOrBufferData(kData1, false, NULL);
   EXPECT_FALSE(HasWriteBlockedStreams());
 }
@@ -209,10 +211,12 @@ TEST_F(ReliableQuicStreamTest, WriteOrBufferData) {
   Initialize(kShouldProcessData);
 
   EXPECT_FALSE(HasWriteBlockedStreams());
-  connection_->options()->max_packet_length =
-      1 + QuicPacketCreator::StreamFramePacketOverhead(
-          connection_->version(), PACKET_8BYTE_CONNECTION_ID, !kIncludeVersion,
-          PACKET_6BYTE_SEQUENCE_NUMBER, 0u, NOT_IN_FEC_GROUP);
+  size_t length = 1 + QuicPacketCreator::StreamFramePacketOverhead(
+      connection_->version(), PACKET_8BYTE_CONNECTION_ID, !kIncludeVersion,
+      PACKET_6BYTE_SEQUENCE_NUMBER, 0u, NOT_IN_FEC_GROUP);
+  QuicConnectionPeer::GetPacketCreator(connection_)->set_max_packet_length(
+      length);
+
   EXPECT_CALL(*session_, WritevData(_, _, _, _, _)).WillOnce(
       Return(QuicConsumedData(kDataLen - 1, false)));
   stream_->WriteOrBufferData(kData1, false, NULL);
@@ -551,6 +555,33 @@ TEST_F(ReliableQuicStreamTest, WriteAndBufferDataWithAckNotiferOnlyFinRemains) {
   proxy_delegate->OnAckNotification(1, 2, 3, 4, zero_);
   EXPECT_CALL(*delegate, OnAckNotification(11, 22, 33, 44, zero_));
   proxy_delegate->OnAckNotification(10, 20, 30, 40, zero_);
+}
+
+
+// Verify that when we receive a packet which violates flow control (i.e. sends
+// too much data on the stream) that the stream sequencer never sees this frame,
+// as we check for violation and close the connection early.
+TEST_F(ReliableQuicStreamTest,
+       StreamSequencerNeverSeesPacketsViolatingFlowControl) {
+  ValueRestore<bool> old_stream_flag(
+      &FLAGS_enable_quic_stream_flow_control_2, true);
+  ValueRestore<bool> old_connection_flag(
+      &FLAGS_enable_quic_connection_flow_control, true);
+
+  Initialize(kShouldProcessData);
+
+  // Receive a stream frame that violates flow control: the byte offset is
+  // higher than the receive window offset.
+  QuicStreamFrame frame(stream_->id(), false,
+                        kInitialFlowControlWindowForTest + 1,
+                        MakeIOVector("."));
+  EXPECT_GT(frame.offset, QuicFlowControllerPeer::ReceiveWindowOffset(
+                              stream_->flow_controller()));
+
+  // Stream should not accept the frame, and the connection should be closed.
+  EXPECT_CALL(*connection_,
+              SendConnectionClose(QUIC_FLOW_CONTROL_RECEIVED_TOO_MUCH_DATA));
+  EXPECT_FALSE(stream_->OnStreamFrame(frame));
 }
 
 }  // namespace

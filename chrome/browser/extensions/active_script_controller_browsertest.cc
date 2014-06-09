@@ -15,6 +15,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "content/public/test/browser_test_utils.h"
 #include "extensions/common/feature_switch.h"
 #include "extensions/common/switches.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -71,8 +72,8 @@ class ActiveScriptControllerBrowserTest : public ExtensionBrowserTest {
   // one already exists, the existing extension will be returned. Othewrwise,
   // one will be created.
   // This could potentially return NULL if LoadExtension() fails.
-  const Extension* GetOrCreateExtension(HostType host_type,
-                                        InjectionType injection_type);
+  const Extension* CreateExtension(HostType host_type,
+                                   InjectionType injection_type);
 
  private:
   ScopedVector<TestExtensionDir> test_extension_dirs_;
@@ -92,7 +93,7 @@ void ActiveScriptControllerBrowserTest::CleanUpOnMainThread() {
   test_extension_dirs_.clear();
 }
 
-const Extension* ActiveScriptControllerBrowserTest::GetOrCreateExtension(
+const Extension* ActiveScriptControllerBrowserTest::CreateExtension(
     HostType host_type, InjectionType injection_type) {
   std::string name =
       base::StringPrintf(
@@ -100,13 +101,6 @@ const Extension* ActiveScriptControllerBrowserTest::GetOrCreateExtension(
           injection_type == CONTENT_SCRIPT ?
               "content_script" : "execute_script",
           host_type == ALL_HOSTS ? "all_hosts" : "explicit_hosts");
-
-  for (std::vector<const Extension*>::const_iterator iter = extensions_.begin();
-       iter != extensions_.end();
-       ++iter) {
-    if ((*iter)->name() == name)
-      return *iter;
-  }
 
   const char* permission_scheme =
       host_type == ALL_HOSTS ? kAllHostsScheme : kExplicitHostsScheme;
@@ -342,25 +336,25 @@ IN_PROC_BROWSER_TEST_F(ActiveScriptControllerBrowserTest,
   ActiveScriptTester testers[] = {
       ActiveScriptTester(
           kExtensionNames[0],
-          GetOrCreateExtension(ALL_HOSTS, EXECUTE_SCRIPT),
+          CreateExtension(ALL_HOSTS, EXECUTE_SCRIPT),
           browser(),
           REQUIRES_CONSENT,
           EXECUTE_SCRIPT),
       ActiveScriptTester(
           kExtensionNames[1],
-          GetOrCreateExtension(EXPLICIT_HOSTS, EXECUTE_SCRIPT),
+          CreateExtension(EXPLICIT_HOSTS, EXECUTE_SCRIPT),
           browser(),
           DOES_NOT_REQUIRE_CONSENT,
           EXECUTE_SCRIPT),
       ActiveScriptTester(
           kExtensionNames[2],
-          GetOrCreateExtension(ALL_HOSTS, CONTENT_SCRIPT),
+          CreateExtension(ALL_HOSTS, CONTENT_SCRIPT),
           browser(),
           REQUIRES_CONSENT,
           CONTENT_SCRIPT),
       ActiveScriptTester(
           kExtensionNames[3],
-          GetOrCreateExtension(EXPLICIT_HOSTS, CONTENT_SCRIPT),
+          CreateExtension(EXPLICIT_HOSTS, CONTENT_SCRIPT),
           browser(),
           DOES_NOT_REQUIRE_CONSENT,
           CONTENT_SCRIPT),
@@ -375,6 +369,57 @@ IN_PROC_BROWSER_TEST_F(ActiveScriptControllerBrowserTest,
 
   for (size_t i = 0u; i < arraysize(testers); ++i)
     EXPECT_TRUE(testers[i].Verify()) << kExtensionNames[i];
+}
+
+// Test that removing an extension with pending injections a) removes the
+// pending injections for that extension, and b) does not affect pending
+// injections for other extensions.
+IN_PROC_BROWSER_TEST_F(ActiveScriptControllerBrowserTest,
+                       RemoveExtensionWithPendingInjections) {
+  // Load up two extensions, each with content scripts.
+  const Extension* extension1 = CreateExtension(ALL_HOSTS, CONTENT_SCRIPT);
+  ASSERT_TRUE(extension1);
+  const Extension* extension2 = CreateExtension(ALL_HOSTS, CONTENT_SCRIPT);
+  ASSERT_TRUE(extension2);
+
+  ASSERT_NE(extension1->id(), extension2->id());
+
+  content::WebContents* web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  ASSERT_TRUE(web_contents);
+  ActiveScriptController* active_script_controller =
+      ActiveScriptController::GetForWebContents(web_contents);
+  ASSERT_TRUE(active_script_controller);
+
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+  ui_test_utils::NavigateToURL(
+      browser(), embedded_test_server()->GetURL("/extensions/test_file.html"));
+
+  // Both extensions should have pending requests.
+  EXPECT_TRUE(active_script_controller->GetActionForExtension(extension1));
+  EXPECT_TRUE(active_script_controller->GetActionForExtension(extension2));
+
+  // Unload one of the extensions.
+  UnloadExtension(extension2->id());
+
+  // This is slight hack to achieve a RunPendingInRenderer() method. Since IPCs
+  // are sent synchronously, the renderer will be notified of the extension
+  // being unloaded before the script is executed, and, since ExecuteScript() is
+  // synchronous, the renderer is guaranteed to be done updating scripts.
+  EXPECT_TRUE(content::ExecuteScript(web_contents, "1 == 1;"));
+
+  // We should have pending requests for extension1, but not the removed
+  // extension2.
+  EXPECT_TRUE(active_script_controller->GetActionForExtension(extension1));
+  EXPECT_FALSE(active_script_controller->GetActionForExtension(extension2));
+
+  // We should still be able to run the request for extension1.
+  ExtensionTestMessageListener inject_success_listener(
+      new ExtensionTestMessageListener(kInjectSucceeded,
+                                       false /* won't reply */));
+  inject_success_listener.set_extension_id(extension1->id());
+  active_script_controller->OnClicked(extension1);
+  inject_success_listener.WaitUntilSatisfied();
 }
 
 // A version of the test with the flag off, in order to test that everything
@@ -397,13 +442,13 @@ IN_PROC_BROWSER_TEST_F(FlagOffActiveScriptControllerBrowserTest,
   ActiveScriptTester testers[] = {
     ActiveScriptTester(
           kExtensionNames[0],
-          GetOrCreateExtension(ALL_HOSTS, CONTENT_SCRIPT),
+          CreateExtension(ALL_HOSTS, CONTENT_SCRIPT),
           browser(),
           DOES_NOT_REQUIRE_CONSENT,
           CONTENT_SCRIPT),
       ActiveScriptTester(
           kExtensionNames[1],
-          GetOrCreateExtension(ALL_HOSTS, EXECUTE_SCRIPT),
+          CreateExtension(ALL_HOSTS, EXECUTE_SCRIPT),
           browser(),
           DOES_NOT_REQUIRE_CONSENT,
           EXECUTE_SCRIPT),

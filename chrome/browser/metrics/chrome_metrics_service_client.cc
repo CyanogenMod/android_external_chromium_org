@@ -4,11 +4,14 @@
 
 #include "chrome/browser/metrics/chrome_metrics_service_client.h"
 
+#include <vector>
+
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "base/prefs/pref_service.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -16,7 +19,7 @@
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/google/google_util.h"
+#include "chrome/browser/google/google_brand.h"
 #include "chrome/browser/memory_details.h"
 #include "chrome/browser/metrics/extensions_metrics_provider.h"
 #include "chrome/browser/metrics/metrics_service.h"
@@ -25,7 +28,9 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/crash_keys.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
+#include "components/metrics/net/net_metrics_log_uploader.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/histogram_fetcher.h"
 #include "content/public/browser/notification_service.h"
@@ -154,7 +159,7 @@ std::string ChromeMetricsServiceClient::GetApplicationLocale() {
 }
 
 bool ChromeMetricsServiceClient::GetBrand(std::string* brand_code) {
-  return google_util::GetBrand(brand_code);
+  return google_brand::GetBrand(brand_code);
 }
 
 metrics::SystemProfileProto::Channel ChromeMetricsServiceClient::GetChannel() {
@@ -177,9 +182,24 @@ std::string ChromeMetricsServiceClient::GetVersionString() {
   return version;
 }
 
+int64 ChromeMetricsServiceClient::GetInstallDate() {
+  return g_browser_process->local_state()->GetInt64(prefs::kInstallDate);
+}
+
 void ChromeMetricsServiceClient::OnLogUploadComplete() {
   // Collect network stats after each UMA upload.
   network_stats_uploader_.CollectAndReportNetworkStats();
+}
+
+void ChromeMetricsServiceClient::StartGatheringMetrics(
+    const base::Closure& done_callback) {
+// TODO(blundell): Move all metrics gathering tasks from MetricsService to
+// here.
+#if defined(OS_CHROMEOS)
+  chromeos_metrics_provider_->InitTaskGetHardwareClass(done_callback);
+#else
+  done_callback.Run();
+#endif
 }
 
 void ChromeMetricsServiceClient::CollectFinalMetrics(
@@ -210,6 +230,17 @@ void ChromeMetricsServiceClient::CollectFinalMetrics(
        !i.IsAtEnd(); i.Advance()) {
     i.GetCurrentValue()->Send(new ChromeViewMsg_GetCacheResourceStats());
   }
+}
+
+scoped_ptr<metrics::MetricsLogUploader>
+ChromeMetricsServiceClient::CreateUploader(
+    const std::string& server_url,
+    const std::string& mime_type,
+    const base::Callback<void(int)>& on_upload_complete) {
+  return scoped_ptr<metrics::MetricsLogUploader>(
+      new metrics::NetMetricsLogUploader(
+          g_browser_process->system_request_context(), server_url, mime_type,
+          on_upload_complete));
 }
 
 void ChromeMetricsServiceClient::OnMemoryDetailCollectionDone() {
@@ -333,17 +364,6 @@ void ChromeMetricsServiceClient::Observe(
     default:
       NOTREACHED();
   }
-}
-
-void ChromeMetricsServiceClient::StartGatheringMetrics(
-    const base::Closure& done_callback) {
-// TODO(blundell): Move all metrics gathering tasks from MetricsService to
-// here.
-#if defined(OS_CHROMEOS)
-  chromeos_metrics_provider_->InitTaskGetHardwareClass(done_callback);
-#else
-  done_callback.Run();
-#endif
 }
 
 #if defined(OS_WIN)

@@ -223,6 +223,7 @@ struct SpdySessionDependencies {
   bool force_spdy_over_ssl;
   bool force_spdy_always;
   bool use_alternate_protocols;
+  bool enable_websocket_over_spdy;
   NetLog* net_log;
 };
 
@@ -400,7 +401,7 @@ class SpdyTestUtil {
                                     SpdyRstStreamStatus status) const;
 
   // Constructs a standard SPDY GET SYN frame, optionally compressed
-  // for the url |url|.
+  // for |url|.
   // |extra_headers| are the extra header-value pairs, which typically
   // will vary the most between calls.
   // Returns a SpdyFrame.

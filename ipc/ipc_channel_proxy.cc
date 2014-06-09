@@ -52,7 +52,7 @@ void ChannelProxy::Context::CreateChannel(const IPC::ChannelHandle& handle,
                                           const Channel::Mode& mode) {
   DCHECK(!channel_);
   channel_id_ = handle.name;
-  channel_ = Channel::CreateByModeForProxy(handle, mode, this);
+  channel_ = Channel::Create(handle, mode, this);
 }
 
 bool ChannelProxy::Context::TryFilters(const Message& message) {
@@ -95,7 +95,7 @@ bool ChannelProxy::Context::OnMessageReceivedNoFilter(const Message& message) {
 // Called on the IPC::Channel thread
 void ChannelProxy::Context::OnChannelConnected(int32 peer_pid) {
   // We cache off the peer_pid so it can be safely accessed from both threads.
-  peer_pid_ = channel_->peer_pid();
+  peer_pid_ = channel_->GetPeerPID();
 
   // Add any pending filters.  This avoids a race condition where someone
   // creates a ChannelProxy, calls AddFilter, and then right after starts the
@@ -304,18 +304,25 @@ void ChannelProxy::Context::OnDispatchBadMessage(const Message& message) {
 
 //-----------------------------------------------------------------------------
 
-ChannelProxy::ChannelProxy(const IPC::ChannelHandle& channel_handle,
-                           Channel::Mode mode,
-                           Listener* listener,
-                           base::SingleThreadTaskRunner* ipc_task_runner)
-    : context_(new Context(listener, ipc_task_runner)),
-      did_init_(false) {
-  Init(channel_handle, mode, true);
+// static
+scoped_ptr<ChannelProxy> ChannelProxy::Create(
+    const IPC::ChannelHandle& channel_handle,
+    Channel::Mode mode,
+    Listener* listener,
+    base::SingleThreadTaskRunner* ipc_task_runner) {
+  scoped_ptr<ChannelProxy> channel(new ChannelProxy(listener, ipc_task_runner));
+  channel->Init(channel_handle, mode, true);
+  return channel.Pass();
 }
 
 ChannelProxy::ChannelProxy(Context* context)
     : context_(context),
       did_init_(false) {
+}
+
+ChannelProxy::ChannelProxy(Listener* listener,
+                           base::SingleThreadTaskRunner* ipc_task_runner)
+    : context_(new Context(listener, ipc_task_runner)), did_init_(false) {
 }
 
 ChannelProxy::~ChannelProxy() {

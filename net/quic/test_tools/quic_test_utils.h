@@ -49,6 +49,9 @@ QuicVersion QuicVersionMin();
 // Returns an address for 127.0.0.1.
 IPAddressNumber Loopback4();
 
+// Returns an address for ::1.
+IPAddressNumber Loopback6();
+
 void GenerateBody(std::string* body, int length);
 
 // Create an encrypted packet for testing.
@@ -92,6 +95,13 @@ QuicAckFrame MakeAckFrame(QuicPacketSequenceNumber largest_observed,
 // nack ranges of width 1 packet, starting from |least_unacked|.
 QuicAckFrame MakeAckFrameWithNackRanges(size_t num_nack_ranges,
                                         QuicPacketSequenceNumber least_unacked);
+
+// Returns a SerializedPacket whose |packet| member is owned by the caller,
+// and is populated with the fields in |header| and |frames|, or is NULL if
+// the packet could not be created.
+SerializedPacket BuildUnsizedDataPacket(QuicFramer* framer,
+                                        const QuicPacketHeader& header,
+                                        const QuicFrames& frames);
 
 template<typename SaveType>
 class ValueRestore {
@@ -419,9 +429,10 @@ class MockSendAlgorithm : public SendAlgorithmInterface {
                bool(QuicTime, QuicByteCount, QuicPacketSequenceNumber,
                     QuicByteCount, HasRetransmittableData));
   MOCK_METHOD1(OnRetransmissionTimeout, void(bool));
-  MOCK_METHOD3(TimeUntilSend, QuicTime::Delta(QuicTime now,
-                                              QuicByteCount bytes_in_flight,
-                                              HasRetransmittableData));
+  MOCK_CONST_METHOD3(TimeUntilSend,
+                     QuicTime::Delta(QuicTime now,
+                                     QuicByteCount bytes_in_flight,
+                                     HasRetransmittableData));
   MOCK_CONST_METHOD0(BandwidthEstimate, QuicBandwidth(void));
   MOCK_METHOD1(OnRttUpdated, void(QuicPacketSequenceNumber));
   MOCK_CONST_METHOD0(RetransmissionDelay, QuicTime::Delta(void));

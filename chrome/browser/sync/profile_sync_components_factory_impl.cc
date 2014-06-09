@@ -27,7 +27,6 @@
 #include "chrome/browser/sync/glue/extension_setting_data_type_controller.h"
 #include "chrome/browser/sync/glue/password_data_type_controller.h"
 #include "chrome/browser/sync/glue/search_engine_data_type_controller.h"
-#include "chrome/browser/sync/glue/shared_change_processor.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
 #include "chrome/browser/sync/glue/sync_backend_host_impl.h"
 #include "chrome/browser/sync/glue/theme_data_type_controller.h"
@@ -56,11 +55,13 @@
 #include "components/sync_driver/data_type_manager_observer.h"
 #include "components/sync_driver/generic_change_processor.h"
 #include "components/sync_driver/proxy_data_type_controller.h"
+#include "components/sync_driver/shared_change_processor.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/extension_system.h"
 #include "sync/api/attachments/attachment_service.h"
 #include "sync/api/attachments/attachment_service_impl.h"
 #include "sync/api/syncable_service.h"
+#include "sync/internal_api/public/attachments/fake_attachment_downloader.h"
 #include "sync/internal_api/public/attachments/fake_attachment_store.h"
 #include "sync/internal_api/public/attachments/fake_attachment_uploader.h"
 
@@ -570,19 +571,23 @@ base::WeakPtr<syncer::SyncableService> ProfileSyncComponentsFactoryImpl::
 scoped_ptr<syncer::AttachmentService>
 ProfileSyncComponentsFactoryImpl::CreateAttachmentService(
     syncer::AttachmentService::Delegate* delegate) {
-  // TODO(maniscalco): Use a shared (one per profile) thread-safe instance of
-  // AttachmentUpload instead of creating a new one per AttachmentService (bug
-  // 369536).
+  // TODO(maniscalco): Use a shared (one per profile) thread-safe instances of
+  // AttachmentUploader and AttachmentDownloader instead of creating a new one
+  // per AttachmentService (bug 369536).
   scoped_ptr<syncer::AttachmentUploader> attachment_uploader(
       new syncer::FakeAttachmentUploader);
+  scoped_ptr<syncer::AttachmentDownloader> attachment_downloader(
+      new syncer::FakeAttachmentDownloader());
 
   scoped_ptr<syncer::AttachmentStore> attachment_store(
       new syncer::FakeAttachmentStore(
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)));
 
   scoped_ptr<syncer::AttachmentService> attachment_service(
-      new syncer::AttachmentServiceImpl(
-          attachment_store.Pass(), attachment_uploader.Pass(), delegate));
+      new syncer::AttachmentServiceImpl(attachment_store.Pass(),
+                                        attachment_uploader.Pass(),
+                                        attachment_downloader.Pass(),
+                                        delegate));
 
   return attachment_service.Pass();
 }

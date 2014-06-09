@@ -6,8 +6,6 @@
 #include "base/command_line.h"
 #include "base/message_loop/message_loop.h"
 #include "mojo/public/cpp/application/application.h"
-#include "mojo/public/cpp/environment/environment.h"
-#include "mojo/public/cpp/utility/run_loop.h"
 
 extern "C" APPLICATION_EXPORT MojoResult CDECL MojoMain(
     MojoHandle service_provider_handle) {
@@ -15,7 +13,7 @@ extern "C" APPLICATION_EXPORT MojoResult CDECL MojoMain(
   base::AtExitManager at_exit;
   base::MessageLoop loop;
 
-  scoped_ptr<mojo::Application>app(mojo::Application::Create());
+  scoped_ptr<mojo::Application> app(mojo::Application::Create());
   app->BindServiceProvider(
       mojo::MakeScopedHandle(mojo::MessagePipeHandle(service_provider_handle)));
   app->Initialize();

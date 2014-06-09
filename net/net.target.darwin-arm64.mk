@@ -188,6 +188,7 @@ LOCAL_SRC_FILES := \
 	net/disk_cache/blockfile/sparse_control.cc \
 	net/disk_cache/blockfile/stats.cc \
 	net/disk_cache/blockfile/trace.cc \
+	net/disk_cache/blockfile/webfonts_histogram.cc \
 	net/disk_cache/cache_creator.cc \
 	net/disk_cache/cache_util.cc \
 	net/disk_cache/cache_util_posix.cc \
@@ -308,7 +309,6 @@ LOCAL_SRC_FILES := \
 	net/quic/congestion_control/hybrid_slow_start.cc \
 	net/quic/congestion_control/leaky_bucket.cc \
 	net/quic/congestion_control/loss_detection_interface.cc \
-	net/quic/congestion_control/paced_sender.cc \
 	net/quic/congestion_control/pacing_sender.cc \
 	net/quic/congestion_control/receive_algorithm_interface.cc \
 	net/quic/congestion_control/rtt_stats.cc \
@@ -391,6 +391,7 @@ LOCAL_SRC_FILES := \
 	net/quic/quic_stream_factory.cc \
 	net/quic/quic_stream_sequencer.cc \
 	net/quic/quic_time.cc \
+	net/quic/quic_types.cc \
 	net/quic/quic_unacked_packet_map.cc \
 	net/quic/quic_utils.cc \
 	net/quic/quic_write_blocked_list.cc \
@@ -562,7 +563,6 @@ MY_DEFS_Debug := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
@@ -663,7 +663,6 @@ MY_DEFS_Release := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \

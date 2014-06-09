@@ -29,7 +29,7 @@ base::LazyInstance<BrowserContextKeyedAPIFactory<ExtensionGCMAppHandler> >
     g_factory = LAZY_INSTANCE_INITIALIZER;
 
 bool IsGCMPermissionEnabled(const Extension* extension) {
-  return PermissionsData::HasAPIPermission(extension, APIPermission::kGcm);
+  return extension->permissions_data()->HasAPIPermission(APIPermission::kGcm);
 }
 
 }  // namespace

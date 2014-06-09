@@ -831,6 +831,11 @@ TEST_P(QuicNetworkTransactionTest, FailedZeroRttBrokenAlternateProtocol) {
 
   AddHangingNonAlternateProtocolSocketData();
 
+  // Second Alternate-protocol job which will race with the TCP job.
+  StaticSocketDataProvider quic_data2(quic_reads, arraysize(quic_reads),
+                                      NULL, 0);
+  socket_factory_.AddSocketDataProvider(&quic_data2);
+
   // Final job that will proceed when the QUIC job fails.
   MockRead http_reads[] = {
     MockRead("HTTP/1.1 200 OK\r\n\r\n"),
@@ -853,6 +858,34 @@ TEST_P(QuicNetworkTransactionTest, FailedZeroRttBrokenAlternateProtocol) {
 
   EXPECT_TRUE(quic_data.at_read_eof());
   EXPECT_TRUE(quic_data.at_write_eof());
+}
+
+TEST_P(QuicNetworkTransactionTest, HangingZeroRttFallback) {
+  // Alternate-protocol job
+  MockRead quic_reads[] = {
+    MockRead(ASYNC, ERR_IO_PENDING),
+  };
+  StaticSocketDataProvider quic_data(quic_reads, arraysize(quic_reads),
+                                     NULL, 0);
+  socket_factory_.AddSocketDataProvider(&quic_data);
+
+  // Main job that will proceed when the QUIC job fails.
+  MockRead http_reads[] = {
+    MockRead("HTTP/1.1 200 OK\r\n\r\n"),
+    MockRead("hello from http"),
+    MockRead(SYNCHRONOUS, ERR_TEST_PEER_CLOSE_AFTER_NEXT_MOCK_READ),
+    MockRead(ASYNC, OK)
+  };
+
+  StaticSocketDataProvider http_data(http_reads, arraysize(http_reads),
+                                     NULL, 0);
+  socket_factory_.AddSocketDataProvider(&http_data);
+
+  CreateSessionWithNextProtos();
+
+  AddQuicAlternateProtocolMapping(MockCryptoClientStream::ZERO_RTT);
+
+  SendRequestAndExpectHttpResponse("hello from http");
 }
 
 TEST_P(QuicNetworkTransactionTest, BrokenAlternateProtocolOnConnectFailure) {

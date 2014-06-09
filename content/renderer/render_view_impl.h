@@ -93,7 +93,6 @@ class WebDOMMessageEvent;
 class WebDataSource;
 class WebDateTimeChooserCompletion;
 class WebDragData;
-class WebGeolocationClient;
 class WebGestureEvent;
 class WebIconURL;
 class WebImage;
@@ -127,12 +126,10 @@ class WebURLResponseExtraDataImpl;
 
 namespace content {
 class BrowserPluginManager;
-class DeviceOrientationDispatcher;
 class DevToolsAgent;
 class DocumentState;
 class ExternalPopupMenu;
 class FaviconHelper;
-class GeolocationDispatcher;
 class HistoryController;
 class HistoryEntry;
 class ImageResourceFetcher;
@@ -437,7 +434,6 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void focusNext();
   virtual void focusPrevious();
   virtual void focusedNodeChanged(const blink::WebNode& node);
-  virtual void numberOfWheelEventHandlersChanged(unsigned num_handlers);
   virtual void didUpdateLayout();
 #if defined(OS_ANDROID)
   virtual bool didTapMultipleTargets(
@@ -452,7 +448,6 @@ class CONTENT_EXPORT RenderViewImpl
       const blink::WebAXObject& obj, blink::WebAXEvent event);
   virtual void didUpdateInspectorSetting(const blink::WebString& key,
                                          const blink::WebString& value);
-  virtual blink::WebGeolocationClient* geolocationClient();
   virtual blink::WebSpeechRecognizer* speechRecognizer();
   virtual void zoomLimitsChanged(double minimum_level, double maximum_level);
   virtual void zoomLevelChanged();
@@ -529,6 +524,7 @@ class CONTENT_EXPORT RenderViewImpl
 
  protected:
   // RenderWidget overrides:
+  virtual void OnClose() OVERRIDE;
   virtual void Close() OVERRIDE;
   virtual void OnResize(const ViewMsg_Resize_Params& params) OVERRIDE;
   virtual void DidInitiatePaint() OVERRIDE;
@@ -1059,15 +1055,9 @@ class CONTENT_EXPORT RenderViewImpl
   // The push messaging dispatcher attached to this view, lazily initialized.
   PushMessagingDispatcher* push_messaging_dispatcher_;
 
-  // The geolocation dispatcher attached to this view, lazily initialized.
-  GeolocationDispatcher* geolocation_dispatcher_;
-
   // The speech recognition dispatcher attached to this view, lazily
   // initialized.
   SpeechRecognitionDispatcher* speech_recognition_dispatcher_;
-
-  // Device orientation dispatcher attached to this view; lazily initialized.
-  DeviceOrientationDispatcher* device_orientation_dispatcher_;
 
   // MediaStream dispatcher attached to this view; lazily initialized.
   MediaStreamDispatcher* media_stream_dispatcher_;

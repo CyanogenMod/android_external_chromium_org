@@ -5,13 +5,16 @@
 #include "components/metrics/test_metrics_service_client.h"
 
 #include "base/callback.h"
+#include "components/metrics/metrics_log_uploader.h"
 
 namespace metrics {
 
 // static
 const char TestMetricsServiceClient::kBrandForTesting[] = "brand_for_testing";
 
-TestMetricsServiceClient::TestMetricsServiceClient() {
+TestMetricsServiceClient::TestMetricsServiceClient()
+    : install_date_(0),
+      version_string_("5.0.322.0-64-devel") {
 }
 
 TestMetricsServiceClient::~TestMetricsServiceClient() {
@@ -39,7 +42,11 @@ SystemProfileProto::Channel TestMetricsServiceClient::GetChannel() {
 }
 
 std::string TestMetricsServiceClient::GetVersionString() {
-  return "5.0.322.0-64-devel";
+  return version_string_;
+}
+
+int64 TestMetricsServiceClient::GetInstallDate() {
+  return install_date_;
 }
 
 void TestMetricsServiceClient::OnLogUploadComplete() {
@@ -53,6 +60,13 @@ void TestMetricsServiceClient::StartGatheringMetrics(
 void TestMetricsServiceClient::CollectFinalMetrics(
     const base::Closure& done_callback) {
   done_callback.Run();
+}
+
+scoped_ptr<MetricsLogUploader> TestMetricsServiceClient::CreateUploader(
+    const std::string& server_url,
+    const std::string& mime_type,
+    const base::Callback<void(int)>& on_upload_complete) {
+  return scoped_ptr<MetricsLogUploader>();
 }
 
 }  // namespace metrics

@@ -254,7 +254,6 @@ class LayerTreeHostDelegatedTestCaseSingleDelegatedLayer
 
   virtual void SetupTree() OVERRIDE {
     root_ = Layer::Create();
-    root_->SetAnchorPoint(gfx::PointF());
     root_->SetBounds(gfx::Size(15, 15));
 
     layer_tree_host()->SetRootLayer(root_);
@@ -291,7 +290,6 @@ class LayerTreeHostDelegatedTestCaseSingleDelegatedLayer
       DelegatedFrameProvider* frame_provider) {
     scoped_refptr<DelegatedRendererLayer> delegated =
         FakeDelegatedRendererLayer::Create(frame_provider);
-    delegated->SetAnchorPoint(gfx::PointF());
     delegated->SetBounds(gfx::Size(10, 10));
     delegated->SetIsDrawable(true);
 
@@ -488,9 +486,8 @@ class LayerTreeHostDelegatedTestLayerUsesFrameDamage
             CreateFrameData(gfx::Rect(0, 0, 20, 20), gfx::Rect(0, 0, 0, 0)));
         break;
       case 3:
-        // Should create a total amount of gfx::Rect(2, 2, 10, 6) damage.
-        // The frame size is 20x20 while the layer is 10x10, so this should
-        // produce a gfx::Rect(1, 1, 5, 3) damage rect.
+        // Should create a total amount of gfx::Rect(2, 2, 8, 6) damage:
+        // (2, 2, 10, 6) clamped to the root output rect.
         SetFrameData(
             CreateFrameData(gfx::Rect(0, 0, 20, 20), gfx::Rect(2, 2, 5, 5)));
         SetFrameData(
@@ -537,9 +534,7 @@ class LayerTreeHostDelegatedTestLayerUsesFrameDamage
                                             gfx::Rect(4, 4, 1, 1)));
         break;
       case 13:
-        // Should create gfx::Rect(1, 1, 2, 2) of damage. The frame size is
-        // 5x5 and the display size is now set to 10x10, so this should result
-        // in a gfx::Rect(2, 2, 4, 4) damage rect.
+        // Should create gfx::Rect(1, 1, 2, 2) of damage.
         SetFrameData(
             CreateFrameData(gfx::Rect(0, 0, 5, 5), gfx::Rect(1, 1, 2, 2)));
         break;
@@ -585,6 +580,7 @@ class LayerTreeHostDelegatedTestLayerUsesFrameDamage
         // ways.
         SetFrameData(
             CreateFrameData(gfx::Rect(0, 0, 10, 10), gfx::Rect(3, 3, 1, 1)));
+        break;
     }
     first_draw_for_source_frame_ = true;
   }
@@ -618,7 +614,7 @@ class LayerTreeHostDelegatedTestLayerUsesFrameDamage
         EXPECT_EQ(gfx::Rect(10, 10).ToString(), damage_rect.ToString());
         break;
       case 3:
-        EXPECT_EQ(gfx::Rect(1, 1, 5, 3).ToString(), damage_rect.ToString());
+        EXPECT_EQ(gfx::Rect(2, 2, 8, 6).ToString(), damage_rect.ToString());
         break;
       case 4:
         EXPECT_EQ(gfx::Rect().ToString(), damage_rect.ToString());
@@ -648,7 +644,7 @@ class LayerTreeHostDelegatedTestLayerUsesFrameDamage
         EXPECT_EQ(gfx::Rect().ToString(), damage_rect.ToString());
         break;
       case 13:
-        EXPECT_EQ(gfx::Rect(2, 2, 4, 4).ToString(), damage_rect.ToString());
+        EXPECT_EQ(gfx::Rect(1, 1, 2, 2).ToString(), damage_rect.ToString());
         break;
       case 14:
         EXPECT_EQ(gfx::Rect().ToString(), damage_rect.ToString());

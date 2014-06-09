@@ -23,7 +23,7 @@ class DriveUploaderInterface;
 }
 
 namespace google_apis {
-class ResourceEntry;
+class FileResource;
 class ResourceList;
 }
 
@@ -73,7 +73,7 @@ class LocalToRemoteSyncer : public SyncTask {
   void DidUploadExistingFile(const SyncStatusCallback& callback,
                              google_apis::GDataErrorCode error,
                              const GURL&,
-                             scoped_ptr<google_apis::ResourceEntry>);
+                             scoped_ptr<google_apis::FileResource>);
   void DidUpdateDatabaseForUploadExistingFile(
       const SyncStatusCallback& callback,
       SyncStatusCode status);
@@ -82,7 +82,7 @@ class LocalToRemoteSyncer : public SyncTask {
   void DidGetRemoteMetadata(const std::string& file_id,
                             const SyncStatusCallback& callback,
                             google_apis::GDataErrorCode error,
-                            scoped_ptr<google_apis::ResourceEntry> entry);
+                            scoped_ptr<google_apis::FileResource> entry);
 
   void DidDeleteForUploadNewFile(const SyncStatusCallback& callback,
                                  SyncStatusCode status);
@@ -93,7 +93,7 @@ class LocalToRemoteSyncer : public SyncTask {
   void DidUploadNewFile(const SyncStatusCallback& callback,
                         google_apis::GDataErrorCode error,
                         const GURL& upload_location,
-                        scoped_ptr<google_apis::ResourceEntry> entry);
+                        scoped_ptr<google_apis::FileResource> entry);
 
   void CreateRemoteFolder(const SyncStatusCallback& callback);
   void DidCreateRemoteFolder(const SyncStatusCallback& callback,

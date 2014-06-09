@@ -74,13 +74,9 @@ class InspectorBackend(inspector_websocket.InspectorWebsocket):
   @property
   def url(self):
     for c in self._browser_backend.ListInspectableContexts():
-      if c['id'] == self.id:
+      if c['id'] == self._context['id']:
         return c['url']
     return None
-
-  @property
-  def id(self):
-    return self._context['id']
 
   @property
   def debugger_url(self):
@@ -158,8 +154,8 @@ class InspectorBackend(inspector_websocket.InspectorWebsocket):
 
   # Page public methods.
 
-  def PerformActionAndWaitForNavigate(self, action_function, timeout):
-    self._page.PerformActionAndWaitForNavigate(action_function, timeout)
+  def WaitForNavigate(self, timeout):
+    self._page.WaitForNavigate(timeout)
 
   def Navigate(self, url, script_to_evaluate_on_commit, timeout):
     self._page.Navigate(url, script_to_evaluate_on_commit, timeout)

@@ -56,7 +56,6 @@ class RenderViewHostDelegateView;
 class RenderViewHostImpl;
 class RenderWidgetHostImpl;
 class SavePackage;
-class SessionStorageNamespaceImpl;
 class SiteInstance;
 class TestWebContents;
 class WebContentsDelegate;
@@ -268,8 +267,6 @@ class CONTENT_EXPORT WebContentsImpl
       const base::FilePath& file,
       const base::Callback<void(int64)>& callback)
           OVERRIDE;
-  virtual bool IsActiveEntry(int32 page_id) OVERRIDE;
-
   virtual const std::string& GetContentsMimeType() const OVERRIDE;
   virtual bool WillNotifyDisconnection() const OVERRIDE;
   virtual void SetOverrideEncoding(const std::string& encoding) OVERRIDE;
@@ -439,6 +436,7 @@ class CONTENT_EXPORT WebContentsImpl
       const MediaResponseCallback& callback) OVERRIDE;
   virtual SessionStorageNamespace* GetSessionStorageNamespace(
       SiteInstance* instance) OVERRIDE;
+  virtual SessionStorageNamespaceMap GetSessionStorageNamespaceMap() OVERRIDE;
   virtual FrameTree* GetFrameTree() OVERRIDE;
   virtual void AccessibilityEventReceived(
       const std::vector<AXEventNotificationDetails>& details) OVERRIDE;
@@ -479,7 +477,7 @@ class CONTENT_EXPORT WebContentsImpl
       const LoadCommittedDetails& details,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params) OVERRIDE;
   virtual void SetMainFrameMimeType(const std::string& mime_type) OVERRIDE;
-  virtual bool CanOverscrollContent() OVERRIDE;
+  virtual bool CanOverscrollContent() const OVERRIDE;
   virtual void NotifyChangedNavigationState(
       InvalidateTypes changed_flags) OVERRIDE;
   virtual void AboutToNavigateRenderFrame(

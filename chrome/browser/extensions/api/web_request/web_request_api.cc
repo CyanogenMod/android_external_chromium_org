@@ -2214,11 +2214,12 @@ bool WebRequestInternalAddEventListenerFunction::RunSync() {
   // We check automatically whether the extension has the 'webRequest'
   // permission. For blocking calls we require the additional permission
   // 'webRequestBlocking'.
-  if ((!is_web_view_guest && extra_info_spec &
-          (ExtensionWebRequestEventRouter::ExtraInfoSpec::BLOCKING |
-           ExtensionWebRequestEventRouter::ExtraInfoSpec::ASYNC_BLOCKING)) &&
-       !extension->HasAPIPermission(
-           extensions::APIPermission::kWebRequestBlocking)) {
+  if ((!is_web_view_guest &&
+       extra_info_spec &
+           (ExtensionWebRequestEventRouter::ExtraInfoSpec::BLOCKING |
+            ExtensionWebRequestEventRouter::ExtraInfoSpec::ASYNC_BLOCKING)) &&
+      !extension->permissions_data()->HasAPIPermission(
+          extensions::APIPermission::kWebRequestBlocking)) {
     error_ = keys::kBlockingPermissionRequired;
     return false;
   }
@@ -2230,8 +2231,7 @@ bool WebRequestInternalAddEventListenerFunction::RunSync() {
   // For this reason we do only a coarse check here to warn the extension
   // developer if he does something obviously wrong.
   if (!is_web_view_guest &&
-      extensions::PermissionsData::GetEffectiveHostPermissions(
-          extension).is_empty()) {
+      extension->permissions_data()->GetEffectiveHostPermissions().is_empty()) {
     error_ = keys::kHostPermissionsRequired;
     return false;
   }

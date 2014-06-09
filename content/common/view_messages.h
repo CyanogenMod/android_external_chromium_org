@@ -567,6 +567,7 @@ IPC_MESSAGE_ROUTED1(ViewMsg_UpdateWebPreferences,
 IPC_MESSAGE_CONTROL0(ViewMsg_TimezoneChange)
 
 // Tells the render view to close.
+// Expects a Close_ACK message when finished.
 IPC_MESSAGE_ROUTED0(ViewMsg_Close)
 
 IPC_STRUCT_BEGIN(ViewMsg_Resize_Params)
@@ -1101,6 +1102,11 @@ IPC_MESSAGE_ROUTED5(ViewHostMsg_Find_Reply,
                     int /* active_match_ordinal */,
                     bool /* final_update */)
 
+// Indicates that the render view has been closed in respose to a
+// Close message.
+IPC_MESSAGE_CONTROL1(ViewHostMsg_Close_ACK,
+                     int /* old_route_id */);
+
 // Indicates that the current page has been closed, after a ClosePage
 // message.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_ClosePage_ACK)
@@ -1286,10 +1292,6 @@ IPC_MESSAGE_ROUTED0(ViewHostMsg_DidChangeScrollOffset)
 IPC_MESSAGE_ROUTED2(ViewHostMsg_DidChangeScrollOffsetPinningForMainFrame,
                     bool /* pinned_to_left */,
                     bool /* pinned_to_right */)
-
-// Notifies that the number of JavaScript scroll handlers changed.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_DidChangeNumWheelEvents,
-                    int /* count */)
 
 // Notifies whether there are JavaScript touch event handlers or not.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_HasTouchEventHandlers,

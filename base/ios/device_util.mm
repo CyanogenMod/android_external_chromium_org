@@ -46,7 +46,7 @@ NSString* GenerateClientId() {
   if (!client_id || [client_id isEqualToString:kZeroUUID]) {
     if (base::ios::IsRunningOnIOS6OrLater()) {
       client_id = [[[UIDevice currentDevice] identifierForVendor] UUIDString];
-      if ([client_id isEqualToString:kZeroUUID])
+      if (!client_id || [client_id isEqualToString:kZeroUUID])
         client_id = base::SysUTF8ToNSString(ios::device_util::GetRandomId());
     } else {
       client_id = base::SysUTF8ToNSString(ios::device_util::GetRandomId());
@@ -157,8 +157,16 @@ std::string GetDeviceIdentifier(const char* salt) {
     [defaults synchronize];
   }
 
-  NSData* hash_data = [[NSString stringWithFormat:@"%@%s", client_id,
-      salt ? salt : kDefaultSalt] dataUsingEncoding:NSUTF8StringEncoding];
+  return GetSaltedString(base::SysNSStringToUTF8(client_id),
+                         salt ? salt : kDefaultSalt);
+}
+
+std::string GetSaltedString(const std::string& in_string,
+                            const std::string& salt) {
+  DCHECK(in_string.length());
+  DCHECK(salt.length());
+  NSData* hash_data = [base::SysUTF8ToNSString(in_string + salt)
+      dataUsingEncoding:NSUTF8StringEncoding];
 
   unsigned char hash[CC_SHA256_DIGEST_LENGTH];
   CC_SHA256([hash_data bytes], [hash_data length], hash);

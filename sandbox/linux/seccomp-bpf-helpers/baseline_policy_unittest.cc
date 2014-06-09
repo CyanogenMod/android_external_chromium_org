@@ -5,12 +5,15 @@
 #include "sandbox/linux/seccomp-bpf-helpers/baseline_policy.h"
 
 #include <errno.h>
+#include <linux/futex.h>
 #include <sched.h>
 #include <signal.h>
 #include <string.h>
+#include <sys/prctl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -23,6 +26,7 @@
 #include "sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.h"
 #include "sandbox/linux/seccomp-bpf/bpf_tests.h"
 #include "sandbox/linux/seccomp-bpf/sandbox_bpf.h"
+#include "sandbox/linux/services/android_futex.h"
 #include "sandbox/linux/services/linux_syscalls.h"
 #include "sandbox/linux/services/thread_helpers.h"
 #include "sandbox/linux/tests/unit_tests.h"
@@ -240,6 +244,44 @@ TEST_BASELINE_SIGSYS(__NR_vserver);
 TEST_BASELINE_SIGSYS(__NR_getcpu);
 TEST_BASELINE_SIGSYS(__NR_setpgid);
 TEST_BASELINE_SIGSYS(__NR_getitimer);
+
+#if !defined(OS_ANDROID)
+BPF_DEATH_TEST_C(BaselinePolicy,
+                 FutexWithRequeuePriorityInheritence,
+                 DEATH_MESSAGE(GetFutexErrorMessageContentForTests()),
+                 BaselinePolicy) {
+  syscall(__NR_futex, NULL, FUTEX_CMP_REQUEUE_PI, 0, NULL, NULL, 0);
+  _exit(1);
+}
+
+BPF_DEATH_TEST_C(BaselinePolicy,
+                 FutexWithRequeuePriorityInheritencePrivate,
+                 DEATH_MESSAGE(GetFutexErrorMessageContentForTests()),
+                 BaselinePolicy) {
+  syscall(__NR_futex, NULL, FUTEX_CMP_REQUEUE_PI_PRIVATE, 0, NULL, NULL, 0);
+  _exit(1);
+}
+#endif  // !defined(OS_ANDROID)
+
+BPF_TEST_C(BaselinePolicy, PrctlDumpable, BaselinePolicy) {
+  const int is_dumpable = prctl(PR_GET_DUMPABLE, 0, 0, 0, 0);
+  BPF_ASSERT(is_dumpable == 1 || is_dumpable == 0);
+  const int prctl_ret = prctl(PR_SET_DUMPABLE, is_dumpable, 0, 0, 0, 0);
+  BPF_ASSERT_EQ(0, prctl_ret);
+}
+
+// Workaround incomplete Android headers.
+#if !defined(PR_CAPBSET_READ)
+#define PR_CAPBSET_READ 23
+#endif
+
+BPF_DEATH_TEST_C(BaselinePolicy,
+                 PrctlSigsys,
+                 DEATH_MESSAGE(GetPrctlErrorMessageContentForTests()),
+                 BaselinePolicy) {
+  prctl(PR_CAPBSET_READ, 0, 0, 0, 0);
+  _exit(1);
+}
 
 }  // namespace
 

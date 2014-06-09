@@ -256,6 +256,7 @@ string CryptoHandshakeMessage::DebugStringInternal(size_t indent) const {
       case kKEXS:
       case kAEAD:
       case kCGST:
+      case kCOPT:
       case kLOSS:
       case kPDMD:
       case kVER:
@@ -298,6 +299,10 @@ string CryptoHandshakeMessage::DebugStringInternal(size_t indent) const {
       case kPAD:
         ret += StringPrintf("(%d bytes of padding)",
                             static_cast<int>(it->second.size()));
+        done = true;
+        break;
+      case kUAID:
+        ret += it->second;
         done = true;
         break;
     }

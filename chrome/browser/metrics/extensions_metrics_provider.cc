@@ -10,9 +10,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/metrics/metrics_state_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "components/metrics/metrics_log_base.h"
+#include "components/metrics/metrics_log.h"
+#include "components/metrics/metrics_state_manager.h"
 #include "components/metrics/proto/system_profile.pb.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension_set.h"
@@ -90,10 +90,10 @@ ExtensionsMetricsProvider::GetInstalledExtensions() {
 }
 
 uint64 ExtensionsMetricsProvider::GetClientID() {
-  // TODO(blundell): Create a MetricsLogBase::ClientIDAsInt() API and call it
-  // here as well as in MetricsLogBases's population of the client_id field of
+  // TODO(blundell): Create a MetricsLog::ClientIDAsInt() API and call it
+  // here as well as in MetricsLog's population of the client_id field of
   // the uma_proto.
-  return metrics::MetricsLogBase::Hash(metrics_state_manager_->client_id());
+  return MetricsLog::Hash(metrics_state_manager_->client_id());
 }
 
 void ExtensionsMetricsProvider::ProvideSystemProfileMetrics(

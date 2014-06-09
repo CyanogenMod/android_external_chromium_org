@@ -41,6 +41,19 @@ struct QuicConnectionStats;
 // previous transmission is acked, the data will not be retransmitted.
 class NET_EXPORT_PRIVATE QuicSentPacketManager {
  public:
+  // Interface which gets callbacks from the QuicSentPacketManager at
+  // interesting points.  Implementations must not mutate the state of
+  // the packet manager or connection as a result of these callbacks.
+  class NET_EXPORT_PRIVATE DebugDelegate {
+   public:
+    virtual ~DebugDelegate() {}
+
+    // Called when a spurious retransmission is detected.
+    virtual void OnSpuriousPacketRetransmition(
+        TransmissionType transmission_type,
+        QuicByteCount byte_size) {}
+  };
+
   // Struct to store the pending retransmission information.
   struct PendingRetransmission {
     PendingRetransmission(QuicPacketSequenceNumber sequence_number,
@@ -133,7 +146,6 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   // Note 2: Send algorithms may or may not use |retransmit| in their
   // calculations.
   virtual QuicTime::Delta TimeUntilSend(QuicTime now,
-                                        TransmissionType transmission_type,
                                         HasRetransmittableData retransmittable);
 
   // Returns amount of time for delayed ack timer.
@@ -159,6 +171,10 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   void MaybeEnablePacing();
 
   bool using_pacing() const { return using_pacing_; }
+
+  void set_debug_delegate(DebugDelegate* debug_delegate) {
+    debug_delegate_ = debug_delegate;
+  }
 
  private:
   friend class test::QuicConnectionPeer;
@@ -240,6 +256,11 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   void MarkForRetransmission(QuicPacketSequenceNumber sequence_number,
                              TransmissionType transmission_type);
 
+  // Notify observers about spurious retransmits.
+  void RecordSpuriousRetransmissions(
+      const SequenceNumberSet& all_transmissions,
+      QuicPacketSequenceNumber acked_sequence_number);
+
   // Newly serialized retransmittable and fec packets are added to this map,
   // which contains owning pointers to any contained frames.  If a packet is
   // retransmitted, this map will contain entries for both the old and the new
@@ -263,6 +284,7 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
 
   const QuicClock* clock_;
   QuicConnectionStats* stats_;
+  DebugDelegate* debug_delegate_;
   RttStats rtt_stats_;
   scoped_ptr<SendAlgorithmInterface> send_algorithm_;
   scoped_ptr<LossDetectionInterface> loss_algorithm_;
@@ -274,6 +296,8 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   size_t consecutive_tlp_count_;
   // Number of times the crypto handshake has been retransmitted.
   size_t consecutive_crypto_retransmission_count_;
+  // Whether a tlp packet can be sent even if the send algorithm says not to.
+  bool pending_tlp_transmission_;
   // Maximum number of tail loss probes to send before firing an RTO.
   size_t max_tail_loss_probes_;
   bool using_pacing_;

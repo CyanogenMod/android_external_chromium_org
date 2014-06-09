@@ -256,11 +256,12 @@ void PnaclCoordinator::TranslateFinished(int32_t pp_error) {
   // that were delayed (see the delay inserted in BitcodeGotCompiled).
   if (ExpectedProgressKnown()) {
     pexe_bytes_compiled_ = expected_pexe_size_;
-    plugin_->EnqueueProgressEvent(PP_NACL_EVENT_PROGRESS,
-                                  pexe_url_,
-                                  plugin::Plugin::LENGTH_IS_COMPUTABLE,
-                                  pexe_bytes_compiled_,
-                                  expected_pexe_size_);
+    GetNaClInterface()->DispatchEvent(plugin_->pp_instance(),
+                                      PP_NACL_EVENT_PROGRESS,
+                                      pexe_url_.c_str(),
+                                      PP_TRUE,
+                                      pexe_bytes_compiled_,
+                                      expected_pexe_size_);
   }
 
   // If there are no errors, report stats from this thread (the main thread).
@@ -376,7 +377,7 @@ void PnaclCoordinator::BitcodeStreamDidOpen(int32_t pp_error) {
   // The component updater's resource throttles + OnDemand update/install
   // should block the URL request until the compiler is present. Now we
   // can load the resources (e.g. llc and ld nexes).
-  resources_.reset(new PnaclResources(plugin_, this));
+  resources_.reset(new PnaclResources(plugin_));
   CHECK(resources_ != NULL);
 
   // The first step of loading resources: read the resource info file.
@@ -388,6 +389,10 @@ void PnaclCoordinator::BitcodeStreamDidOpen(int32_t pp_error) {
 void PnaclCoordinator::ResourceInfoWasRead(int32_t pp_error) {
   PLUGIN_PRINTF(("PluginCoordinator::ResourceInfoWasRead (pp_error=%"
                 NACL_PRId32 ")\n", pp_error));
+  if (pp_error != PP_OK) {
+    ExitWithError();
+    return;
+  }
   // Second step of loading resources: call StartLoad to load pnacl-llc
   // and pnacl-ld, based on the filenames found in the resource info file.
   pp::CompletionCallback resources_cb =
@@ -399,8 +404,11 @@ void PnaclCoordinator::ResourcesDidLoad(int32_t pp_error) {
   PLUGIN_PRINTF(("PnaclCoordinator::ResourcesDidLoad (pp_error=%"
                  NACL_PRId32 ")\n", pp_error));
   if (pp_error != PP_OK) {
-    // Finer-grained error code should have already been reported by
-    // the PnaclResources class.
+    ReportNonPpapiError(
+        PP_NACL_ERROR_PNACL_RESOURCE_FETCH,
+        nacl::string("The Portable Native Client (pnacl) component is not "
+                     "installed. Please consult chrome://components for more "
+                      "information."));
     return;
   }
 
@@ -549,18 +557,20 @@ void PnaclCoordinator::BitcodeGotCompiled(int32_t pp_error,
   // that bytes were sent to the compiler.
   if (ExpectedProgressKnown()) {
     if (!ShouldDelayProgressEvent()) {
-      plugin_->EnqueueProgressEvent(PP_NACL_EVENT_PROGRESS,
-                                    pexe_url_,
-                                    plugin::Plugin::LENGTH_IS_COMPUTABLE,
-                                    pexe_bytes_compiled_,
-                                    expected_pexe_size_);
+      GetNaClInterface()->DispatchEvent(plugin_->pp_instance(),
+                                        PP_NACL_EVENT_PROGRESS,
+                                        pexe_url_.c_str(),
+                                        PP_TRUE,
+                                        pexe_bytes_compiled_,
+                                        expected_pexe_size_);
     }
   } else {
-    plugin_->EnqueueProgressEvent(PP_NACL_EVENT_PROGRESS,
-                                  pexe_url_,
-                                  plugin::Plugin::LENGTH_IS_NOT_COMPUTABLE,
-                                  pexe_bytes_compiled_,
-                                  expected_pexe_size_);
+    GetNaClInterface()->DispatchEvent(plugin_->pp_instance(),
+                                      PP_NACL_EVENT_PROGRESS,
+                                      pexe_url_.c_str(),
+                                      PP_FALSE,
+                                      pexe_bytes_compiled_,
+                                      expected_pexe_size_);
   }
 }
 

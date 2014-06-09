@@ -13,51 +13,60 @@
 #include "base/logging.h"
 #include "mojo/system/constants.h"
 #include "mojo/system/memory.h"
+#include "mojo/system/options_validation.h"
 #include "mojo/system/waiter_list.h"
 
 namespace mojo {
 namespace system {
 
 // static
-MojoResult DataPipe::ValidateOptions(
+MojoResult DataPipe::ValidateCreateOptions(
     const MojoCreateDataPipeOptions* in_options,
     MojoCreateDataPipeOptions* out_options) {
+  const MojoCreateDataPipeOptionsFlags kKnownFlags =
+      MOJO_CREATE_DATA_PIPE_OPTIONS_FLAG_MAY_DISCARD;
   static const MojoCreateDataPipeOptions kDefaultOptions = {
     static_cast<uint32_t>(sizeof(MojoCreateDataPipeOptions)),
     MOJO_CREATE_DATA_PIPE_OPTIONS_FLAG_NONE,
     1u,
     static_cast<uint32_t>(kDefaultDataPipeCapacityBytes)
   };
-  if (!in_options) {
-    *out_options = kDefaultOptions;
+
+  *out_options = kDefaultOptions;
+  if (!in_options)
     return MOJO_RESULT_OK;
-  }
 
-  if (in_options->struct_size < sizeof(*in_options))
-    return MOJO_RESULT_INVALID_ARGUMENT;
-  out_options->struct_size = static_cast<uint32_t>(sizeof(*out_options));
+  MojoResult result =
+      ValidateOptionsStructPointerSizeAndFlags<MojoCreateDataPipeOptions>(
+          in_options, kKnownFlags, out_options);
+  if (result != MOJO_RESULT_OK)
+    return result;
 
-  // All flags are okay (unrecognized flags will be ignored).
-  out_options->flags = in_options->flags;
+  // Checks for fields beyond |flags|:
 
+  if (!HAS_OPTIONS_STRUCT_MEMBER(MojoCreateDataPipeOptions, element_num_bytes,
+                                 in_options))
+    return MOJO_RESULT_OK;
   if (in_options->element_num_bytes == 0)
     return MOJO_RESULT_INVALID_ARGUMENT;
   out_options->element_num_bytes = in_options->element_num_bytes;
 
-  if (in_options->capacity_num_bytes == 0) {
+  if (!HAS_OPTIONS_STRUCT_MEMBER(MojoCreateDataPipeOptions, capacity_num_bytes,
+                                 in_options) ||
+      in_options->capacity_num_bytes == 0) {
     // Round the default capacity down to a multiple of the element size (but at
     // least one element).
     out_options->capacity_num_bytes = std::max(
         static_cast<uint32_t>(kDefaultDataPipeCapacityBytes -
-            (kDefaultDataPipeCapacityBytes % in_options->element_num_bytes)),
-        in_options->element_num_bytes);
-  } else {
-    if (in_options->capacity_num_bytes % in_options->element_num_bytes != 0)
-      return MOJO_RESULT_INVALID_ARGUMENT;
-    out_options->capacity_num_bytes = in_options->capacity_num_bytes;
+            (kDefaultDataPipeCapacityBytes % out_options->element_num_bytes)),
+        out_options->element_num_bytes);
+    return MOJO_RESULT_OK;
   }
-  if (out_options->capacity_num_bytes > kMaxDataPipeCapacityBytes)
+  if (in_options->capacity_num_bytes % out_options->element_num_bytes != 0)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+  if (in_options->capacity_num_bytes > kMaxDataPipeCapacityBytes)
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
+  out_options->capacity_num_bytes = in_options->capacity_num_bytes;
 
   return MOJO_RESULT_OK;
 }
@@ -351,7 +360,7 @@ DataPipe::DataPipe(bool has_local_producer,
       consumer_two_phase_max_num_bytes_read_(0) {
   // Check that the passed in options actually are validated.
   MojoCreateDataPipeOptions unused ALLOW_UNUSED = { 0 };
-  DCHECK_EQ(ValidateOptions(&validated_options, &unused), MOJO_RESULT_OK);
+  DCHECK_EQ(ValidateCreateOptions(&validated_options, &unused), MOJO_RESULT_OK);
 }
 
 DataPipe::~DataPipe() {

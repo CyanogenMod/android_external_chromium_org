@@ -27,7 +27,6 @@
 #include "base/sys_info.h"
 #import "content/browser/accessibility/browser_accessibility_cocoa.h"
 #include "content/browser/accessibility/browser_accessibility_manager_mac.h"
-#include "content/browser/compositor/browser_compositor_view_mac.h"
 #include "content/browser/compositor/resize_lock.h"
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/frame_tree_node.h"
@@ -74,7 +73,6 @@
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gl/gl_switches.h"
-#include "ui/gl/io_surface_support_mac.h"
 
 using content::BrowserAccessibility;
 using content::BrowserAccessibilityManager;
@@ -105,28 +103,11 @@ using blink::WebGestureEvent;
 // Declare things that are part of the 10.7 SDK.
 #if !defined(MAC_OS_X_VERSION_10_7) || \
     MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
-@interface NSView (NSOpenGLSurfaceResolutionLionAPI)
-- (void)setWantsBestResolutionOpenGLSurface:(BOOL)flag;
-@end
 
 static NSString* const NSWindowDidChangeBackingPropertiesNotification =
     @"NSWindowDidChangeBackingPropertiesNotification";
 
 #endif  // 10.7
-
-// Declare things that are part of the 10.9 SDK.
-#if !defined(MAC_OS_X_VERSION_10_9) || \
-    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_9
-enum {
-   NSWindowOcclusionStateVisible = 1UL << 1,
-};
-typedef NSUInteger NSWindowOcclusionState;
-
-@interface NSWindow (MavericksAPI)
-- (NSWindowOcclusionState)occlusionState;
-@end
-
-#endif  // 10.9
 
 // This method will return YES for OS X versions 10.7.3 and later, and NO
 // otherwise.
@@ -158,7 +139,9 @@ static BOOL SupportsBackingPropertiesChangedNotification() {
 
 + (BOOL)shouldAutohideCursorForEvent:(NSEvent*)event;
 - (id)initWithRenderWidgetHostViewMac:(RenderWidgetHostViewMac*)r;
-- (void)gotUnhandledWheelEvent;
+- (void)processedWheelEvent:(const blink::WebMouseWheelEvent&)event
+                   consumed:(BOOL)consumed;
+
 - (void)scrollOffsetPinnedToLeft:(BOOL)left toRight:(BOOL)right;
 - (void)setHasHorizontalScrollbar:(BOOL)has_horizontal_scrollbar;
 - (void)keyEvent:(NSEvent*)theEvent wasKeyEquivalent:(BOOL)equiv;
@@ -425,7 +408,30 @@ RenderWidgetHostImpl* RenderWidgetHostViewMac::GetHost() {
 
 void RenderWidgetHostViewMac::SchedulePaintInRect(
     const gfx::Rect& damage_rect_in_dip) {
-  [browser_compositor_view_ compositor]->Draw();
+  if (browser_compositor_lock_)
+    browser_compositor_damaged_during_lock_ = true;
+  else
+    [browser_compositor_view_ compositor]->ScheduleFullRedraw();
+}
+
+void RenderWidgetHostViewMac::DelegatedCompositorDidSwapBuffers() {
+  // If this view is not visible then do not lock the compositor, because the
+  // wait for the surface to be drawn will time out.
+  NSWindow* window = [cocoa_view_ window];
+  if (!window)
+    return;
+  if (window && [window respondsToSelector:@selector(occlusionState)]) {
+    bool window_is_occluded =
+        !([window occlusionState] & NSWindowOcclusionStateVisible);
+    if (window_is_occluded)
+      return;
+  }
+  browser_compositor_lock_ =
+      [browser_compositor_view_ compositor]->GetCompositorLock();
+}
+
+void RenderWidgetHostViewMac::DelegatedCompositorAbortedSwapBuffers() {
+  PostReleaseBrowserCompositorLock();
 }
 
 bool RenderWidgetHostViewMac::IsVisible() {
@@ -509,10 +515,6 @@ RenderWidgetHostViewMac::~RenderWidgetHostViewMac() {
   // This is being called from |cocoa_view_|'s destructor, so invalidate the
   // pointer.
   cocoa_view_ = nil;
-
-  // Delete the delegated frame state.
-  delegated_frame_host_.reset();
-  root_layer_.reset();
 
   UnlockMouse();
 
@@ -632,6 +634,7 @@ void RenderWidgetHostViewMac::EnsureCompositedIOSurfaceLayer() {
 
   compositing_iosurface_layer_.reset([[CompositingIOSurfaceLayer alloc]
       initWithIOSurface:compositing_iosurface_
+        withScaleFactor:compositing_iosurface_->scale_factor()
              withClient:this]);
   DCHECK(compositing_iosurface_layer_);
 
@@ -824,6 +827,23 @@ void RenderWidgetHostViewMac::UpdateDisplayLink() {
   }
 }
 
+void RenderWidgetHostViewMac::PostReleaseBrowserCompositorLock() {
+  base::MessageLoop::current()->PostTask(FROM_HERE,
+      base::Bind(&RenderWidgetHostViewMac::ReleaseBrowserCompositorLock,
+                 weak_factory_.GetWeakPtr()));
+}
+
+void RenderWidgetHostViewMac::ReleaseBrowserCompositorLock() {
+  if (!browser_compositor_view_)
+    return;
+
+  browser_compositor_lock_ = NULL;
+  if (browser_compositor_damaged_during_lock_) {
+    browser_compositor_damaged_during_lock_ = false;
+    [browser_compositor_view_ compositor]->ScheduleFullRedraw();
+  }
+}
+
 void RenderWidgetHostViewMac::SendVSyncParametersToRenderer() {
   if (!render_widget_host_ || !display_link_)
     return;
@@ -880,6 +900,7 @@ void RenderWidgetHostViewMac::WasHidden() {
   // Any pending frames will not be displayed until this is shown again. Ack
   // them now.
   SendPendingSwapAck();
+  PostReleaseBrowserCompositorLock();
 
   // If we have a renderer, then inform it that we are being hidden so it can
   // reduce its resource utilization.
@@ -1103,6 +1124,13 @@ void RenderWidgetHostViewMac::Destroy() {
   // chain, for instance |-performKeyEquivalent:|.  In that case the
   // object needs to survive until the stack unwinds.
   pepper_fullscreen_window_.autorelease();
+
+  // Delete the delegated frame state, which will reach back into
+  // render_widget_host_.
+  browser_compositor_lock_ = NULL;
+  [browser_compositor_view_ resetClient];
+  delegated_frame_host_.reset();
+  root_layer_.reset();
 
   // We get this call just before |render_widget_host_| deletes
   // itself.  But we are owned by |cocoa_view_|, which may be retained
@@ -1892,8 +1920,8 @@ void RenderWidgetHostViewMac::OnSwapCompositorFrame(
 
   if (frame->delegated_frame_data) {
     if (!browser_compositor_view_) {
-      browser_compositor_view_.reset(
-          [[BrowserCompositorViewMac alloc] initWithSuperview:cocoa_view_]);
+      browser_compositor_view_.reset([[BrowserCompositorViewMac alloc]
+          initWithSuperview:cocoa_view_ withClient:this]);
       root_layer_.reset(new ui::Layer(ui::LAYER_TEXTURED));
       delegated_frame_host_.reset(new DelegatedFrameHost(this));
       [browser_compositor_view_ compositor]->SetRootLayer(root_layer_.get());
@@ -2027,12 +2055,14 @@ void RenderWidgetHostViewMac::UnlockMouse() {
     render_widget_host_->LostMouseLock();
 }
 
-void RenderWidgetHostViewMac::UnhandledWheelEvent(
-    const blink::WebMouseWheelEvent& event) {
+void RenderWidgetHostViewMac::WheelEventAck(
+    const blink::WebMouseWheelEvent& event,
+    InputEventAckState ack_result) {
+  bool consumed = ack_result == INPUT_EVENT_ACK_STATE_CONSUMED;
   // Only record a wheel event as unhandled if JavaScript handlers got a chance
   // to see it (no-op wheel events are ignored by the event dispatcher)
   if (event.deltaX || event.deltaY)
-    [cocoa_view_ gotUnhandledWheelEvent];
+    [cocoa_view_ processedWheelEvent:event consumed:consumed];
 }
 
 bool RenderWidgetHostViewMac::Send(IPC::Message* message) {
@@ -2354,11 +2384,6 @@ void RenderWidgetHostViewMac::AddPendingSwapAck(
   // loss. Drop the old acks.
   pending_swap_ack_.reset(new PendingSwapAck(
       route_id, gpu_host_id, renderer_id));
-
-  // A trace value of 2 indicates that there is a pending swap ack. See
-  // CompositingIOSurfaceLayer's canDrawInCGLContext for other value meanings.
-  TRACE_COUNTER_ID1("browser", "PendingSwapAck",
-                    compositing_iosurface_layer_.get(), 2);
 }
 
 void RenderWidgetHostViewMac::SendPendingSwapAck() {
@@ -2372,7 +2397,6 @@ void RenderWidgetHostViewMac::SendPendingSwapAck() {
                                                  pending_swap_ack_->gpu_host_id,
                                                  ack_params);
   pending_swap_ack_.reset();
-  TRACE_COUNTER_ID1("browser", "PendingSwapAck", this, 0);
 }
 
 void RenderWidgetHostViewMac::PauseForPendingResizeOrRepaintsAndDraw() {
@@ -2473,17 +2497,23 @@ SkBitmap::Config RenderWidgetHostViewMac::PreferredReadbackFormat() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// BrowserCompositorViewMacClient, public:
+
+void RenderWidgetHostViewMac::BrowserCompositorDidDrawFrame() {
+  PostReleaseBrowserCompositorLock();
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // CompositingIOSurfaceLayerClient, public:
 
 void RenderWidgetHostViewMac::AcceleratedLayerDidDrawFrame(bool succeeded) {
+  if (!render_widget_host_)
+    return;
+
   SendPendingLatencyInfoToHost();
   SendPendingSwapAck();
   if (!succeeded)
     GotAcceleratedCompositingError();
-}
-
-bool RenderWidgetHostViewMac::AcceleratedLayerHasNotAckedPendingFrame() const {
-  return pending_swap_ack_;
 }
 
 }  // namespace content
@@ -2563,12 +2593,9 @@ bool RenderWidgetHostViewMac::AcceleratedLayerHasNotAckedPendingFrame() const {
   }
 }
 
-- (void)gotUnhandledWheelEvent {
-  if (responderDelegate_ &&
-      [responderDelegate_
-          respondsToSelector:@selector(gotUnhandledWheelEvent)]) {
-    [responderDelegate_ gotUnhandledWheelEvent];
-  }
+- (void)processedWheelEvent:(const blink::WebMouseWheelEvent&)event
+                   consumed:(BOOL)consumed {
+  [responderDelegate_ rendererHandledWheelEvent:event consumed:consumed];
 }
 
 - (void)scrollOffsetPinnedToLeft:(BOOL)left toRight:(BOOL)right {

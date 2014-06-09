@@ -15,6 +15,7 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/devtools/devtools_window.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/app_window.h"
 #include "chrome/common/extensions/features/feature_channel.h"
 #include "content/public/browser/notification_registrar.h"
@@ -25,6 +26,7 @@
 #include "content/public/common/url_constants.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/image_util.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/switches.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/ui_base_types.h"
@@ -224,7 +226,8 @@ bool AppWindowCreateFunction::RunAsync() {
       return false;
 
     if (options->transparent_background.get() &&
-        (GetExtension()->HasAPIPermission(APIPermission::kExperimental) ||
+        (GetExtension()->permissions_data()->HasAPIPermission(
+             APIPermission::kExperimental) ||
          CommandLine::ForCurrentProcess()->HasSwitch(
              switches::kEnableExperimentalExtensionApis))) {
       create_params.transparent_background = *options->transparent_background;
@@ -239,7 +242,8 @@ bool AppWindowCreateFunction::RunAsync() {
     if (options->always_on_top.get()) {
       create_params.always_on_top = *options->always_on_top.get();
 
-      if (create_params.always_on_top && !GetExtension()->HasAPIPermission(
+      if (create_params.always_on_top &&
+          !GetExtension()->permissions_data()->HasAPIPermission(
               APIPermission::kAlwaysOnTopWindows)) {
         error_ = app_window_constants::kAlwaysOnTopPermission;
         return false;
@@ -299,6 +303,8 @@ bool AppWindowCreateFunction::RunAsync() {
   }
 
   SendResponse(true);
+  app_window->WindowEventsReady();
+
   return true;
 }
 
@@ -416,10 +422,11 @@ bool AppWindowCreateFunction::GetBoundsSpec(
 
 AppWindow::Frame AppWindowCreateFunction::GetFrameFromString(
     const std::string& frame_string) {
-   if (frame_string == kHtmlFrameOption &&
-       (GetExtension()->HasAPIPermission(APIPermission::kExperimental) ||
-        CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kEnableExperimentalExtensionApis))) {
+  if (frame_string == kHtmlFrameOption &&
+      (GetExtension()->permissions_data()->HasAPIPermission(
+           APIPermission::kExperimental) ||
+       CommandLine::ForCurrentProcess()->HasSwitch(
+           switches::kEnableExperimentalExtensionApis))) {
      inject_html_titlebar_ = true;
      return AppWindow::FRAME_NONE;
    }

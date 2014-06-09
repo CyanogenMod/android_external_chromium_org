@@ -176,6 +176,7 @@ const Experiment::Choice kOverscrollHistoryNavigationChoices[] = {
 };
 #endif
 
+#if !defined(DISABLE_NACL)
 const Experiment::Choice kNaClDebugMaskChoices[] = {
   // Secure shell can be used on ChromeOS for forwarding the TCP port opened by
   // debug stub to a remote machine. Since secure shell uses NaCl, we usually
@@ -188,6 +189,7 @@ const Experiment::Choice kNaClDebugMaskChoices[] = {
   { IDS_NACL_DEBUG_MASK_CHOICE_INCLUDE_DEBUG,
       switches::kNaClDebugMask, "*://*/*debug.nmf" }
 };
+#endif
 
 const Experiment::Choice kImplSidePaintingChoices[] = {
   { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
@@ -401,6 +403,40 @@ const Experiment::Choice kExtensionContentVerificationChoices[] = {
     extensions::switches::kExtensionContentVerificationEnforceStrict },
 };
 
+// Using independent flags (instead of flag=value flags) to be able to
+// associate the version with a FieldTrial. FieldTrials don't currently support
+// flag=value flags.
+const Experiment::Choice kSSLInterstitialVersions[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
+  { IDS_FLAGS_SSL_INTERSTITIAL_VERSION_V1,
+    switches::kSSLInterstitialVersionV1, "" },
+  { IDS_FLAGS_SSL_INTERSTITIAL_VERSION_V2_GRAY,
+    switches::kSSLInterstitialVersionV2Gray, "" },
+  { IDS_FLAGS_SSL_INTERSTITIAL_VERSION_V2_COLORFUL,
+    switches::kSSLInterstitialVersionV2Colorful, "" },
+};
+
+// Using independent flags (instead of flag=value flags) to be able to
+// associate the version with a FieldTrial. FieldTrials don't currently support
+// flag=value flags.
+const Experiment::Choice kMalwareInterstitialVersions[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
+  { IDS_FLAGS_MALWARE_INTERSTITIAL_VERSION_V2,
+    switches::kMalwareInterstitialVersionV2, "" },
+  { IDS_FLAGS_MALWARE_INTERSTITIAL_VERSION_V3,
+    switches::kMalwareInterstitialVersionV3, "" },
+};
+
+#if defined(OS_CHROMEOS)
+const Experiment::Choice kEnableFileManagerMTPChoices[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
+  { IDS_GENERIC_EXPERIMENT_CHOICE_ENABLED,
+    chromeos::switches::kEnableFileManagerMTP, "true" },
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED,
+    chromeos::switches::kEnableFileManagerMTP, "false" }
+};
+#endif
+
 // RECORDING USER METRICS FOR FLAGS:
 // -----------------------------------------------------------------------------
 // The first line of the experiment is the internal name. If you'd like to
@@ -589,12 +625,13 @@ const Experiment kExperiments[] = {
     kOsAll,
     MULTI_VALUE_TYPE(kEnableAcceleratedFixedRootBackgroundChoices)
   },
-  // TODO(bbudge): When NaCl is on by default, remove this flag entry.
+  // Native client is compiled out when DISABLE_NACL is defined.
+#if !defined(DISABLE_NACL)
   {
     "enable-nacl",  // FLAGS:RECORD_UMA
     IDS_FLAGS_ENABLE_NACL_NAME,
     IDS_FLAGS_ENABLE_NACL_DESCRIPTION,
-    kOsDesktop,
+    kOsAll,
     SINGLE_VALUE_TYPE(switches::kEnableNaCl)
   },
   {
@@ -618,6 +655,7 @@ const Experiment kExperiments[] = {
     kOsDesktop,
     MULTI_VALUE_TYPE(kNaClDebugMaskChoices)
   },
+#endif
   {
     "extension-apis",  // FLAGS:RECORD_UMA
     IDS_FLAGS_EXPERIMENTAL_EXTENSION_APIS_NAME,
@@ -895,6 +933,8 @@ const Experiment kExperiments[] = {
     kOsDesktop,
     SINGLE_VALUE_TYPE(switches::kEnableDownloadResumption)
   },
+  // Native client is compiled out when DISABLE_NACL is defined.
+#if !defined(DISABLE_NACL)
   {
     "allow-nacl-socket-api",
     IDS_FLAGS_ALLOW_NACL_SOCKET_API_NAME,
@@ -902,6 +942,7 @@ const Experiment kExperiments[] = {
     kOsDesktop,
     SINGLE_VALUE_TYPE_AND_VALUE(switches::kAllowNaClSocketAPI, "*")
   },
+#endif
   {
     "force-device-scale-factor",
     IDS_FLAGS_FORCE_HIGH_DPI_NAME,
@@ -1079,7 +1120,7 @@ const Experiment kExperiments[] = {
     "wallet-service-use-sandbox",
     IDS_FLAGS_WALLET_SERVICE_USE_SANDBOX_NAME,
     IDS_FLAGS_WALLET_SERVICE_USE_SANDBOX_DESCRIPTION,
-    kOsCrOS | kOsWin | kOsMac,
+    kOsAndroid | kOsDesktop,
     ENABLE_DISABLE_VALUE_TYPE_AND_VALUE(
         autofill::switches::kWalletServiceUseSandbox, "1",
         autofill::switches::kWalletServiceUseSandbox, "0")
@@ -1114,7 +1155,7 @@ const Experiment kExperiments[] = {
     "enable-touch-editing",
     IDS_FLAGS_ENABLE_TOUCH_EDITING_NAME,
     IDS_FLAGS_ENABLE_TOUCH_EDITING_DESCRIPTION,
-    kOsCrOS,
+    kOsCrOS | kOsWin | kOsLinux,
     ENABLE_DISABLE_VALUE_TYPE(switches::kEnableTouchEditing,
                               switches::kDisableTouchEditing)
   },
@@ -1253,6 +1294,13 @@ const Experiment kExperiments[] = {
     ENABLE_DISABLE_VALUE_TYPE(keyboard::switches::kEnableInputView,
                               keyboard::switches::kDisableInputView)
   },
+  {
+    "enable-experimental-input-view-features",
+    IDS_FLAGS_ENABLE_EXPERIMENTAL_INPUT_VIEW_FEATURES_NAME,
+    IDS_FLAGS_ENABLE_EXPERIMENTAL_INPUT_VIEW_FEATURES_DESCRIPTION,
+    kOsCrOS,
+    SINGLE_VALUE_TYPE(keyboard::switches::kEnableExperimentalInputViewFeatures)
+  },
 #endif
   {
     "enable-simple-cache-backend",
@@ -1267,13 +1315,6 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_TCP_FAST_OPEN_DESCRIPTION,
     kOsLinux | kOsCrOS | kOsAndroid,
     SINGLE_VALUE_TYPE(switches::kEnableTcpFastOpen)
-  },
-  {
-    "apps-use-native-frame",
-    IDS_FLAGS_ENABLE_NATIVE_FRAMES_FOR_APPS_NAME,
-    IDS_FLAGS_ENABLE_NATIVE_FRAMES_FOR_APPS_DESCRIPTION,
-    kOsMac,
-    SINGLE_VALUE_TYPE(switches::kAppsUseNativeFrame)
   },
   {
     "enable-syncfs-directory-operation",
@@ -1753,7 +1794,7 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_FILE_MANAGER_MTP_NAME,
     IDS_FLAGS_ENABLE_FILE_MANAGER_MTP_DESCRIPTION,
     kOsCrOS,
-    SINGLE_VALUE_TYPE(chromeos::switches::kEnableFileManagerMTP)
+    MULTI_VALUE_TYPE(kEnableFileManagerMTPChoices)
   },
 #endif
   // TODO(tyoshino): Remove this temporary flag and command line switch. See
@@ -1834,6 +1875,29 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_HARFBUZZ_RENDERTEXT_DESCRIPTION,
     kOsDesktop,
     SINGLE_VALUE_TYPE(switches::kEnableHarfBuzzRenderText)
+  },
+#if defined(OS_ANDROID)
+  {
+    "enable-answers-in-suggest",
+    IDS_FLAGS_ENABLE_ANSWERS_IN_SUGGEST_NAME,
+    IDS_FLAGS_ENABLE_ANSWERS_IN_SUGGEST_DESCRIPTION,
+    kOsAndroid,
+    SINGLE_VALUE_TYPE(switches::kEnableAnswersInSuggest)
+  },
+#endif
+  {
+    "ssl-interstitial-version",
+    IDS_FLAGS_SSL_INTERSTITIAL_TRIAL_NAME,
+    IDS_FLAGS_SSL_INTERSTITIAL_TRIAL_DESCRIPTION,
+    kOsAll,
+    MULTI_VALUE_TYPE(kSSLInterstitialVersions)
+  },
+  {
+    "malware-interstitial-version",
+    IDS_FLAGS_MALWARE_INTERSTITIAL_TRIAL_NAME,
+    IDS_FLAGS_MALWARE_INTERSTITIAL_TRIAL_DESCRIPTION,
+    kOsAll,
+    MULTI_VALUE_TYPE(kMalwareInterstitialVersions)
   },
 };
 

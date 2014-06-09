@@ -9,9 +9,12 @@
 
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
+#include "base/memory/scoped_ptr.h"
 #include "components/metrics/proto/system_profile.pb.h"
 
 namespace metrics {
+
+class MetricsLogUploader;
 
 // An abstraction of operations that depend on the embedder's (e.g. Chrome)
 // environment.
@@ -39,6 +42,9 @@ class MetricsServiceClient {
   // Returns the version of the application as a string.
   virtual std::string GetVersionString() = 0;
 
+  // Returns the install date of the application, in seconds since the epoch.
+  virtual int64 GetInstallDate() = 0;
+
   // Called by the metrics service when a log has been uploaded.
   virtual void OnLogUploadComplete() = 0;
 
@@ -50,6 +56,13 @@ class MetricsServiceClient {
   // extra histograms that will go in that log. Asynchronous API - the client
   // implementation should call |done_callback| when complete.
   virtual void CollectFinalMetrics(const base::Closure& done_callback) = 0;
+
+  // Creates a MetricsLogUploader with the specified parameters (see comments on
+  // MetricsLogUploader for details).
+  virtual scoped_ptr<MetricsLogUploader> CreateUploader(
+      const std::string& server_url,
+      const std::string& mime_type,
+      const base::Callback<void(int)>& on_upload_complete) = 0;
 };
 
 }  // namespace metrics

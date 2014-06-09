@@ -24,6 +24,7 @@
 #include "chrome/browser/chromeos/login/auth/mock_login_status_consumer.h"
 #include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/enrollment/enrollment_screen.h"
+#include "chrome/browser/chromeos/login/enrollment/mock_auto_enrollment_check_screen.h"
 #include "chrome/browser/chromeos/login/enrollment/mock_enrollment_screen.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
 #include "chrome/browser/chromeos/login/screens/error_screen.h"
@@ -282,15 +283,15 @@ IN_PROC_BROWSER_TEST_F(WizardControllerTest, SwitchLanguage) {
   EXPECT_EQ("en-US", g_browser_process->GetApplicationLocale());
   EXPECT_STREQ("en", icu::Locale::getDefault().getLanguage());
   EXPECT_FALSE(base::i18n::IsRTL());
-  const std::wstring en_str =
-      base::UTF16ToWide(l10n_util::GetStringUTF16(IDS_NETWORK_SELECTION_TITLE));
+  const base::string16 en_str =
+      l10n_util::GetStringUTF16(IDS_NETWORK_SELECTION_TITLE);
 
   RunSwitchLanguageTest("fr", "fr", true);
   EXPECT_EQ("fr", g_browser_process->GetApplicationLocale());
   EXPECT_STREQ("fr", icu::Locale::getDefault().getLanguage());
   EXPECT_FALSE(base::i18n::IsRTL());
-  const std::wstring fr_str =
-      base::UTF16ToWide(l10n_util::GetStringUTF16(IDS_NETWORK_SELECTION_TITLE));
+  const base::string16 fr_str =
+      l10n_util::GetStringUTF16(IDS_NETWORK_SELECTION_TITLE);
 
   EXPECT_NE(en_str, fr_str);
 
@@ -298,8 +299,8 @@ IN_PROC_BROWSER_TEST_F(WizardControllerTest, SwitchLanguage) {
   EXPECT_EQ("ar", g_browser_process->GetApplicationLocale());
   EXPECT_STREQ("ar", icu::Locale::getDefault().getLanguage());
   EXPECT_TRUE(base::i18n::IsRTL());
-  const std::wstring ar_str =
-      base::UTF16ToWide(l10n_util::GetStringUTF16(IDS_NETWORK_SELECTION_TITLE));
+  const base::string16 ar_str =
+      l10n_util::GetStringUTF16(IDS_NETWORK_SELECTION_TITLE);
 
   EXPECT_NE(fr_str, ar_str);
 }
@@ -396,6 +397,8 @@ class WizardControllerFlowTest : public WizardControllerTest {
     MOCK(mock_eula_screen_, eula_screen_, MockEulaScreen, MockEulaScreenActor);
     MOCK(mock_enrollment_screen_, enrollment_screen_,
          MockEnrollmentScreen, MockEnrollmentScreenActor);
+    MOCK(mock_auto_enrollment_check_screen_, auto_enrollment_check_screen_,
+         MockAutoEnrollmentCheckScreen, MockAutoEnrollmentCheckScreenActor);
 
     // Switch to the initial screen.
     EXPECT_EQ(NULL, WizardController::default_controller()->current_screen());
@@ -424,7 +427,6 @@ class WizardControllerFlowTest : public WizardControllerTest {
     NetworkPortalDetector::CaptivePortalState online_state;
     online_state.status = NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_ONLINE;
     online_state.response_code = 204;
-    // Default detworks happens to be usually "eth1" in tests.
     network_portal_detector_->SetDefaultNetworkPathForTesting(
         NetworkHandler::Get()
             ->network_state_handler()
@@ -457,12 +459,19 @@ class WizardControllerFlowTest : public WizardControllerTest {
     runner->Run();
   }
 
+  void ResetAutoEnrollmentCheckScreen() {
+    WizardController::default_controller()->
+        auto_enrollment_check_screen_.reset();
+  }
+
   MockOutShowHide<MockNetworkScreen, MockNetworkScreenActor>*
       mock_network_screen_;
   MockOutShowHide<MockUpdateScreen, MockUpdateScreenActor>* mock_update_screen_;
   MockOutShowHide<MockEulaScreen, MockEulaScreenActor>* mock_eula_screen_;
   MockOutShowHide<MockEnrollmentScreen,
       MockEnrollmentScreenActor>* mock_enrollment_screen_;
+  MockOutShowHide<MockAutoEnrollmentCheckScreen,
+      MockAutoEnrollmentCheckScreenActor>* mock_auto_enrollment_check_screen_;
 
  private:
   NetworkPortalDetectorTestImpl* network_portal_detector_;
@@ -507,9 +516,16 @@ IN_PROC_BROWSER_TEST_F(WizardControllerFlowTest, ControlFlowMain) {
 
   EXPECT_EQ(WizardController::default_controller()->GetUpdateScreen(),
             WizardController::default_controller()->current_screen());
-  EXPECT_CALL(*mock_update_screen_, Hide()).Times(0);
-  EXPECT_CALL(*mock_eula_screen_, Show()).Times(0);
+  EXPECT_CALL(*mock_update_screen_, Hide()).Times(1);
+  EXPECT_CALL(*mock_auto_enrollment_check_screen_, Show()).Times(1);
   OnExit(ScreenObserver::UPDATE_INSTALLED);
+
+  EXPECT_EQ(
+      WizardController::default_controller()->GetAutoEnrollmentCheckScreen(),
+      WizardController::default_controller()->current_screen());
+  EXPECT_CALL(*mock_auto_enrollment_check_screen_, Hide()).Times(0);
+  EXPECT_CALL(*mock_eula_screen_, Show()).Times(0);
+  OnExit(ScreenObserver::ENTERPRISE_AUTO_ENROLLMENT_CHECK_COMPLETED);
 
   EXPECT_FALSE(ExistingUserController::current_controller() == NULL);
   EXPECT_EQ("ethernet,wifi,cellular",
@@ -542,12 +558,51 @@ IN_PROC_BROWSER_TEST_F(WizardControllerFlowTest, ControlFlowErrorUpdate) {
 
   EXPECT_EQ(WizardController::default_controller()->GetUpdateScreen(),
             WizardController::default_controller()->current_screen());
-  EXPECT_CALL(*mock_update_screen_, Hide()).Times(0);
-  EXPECT_CALL(*mock_eula_screen_, Show()).Times(0);
-  EXPECT_CALL(*mock_eula_screen_, Hide()).Times(0);  // last transition
+  EXPECT_CALL(*mock_update_screen_, Hide()).Times(1);
+  EXPECT_CALL(*mock_auto_enrollment_check_screen_, Show()).Times(1);
   OnExit(ScreenObserver::UPDATE_ERROR_UPDATING);
 
+  EXPECT_EQ(
+      WizardController::default_controller()->GetAutoEnrollmentCheckScreen(),
+      WizardController::default_controller()->current_screen());
+  EXPECT_CALL(*mock_auto_enrollment_check_screen_, Hide()).Times(0);
+  EXPECT_CALL(*mock_eula_screen_, Show()).Times(0);
+  OnExit(ScreenObserver::ENTERPRISE_AUTO_ENROLLMENT_CHECK_COMPLETED);
+
   EXPECT_FALSE(ExistingUserController::current_controller() == NULL);
+}
+
+IN_PROC_BROWSER_TEST_F(WizardControllerFlowTest, ControlFlowSkipUpdateEnroll) {
+  EXPECT_EQ(WizardController::default_controller()->GetNetworkScreen(),
+            WizardController::default_controller()->current_screen());
+  EXPECT_CALL(*mock_update_screen_, StartNetworkCheck()).Times(0);
+  EXPECT_CALL(*mock_eula_screen_, Show()).Times(1);
+  EXPECT_CALL(*mock_update_screen_, Show()).Times(0);
+  EXPECT_CALL(*mock_network_screen_, Hide()).Times(1);
+  OnExit(ScreenObserver::NETWORK_CONNECTED);
+
+  EXPECT_EQ(WizardController::default_controller()->GetEulaScreen(),
+            WizardController::default_controller()->current_screen());
+  EXPECT_CALL(*mock_eula_screen_, Hide()).Times(1);
+  EXPECT_CALL(*mock_update_screen_, StartNetworkCheck()).Times(0);
+  EXPECT_CALL(*mock_update_screen_, Show()).Times(0);
+  WizardController::default_controller()->SkipUpdateEnrollAfterEula();
+  EXPECT_CALL(*mock_enrollment_screen_->actor(),
+              SetParameters(mock_enrollment_screen_,
+                            EnrollmentScreenActor::ENROLLMENT_MODE_MANUAL,
+                            ""))
+      .Times(1);
+  EXPECT_CALL(*mock_enrollment_screen_, Show()).Times(1);
+  EXPECT_CALL(*mock_enrollment_screen_, Hide()).Times(0);
+  OnExit(ScreenObserver::EULA_ACCEPTED);
+  content::RunAllPendingInMessageLoop();
+
+  EXPECT_EQ(WizardController::default_controller()->GetEnrollmentScreen(),
+            WizardController::default_controller()->current_screen());
+  EXPECT_TRUE(ExistingUserController::current_controller() == NULL);
+  EXPECT_EQ("ethernet,wifi,cellular",
+            NetworkHandler::Get()->network_state_handler()
+            ->GetCheckPortalListForTest());
 }
 
 IN_PROC_BROWSER_TEST_F(WizardControllerFlowTest, ControlFlowEulaDeclined) {
@@ -688,8 +743,15 @@ IN_PROC_BROWSER_TEST_F(WizardControllerEnrollmentFlowTest,
   EXPECT_EQ(WizardController::default_controller()->GetUpdateScreen(),
             WizardController::default_controller()->current_screen());
   EXPECT_CALL(*mock_update_screen_, Hide()).Times(1);
+  EXPECT_CALL(*mock_auto_enrollment_check_screen_, Show()).Times(1);
   OnExit(ScreenObserver::UPDATE_INSTALLED);
 
+  AutoEnrollmentCheckScreen* screen =
+      WizardController::default_controller()->GetAutoEnrollmentCheckScreen();
+  EXPECT_EQ(screen,
+            WizardController::default_controller()->current_screen());
+  EXPECT_CALL(*mock_auto_enrollment_check_screen_, Hide()).Times(1);
+  screen->Start();
   // Wait for auto-enrollment controller to encounter the connection error.
   WaitForAutoEnrollmentState(policy::AUTO_ENROLLMENT_STATE_CONNECTION_ERROR);
 
@@ -708,6 +770,8 @@ IN_PROC_BROWSER_TEST_F(WizardControllerEnrollmentFlowTest,
                             EnrollmentScreenActor::ENROLLMENT_MODE_FORCED,
                             "")).Times(1);
   OnExit(ScreenObserver::ENTERPRISE_AUTO_ENROLLMENT_CHECK_COMPLETED);
+
+  ResetAutoEnrollmentCheckScreen();
 
   // Make sure enterprise enrollment page shows up.
   EXPECT_EQ(WizardController::default_controller()->GetEnrollmentScreen(),
@@ -883,8 +947,16 @@ IN_PROC_BROWSER_TEST_F(WizardControllerKioskFlowTest,
   EXPECT_EQ(WizardController::default_controller()->GetUpdateScreen(),
             WizardController::default_controller()->current_screen());
   EXPECT_CALL(*mock_update_screen_, Hide()).Times(1);
-  EXPECT_CALL(*mock_enrollment_screen_, Show()).Times(1);
+  EXPECT_CALL(*mock_auto_enrollment_check_screen_, Show()).Times(1);
   OnExit(ScreenObserver::UPDATE_INSTALLED);
+
+  EXPECT_EQ(
+      WizardController::default_controller()->GetAutoEnrollmentCheckScreen(),
+      WizardController::default_controller()->current_screen());
+  EXPECT_CALL(*mock_auto_enrollment_check_screen_, Hide()).Times(1);
+  EXPECT_CALL(*mock_enrollment_screen_, Show()).Times(1);
+  OnExit(ScreenObserver::ENTERPRISE_AUTO_ENROLLMENT_CHECK_COMPLETED);
+
 
   EXPECT_FALSE(StartupUtils::IsOobeCompleted());
 
@@ -900,7 +972,6 @@ IN_PROC_BROWSER_TEST_F(WizardControllerKioskFlowTest,
 
 IN_PROC_BROWSER_TEST_F(WizardControllerKioskFlowTest,
                        ControlFlowEnrollmentBack) {
-
   EXPECT_CALL(*mock_enrollment_screen_->actor(),
               SetParameters(mock_enrollment_screen_,
                             EnrollmentScreenActor::ENROLLMENT_MODE_FORCED,
@@ -927,9 +998,16 @@ IN_PROC_BROWSER_TEST_F(WizardControllerKioskFlowTest,
   EXPECT_EQ(WizardController::default_controller()->GetUpdateScreen(),
             WizardController::default_controller()->current_screen());
   EXPECT_CALL(*mock_update_screen_, Hide()).Times(1);
+  EXPECT_CALL(*mock_auto_enrollment_check_screen_, Show()).Times(1);
+  OnExit(ScreenObserver::UPDATE_INSTALLED);
+
+  EXPECT_EQ(
+      WizardController::default_controller()->GetAutoEnrollmentCheckScreen(),
+      WizardController::default_controller()->current_screen());
+  EXPECT_CALL(*mock_auto_enrollment_check_screen_, Hide()).Times(1);
   EXPECT_CALL(*mock_enrollment_screen_, Show()).Times(1);
   EXPECT_CALL(*mock_enrollment_screen_, Hide()).Times(1);
-  OnExit(ScreenObserver::UPDATE_INSTALLED);
+  OnExit(ScreenObserver::ENTERPRISE_AUTO_ENROLLMENT_CHECK_COMPLETED);
 
   EXPECT_FALSE(StartupUtils::IsOobeCompleted());
 

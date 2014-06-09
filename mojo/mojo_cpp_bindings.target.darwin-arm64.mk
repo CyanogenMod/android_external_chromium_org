@@ -26,6 +26,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 LOCAL_SRC_FILES := \
 	mojo/public/cpp/bindings/lib/array_internal.cc \
 	mojo/public/cpp/bindings/lib/bindings_serialization.cc \
+	mojo/public/cpp/bindings/lib/bounds_checker.cc \
 	mojo/public/cpp/bindings/lib/connector.cc \
 	mojo/public/cpp/bindings/lib/filter_chain.cc \
 	mojo/public/cpp/bindings/lib/fixed_buffer.cc \
@@ -37,7 +38,8 @@ LOCAL_SRC_FILES := \
 	mojo/public/cpp/bindings/lib/no_interface.cc \
 	mojo/public/cpp/bindings/lib/router.cc \
 	mojo/public/cpp/bindings/lib/string_serialization.cc \
-	mojo/public/cpp/bindings/lib/sync_dispatcher.cc
+	mojo/public/cpp/bindings/lib/sync_dispatcher.cc \
+	mojo/public/cpp/bindings/lib/validation_errors.cc
 
 
 # Flags passed to both C and C++ files.
@@ -82,7 +84,6 @@ MY_DEFS_Debug := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
@@ -168,7 +169,6 @@ MY_DEFS_Release := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \

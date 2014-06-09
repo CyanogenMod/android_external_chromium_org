@@ -187,8 +187,6 @@ TEST_PPAPI_NACL(Console)
 #else
 #define MAYBE_Core Core
 #endif
-TEST_PPAPI_IN_PROCESS(MAYBE_Core)
-TEST_PPAPI_OUT_OF_PROCESS(MAYBE_Core)
 TEST_PPAPI_NACL(MAYBE_Core)
 
 // Non-NaCl TraceEvent tests are in content/test/ppapi/ppapi_browsertest.cc.
@@ -205,18 +203,6 @@ TEST_PPAPI_NACL(InputEvent)
 
 TEST_PPAPI_OUT_OF_PROCESS(MAYBE_ImeInputEvent)
 TEST_PPAPI_NACL(MAYBE_ImeInputEvent)
-
-// We run and reload the RecursiveObjects test to ensure that the InstanceObject
-// (and others) are properly cleaned up after the first run.
-IN_PROC_BROWSER_TEST_F(PPAPITest, Instance_RecursiveObjects) {
-  RunTestAndReload("Instance_RecursiveObjects");
-}
-// TODO(dmichael): Make it work out-of-process (or at least see whether we
-//                 care).
-IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest,
-                       DISABLED_Instance_RecursiveObjects) {
-  RunTestAndReload("Instance_RecursiveObjects");
-}
 
 // Graphics2D_Dev isn't supported in NaCl, only test the other interfaces
 // TODO(jhorwich) Enable when Graphics2D_Dev interfaces are proxied in NaCl.
@@ -555,8 +541,7 @@ TEST_PPAPI_NACL(MAYBE_URLRequest_CreateAndIsURLRequestInfo)
 
 TEST_PPAPI_IN_PROCESS_VIA_HTTP(URLRequest_SetProperty)
 TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(URLRequest_SetProperty)
-// http://crbug.com/167150
-TEST_PPAPI_NACL(DISABLED_URLRequest_SetProperty)
+TEST_PPAPI_NACL(URLRequest_SetProperty)
 TEST_PPAPI_IN_PROCESS_VIA_HTTP(URLRequest_AppendDataToBody)
 TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(URLRequest_AppendDataToBody)
 TEST_PPAPI_NACL(URLRequest_AppendDataToBody)
@@ -645,12 +630,7 @@ TEST_PPAPI_NACL(Memory)
 #define MAYBE_FileIO DISABLED_FileIO
 #define MAYBE_FileIO_Private DISABLED_FileIO_Private
 #else
-// Flaky on Mac and Win. http://crbug.com/377599
-#if defined(OS_MACOSX) || defined(OS_WIN)
-#define MAYBE_FileIO DISABLED_FileIO
-#else
 #define MAYBE_FileIO FileIO
-#endif  // OS_MACOSX || OS_WIN
 #define MAYBE_FileIO_Private FileIO_Private
 #endif
 
@@ -1216,40 +1196,29 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_FlashMessageLoop) {
   RUN_FLASH_MESSAGE_LOOP_SUBTESTS;
 }
 
-TEST_PPAPI_OUT_OF_PROCESS(MediaStreamAudioTrack)
 TEST_PPAPI_NACL(MediaStreamAudioTrack)
 
-TEST_PPAPI_OUT_OF_PROCESS(MediaStreamVideoTrack)
 TEST_PPAPI_NACL(MediaStreamVideoTrack)
 
-TEST_PPAPI_IN_PROCESS(MouseCursor)
-TEST_PPAPI_OUT_OF_PROCESS(MouseCursor)
 TEST_PPAPI_NACL(MouseCursor)
 
-// PPB_NetworkProxy is not supported in-process.
-TEST_PPAPI_OUT_OF_PROCESS(NetworkProxy)
 TEST_PPAPI_NACL(NetworkProxy)
 
-TEST_PPAPI_OUT_OF_PROCESS(TrueTypeFont)
 TEST_PPAPI_NACL(TrueTypeFont)
 
+// VideoDestination doesn't work in content_browsertests.
 TEST_PPAPI_OUT_OF_PROCESS(VideoDestination)
 TEST_PPAPI_NACL(VideoDestination)
 
+// VideoSource doesn't work in content_browsertests.
 TEST_PPAPI_OUT_OF_PROCESS(VideoSource)
 TEST_PPAPI_NACL(VideoSource)
 
-// PPB_Printing only implemented for out of process.
+// Printing doesn't work in content_browsertests.
 TEST_PPAPI_OUT_OF_PROCESS(Printing)
 
-// PPB_MessageLoop is only supported out-of-process.
-// TODO(dmichael): Enable for NaCl with the IPC proxy. crbug.com/116317
-TEST_PPAPI_OUT_OF_PROCESS(MessageLoop_Basics)
-// MessageLoop_Post starts a thread so only run it if pepper threads are
-// enabled.
-#ifdef ENABLE_PEPPER_THREADING
-TEST_PPAPI_OUT_OF_PROCESS(MessageLoop_Post)
-#endif
+TEST_PPAPI_NACL(MessageLoop_Basics)
+TEST_PPAPI_NACL(MessageLoop_Post)
 
 // Going forward, Flash APIs will only work out-of-process.
 TEST_PPAPI_OUT_OF_PROCESS(Flash_GetLocalTimeZoneOffset)

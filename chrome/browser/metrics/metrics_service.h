@@ -26,19 +26,19 @@
 #include "base/strings/string16.h"
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
-#include "chrome/browser/metrics/metrics_log.h"
 #include "chrome/browser/metrics/tracking_synchronizer_observer.h"
+#include "components/metrics/metrics_log.h"
 #include "components/metrics/metrics_log_manager.h"
 #include "components/metrics/metrics_provider.h"
 #include "components/metrics/metrics_service_observer.h"
 #include "components/variations/active_field_trials.h"
-#include "net/url_request/url_fetcher_delegate.h"
 
 class GoogleUpdateMetricsProviderWin;
 class MetricsReportingScheduler;
 class PrefService;
 class PrefRegistrySimple;
 class PluginMetricsProvider;
+class ProfilerMetricsProvider;
 
 namespace base {
 class DictionaryValue;
@@ -55,6 +55,7 @@ namespace content {
 }
 
 namespace metrics {
+class MetricsLogUploader;
 class MetricsServiceClient;
 class MetricsStateManager;
 }
@@ -89,8 +90,7 @@ struct SyntheticTrialGroup {
 
 class MetricsService
     : public base::HistogramFlattener,
-      public chrome_browser_metrics::TrackingSynchronizerObserver,
-      public net::URLFetcherDelegate {
+      public chrome_browser_metrics::TrackingSynchronizerObserver {
  public:
   // The execution phase of the browser.
   enum ExecutionPhase {
@@ -207,6 +207,7 @@ class MetricsService
   bool recording_active() const;
   bool reporting_active() const;
 
+  // TODO(blundell): Move this to ChromeMetricsServiceClient.
   void LogPluginLoadingError(const base::FilePath& plugin_path);
 
   // Redundant test to ensure that we are notified of a clean exit.
@@ -357,14 +358,8 @@ class MetricsService
   // Uploads the currently staged log (which must be non-null).
   void SendStagedLog();
 
-  // Prepared the staged log to be passed to the server. Upon return,
-  // current_fetch_ should be reset with its upload data set to a compressed
-  // copy of the staged log.
-  void PrepareFetchWithStagedLog();
-
-  // Implementation of net::URLFetcherDelegate. Called after transmission
-  // completes (either successfully or with failure).
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
+  // Called after transmission completes (either successfully or with failure).
+  void OnLogUploadComplete(int response_code);
 
   // Reads, increments and then sets the specified integer preference.
   void IncrementPrefValue(const char* path);
@@ -440,6 +435,8 @@ class MetricsService
   // Whether the initial stability log has been recorded during startup.
   bool has_initial_stability_log_;
 
+  ProfilerMetricsProvider* profiler_metrics_provider_;
+
 #if defined(ENABLE_PLUGINS)
   PluginMetricsProvider* plugin_metrics_provider_;
 #endif
@@ -453,8 +450,11 @@ class MetricsService
   // initial stability log may be sent before this.
   scoped_ptr<MetricsLog> initial_metrics_log_;
 
-  // The outstanding transmission appears as a URL Fetch operation.
-  scoped_ptr<net::URLFetcher> current_fetch_;
+  // Instance of the helper class for uploading logs.
+  scoped_ptr<metrics::MetricsLogUploader> log_uploader_;
+
+  // Whether there is a current log upload in progress.
+  bool log_upload_in_progress_;
 
   // Whether the MetricsService object has received any notifications since
   // the last time a transmission was sent.
@@ -473,10 +473,6 @@ class MetricsService
 
   // The scheduler for determining when uploads should happen.
   scoped_ptr<MetricsReportingScheduler> scheduler_;
-
-  // Indicates that an asynchronous reporting step is running.
-  // This is used only for debugging.
-  bool waiting_for_asynchronous_reporting_step_;
 
   // Stores the time of the first call to |GetUptimes()|.
   base::TimeTicks first_updated_time_;

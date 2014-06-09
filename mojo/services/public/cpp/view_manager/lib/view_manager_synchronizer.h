@@ -15,10 +15,6 @@
 
 class SkBitmap;
 
-namespace base {
-class RunLoop;
-}
-
 namespace mojo {
 namespace view_manager {
 
@@ -26,7 +22,7 @@ class ViewManager;
 class ViewManagerTransaction;
 
 // Manages the connection with the View Manager service.
-class ViewManagerSynchronizer : public IViewManagerClient {
+class ViewManagerSynchronizer : public InterfaceImpl<IViewManagerClient> {
  public:
   explicit ViewManagerSynchronizer(ViewManager* view_manager);
   virtual ~ViewManagerSynchronizer();
@@ -54,6 +50,8 @@ class ViewManagerSynchronizer : public IViewManagerClient {
   void SetBounds(TransportNodeId node_id, const gfx::Rect& bounds);
   void SetViewContents(TransportViewId view_id, const SkBitmap& contents);
 
+  void Embed(const String& url, TransportNodeId node_id);
+
   void set_changes_acked_callback(const base::Callback<void(void)>& callback) {
     changes_acked_callback_ = callback;
   }
@@ -65,11 +63,15 @@ class ViewManagerSynchronizer : public IViewManagerClient {
   friend class ViewManagerTransaction;
   typedef ScopedVector<ViewManagerTransaction> Transactions;
 
+  // Overridden from InterfaceImpl:
+  virtual void OnConnectionEstablished() OVERRIDE;
+
   // Overridden from IViewManagerClient:
   virtual void OnViewManagerConnectionEstablished(
       TransportConnectionId connection_id,
       TransportChangeId next_server_change_id,
       mojo::Array<INodePtr> nodes) OVERRIDE;
+  virtual void OnRootsAdded(Array<INodePtr> nodes) OVERRIDE;
   virtual void OnServerChangeIdAdvanced(
       uint32_t next_server_change_id) OVERRIDE;
   virtual void OnNodeBoundsChanged(uint32 node_id,
@@ -87,6 +89,9 @@ class ViewManagerSynchronizer : public IViewManagerClient {
                                   uint32_t new_view_id,
                                   uint32_t old_view_id) OVERRIDE;
   virtual void OnViewDeleted(uint32_t view_id) OVERRIDE;
+  virtual void OnViewInputEvent(uint32_t view,
+                                EventPtr event,
+                                const Callback<void()>& callback) OVERRIDE;
 
   // Sync the client model with the service by enumerating the pending
   // transaction queue and applying them in order.
@@ -96,7 +101,9 @@ class ViewManagerSynchronizer : public IViewManagerClient {
   // front of the queue.
   void RemoveFromPendingQueue(ViewManagerTransaction* transaction);
 
-  ViewManager* view_manager_;
+  ViewManager* view_manager() { return view_manager_.get(); }
+
+  scoped_ptr<ViewManager> view_manager_;
   bool connected_;
   TransportConnectionId connection_id_;
   uint16_t next_id_;
@@ -106,13 +113,9 @@ class ViewManagerSynchronizer : public IViewManagerClient {
 
   base::WeakPtrFactory<ViewManagerSynchronizer> sync_factory_;
 
-  // Non-NULL while blocking on the connection to |service_| during
-  // construction.
-  base::RunLoop* init_loop_;
-
   base::Callback<void(void)> changes_acked_callback_;
 
-  IViewManagerPtr service_;
+  IViewManager* service_;
 
   DISALLOW_COPY_AND_ASSIGN(ViewManagerSynchronizer);
 };

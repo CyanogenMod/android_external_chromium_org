@@ -15,14 +15,14 @@ class PrefService;
 // sync_driver::prefs::kEnhancedBookmarksExperimentEnabled user preference and
 // used for UMA reporting as well.
 enum BookmarksExperimentState {
-  kNoBookmarksExperiment,
-  kBookmarksExperimentEnabled,
-  kBookmarksExperimentEnabledUserOptOut,
-  kBookmarksExperimentEnabledFromFinch,
-  kBookmarksExperimentOptOutFromFinch,
-  kBookmarksExperimentEnabledFromFinchUserSignedIn,
-  kBookmarksExperimentEnabledFromSyncUnknown,
-  kBookmarksExperimentEnumSize
+  BOOKMARKS_EXPERIMENT_NONE,
+  BOOKMARKS_EXPERIMENT_ENABLED,
+  BOOKMARKS_EXPERIMENT_ENABLED_USER_OPT_OUT,
+  BOOKMARKS_EXPERIMENT_ENABLED_FROM_FINCH,
+  BOOKMARKS_EXPERIMENT_OPT_OUT_FROM_FINCH,
+  BOOKMARKS_EXPERIMENT_ENABLED_FROM_FINCH_USER_SIGNEDIN,
+  BOOKMARKS_EXPERIMENT_ENABLED_FROM_SYNC_UNKNOWN,
+  BOOKMARKS_EXPERIMENT_ENUM_SIZE
 };
 
 // Returns true and sets |extension_id| if bookmarks experiment enabled
@@ -46,6 +46,10 @@ void ForceFinchBookmarkExperimentIfNeeded(
 // Returns true if enhanced bookmarks experiment is enabled.
 // Experiment could be enable from Chrome sync or from Finch.
 bool IsEnhancedBookmarksExperimentEnabled();
+
+#if defined(OS_ANDROID)
+bool IsEnhancedBookmarkImageFetchingEnabled();
+#endif
 
 // Returns true when flag enable-dom-distiller is set or enabled from Finch.
 bool IsEnableDomDistillerSet();

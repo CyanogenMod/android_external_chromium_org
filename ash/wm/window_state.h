@@ -25,6 +25,7 @@ class Rect;
 
 namespace ash {
 class WorkspaceLayoutManager;
+class LockWindowState;
 class MaximizeModeWindowState;
 
 namespace wm {
@@ -267,6 +268,17 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
     top_row_keys_are_function_keys_ = value;
   }
 
+  // True if the window is in "immersive full screen mode" which is slightly
+  // different from the normal fullscreen mode by allowing the user to reveal
+  // the top portion of the window through a touch / mouse gesture. It might
+  // also allow the shelf to be shown in some situations.
+  bool in_immersive_fullscreen() const {
+    return in_immersive_fullscreen_;
+  }
+  void set_in_immersive_fullscreen(bool enable) {
+    in_immersive_fullscreen_ = enable;
+  }
+
   // Creates and takes ownership of a pointer to DragDetails when resizing is
   // active. This should be done before a resizer gets created.
   void CreateDragDetails(aura::Window* window,
@@ -292,6 +304,7 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
 
  private:
   friend class DefaultState;
+  friend class ash::LockWindowState;
   friend class ash::MaximizeModeWindowState;
   FRIEND_TEST_ALL_PREFIXES(WindowAnimationsTest, CrossFadeToBounds);
 
@@ -342,6 +355,7 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
   scoped_ptr<DragDetails> drag_details_;
 
   bool unminimize_to_restore_bounds_;
+  bool in_immersive_fullscreen_;
   bool hide_shelf_when_fullscreen_;
   bool minimum_visibility_;
   bool can_be_dragged_;

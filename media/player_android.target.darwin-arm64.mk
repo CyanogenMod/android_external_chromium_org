@@ -28,7 +28,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
 	media/base/android/audio_decoder_job.cc \
-	media/base/android/cdm_factory_android.cc \
+	media/base/android/browser_cdm_factory_android.cc \
 	media/base/android/media_codec_bridge.cc \
 	media/base/android/media_decoder_job.cc \
 	media/base/android/media_drm_bridge.cc \
@@ -38,7 +38,8 @@ LOCAL_SRC_FILES := \
 	media/base/android/media_player_listener.cc \
 	media/base/android/media_source_player.cc \
 	media/base/android/video_decoder_job.cc \
-	media/base/android/webaudio_media_codec_bridge.cc
+	media/base/android/webaudio_media_codec_bridge.cc \
+	media/base/browser_cdm.cc
 
 
 # Flags passed to both C and C++ files.
@@ -83,7 +84,6 @@ MY_DEFS_Debug := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
@@ -181,7 +181,6 @@ MY_DEFS_Release := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \

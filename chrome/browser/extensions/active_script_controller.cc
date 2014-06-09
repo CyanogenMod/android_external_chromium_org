@@ -73,7 +73,7 @@ ActiveScriptController* ActiveScriptController::GetForWebContents(
 bool ActiveScriptController::RequiresUserConsentForScriptInjection(
     const Extension* extension) {
   CHECK(extension);
-  if (!PermissionsData::RequiresActionForScriptExecution(
+  if (!extension->permissions_data()->RequiresActionForScriptExecution(
           extension,
           SessionID::IdForTab(web_contents()),
           web_contents()->GetVisibleURL()) ||
@@ -166,6 +166,12 @@ void ActiveScriptController::OnNavigated() {
   LogUMA();
   permitted_extensions_.clear();
   pending_requests_.clear();
+}
+
+void ActiveScriptController::OnExtensionUnloaded(const Extension* extension) {
+  PendingRequestMap::iterator iter = pending_requests_.find(extension->id());
+  if (iter != pending_requests_.end())
+    pending_requests_.erase(iter);
 }
 
 void ActiveScriptController::RunPendingForExtension(

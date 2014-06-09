@@ -33,9 +33,9 @@ AudioSender::AudioSender(scoped_refptr<CastEnvironment> cast_environment,
             audio_config.rtp_config.ssrc,
             audio_config.incoming_feedback_ssrc,
             audio_config.rtcp_c_name,
-            true),
+            AUDIO_EVENT),
       num_aggressive_rtcp_reports_sent_(0),
-      cast_initialization_cb_(STATUS_AUDIO_UNINITIALIZED),
+      cast_initialization_status_(STATUS_AUDIO_UNINITIALIZED),
       weak_factory_(this) {
   rtcp_.SetCastReceiverEventHistorySize(kReceiverRtcpEventHistorySize);
   if (!audio_config.use_external_encoder) {
@@ -44,7 +44,10 @@ AudioSender::AudioSender(scoped_refptr<CastEnvironment> cast_environment,
                          audio_config,
                          base::Bind(&AudioSender::SendEncodedAudioFrame,
                                     weak_factory_.GetWeakPtr())));
-    cast_initialization_cb_ = audio_encoder_->InitializationResult();
+    cast_initialization_status_ = audio_encoder_->InitializationResult();
+  } else {
+    NOTREACHED();  // No support for external audio encoding.
+    cast_initialization_status_ = STATUS_AUDIO_INITIALIZED;
   }
 
   media::cast::transport::CastTransportAudioConfig transport_config;
@@ -55,6 +58,8 @@ AudioSender::AudioSender(scoped_refptr<CastEnvironment> cast_environment,
   transport_config.rtp.max_outstanding_frames =
       audio_config.rtp_config.max_delay_ms / 100 + 1;
   transport_sender_->InitializeAudio(transport_config);
+
+  memset(frame_id_to_rtp_timestamp_, 0, sizeof(frame_id_to_rtp_timestamp_));
 }
 
 AudioSender::~AudioSender() {}
@@ -62,6 +67,10 @@ AudioSender::~AudioSender() {}
 void AudioSender::InsertAudio(scoped_ptr<AudioBus> audio_bus,
                               const base::TimeTicks& recorded_time) {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
+  if (cast_initialization_status_ != STATUS_AUDIO_INITIALIZED) {
+    NOTREACHED();
+    return;
+  }
   DCHECK(audio_encoder_.get()) << "Invalid internal state";
   audio_encoder_->InsertAudio(audio_bus.Pass(), recorded_time);
 }
@@ -69,6 +78,7 @@ void AudioSender::InsertAudio(scoped_ptr<AudioBus> audio_bus,
 void AudioSender::SendEncodedAudioFrame(
     scoped_ptr<transport::EncodedFrame> audio_frame) {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
+
   DCHECK(!audio_frame->reference_time.is_null());
   rtp_timestamp_helper_.StoreLatestTime(audio_frame->reference_time,
                                         audio_frame->rtp_timestamp);
@@ -88,6 +98,8 @@ void AudioSender::SendEncodedAudioFrame(
     SendRtcpReport(is_last_aggressive_report);
   }
 
+  frame_id_to_rtp_timestamp_[audio_frame->frame_id & 0xff] =
+      audio_frame->rtp_timestamp;
   transport_sender_->InsertCodedAudioFrame(*audio_frame);
 }
 
@@ -152,8 +164,12 @@ void AudioSender::OnReceivedCastFeedback(const RtcpCastMessage& cast_feedback) {
   if (!cast_feedback.missing_frames_and_packets_.empty()) {
     ResendPackets(cast_feedback.missing_frames_and_packets_);
   }
-  VLOG(2) << "Received audio ACK "
-          << static_cast<int>(cast_feedback.ack_frame_id_);
+  uint32 acked_frame_id = static_cast<uint32>(cast_feedback.ack_frame_id_);
+  VLOG(2) << "Received audio ACK: " << acked_frame_id;
+  cast_environment_->Logging()->InsertFrameEvent(
+        cast_environment_->Clock()->NowTicks(),
+        FRAME_ACK_RECEIVED, AUDIO_EVENT,
+        frame_id_to_rtp_timestamp_[acked_frame_id & 0xff], acked_frame_id);
 }
 
 }  // namespace cast

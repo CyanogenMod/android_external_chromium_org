@@ -95,6 +95,7 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
       QuicRandom* random_generator,
       QuicClock* clock,
       size_t max_packet_length,
+      const std::string& user_agent_id,
       const QuicVersionVector& supported_versions,
       bool enable_port_selection,
       bool enable_pacing,
@@ -124,6 +125,9 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
 
   // Called by a session after it shuts down.
   void OnSessionClosed(QuicClientSession* session);
+
+  // Called by a session whose connection has timed out.
+  void OnSessionConnectTimeout(QuicClientSession* session);
 
   // Cancels a pending request.
   void CancelRequest(QuicStreamRequest* request);
@@ -157,6 +161,10 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   QuicConnectionHelper* helper() { return helper_.get(); }
 
   bool enable_port_selection() const { return enable_port_selection_; }
+
+  bool has_quic_server_info_factory() {
+    return quic_server_info_factory_ != NULL;
+  }
 
   void set_quic_server_info_factory(
       QuicServerInfoFactory* quic_server_info_factory) {

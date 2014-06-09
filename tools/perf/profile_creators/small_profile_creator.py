@@ -1,4 +1,4 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -32,6 +32,4 @@ class SmallProfileCreator(profile_creator.ProfileCreator):
       return browser.tabs.New()
 
   def MeasurePage(self, _, tab, results):
-    # Can't use WaitForDocumentReadyStateToBeComplete() here due to
-    # crbug.com/280750 .
-    tab.WaitForDocumentReadyStateToBeInteractiveOrBetter()
+    tab.WaitForDocumentReadyStateToBeComplete()

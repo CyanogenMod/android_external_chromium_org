@@ -18,7 +18,7 @@ namespace {
 // Convert |value| into |output|. If parsing fails, then returns a negative
 // value. Otherwise returns number of bytes written to the buffer.
 int CopyRequestValueToBuffer(scoped_ptr<RequestValue> value,
-                             net::IOBuffer* buffer,
+                             scoped_refptr<net::IOBuffer> buffer,
                              int buffer_offset,
                              int buffer_length) {
   using extensions::api::file_system_provider_internal::
@@ -45,7 +45,7 @@ ReadFile::ReadFile(
     extensions::EventRouter* event_router,
     const ProvidedFileSystemInfo& file_system_info,
     int file_handle,
-    net::IOBuffer* buffer,
+    scoped_refptr<net::IOBuffer> buffer,
     int64 offset,
     int length,
     const ProvidedFileSystemInterface::ReadChunkReceivedCallback& callback)
@@ -74,18 +74,18 @@ bool ReadFile::Execute(int request_id) {
 
 void ReadFile::OnSuccess(int /* request_id */,
                          scoped_ptr<RequestValue> result,
-                         bool has_next) {
+                         bool has_more) {
   const int copy_result = CopyRequestValueToBuffer(
       result.Pass(), buffer_, current_offset_, length_);
   DCHECK_LE(0, copy_result);
-  DCHECK(!has_next || copy_result > 0);
+  DCHECK(!has_more || copy_result > 0);
   if (copy_result > 0)
     current_offset_ += copy_result;
-  callback_.Run(copy_result, has_next, base::File::FILE_OK);
+  callback_.Run(copy_result, has_more, base::File::FILE_OK);
 }
 
 void ReadFile::OnError(int /* request_id */, base::File::Error error) {
-  callback_.Run(0 /* chunk_length */, false /* has_next */, error);
+  callback_.Run(0 /* chunk_length */, false /* has_more */, error);
 }
 
 }  // namespace operations

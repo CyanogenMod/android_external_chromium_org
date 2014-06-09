@@ -51,10 +51,6 @@ const int kReadBufferSize = 8 * 1024;
 const int kDefaultConnectionAtRiskOfLossSeconds = 10;
 const int kHungIntervalSeconds = 10;
 
-// As we always act as the client, start at 1 for the first stream id.
-const SpdyStreamId kFirstStreamId = 1;
-const SpdyStreamId kLastStreamId = 0x7fffffff;
-
 // Minimum seconds that unclaimed pushed streams will be kept in memory.
 const int kMinPushedStreamLifetimeSeconds = 300;
 
@@ -664,8 +660,6 @@ int SpdySession::GetPushStream(
 // another being closed due to received data.
 
 Error SpdySession::TryAccessStream(const GURL& url) {
-  CHECK_NE(availability_state_, STATE_DRAINING);
-
   if (is_secure_ && certificate_error_code_ != OK &&
       (url.SchemeIs("https") || url.SchemeIs("wss"))) {
     RecordProtocolErrorHistogram(
@@ -1580,7 +1574,6 @@ void SpdySession::CloseSessionOnError(Error err,
 }
 
 void SpdySession::MakeUnavailable() {
-  CHECK_NE(availability_state_, STATE_DRAINING);
   if (availability_state_ == STATE_AVAILABLE) {
     availability_state_ = STATE_GOING_AWAY;
     pool_->MakeSessionUnavailable(GetWeakPtr());

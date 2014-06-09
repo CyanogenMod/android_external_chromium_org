@@ -575,6 +575,73 @@ TEST_P(SpdySessionTest, GoAwayWithActiveStreamsThenClose) {
   EXPECT_TRUE(session == NULL);
 }
 
+// Process a joint read buffer which causes the session to begin draining, and
+// then processes a GOAWAY. The session should gracefully drain. Regression test
+// for crbug.com/379469
+TEST_P(SpdySessionTest, GoAwayWhileDraining) {
+  session_deps_.host_resolver->set_synchronous_mode(true);
+
+  scoped_ptr<SpdyFrame> req(
+      spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, MEDIUM, true));
+  MockWrite writes[] = {
+      CreateMockWrite(*req, 0),
+  };
+
+  scoped_ptr<SpdyFrame> resp(spdy_util_.ConstructSpdyGetSynReply(NULL, 0, 1));
+  scoped_ptr<SpdyFrame> goaway(spdy_util_.ConstructSpdyGoAway(1));
+  scoped_ptr<SpdyFrame> body(spdy_util_.ConstructSpdyBodyFrame(1, true));
+  size_t joint_size = goaway->size() * 2 + body->size();
+
+  // Compose interleaved |goaway| and |body| frames into a single read.
+  scoped_ptr<char[]> buffer(new char[joint_size]);
+  {
+    size_t out = 0;
+    memcpy(&buffer[out], goaway->data(), goaway->size());
+    out += goaway->size();
+    memcpy(&buffer[out], body->data(), body->size());
+    out += body->size();
+    memcpy(&buffer[out], goaway->data(), goaway->size());
+    out += goaway->size();
+    ASSERT_EQ(out, joint_size);
+  }
+  SpdyFrame joint_frames(buffer.get(), joint_size, false);
+
+  MockRead reads[] = {
+      CreateMockRead(*resp, 1), CreateMockRead(joint_frames, 2),
+      MockRead(ASYNC, 0, 3)  // EOF
+  };
+
+  MockConnect connect_data(SYNCHRONOUS, OK);
+  DeterministicSocketData data(
+      reads, arraysize(reads), writes, arraysize(writes));
+  data.set_connect_data(connect_data);
+  session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
+
+  CreateDeterministicNetworkSession();
+  base::WeakPtr<SpdySession> session =
+      CreateInsecureSpdySession(http_session_, key_, BoundNetLog());
+
+  GURL url(kDefaultURL);
+  base::WeakPtr<SpdyStream> spdy_stream = CreateStreamSynchronously(
+      SPDY_REQUEST_RESPONSE_STREAM, session, url, MEDIUM, BoundNetLog());
+  test::StreamDelegateDoNothing delegate(spdy_stream);
+  spdy_stream->SetDelegate(&delegate);
+
+  scoped_ptr<SpdyHeaderBlock> headers(
+      spdy_util_.ConstructGetHeaderBlock(url.spec()));
+  spdy_stream->SendRequestHeaders(headers.Pass(), NO_MORE_DATA_TO_SEND);
+  EXPECT_TRUE(spdy_stream->HasUrlFromHeaders());
+
+  data.RunFor(3);
+  base::MessageLoop::current()->RunUntilIdle();
+
+  // Stream and session closed gracefully.
+  EXPECT_TRUE(delegate.StreamIsClosed());
+  EXPECT_EQ(OK, delegate.WaitForClose());
+  EXPECT_EQ(kUploadData, delegate.TakeReceivedData());
+  EXPECT_TRUE(session == NULL);
+}
+
 // Try to create a stream after receiving a GOAWAY frame. It should
 // fail.
 TEST_P(SpdySessionTest, CreateStreamAfterGoAway) {

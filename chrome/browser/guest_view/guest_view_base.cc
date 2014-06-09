@@ -5,17 +5,19 @@
 #include "chrome/browser/guest_view/guest_view_base.h"
 
 #include "base/lazy_instance.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/guest_view/ad_view/ad_view_guest.h"
 #include "chrome/browser/guest_view/guest_view_constants.h"
 #include "chrome/browser/guest_view/guest_view_manager.h"
 #include "chrome/browser/guest_view/web_view/web_view_guest.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/content_settings.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
 #include "extensions/browser/event_router.h"
-#include "net/base/escape.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 
 using content::WebContents;
@@ -132,29 +134,6 @@ bool GuestViewBase::IsGuest(WebContents* web_contents) {
 }
 
 // static
-bool GuestViewBase::GetGuestPartitionConfigForSite(
-    const GURL& site,
-    std::string* partition_domain,
-    std::string* partition_name,
-    bool* in_memory) {
-  if (!site.SchemeIs(content::kGuestScheme))
-    return false;
-
-  // Since guest URLs are only used for packaged apps, there must be an app
-  // id in the URL.
-  CHECK(site.has_host());
-  *partition_domain = site.host();
-  // Since persistence is optional, the path must either be empty or the
-  // literal string.
-  *in_memory = (site.path() != "/persist");
-  // The partition name is user supplied value, which we have encoded when the
-  // URL was created, so it needs to be decoded.
-  *partition_name =
-      net::UnescapeURLComponent(site.query(), net::UnescapeRule::NORMAL);
-  return true;
-}
-
-// static
 void GuestViewBase::GetDefaultContentSettingRules(
     RendererContentSettingRules* rules,
     bool incognito) {
@@ -175,6 +154,10 @@ void GuestViewBase::GetDefaultContentSettingRules(
 
 base::WeakPtr<GuestViewBase> GuestViewBase::AsWeakPtr() {
   return weak_ptr_factory_.GetWeakPtr();
+}
+
+bool GuestViewBase::IsDragAndDropEnabled() const {
+  return false;
 }
 
 void GuestViewBase::Attach(content::WebContents* embedder_web_contents,
@@ -204,6 +187,7 @@ void GuestViewBase::Attach(content::WebContents* embedder_web_contents,
 }
 
 void GuestViewBase::Destroy() {
+  WillDestroy();
   if (!destruction_callback_.is_null())
     destruction_callback_.Run();
   delete guest_web_contents();
@@ -223,7 +207,19 @@ void GuestViewBase::RegisterDestructionCallback(
   destruction_callback_ = callback;
 }
 
+void GuestViewBase::DidStopLoading(content::RenderViewHost* render_view_host) {
+  if (!IsDragAndDropEnabled()) {
+    const char script[] = "window.addEventListener('dragstart', function() { "
+                          "  window.event.preventDefault(); "
+                          "});";
+    render_view_host->GetMainFrame()->ExecuteJavaScript(
+        base::ASCIIToUTF16(script));
+  }
+  DidStopLoading();
+}
+
 void GuestViewBase::WebContentsDestroyed() {
+  GuestDestroyed();
   delete this;
 }
 

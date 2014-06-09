@@ -19,12 +19,14 @@ namespace service {
 
 enum ChangeType {
   CHANGE_TYPE_CONNECTION_ESTABLISHED,
+  CHANGE_TYPE_ROOTS_ADDED,
   CHANGE_TYPE_SERVER_CHANGE_ID_ADVANCED,
   CHANGE_TYPE_NODE_BOUNDS_CHANGED,
   CHANGE_TYPE_NODE_HIERARCHY_CHANGED,
   CHANGE_TYPE_NODE_DELETED,
   CHANGE_TYPE_VIEW_DELETED,
   CHANGE_TYPE_VIEW_REPLACED,
+  CHANGE_TYPE_INPUT_EVENT,
 };
 
 struct TestNode {
@@ -53,6 +55,7 @@ struct Change {
   TransportViewId view_id2;
   gfx::Rect bounds;
   gfx::Rect bounds2;
+  int32 event_action;
 };
 
 // Converts Changes to string descriptions.
@@ -62,6 +65,10 @@ std::vector<std::string> ChangesToDescription1(
 // Returns a string description of |changes[0].nodes|. Returns an empty string
 // if change.size() != 1.
 std::string ChangeNodeDescription(const std::vector<Change>& changes);
+
+// Converts INodes to TestNodes.
+void INodesToTestNodes(const Array<INodePtr>& data,
+                       std::vector<TestNode>* test_nodes);
 
 // TestChangeTracker is used to record IViewManagerClient functions. It notifies
 // a delegate any time a change is added.
@@ -90,6 +97,7 @@ class TestChangeTracker {
       TransportConnectionId connection_id,
       TransportChangeId next_server_change_id,
       Array<INodePtr> nodes);
+  void OnRootsAdded(Array<INodePtr> nodes);
   void OnServerChangeIdAdvanced(TransportChangeId change_id);
   void OnNodeBoundsChanged(TransportNodeId node_id,
                            RectPtr old_bounds,
@@ -105,6 +113,7 @@ class TestChangeTracker {
   void OnNodeViewReplaced(TransportNodeId node_id,
                           TransportViewId new_view_id,
                           TransportViewId old_view_id);
+  void OnViewInputEvent(TransportViewId view_id, EventPtr event);
 
  private:
   void AddChange(const Change& change);

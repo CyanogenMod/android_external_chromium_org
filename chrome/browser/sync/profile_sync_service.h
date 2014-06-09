@@ -591,9 +591,9 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // [ {"name": <name>, "value": <value>, "status": <status> }, ... ]
   // where <name> is a type's name, <value> is a string providing details for
   // the type's status, and <status> is one of "error", "warning" or "ok"
-  // dpending on the type's current status.
+  // depending on the type's current status.
   //
-  // This function is used by sync_ui_util.cc to help populate the about:sync
+  // This function is used by about_sync_util.cc to help populate the about:sync
   // page.  It returns a ListValue rather than a DictionaryValue in part to make
   // it easier to iterate over its elements when constructing that page.
   base::Value* GetTypeStatusMap() const;
@@ -766,6 +766,9 @@ class ProfileSyncService : public ProfileSyncServiceBase,
     return backend_mode_;
   }
 
+  void SetClearingBrowseringDataForTesting(
+      base::Callback<void(Profile*, base::Time, base::Time)> c);
+
  protected:
   // Helper to configure the priority data types.
   void ConfigurePriorityDataTypes();
@@ -935,6 +938,12 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // True if a syncing backend exists.
   bool HasSyncingBackend() const;
 
+  // Update first sync time stored in preferences
+  void UpdateFirstSyncTimePref();
+
+  // Clear browsing data since first sync during rollback.
+  void ClearBrowsingDataSinceFirstSync();
+
  // Factory used to create various dependent objects.
   scoped_ptr<ProfileSyncComponentsFactory> factory_;
 
@@ -1098,6 +1107,8 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // When browser starts, delay sync backup/rollback backend start for this
   // time.
   base::TimeDelta backup_start_delay_;
+
+  base::Callback<void(Profile*, base::Time, base::Time)> clear_browsing_data_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileSyncService);
 };

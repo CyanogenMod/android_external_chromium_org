@@ -10,6 +10,7 @@ from telemetry.core.backends.chrome import tracing_backend
 from telemetry.core.timeline import model as model_module
 from telemetry.web_perf import timeline_interaction_record as tir_module
 from telemetry.web_perf.metrics import smoothness
+from telemetry.web_perf.metrics import responsiveness_metric
 from telemetry.page import page_measurement
 from telemetry.value import string as string_value_module
 
@@ -58,7 +59,6 @@ class _TimelineBasedMetrics(object):
             event in self._renderer_thread.async_slices
             if tir_module.IsTimelineInteractionRecord(event.name)]
 
-
   def AddResults(self, results):
     interactions = self.FindTimelineInteractionRecords()
     if len(interactions) == 0:
@@ -101,12 +101,12 @@ class TimelineBasedMeasurement(page_measurement.PageMeasurement):
   @classmethod
   def AddCommandLineArgs(cls, parser):
     parser.add_option(
-        '--overhead-level', type='choice',
+        '--overhead-level', dest='overhead_level', type='choice',
         choices=ALL_OVERHEAD_LEVELS,
         default=NO_OVERHEAD_LEVEL,
         help='How much overhead to incur during the measurement.')
     parser.add_option(
-        '--trace-dir', type='string', default=None,
+        '--trace-dir', dest='trace_dir', type='string', default=None,
         help=('Where to save the trace after the run. If this flag '
               'is not set, the trace will not be saved.'))
 
@@ -131,6 +131,8 @@ class TimelineBasedMeasurement(page_measurement.PageMeasurement):
     res = []
     if interaction.is_smooth:
       res.append(smoothness.SmoothnessMetric())
+    if interaction.is_responsive:
+      res.append(responsiveness_metric.ResponsivenessMetric())
     return res
 
   def MeasurePage(self, page, tab, results):

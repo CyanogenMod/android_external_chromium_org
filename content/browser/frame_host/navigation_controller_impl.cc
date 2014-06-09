@@ -109,7 +109,7 @@ bool AreURLsInPageNavigation(const GURL& existing_url,
                              const GURL& new_url,
                              bool renderer_says_in_page,
                              NavigationType navigation_type) {
-  if (existing_url == new_url)
+  if (existing_url.GetOrigin() == new_url.GetOrigin())
     return renderer_says_in_page;
 
   if (!new_url.has_ref()) {
@@ -1057,6 +1057,12 @@ void NavigationControllerImpl::RendererDidNavigateToNewPage(
   new_entry->SetOriginalRequestURL(params.original_request_url);
   new_entry->SetIsOverridingUserAgent(params.is_overriding_user_agent);
 
+  // history.pushState() is classified as a navigation to a new page, but
+  // sets was_within_same_page to true. In this case, we already have the
+  // title available, so set it immediately.
+  if (params.was_within_same_page && GetLastCommittedEntry())
+    new_entry->SetTitle(GetLastCommittedEntry()->GetTitle());
+
   DCHECK(!params.history_list_was_cleared || !replace_entry);
   // The browser requested to clear the session history when it initiated the
   // navigation. Now we know that the renderer has updated its state accordingly
@@ -1167,6 +1173,9 @@ void NavigationControllerImpl::RendererDidNavigateInPage(
   existing_entry->SetURL(params.url);
   if (existing_entry->update_virtual_url_with_url())
     UpdateVirtualURLToURL(existing_entry, params.url);
+
+  existing_entry->SetHasPostData(params.is_post);
+  existing_entry->SetPostID(params.post_id);
 
   // This replaces the existing entry since the page ID didn't change.
   *did_replace_entry = true;

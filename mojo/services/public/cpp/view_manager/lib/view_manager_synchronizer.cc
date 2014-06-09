@@ -5,13 +5,14 @@
 #include "mojo/services/public/cpp/view_manager/lib/view_manager_synchronizer.h"
 
 #include "base/bind.h"
-#include "base/run_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "mojo/public/cpp/application/connect.h"
 #include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
 #include "mojo/services/public/cpp/view_manager/lib/view_manager_private.h"
 #include "mojo/services/public/cpp/view_manager/lib/view_private.h"
 #include "mojo/services/public/cpp/view_manager/lib/view_tree_node_private.h"
 #include "mojo/services/public/cpp/view_manager/util.h"
+#include "mojo/services/public/cpp/view_manager/view_observer.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/png_codec.h"
 
@@ -108,7 +109,9 @@ class ViewManagerTransaction {
     // Node bounds.
     TYPE_SET_BOUNDS,
     // View contents
-    TYPE_SET_VIEW_CONTENTS
+    TYPE_SET_VIEW_CONTENTS,
+    // Embed.
+    TYPE_EMBED
   };
 
   ViewManagerTransaction(TransactionType transaction_type,
@@ -125,7 +128,7 @@ class ViewManagerTransaction {
   // service.
   virtual void DoActionCompleted(bool success) = 0;
 
-  IViewManager* service() { return synchronizer_->service_.get(); }
+  IViewManager* service() { return synchronizer_->service_; }
 
   TransportChangeId GetAndAdvanceNextServerChangeId() {
     return synchronizer_->next_server_change_id_++;
@@ -231,6 +234,7 @@ class DestroyViewTreeNodeTransaction : public ViewManagerTransaction {
  private:
   // Overridden from ViewManagerTransaction:
   virtual void DoCommit() OVERRIDE {
+    GetAndAdvanceNextServerChangeId();
     service()->DeleteNode(node_id_, ActionCompletedCallback());
   }
   virtual void DoActionCompleted(bool success) OVERRIDE {
@@ -405,30 +409,46 @@ class SetViewContentsTransaction : public ViewManagerTransaction {
   DISALLOW_COPY_AND_ASSIGN(SetViewContentsTransaction);
 };
 
+class EmbedTransaction : public ViewManagerTransaction {
+ public:
+  EmbedTransaction(const String& url,
+                   TransportNodeId node_id,
+                   ViewManagerSynchronizer* synchronizer)
+      : ViewManagerTransaction(TYPE_EMBED, synchronizer),
+        url_(url),
+        node_id_(node_id) {}
+  virtual ~EmbedTransaction() {}
+
+ private:
+  // Overridden from ViewManagerTransaction:
+  virtual void DoCommit() OVERRIDE {
+    std::vector<TransportNodeId> ids;
+    ids.push_back(node_id_);
+    service()->Connect(url_, Array<TransportNodeId>::From(ids),
+                       ActionCompletedCallback());
+  }
+  virtual void DoActionCompleted(bool success) OVERRIDE {
+    // TODO(beng): recovery?
+  }
+
+  const String url_;
+  const TransportNodeId node_id_;
+
+  DISALLOW_COPY_AND_ASSIGN(EmbedTransaction);
+};
+
 ViewManagerSynchronizer::ViewManagerSynchronizer(ViewManager* view_manager)
     : view_manager_(view_manager),
       connected_(false),
       connection_id_(0),
       next_id_(1),
       next_server_change_id_(0),
-      sync_factory_(this),
-      init_loop_(NULL) {
-  ConnectToService(
-      ViewManagerPrivate(view_manager_).service_provider(),
-      "mojo:mojo_view_manager",
-      &service_);
-  service_.set_client(this);
-
-  // Start a runloop. This loop is quit when the server tells us about the
-  // connection (OnConnectionEstablished()).
-  base::RunLoop loop;
-  init_loop_ = &loop;
-  init_loop_->Run();
-  init_loop_ = NULL;
+      sync_factory_(this) {
+  ViewManagerPrivate(view_manager).set_synchronizer(this);
 }
 
 ViewManagerSynchronizer::~ViewManagerSynchronizer() {
-  Sync();
+  view_manager_.reset();
 }
 
 TransportNodeId ViewManagerSynchronizer::CreateViewTreeNode() {
@@ -517,6 +537,20 @@ void ViewManagerSynchronizer::SetViewContents(TransportViewId view_id,
   Sync();
 }
 
+void ViewManagerSynchronizer::Embed(const String& url,
+                                    TransportNodeId node_id) {
+  DCHECK(connected_);
+  pending_transactions_.push_back(new EmbedTransaction(url, node_id, this));
+  Sync();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// ViewManagerSynchronizer, InterfaceImpl overrides:
+
+void ViewManagerSynchronizer::OnConnectionEstablished() {
+  service_ = client();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // ViewManagerSynchronizer, IViewManagerClient implementation:
 
@@ -528,12 +562,14 @@ void ViewManagerSynchronizer::OnViewManagerConnectionEstablished(
   connection_id_ = connection_id;
   next_server_change_id_ = next_server_change_id;
 
-  ViewManagerPrivate(view_manager_).set_root(
-      BuildNodeTree(view_manager_, nodes));
-  if (init_loop_)
-    init_loop_->Quit();
+  DCHECK(pending_transactions_.empty());
+  ViewManagerPrivate private_manager(view_manager());
+  private_manager.AddRoot(BuildNodeTree(view_manager(), nodes));
+}
 
-  Sync();
+void ViewManagerSynchronizer::OnRootsAdded(Array<INodePtr> nodes) {
+  ViewManagerPrivate private_manager(view_manager());
+  private_manager.AddRoot(BuildNodeTree(view_manager(), nodes));
 }
 
 void ViewManagerSynchronizer::OnServerChangeIdAdvanced(
@@ -544,7 +580,7 @@ void ViewManagerSynchronizer::OnServerChangeIdAdvanced(
 void ViewManagerSynchronizer::OnNodeBoundsChanged(uint32 node_id,
                                                   RectPtr old_bounds,
                                                   RectPtr new_bounds) {
-  ViewTreeNode* node = view_manager_->GetNodeById(node_id);
+  ViewTreeNode* node = view_manager()->GetNodeById(node_id);
   ViewTreeNodePrivate(node).LocalSetBounds(old_bounds.To<gfx::Rect>(),
                                            new_bounds.To<gfx::Rect>());
 }
@@ -558,11 +594,11 @@ void ViewManagerSynchronizer::OnNodeHierarchyChanged(
   // TODO: deal with |nodes|.
   next_server_change_id_ = server_change_id + 1;
 
-  BuildNodeTree(view_manager_, nodes);
+  BuildNodeTree(view_manager(), nodes);
 
-  ViewTreeNode* new_parent = view_manager_->GetNodeById(new_parent_id);
-  ViewTreeNode* old_parent = view_manager_->GetNodeById(old_parent_id);
-  ViewTreeNode* node = view_manager_->GetNodeById(node_id);
+  ViewTreeNode* new_parent = view_manager()->GetNodeById(new_parent_id);
+  ViewTreeNode* old_parent = view_manager()->GetNodeById(old_parent_id);
+  ViewTreeNode* node = view_manager()->GetNodeById(node_id);
   if (new_parent)
     ViewTreeNodePrivate(new_parent).LocalAddChild(node);
   else
@@ -573,7 +609,7 @@ void ViewManagerSynchronizer::OnNodeDeleted(uint32_t node_id,
                                             uint32_t server_change_id) {
   next_server_change_id_ = server_change_id + 1;
 
-  ViewTreeNode* node = view_manager_->GetNodeById(node_id);
+  ViewTreeNode* node = view_manager()->GetNodeById(node_id);
   if (node)
     ViewTreeNodePrivate(node).LocalDestroy();
 }
@@ -581,27 +617,41 @@ void ViewManagerSynchronizer::OnNodeDeleted(uint32_t node_id,
 void ViewManagerSynchronizer::OnNodeViewReplaced(uint32_t node_id,
                                                  uint32_t new_view_id,
                                                  uint32_t old_view_id) {
-  ViewTreeNode* node = view_manager_->GetNodeById(node_id);
-  View* new_view = view_manager_->GetViewById(new_view_id);
+  ViewTreeNode* node = view_manager()->GetNodeById(node_id);
+  View* new_view = view_manager()->GetViewById(new_view_id);
   if (!new_view && new_view_id != 0) {
     // This client wasn't aware of this View until now.
     new_view = ViewPrivate::LocalCreate();
     ViewPrivate private_view(new_view);
-    private_view.set_view_manager(view_manager_);
+    private_view.set_view_manager(view_manager());
     private_view.set_id(new_view_id);
     private_view.set_node(node);
-    ViewManagerPrivate(view_manager_).AddView(new_view->id(), new_view);
+    ViewManagerPrivate(view_manager()).AddView(new_view->id(), new_view);
   }
-  View* old_view = view_manager_->GetViewById(old_view_id);
+  View* old_view = view_manager()->GetViewById(old_view_id);
   DCHECK_EQ(old_view, node->active_view());
   ViewTreeNodePrivate(node).LocalSetActiveView(new_view);
 }
 
 void ViewManagerSynchronizer::OnViewDeleted(uint32_t view_id) {
-  View* view = view_manager_->GetViewById(view_id);
+  View* view = view_manager()->GetViewById(view_id);
   if (view)
     ViewPrivate(view).LocalDestroy();
 }
+
+void ViewManagerSynchronizer::OnViewInputEvent(
+    uint32_t view_id,
+    EventPtr event,
+    const Callback<void()>& ack_callback) {
+  View* view = view_manager_->GetViewById(view_id);
+  if (view) {
+    FOR_EACH_OBSERVER(ViewObserver,
+                      *ViewPrivate(view).observers(),
+                      OnViewInputEvent(view, event.Pass()));
+  }
+  ack_callback.Run();
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // ViewManagerSynchronizer, private:

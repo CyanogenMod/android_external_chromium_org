@@ -4,11 +4,14 @@
 
 #include "athena/home/public/home_card.h"
 
-#include "athena/home/home_card_delegate_view.h"
+#include "athena/home/app_list_view_delegate.h"
+#include "athena/input/public/accelerator_manager.h"
+#include "athena/input/public/input_manager.h"
 #include "athena/screen/public/screen_manager.h"
+#include "ui/app_list/pagination_model.h"
+#include "ui/app_list/views/app_list_view.h"
 #include "ui/aura/layout_manager.h"
 #include "ui/aura/window.h"
-#include "ui/views/widget/widget.h"
 #include "ui/wm/core/visibility_controller.h"
 #include "ui/wm/core/window_animations.h"
 
@@ -41,8 +44,12 @@ class HomeCardLayoutManager : public aura::LayoutManager {
   }
 
   void Layout() {
-    const int kHomeCardHeight = 50;
+    const int kHomeCardHeight = 150;
     const int kHomeCardHorizontalMargin = 50;
+    // Currently the home card is provided as a bubble and the bounds has to be
+    // increased to cancel the shadow.
+    // TODO(mukai): stops using the bubble and remove this.
+    const int kHomeCardShadowWidth = 30;
     if (container_->children().size() < 1)
       return;
     aura::Window* home_card = container_->children()[0];
@@ -54,6 +61,7 @@ class HomeCardLayoutManager : public aura::LayoutManager {
                       screen_bounds.height() - kHomeCardHeight,
                       kHomeCardHorizontalMargin,
                       0);
+    card_bounds.Inset(-kHomeCardShadowWidth, -kHomeCardShadowWidth);
     SetChildBoundsDirect(home_card, card_bounds);
   }
 
@@ -62,7 +70,7 @@ class HomeCardLayoutManager : public aura::LayoutManager {
   DISALLOW_COPY_AND_ASSIGN(HomeCardLayoutManager);
 };
 
-class HomeCardImpl : public HomeCard {
+class HomeCardImpl : public HomeCard, public AcceleratorHandler {
  public:
   HomeCardImpl();
   virtual ~HomeCardImpl();
@@ -70,12 +78,27 @@ class HomeCardImpl : public HomeCard {
   void Init();
 
  private:
+  enum Command {
+    COMMAND_SHOW_HOME_CARD,
+  };
+  void InstallAccelerators();
+
+  // AcceleratorHandler:
+  virtual bool IsCommandEnabled(int command_id) const OVERRIDE { return true; }
+  virtual bool OnAcceleratorFired(int command_id,
+                                  const ui::Accelerator& accelerator) OVERRIDE {
+    DCHECK_EQ(COMMAND_SHOW_HOME_CARD, command_id);
+    home_card_widget_->Show();
+    return true;
+  }
+
   views::Widget* home_card_widget_;
 
   DISALLOW_COPY_AND_ASSIGN(HomeCardImpl);
 };
 
-HomeCardImpl::HomeCardImpl() : home_card_widget_(NULL) {
+HomeCardImpl::HomeCardImpl()
+  : home_card_widget_(NULL) {
   DCHECK(!instance);
   instance = this;
 }
@@ -87,28 +110,32 @@ HomeCardImpl::~HomeCardImpl() {
 }
 
 void HomeCardImpl::Init() {
+  InstallAccelerators();
+
   aura::Window* container =
       ScreenManager::Get()->CreateContainer("HomeCardContainer");
   container->SetLayoutManager(new HomeCardLayoutManager(container));
   wm::SetChildWindowVisibilityChangesAnimated(container);
 
-  views::Widget::InitParams params(
-      views::Widget::InitParams::TYPE_WINDOW_FRAMELESS);
-  params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
-  params.delegate = new HomeCardDelegateView();
-  params.parent = container;
+  app_list::AppListView* view = new app_list::AppListView(
+      new AppListViewDelegate);
+  view->InitAsBubbleAtFixedLocation(
+      container,
+      0 /* initial_apps_page */,
+      gfx::Point(),
+      views::BubbleBorder::FLOAT,
+      true /* border_accepts_events */);
+  home_card_widget_ = view->GetWidget();
+  view->ShowWhenReady();
+}
 
-  home_card_widget_ = new views::Widget;
-  home_card_widget_->Init(params);
-  home_card_widget_->GetNativeView()->SetName("HomeCardWidget");
-
-  aura::Window* home_card_window = home_card_widget_->GetNativeView();
-  wm::SetWindowVisibilityAnimationType(
-      home_card_window, wm::WINDOW_VISIBILITY_ANIMATION_TYPE_FADE);
-  wm::SetWindowVisibilityAnimationTransition(home_card_window,
-                                             wm::ANIMATE_BOTH);
-
-  home_card_widget_->Show();
+void HomeCardImpl::InstallAccelerators() {
+  const AcceleratorData accelerator_data[] = {
+      {TRIGGER_ON_PRESS, ui::VKEY_L, ui::EF_CONTROL_DOWN,
+       COMMAND_SHOW_HOME_CARD, AF_NONE},
+  };
+  InputManager::Get()->GetAcceleratorManager()->RegisterAccelerators(
+      accelerator_data, arraysize(accelerator_data), this);
 }
 
 }  // namespace

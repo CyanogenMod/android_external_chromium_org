@@ -1,0 +1,11 @@
+include_rules = [
+  "+athena/screen",
+  "+ui/aura",
+  "+ui/views",
+]
+
+specific_include_rules = {
+  ".*unittest\.cc": [
+    "+athena/test",
+  ],
+}

@@ -298,6 +298,8 @@
         'base/pipeline.cc',
         'base/pipeline.h',
         'base/pipeline_status.h',
+        'base/player_tracker.cc',
+        'base/player_tracker.h',
         'base/ranges.cc',
         'base/ranges.h',
         'base/sample_format.cc',
@@ -355,6 +357,8 @@
         'cdm/json_web_key.h',
         'cdm/key_system_names.cc',
         'cdm/key_system_names.h',
+        'cdm/player_tracker_impl.cc',
+        'cdm/player_tracker_impl.h',
         'ffmpeg/ffmpeg_common.cc',
         'ffmpeg/ffmpeg_common.h',
         'ffmpeg/ffmpeg_deleters.h',
@@ -922,7 +926,6 @@
           'dependencies': [
             'media_asm',
             'media_mmx',
-            'media_sse',
             'media_sse2',
           ],
           'sources': [
@@ -1338,11 +1341,6 @@
             'USE_NEON'
           ],
         }],
-        ['target_arch=="ia32" or target_arch=="x64"', {
-          'dependencies': [
-            'shared_memory_support_sse'
-          ],
-        }],
       ],
     },
   ],
@@ -1452,22 +1450,6 @@
           ],
         },
         {
-          'target_name': 'media_sse',
-          'type': 'static_library',
-          'cflags': [
-            '-msse',
-          ],
-          'defines': [
-            'MEDIA_IMPLEMENTATION',
-          ],
-          'include_dirs': [
-            '..',
-          ],
-          'sources': [
-            'base/simd/sinc_resampler_sse.cc',
-          ],
-        },
-        {
           'target_name': 'media_sse2',
           'type': 'static_library',
           'cflags': [
@@ -1483,22 +1465,6 @@
             'base/simd/convert_rgb_to_yuv_sse2.cc',
             'base/simd/convert_rgb_to_yuv_ssse3.cc',
             'base/simd/filter_yuv_sse2.cc',
-          ],
-        },
-        {
-          'target_name': 'shared_memory_support_sse',
-          'type': 'static_library',
-          'cflags': [
-            '-msse',
-          ],
-          'defines': [
-            'MEDIA_IMPLEMENTATION',
-          ],
-          'include_dirs': [
-            '..',
-          ],
-          'sources': [
-            'base/simd/vector_math_sse.cc',
           ],
         },
       ], # targets
@@ -1608,7 +1574,7 @@
           'sources': [
             'base/android/audio_decoder_job.cc',
             'base/android/audio_decoder_job.h',
-            'base/android/cdm_factory_android.cc',
+            'base/android/browser_cdm_factory_android.cc',
             'base/android/media_codec_bridge.cc',
             'base/android/media_codec_bridge.h',
             'base/android/media_decoder_job.cc',
@@ -1630,7 +1596,9 @@
             'base/android/webaudio_media_codec_bridge.cc',
             'base/android/webaudio_media_codec_bridge.h',
             'base/android/webaudio_media_codec_info.h',
-            'base/cdm_factory.h',
+            'base/browser_cdm.cc',
+            'base/browser_cdm.h',
+            'base/browser_cdm_factory.h',
           ],
           'dependencies': [
             '../base/base.gyp:base',

@@ -44,6 +44,7 @@ namespace chromeos {
 class AuthenticatedUserEmailRetriever;
 class CaptivePortalWindowProxy;
 class CoreOobeActor;
+class GaiaScreenHandler;
 class LocallyManagedUserCreationScreenHandler;
 class NativeWindowDelegate;
 class User;
@@ -88,6 +89,10 @@ class LoginDisplayWebUIHandler {
   // Show sign-in screen for the given credentials.
   virtual void ShowSigninScreenForCreds(const std::string& username,
                                         const std::string& password) = 0;
+  virtual void LoadUsers(const base::ListValue& users_list,
+                         bool animated,
+                         bool show_guest) = 0;
+
  protected:
   virtual ~LoginDisplayWebUIHandler() {}
 };
@@ -166,9 +171,6 @@ class SigninScreenHandlerDelegate {
   // Public sessions are always shown.
   virtual bool IsShowUsers() const = 0;
 
-  // Whether new user pod is available.
-  virtual bool IsShowNewUser() const = 0;
-
   // Returns true if sign in is in progress.
   virtual bool IsSigninInProgress() const = 0;
 
@@ -185,6 +187,18 @@ class SigninScreenHandlerDelegate {
   // Login to kiosk mode for app with |app_id|.
   virtual void LoginAsKioskApp(const std::string& app_id,
                                bool diagnostic_mode) = 0;
+
+  // Request to (re)load user list.
+  virtual void HandleGetUsers() = 0;
+
+  // Set authentication type (for easier unlocking).
+  virtual void SetAuthType(
+      const std::string& username,
+      ScreenlockBridge::LockHandler::AuthType auth_type) = 0;
+
+  // Get authentication type (for easier unlocking).
+  virtual ScreenlockBridge::LockHandler::AuthType GetAuthType(
+      const std::string& username) const = 0;
 
  protected:
   virtual ~SigninScreenHandlerDelegate() {}
@@ -239,8 +253,9 @@ class SigninScreenHandler
     UI_STATE_ACCOUNT_PICKER,
   };
 
-  friend class ReportDnsCacheClearedOnUIThread;
+  friend class GaiaScreenHandler;
   friend class LocallyManagedUserCreationScreenHandler;
+  friend class ReportDnsCacheClearedOnUIThread;
 
   void ShowImpl();
 
@@ -282,6 +297,9 @@ class SigninScreenHandler
   virtual void ShowErrorScreen(LoginDisplay::SigninError error_id) OVERRIDE;
   virtual void ShowSigninScreenForCreds(const std::string& username,
                                         const std::string& password) OVERRIDE;
+  virtual void LoadUsers(const base::ListValue& users_list,
+                         bool animated,
+                         bool show_guest) OVERRIDE;
 
   // ui::EventHandler implementation:
   virtual void OnKeyEvent(ui::KeyEvent* key) OVERRIDE;
@@ -304,16 +322,6 @@ class SigninScreenHandler
       const std::string& username) const OVERRIDE;
   virtual void Unlock(const std::string& user_email) OVERRIDE;
 
-  // Shows signin screen after dns cache and cookie cleanup operations finish.
-  void ShowSigninScreenIfReady();
-
-  // Tells webui to load authentication extension. |force| is used to force the
-  // extension reloading, if it has already been loaded. |silent_load| is true
-  // for cases when extension should be loaded in the background and it
-  // shouldn't grab the focus. |offline| is true when offline version of the
-  // extension should be used.
-  void LoadAuthExtension(bool force, bool silent_load, bool offline);
-
   // Updates authentication extension. Called when device settings that affect
   // sign-in (allow BWSI and allow whitelist) are changed.
   void UserSettingsChanged();
@@ -323,16 +331,7 @@ class SigninScreenHandler
   void RefocusCurrentPod();
 
   // WebUI message handlers.
-  void HandleCompleteAuthentication(const std::string& email,
-                                    const std::string& password,
-                                    const std::string& auth_code);
-  void HandleCompleteLogin(const std::string& typed_email,
-                           const std::string& password,
-                           bool using_saml);
   void HandleGetUsers();
-  void HandleUsingSAMLAPI();
-  void HandleScrapedPasswordCount(int password_count);
-  void HandleScrapedPasswordVerificationFailed();
   void HandleAuthenticateUser(const std::string& username,
                               const std::string& password);
   void HandleAttemptUnlock(const std::string& username);
@@ -352,7 +351,6 @@ class SigninScreenHandler
   void HandleCreateAccount();
   void HandleAccountPickerReady();
   void HandleWallpaperReady();
-  void HandleLoginWebuiReady();
   void HandleSignOutUser();
   void HandleOpenProxySettings();
   void HandleLoginVisible(const std::string& source);
@@ -370,28 +368,6 @@ class SigninScreenHandler
   void HandleLaunchKioskApp(const std::string& app_id, bool diagnostic_mode);
   void HandleRetrieveAuthenticatedUserEmail(double attempt_token);
 
-  // Fills |user_dict| with information about |user|.
-  static void FillUserDictionary(
-      User* user,
-      bool is_owner,
-      bool is_signin_to_add,
-      ScreenlockBridge::LockHandler::AuthType auth_type,
-      base::DictionaryValue* user_dict);
-
-  // Sends user list to account picker.
-  void SendUserList(bool animated);
-
-  // Kick off cookie / local storage cleanup.
-  void StartClearingCookies(const base::Closure& on_clear_callback);
-  void OnCookiesCleared(base::Closure on_clear_callback);
-
-  // Kick off DNS cache flushing.
-  void StartClearingDnsCache();
-  void OnDnsCleared();
-
-  // Decides whether an auth extension should be pre-loaded. If it should,
-  // pre-loads it.
-  void MaybePreloadAuthExtension();
 
   // Returns true iff
   // (i)   log in is restricted to some user list,
@@ -422,8 +398,7 @@ class SigninScreenHandler
   // Returns true if offline login is allowed.
   bool IsOfflineLoginAllowed() const;
 
-  // Attempts login for test.
-  void SubmitLoginFormForTest();
+  bool ShouldLoadGaia() const;
 
   // Update current input method (namely keyboard layout) to LRU by this user.
   void SetUserInputMethod(const std::string& username);
@@ -433,12 +408,8 @@ class SigninScreenHandler
   // |state| indicates that enrollment is not applicable.
   void ContinueKioskEnableFlow(policy::AutoEnrollmentState state);
 
-  // Shows signin screen for |email|.
-  void OnShowAddUser(const std::string& email);
-
-  // Updates the member variable and UMA histogram indicating whether the
-  // principals API was used during SAML login.
-  void SetSAMLPrincipalsAPIUsed(bool api_used);
+  // Shows signin.
+  void OnShowAddUser();
 
   GaiaScreenHandler::FrameState FrameState() const;
   net::Error FrameError() const;
@@ -461,45 +432,11 @@ class SigninScreenHandler
   // Keeps whether screen should be shown for OOBE.
   bool oobe_ui_;
 
-  // Is focus still stolen from Gaia page?
-  bool focus_stolen_;
-
-  // Has Gaia page silent load been started for the current sign-in attempt?
-  bool gaia_silent_load_;
-
-  // The active network at the moment when Gaia page was preloaded.
-  std::string gaia_silent_load_network_;
-
   // Is account picker being shown for the first time.
   bool is_account_picker_showing_first_time_;
 
-  // True if dns cache cleanup is done.
-  bool dns_cleared_;
-
-  // True if DNS cache task is already running.
-  bool dns_clear_task_running_;
-
-  // True if cookie jar cleanup is done.
-  bool cookies_cleared_;
-
   // Network state informer used to keep signin screen up.
   scoped_refptr<NetworkStateInformer> network_state_informer_;
-
-  // Email to pre-populate with.
-  std::string email_;
-  // Emails of the users, whose passwords have recently been changed.
-  std::set<std::string> password_changed_for_;
-
-  // If the user authenticated via SAML, this indicates whether the principals
-  // API was used.
-  bool using_saml_api_;
-
-  // Test credentials.
-  std::string test_user_;
-  std::string test_pass_;
-  bool test_expects_complete_login_;
-
-  base::WeakPtrFactory<SigninScreenHandler> weak_factory_;
 
   // Set to true once |LOGIN_WEBUI_VISIBLE| notification is observed.
   bool webui_visible_;
@@ -522,8 +459,6 @@ class SigninScreenHandler
   // NOTIFICATION_AUTH_CANCELLED.
   bool has_pending_auth_ui_;
 
-  scoped_ptr<CrosSettings::ObserverSubscription> allow_new_user_subscription_;
-  scoped_ptr<CrosSettings::ObserverSubscription> allow_guest_subscription_;
   scoped_ptr<AutoEnrollmentController::ProgressCallbackList::Subscription>
       auto_enrollment_progress_subscription_;
 
@@ -531,17 +466,14 @@ class SigninScreenHandler
 
   base::Closure kiosk_enable_flow_aborted_callback_for_test_;
 
-  // Map of usernames to their current authentication type. If a user is not
-  // contained in the map, it is using the default authentication type.
-  std::map<std::string, ScreenlockBridge::LockHandler::AuthType>
-      user_auth_type_map_;
-
   // Non-owning ptr.
   // TODO (ygorshenin@): remove this dependency.
   GaiaScreenHandler* gaia_screen_handler_;
 
   // Helper that retrieves the authenticated user's e-mail address.
   scoped_ptr<AuthenticatedUserEmailRetriever> email_retriever_;
+
+  base::WeakPtrFactory<SigninScreenHandler> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SigninScreenHandler);
 };

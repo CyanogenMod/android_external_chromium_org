@@ -29,7 +29,7 @@ class IntranetRedirectDetector;
 class IOThread;
 class MediaFileSystemRegistry;
 class MetricsService;
-class NetworkTimeTracker;
+class MetricsServicesManager;
 class NotificationUIManager;
 class PrefRegistrySimple;
 class PrefService;
@@ -55,12 +55,20 @@ namespace extensions {
 class EventRouterForwarder;
 }
 
+namespace gcm {
+class GCMDriver;
+}
+
 namespace message_center {
 class MessageCenter;
 }
 
 namespace net {
 class URLRequestContextGetter;
+}
+
+namespace network_time {
+class NetworkTimeTracker;
 }
 
 namespace policy {
@@ -101,6 +109,10 @@ class BrowserProcess {
   // to normal shutdown and saves any state that must be saved before we are
   // continue shutdown.
   virtual void EndSession() = 0;
+
+  // Gets the manager for the various metrics-related services, constructing it
+  // if necessary.
+  virtual MetricsServicesManager* GetMetricsServicesManager() = 0;
 
   // Services: any of these getters may return NULL
   virtual MetricsService* metrics_service() = 0;
@@ -220,7 +232,9 @@ class BrowserProcess {
   virtual WebRtcLogUploader* webrtc_log_uploader() = 0;
 #endif
 
-  virtual NetworkTimeTracker* network_time_tracker() = 0;
+  virtual network_time::NetworkTimeTracker* network_time_tracker() = 0;
+
+  virtual gcm::GCMDriver* gcm_driver() = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(BrowserProcess);

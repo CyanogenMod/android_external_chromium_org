@@ -4,8 +4,10 @@
 
 #include "mojo/services/view_manager/view_manager_connection.h"
 
+#include "base/bind.h"
 #include "base/stl_util.h"
 #include "mojo/services/public/cpp/geometry/geometry_type_converters.h"
+#include "mojo/services/public/cpp/input_events/input_events_type_converters.h"
 #include "mojo/services/view_manager/node.h"
 #include "mojo/services/view_manager/root_node_manager.h"
 #include "mojo/services/view_manager/view.h"
@@ -32,9 +34,13 @@ void GetDescendants(const Node* node, std::vector<const Node*>* nodes) {
 
 }  // namespace
 
-ViewManagerConnection::ViewManagerConnection(RootNodeManager* root_node_manager)
+ViewManagerConnection::ViewManagerConnection(RootNodeManager* root_node_manager,
+                                             TransportConnectionId creator_id,
+                                             const std::string& url)
     : root_node_manager_(root_node_manager),
       id_(root_node_manager_->GetAndAdvanceNextConnectionId()),
+      url_(url),
+      creator_id_(creator_id),
       delete_on_connection_error_(false) {
 }
 
@@ -58,11 +64,11 @@ ViewManagerConnection::~ViewManagerConnection() {
         this, root_node_manager_,
         RootNodeManager::CHANGE_TYPE_ADVANCE_SERVER_CHANGE_ID, true);
     while (!node_map_.empty()) {
-      Node* node = node_map_.begin()->second;
+      scoped_ptr<Node> node(node_map_.begin()->second);
       Node* parent = node->GetParent();
       const NodeId node_id(node->id());
       if (parent)
-        parent->Remove(node);
+        parent->Remove(node.get());
       root_node_manager_->ProcessNodeDeleted(node_id);
       node_map_.erase(NodeIdToTransportId(node_id));
     }
@@ -97,6 +103,12 @@ void ViewManagerConnection::SetRoots(const Array<TransportNodeId>& node_ids) {
   roots_.swap(roots);
 }
 
+void ViewManagerConnection::OnViewManagerConnectionDestroyed(
+    TransportConnectionId id) {
+  if (creator_id_ == id)
+    creator_id_ = kRootConnection;
+}
+
 void ViewManagerConnection::ProcessNodeBoundsChanged(
     const Node* node,
     const gfx::Rect& old_bounds,
@@ -127,6 +139,7 @@ void ViewManagerConnection::ProcessNodeHierarchyChanged(
       RemoveFromKnown(node);
       client()->OnNodeDeleted(NodeIdToTransportId(node->id()),
                               server_change_id);
+      root_node_manager_->OnConnectionMessagedClient(id_);
       return;
     }
   }
@@ -185,9 +198,12 @@ void ViewManagerConnection::ProcessNodeDeleted(
 
   if (in_known) {
     client()->OnNodeDeleted(NodeIdToTransportId(node), server_change_id);
-  } else if (root_node_manager_->IsProcessingChange()) {
+    root_node_manager_->OnConnectionMessagedClient(id_);
+  } else if (root_node_manager_->IsProcessingChange() &&
+             !root_node_manager_->DidConnectionMessageClient(id_)) {
     client()->OnServerChangeIdAdvanced(
         root_node_manager_->next_server_change_id() + 1);
+    root_node_manager_->OnConnectionMessagedClient(id_);
   }
 }
 
@@ -196,6 +212,15 @@ void ViewManagerConnection::ProcessViewDeleted(const ViewId& view,
   if (originated_change)
     return;
   client()->OnViewDeleted(ViewIdToTransportId(view));
+}
+
+void ViewManagerConnection::ProcessViewInputEvent(const View* view,
+                                                  const ui::Event* event) {
+  DCHECK_EQ(id_, view->id().connection_id);
+  client()->OnViewInputEvent(
+      ViewIdToTransportId(view->id()),
+      TypeConverter<EventPtr, ui::Event>::ConvertFrom(*event),
+      base::Bind(&base::DoNothing));
 }
 
 void ViewManagerConnection::OnConnectionError() {
@@ -345,6 +370,31 @@ void ViewManagerConnection::RemoveFromKnown(const Node* node) {
   std::vector<const Node*> children = node->GetChildren();
   for (size_t i = 0; i < children.size(); ++i)
     RemoveFromKnown(children[i]);
+}
+
+bool ViewManagerConnection::AddRoots(
+    const std::vector<TransportNodeId>& node_ids) {
+  std::vector<const Node*> to_send;
+  bool did_add_root = false;
+  for (size_t i = 0; i < node_ids.size(); ++i) {
+    CHECK_EQ(creator_id_, NodeIdFromTransportId(node_ids[i]).connection_id);
+    if (roots_.count(node_ids[i]) > 0)
+      continue;
+
+    did_add_root = true;
+    roots_.insert(node_ids[i]);
+    if (known_nodes_.count(node_ids[i]) == 0) {
+      Node* node = GetNode(NodeIdFromTransportId(node_ids[i]));
+      DCHECK(node);
+      GetUnknownNodesFrom(node, &to_send);
+    }
+  }
+
+  if (!did_add_root)
+    return false;
+
+  client()->OnRootsAdded(NodesToINodes(to_send));
+  return true;
 }
 
 bool ViewManagerConnection::IsNodeDescendantOfRoots(const Node* node) const {
@@ -596,9 +646,16 @@ void ViewManagerConnection::SetNodeBounds(
 void ViewManagerConnection::Connect(const String& url,
                                     Array<uint32_t> node_ids,
                                     const Callback<void(bool)>& callback) {
-  const bool success = CanConnect(node_ids);
-  if (success)
-    root_node_manager_->Connect(url, node_ids);
+  bool success = CanConnect(node_ids);
+  if (success) {
+    // We may already have this connection, if so reuse it.
+    ViewManagerConnection* existing_connection =
+        root_node_manager_->GetConnectionByCreator(id_, url.To<std::string>());
+    if (existing_connection)
+      success = existing_connection->AddRoots(node_ids.storage());
+    else
+      root_node_manager_->Connect(id_, url, node_ids);
+  }
   callback.Run(success);
 }
 
@@ -612,6 +669,14 @@ void ViewManagerConnection::OnNodeViewReplaced(const Node* node,
                                                const View* new_view,
                                                const View* old_view) {
   root_node_manager_->ProcessNodeViewReplaced(node, new_view, old_view);
+}
+
+void ViewManagerConnection::OnViewInputEvent(const View* view,
+                                             const ui::Event* event) {
+  ViewManagerConnection* connection = root_node_manager_->GetConnection(
+      view->id().connection_id);
+  DCHECK(connection);
+  connection->ProcessViewInputEvent(view, event);
 }
 
 void ViewManagerConnection::OnConnectionEstablished() {

@@ -90,7 +90,7 @@ cr.define('serviceworker', function() {
                  partition_id) {
     var workers = [];
     live_registrations.forEach(function(registration) {
-      [registration.active, registration.pending].forEach(function(version) {
+      [registration.active, registration.waiting].forEach(function(version) {
         if (!version || version.running_status != 'RUNNING') {
           return;
         }
@@ -145,7 +145,7 @@ cr.define('serviceworker', function() {
     });
     [stored_registrations, live_registrations].forEach(function(registrations) {
       registrations.forEach(function(registration) {
-        [registration.active, registration.pending].forEach(function(version) {
+        [registration.active, registration.waiting].forEach(function(version) {
           if (version) {
             version_id_set[version.version_id] = true;
           }
@@ -185,11 +185,11 @@ cr.define('serviceworker', function() {
                            unregistered_versions);
     var template;
     var container = $('serviceworker-list');
-    // Existing templates are keyed by partition_path. This allows
+    // Existing templates are keyed by partition_id. This allows
     // the UI to be updated in-place rather than refreshing the
     // whole page.
     for (var i = 0; i < container.childNodes.length; ++i) {
-      if (container.childNodes[i].partition_path == partition_path) {
+      if (container.childNodes[i].partition_id == partition_id) {
         template = container.childNodes[i];
       }
     }
@@ -200,10 +200,10 @@ cr.define('serviceworker', function() {
     }
     var fillLogFunc = fillLogForVersion.bind(this, partition_id);
     stored_registrations.forEach(function(registration) {
-      [registration.active, registration.pending].forEach(fillLogFunc);
+      [registration.active, registration.waiting].forEach(fillLogFunc);
     });
     unregistered_registrations.forEach(function(registration) {
-      [registration.active, registration.pending].forEach(fillLogFunc);
+      [registration.active, registration.waiting].forEach(fillLogFunc);
     });
     unregistered_versions.forEach(fillLogFunc);
     jstProcess(new JsEvalContext({

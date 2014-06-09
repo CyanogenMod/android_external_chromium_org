@@ -2,13 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "athena/activity/public/activity_factory.h"
+#include "athena/activity/public/activity_manager.h"
 #include "athena/test/athena_test_helper.h"
 #include "base/at_exit.h"
 #include "base/command_line.h"
 #include "base/i18n/icu_util.h"
 #include "base/message_loop/message_loop.h"
+#include "base/path_service.h"
 #include "base/run_loop.h"
 #include "ui/aura/window_tree_host.h"
+#include "ui/base/resource/resource_bundle.h"
+#include "ui/base/ui_base_paths.h"
 #include "ui/compositor/test/context_factories_for_test.h"
 #include "ui/gl/gl_surface.h"
 
@@ -21,6 +26,14 @@ class UIShell {
         ui::InitializeContextFactoryForTests(enable_pixel_output);
     athena_helper_.SetUp(factory);
     athena_helper_.host()->Show();
+
+    InitSampleActivities();
+  }
+
+  void InitSampleActivities() {
+    athena::ActivityManager::Get()->AddActivity(
+        athena::ActivityFactory::Get()->CreateWebActivity(
+            NULL, GURL("http://www.google.com/")));
   }
 
  private:
@@ -33,9 +46,14 @@ int main(int argc, const char **argv) {
   setlocale(LC_ALL, "");
 
   base::AtExitManager exit_manager;
+  ui::RegisterPathProvider();
   base::CommandLine::Init(argc, argv);
   base::i18n::InitializeICU();
   gfx::GLSurface::InitializeOneOffForTests();
+
+  base::FilePath ui_test_pak_path;
+  DCHECK(PathService::Get(ui::UI_TEST_PAK, &ui_test_pak_path));
+  ui::ResourceBundle::InitSharedInstanceWithPakPath(ui_test_pak_path);
 
   base::MessageLoopForUI message_loop;
   UIShell shell(&message_loop);

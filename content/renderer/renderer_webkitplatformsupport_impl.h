@@ -28,6 +28,7 @@ class SyncMessageFilter;
 }
 
 namespace blink {
+class WebBatteryStatus;
 class WebDeviceMotionData;
 class WebDeviceOrientationData;
 class WebGraphicsContext3DProvider;
@@ -147,7 +148,8 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   virtual void cancelVibration();
   virtual void setScreenOrientationListener(
       blink::WebScreenOrientationListener*);
-  virtual void lockOrientation(blink::WebScreenOrientationLockType);
+  virtual void lockOrientation(blink::WebScreenOrientationLockType,
+                               blink::WebLockOrientationCallback*);
   virtual void unlockOrientation();
   virtual void setBatteryStatusListener(
       blink::WebBatteryStatusListener* listener);
@@ -185,12 +187,17 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   // Resets the mock screen orientation data used for testing.
   static void ResetMockScreenOrientationForTesting();
 
+  // Notifies blink::WebBatteryStatusListener that battery status has changed.
+  static void MockBatteryStatusChangedForTesting(
+      const blink::WebBatteryStatus& status);
+
   WebDatabaseObserverImpl* web_database_observer_impl() {
     return web_database_observer_impl_.get();
   }
 
  private:
   bool CheckPreparsedJsCachingEnabled() const;
+  void EnsureScreenOrientationDispatcher();
 
   scoped_ptr<RendererClipboardClient> clipboard_client_;
   scoped_ptr<WebClipboardImpl> clipboard_;

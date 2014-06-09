@@ -6,7 +6,6 @@
 
 #include "base/values.h"
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
-#include "content/browser/browser_plugin/browser_plugin_host_factory.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/browser_plugin/browser_plugin_constants.h"
@@ -27,9 +26,6 @@
 
 namespace content {
 
-// static
-BrowserPluginHostFactory* BrowserPluginEmbedder::factory_ = NULL;
-
 BrowserPluginEmbedder::BrowserPluginEmbedder(WebContentsImpl* web_contents)
     : WebContentsObserver(web_contents),
       weak_ptr_factory_(this) {
@@ -41,8 +37,6 @@ BrowserPluginEmbedder::~BrowserPluginEmbedder() {
 // static
 BrowserPluginEmbedder* BrowserPluginEmbedder::Create(
     WebContentsImpl* web_contents) {
-  if (factory_)
-    return factory_->CreateBrowserPluginEmbedder(web_contents);
   return new BrowserPluginEmbedder(web_contents);
 }
 
@@ -84,23 +78,6 @@ void BrowserPluginEmbedder::DidSendScreenRects() {
           GetWebContents(), base::Bind(
               &BrowserPluginEmbedder::DidSendScreenRectsCallback,
               base::Unretained(this)));
-}
-
-bool BrowserPluginEmbedder::SetZoomLevelCallback(
-    double level, WebContents* guest_web_contents) {
-  double zoom_factor = content::ZoomLevelToZoomFactor(level);
-  static_cast<WebContentsImpl*>(guest_web_contents)->GetBrowserPluginGuest()->
-      SetZoom(zoom_factor);
-  // Not handled => Iterate over all guests.
-  return false;
-}
-
-void BrowserPluginEmbedder::SetZoomLevel(double level) {
-  GetBrowserPluginGuestManager()->ForEachGuest(
-      GetWebContents(), base::Bind(
-          &BrowserPluginEmbedder::SetZoomLevelCallback,
-          base::Unretained(this),
-          level));
 }
 
 bool BrowserPluginEmbedder::OnMessageReceived(const IPC::Message& message) {

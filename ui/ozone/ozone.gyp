@@ -8,8 +8,10 @@
     'external_ozone_platforms': [],
     'external_ozone_platform_files': [],
     'external_ozone_platform_deps': [],
+    'external_ozone_platform_unittest_deps': [],
     'internal_ozone_platforms': [],
     'internal_ozone_platform_deps': [],
+    'internal_ozone_platform_unittest_deps': [],
   },
   'targets': [
     {
@@ -30,14 +32,23 @@
         'OZONE_IMPLEMENTATION',
       ],
       'variables': {
-        'platform_list_file': '<(SHARED_INTERMEDIATE_DIR)/ui/ozone/ozone_platform_list.cc',
+        'platform_list_cc_file': '<(INTERMEDIATE_DIR)/ui/ozone/platform_list.cc',
+        'platform_list_h_file': '<(SHARED_INTERMEDIATE_DIR)/ui/ozone/platform_list.h',
+        'platform_list_txt_file': '<(SHARED_INTERMEDIATE_DIR)/ui/ozone/platform_list.txt',
+        'constructor_list_cc_file': '<(INTERMEDIATE_DIR)/ui/ozone/constructor_list.cc',
         'ozone_platforms': [
           '<@(external_ozone_platforms)',
           '<@(internal_ozone_platforms)',
         ],
       },
+      'include_dirs': [
+        '<(SHARED_INTERMEDIATE_DIR)',
+      ],
       'sources': [
-        '<(platform_list_file)',
+        '<(platform_list_cc_file)',
+        '<(platform_list_h_file)',
+        '<(constructor_list_cc_file)',
+
         # common/chromeos files are excluded automatically when building with
         # chromeos=0, by exclusion rules in filename_rules.gypi due to the
         # 'chromeos' folder name.
@@ -49,6 +60,8 @@
         'ozone_platform.h',
         'ozone_switches.cc',
         'ozone_switches.h',
+        'platform_selection.cc',
+        'platform_selection.h',
         '<@(external_ozone_platform_files)',
       ],
       'actions': [
@@ -61,14 +74,40 @@
             '<(generator_path)',
           ],
           'outputs': [
-            '<(platform_list_file)',
+            '<(platform_list_cc_file)',
+            '<(platform_list_h_file)',
+            '<(platform_list_txt_file)',
           ],
           'action': [
             'python',
             '<(generator_path)',
-            '--output_file=<(platform_list_file)',
+            '--output_cc=<(platform_list_cc_file)',
+            '--output_h=<(platform_list_h_file)',
+            '--output_txt=<(platform_list_txt_file)',
             '--default=<(ozone_platform)',
             '<@(ozone_platforms)',
+          ],
+        },
+        {
+          'action_name': 'generate_constructor_list',
+          'variables': {
+            'generator_path': 'generate_constructor_list.py',
+          },
+          'inputs': [
+            '<(generator_path)',
+            '<(platform_list_txt_file)',
+          ],
+          'outputs': [
+            '<(constructor_list_cc_file)',
+          ],
+          'action': [
+            'python',
+            '<(generator_path)',
+            '--platform_list=<(platform_list_txt_file)',
+            '--output_cc=<(constructor_list_cc_file)',
+            '--namespace=ui',
+            '--typename=OzonePlatform',
+            '--include="ui/ozone/ozone_platform.h"'
           ],
         },
       ],
@@ -84,6 +123,21 @@
           ],
         }],
       ]
+    },
+    {
+      'target_name': 'ozone_unittests',
+      'type': '<(gtest_target_type)',
+      'sources': [
+        'run_all_unittests.cc',
+      ],
+      'dependencies': [
+        'ozone',
+        '../../base/base.gyp:base',
+        '../../base/base.gyp:test_support_base',
+        '../../testing/gtest.gyp:gtest',
+        '<@(external_ozone_platform_unittest_deps)',
+        '<@(internal_ozone_platform_unittest_deps)',
+      ],
     },
   ],
   'conditions': [

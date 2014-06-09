@@ -178,7 +178,7 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
     syncer::WriteTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     syncer::ReadNode typed_url_root(&trans);
     ASSERT_EQ(syncer::BaseNode::INIT_OK,
-              typed_url_root.InitByTagLookup(browser_sync::kTypedUrlTag));
+              typed_url_root.InitTypeRoot(syncer::TYPED_URLS));
 
     syncer::WriteNode node(&trans);
     std::string tag = url.url().spec();
@@ -267,8 +267,8 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
     urls->clear();
     syncer::ReadTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     syncer::ReadNode typed_url_root(&trans);
-    if (typed_url_root.InitByTagLookup(browser_sync::kTypedUrlTag) !=
-            syncer::BaseNode::INIT_OK)
+    if (typed_url_root.InitTypeRoot(syncer::TYPED_URLS) !=
+        syncer::BaseNode::INIT_OK)
       return;
 
     int64 child_id = typed_url_root.GetFirstChildId();
@@ -839,7 +839,7 @@ TEST_F(ProfileSyncServiceTypedUrlTest, ProcessUserChangeRemove) {
   EXPECT_TRUE(URLsEqual(original_entry2, new_sync_entries[0]));
 }
 
-TEST_F(ProfileSyncServiceTypedUrlTest, ProcessUserChangeRemoveArchive) {
+TEST_F(ProfileSyncServiceTypedUrlTest, ProcessUserChangeRemoveExpired) {
   history::VisitVector original_visits1;
   history::URLRow original_entry1(MakeTypedUrlEntry("http://mine.com", "entry",
                                                     2, 15, false,
@@ -863,8 +863,8 @@ TEST_F(ProfileSyncServiceTypedUrlTest, ProcessUserChangeRemoveArchive) {
 
   history::URLsDeletedDetails changes;
   changes.all_history = false;
-  // Setting archived=true should cause the sync code to ignore this deletion.
-  changes.archived = true;
+  // Setting expired=true should cause the sync code to ignore this deletion.
+  changes.expired = true;
   changes.rows.push_back(history::URLRow(GURL("http://mine.com")));
   scoped_refptr<ThreadNotifier> notifier(
       new ThreadNotifier(history_thread_.get()));
@@ -1091,4 +1091,32 @@ TEST_F(ProfileSyncServiceTypedUrlTest, IgnoreLocalhostURL) {
   // We should ignore the localhost urls and left only with http url.
   ASSERT_EQ(1U, new_sync_entries.size());
   EXPECT_TRUE(URLsEqual(updated_url_entry, new_sync_entries[0]));
+}
+
+TEST_F(ProfileSyncServiceTypedUrlTest, IgnoreModificationWithoutValidVisit) {
+  EXPECT_CALL((*history_backend_.get()), GetAllTypedURLs(_)).
+      WillRepeatedly(Return(true));
+  EXPECT_CALL((*history_backend_.get()), GetMostRecentVisitsForURL(_, _, _)).
+      WillRepeatedly(Return(true));
+
+  CreateRootHelper create_root(this, syncer::TYPED_URLS);
+  StartSyncService(create_root.callback());
+
+  history::VisitVector updated_visits;
+  history::URLRow updated_url_entry(MakeTypedUrlEntry("http://yey.com",
+                                                  "yey", 20, 0, false,
+                                                  &updated_visits));
+  history::URLsModifiedDetails details;
+  details.changed_urls.push_back(updated_url_entry);
+  scoped_refptr<ThreadNotifier> notifier(
+      new ThreadNotifier(history_thread_.get()));
+  notifier->Notify(chrome::NOTIFICATION_HISTORY_URLS_MODIFIED,
+                   content::Source<Profile>(profile_),
+                   content::Details<history::URLsModifiedDetails>(&details));
+
+  history::URLRows new_sync_entries;
+  GetTypedUrlsFromSyncDB(&new_sync_entries);
+
+  // The change should be ignored.
+  ASSERT_EQ(0U, new_sync_entries.size());
 }

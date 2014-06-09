@@ -43,10 +43,14 @@ config("compiler") {
     cflags += [
       "/Gy",  # Enable function-level linking.
       "/GS",  # Enable buffer security checking.
-      "/EHsc",  # Assume C functions can't throw exceptions and don't catch
-                # structured exceptions (only C++ ones).
       "/FS",  # Preserve previous PDB behavior.
     ]
+    if (is_component_build) {
+      cflags += [
+        "/EHsc",  # Assume C functions can't throw exceptions and don't catch
+                  # structured exceptions (only C++ ones).
+      ]
+    }
   } else {
     # Common GCC compiler flags setup.
     # --------------------------------
@@ -54,7 +58,6 @@ config("compiler") {
       "-fno-strict-aliasing",  # See http://crbug.com/32204
     ]
     cflags_cc += [
-      "-fno-exceptions",
       "-fno-threadsafe-statics",
       # Not exporting C++ inline functions can generally be applied anywhere
       # so we do so here. Normal function visibility is controlled by

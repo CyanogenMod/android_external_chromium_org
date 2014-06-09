@@ -329,6 +329,13 @@ class ExtensionPrefs : public ExtensionScopedPrefs, public KeyedService {
   void SetNtpOverriddenBubbleBeenAcknowledged(const std::string& extension_id,
                                               bool value);
 
+  // Whether the user has been notified about extension with |extension_id|
+  // overriding the proxy.
+  bool HasProxyOverriddenBubbleBeenAcknowledged(
+      const std::string& extension_id);
+  void SetProxyOverriddenBubbleBeenAcknowledged(const std::string& extension_id,
+                                                bool value);
+
   // Returns true if the extension notification code has already run for the
   // first time for this profile. Currently we use this flag to mean that any
   // extensions that would trigger notifications should get silently
@@ -557,19 +564,6 @@ class ExtensionPrefs : public ExtensionScopedPrefs, public KeyedService {
   std::string GetInstallParam(const std::string& extension_id) const;
   void SetInstallParam(const std::string& extension_id,
                        const std::string& install_parameter);
-
-  // Gets/sets the next threshold for displaying a notification if an extension
-  // or app consumes excessive disk space. Returns 0 if the initial threshold
-  // has not yet been reached.
-  int64 GetNextStorageThreshold(const std::string& extension_id) const;
-  void SetNextStorageThreshold(const std::string& extension_id,
-                               int64 next_threshold);
-
-  // Gets/sets whether notifications should be shown if an extension or app
-  // consumes too much disk space.
-  bool IsStorageNotificationEnabled(const std::string& extension_id) const;
-  void SetStorageNotificationEnabled(const std::string& extension_id,
-                                     bool enable_notifications);
 
  private:
   friend class ExtensionPrefsBlacklistedExtensions;  // Unit test.

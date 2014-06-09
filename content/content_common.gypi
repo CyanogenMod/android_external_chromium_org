@@ -89,6 +89,8 @@
       'public/common/referrer.h',
       'public/common/renderer_preferences.cc',
       'public/common/renderer_preferences.h',
+      'public/common/resource_devtools_info.cc',
+      'public/common/resource_devtools_info.h',
       'public/common/resource_response.h',
       'public/common/resource_response_info.cc',
       'public/common/resource_response_info.h',
@@ -328,6 +330,8 @@
       'common/input/synthetic_tap_gesture_params.h',
       'common/input/synthetic_web_input_event_builders.cc',
       'common/input/synthetic_web_input_event_builders.h',
+      'common/input/touch_event_stream_validator.cc',
+      'common/input/touch_event_stream_validator.h',
       'common/input/web_input_event_traits.cc',
       'common/input/web_input_event_traits.h',
       'common/input/web_touch_event_traits.cc',
@@ -568,6 +572,7 @@
       ],
       'link_settings': {
         'libraries': [
+          '$(SDKROOT)/System/Library/Frameworks/IOSurface.framework',
           '$(SDKROOT)/System/Library/Frameworks/QuartzCore.framework',
         ],
       },

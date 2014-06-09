@@ -51,11 +51,10 @@ MetroViewerProcessHost::MetroViewerProcessHost(
   DCHECK(!instance_);
   instance_ = this;
 
-  channel_.reset(new IPC::ChannelProxy(
-      kMetroViewerIPCChannelName,
-      IPC::Channel::MODE_NAMED_SERVER,
-      this,
-      ipc_task_runner));
+  channel_ = IPC::ChannelProxy::Create(kMetroViewerIPCChannelName,
+                                       IPC::Channel::MODE_NAMED_SERVER,
+                                       this,
+                                       ipc_task_runner);
 }
 
 MetroViewerProcessHost::~MetroViewerProcessHost() {
@@ -86,13 +85,13 @@ MetroViewerProcessHost::~MetroViewerProcessHost() {
 
 base::ProcessId MetroViewerProcessHost::GetViewerProcessId() {
   if (channel_)
-    return channel_->peer_pid();
+    return channel_->GetPeerPID();
   return base::kNullProcessId;
 }
 
 bool MetroViewerProcessHost::LaunchViewerAndWaitForConnection(
     const base::string16& app_user_model_id) {
-  DCHECK_EQ(base::kNullProcessId, channel_->peer_pid());
+  DCHECK_EQ(base::kNullProcessId, channel_->GetPeerPID());
 
   channel_connected_event_.reset(new base::WaitableEvent(false, false));
 

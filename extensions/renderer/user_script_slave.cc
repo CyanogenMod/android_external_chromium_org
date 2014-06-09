@@ -173,19 +173,34 @@ bool UserScriptSlave::UpdateScripts(
           base::StringPiece(body, body_length));
     }
 
-    // Don't add the script if it shouldn't shouldn't run in this tab, or if
-    // we don't need to reload that extension.
-    // It's a shame we don't catch this sooner, but since we lump all the user
-    // scripts together, we can't skip parsing any.
-    if ((only_inject_incognito && !script->is_incognito_enabled()) ||
-        (!include_all_extensions &&
-             changed_extensions.count(script->extension_id()) == 0)) {
-      continue;
+    if (only_inject_incognito && !script->is_incognito_enabled())
+      continue; // This script shouldn't run in an incognito tab.
+
+    // If we include all extensions or the given extension changed, we add a
+    // new script injection.
+    if (include_all_extensions ||
+        changed_extensions.count(script->extension_id()) > 0) {
+      script_injections_.push_back(new ScriptInjection(script.Pass(), this));
+    } else {
+      // Otherwise, we need to update the existing script injection with the
+      // new user script (since the old content was invalidated).
+      //
+      // Note: Yes, this is O(n^2). But vectors are faster than maps for
+      // relatively few elements, and less than 1% of our users actually have
+      // enough content scripts for it to matter. If this changes, or if
+      // std::maps get a much faster implementation, we should look into
+      // making a map for script injections.
+      for (ScopedVector<ScriptInjection>::iterator iter =
+               script_injections_.begin();
+           iter != script_injections_.end();
+           ++iter) {
+        if ((*iter)->script()->id() == script->id()) {
+          (*iter)->SetScript(script.Pass());
+          break;
+        }
+      }
     }
-
-    script_injections_.push_back(new ScriptInjection(script.Pass(), this));
   }
-
   return true;
 }
 

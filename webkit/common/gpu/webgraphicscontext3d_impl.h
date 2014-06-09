@@ -37,7 +37,8 @@ using blink::WGC3Dclampf;
 using blink::WGC3Dintptr;
 using blink::WGC3Dsizeiptr;
 
-namespace content {
+namespace webkit {
+namespace gpu {
 
 class WebGraphicsContext3DErrorMessageCallback;
 
@@ -175,8 +176,6 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DImpl
   virtual void getBufferParameteriv(WGC3Denum target,
                                     WGC3Denum pname,
                                     WGC3Dint* value);
-
-  virtual Attributes getContextAttributes();
 
   virtual WGC3Denum getError();
 
@@ -552,23 +551,21 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DImpl
 
   virtual GrGLInterface* createGrGLInterface();
 
-  gpu::gles2::GLES2Interface* GetGLInterface() {
+  ::gpu::gles2::GLES2Interface* GetGLInterface() {
     return gl_;
   }
 
  protected:
   friend class WebGraphicsContext3DErrorMessageCallback;
 
-  WebGraphicsContext3DImpl(
-      const Attributes& attributes,
-      bool lose_context_when_out_of_memory);
+  WebGraphicsContext3DImpl();
   virtual ~WebGraphicsContext3DImpl();
 
-  gpu::gles2::GLES2ImplementationErrorMessageCallback*
+  ::gpu::gles2::GLES2ImplementationErrorMessageCallback*
       getErrorMessageCallback();
   virtual void OnErrorMessage(const std::string& message, int id);
 
-  void setGLInterface(gpu::gles2::GLES2Interface* gl) {
+  void setGLInterface(::gpu::gles2::GLES2Interface* gl) {
     gl_ = gl;
   }
 
@@ -583,16 +580,15 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DImpl
   scoped_ptr<WebGraphicsContext3DErrorMessageCallback>
       client_error_message_callback_;
 
-  blink::WebGraphicsContext3D::Attributes attributes_;
-
   // Errors raised by synthesizeGLError().
   std::vector<WGC3Denum> synthetic_errors_;
 
-  gpu::gles2::GLES2Interface* gl_;
+  ::gpu::gles2::GLES2Interface* gl_;
   bool lose_context_when_out_of_memory_;
   uint32_t flush_id_;
 };
 
-}  // namespace content
+}  // namespace gpu
+}  // namespace webkit
 
 #endif  // WEBKIT_COMMON_GPU_WEBGRAPHICSCONTEXT3D_IMPL_H_

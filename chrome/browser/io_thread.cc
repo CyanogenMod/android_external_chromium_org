@@ -78,7 +78,6 @@
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "net/url_request/url_request_throttler_manager.h"
-#include "net/websockets/websocket_job.h"
 #include "url/url_constants.h"
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
@@ -95,6 +94,7 @@
 #endif
 
 #if defined(OS_ANDROID) || defined(OS_IOS)
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_params.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_settings.h"
 #endif
 
@@ -106,6 +106,7 @@
 using content::BrowserThread;
 
 #if defined(OS_ANDROID) || defined(OS_IOS)
+using data_reduction_proxy::DataReductionProxyParams;
 using data_reduction_proxy::DataReductionProxySettings;
 #endif
 
@@ -595,10 +596,17 @@ void IOThread::InitAsync() {
 #endif
   globals_->ssl_config_service = GetSSLConfigService();
 #if defined(OS_ANDROID) || defined(OS_IOS)
-  if (DataReductionProxySettings::IsIncludedInFieldTrialOrFlags()) {
-    spdyproxy_auth_origins_ =
-        DataReductionProxySettings::GetDataReductionProxies();
-  }
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
+  int drp_flags = DataReductionProxyParams::kFallbackAllowed;
+  if (DataReductionProxyParams::IsIncludedInFieldTrial())
+    drp_flags |= DataReductionProxyParams::kAllowed;
+  if (DataReductionProxyParams::IsIncludedInAlternativeFieldTrial())
+    drp_flags |= DataReductionProxyParams::kAlternativeAllowed;
+  if (DataReductionProxyParams::IsIncludedInPromoFieldTrial())
+    drp_flags |= DataReductionProxyParams::kPromoAllowed;
+  globals_->data_reduction_proxy_params.reset(
+      new DataReductionProxyParams(drp_flags));
+#endif  // defined(SPDY_PROXY_AUTH_ORIGIN)
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
   globals_->http_auth_handler_factory.reset(CreateDefaultAuthHandlerFactory(
       globals_->host_resolver.get()));
@@ -748,11 +756,6 @@ void IOThread::InitializeNetworkOptions(const CommandLine& command_line) {
     std::string spdy_trial_group =
         base::FieldTrialList::FindFullName(kSpdyFieldTrialName);
 
-    if (command_line.HasSwitch(switches::kEnableWebSocketOverSpdy)) {
-      // Enable WebSocket over SPDY.
-      net::WebSocketJob::set_websocket_over_spdy_enabled(true);
-    }
-
     if (command_line.HasSwitch(switches::kTrustedSpdyProxy)) {
       globals_->trusted_spdy_proxy.set(
           command_line.GetSwitchValueASCII(switches::kTrustedSpdyProxy));
@@ -783,6 +786,9 @@ void IOThread::InitializeNetworkOptions(const CommandLine& command_line) {
         globals_->use_alternate_protocols.set(true);
       }
     }
+
+    if (command_line.HasSwitch(switches::kEnableWebSocketOverSpdy))
+      globals_->enable_websocket_over_spdy.set(true);
   }
 
   // TODO(rch): Make the client socket factory a per-network session
@@ -901,11 +907,15 @@ net::HttpAuthHandlerFactory* IOThread::CreateDefaultAuthHandlerFactory(
           resolver, gssapi_library_name_, negotiate_disable_cname_lookup_,
           negotiate_enable_port_));
 
-  if (!spdyproxy_auth_origins_.empty()) {
-    registry_factory->RegisterSchemeFactory(
-        "spdyproxy",
-        new data_reduction_proxy::HttpAuthHandlerDataReductionProxy::Factory(
-            spdyproxy_auth_origins_));
+  if (globals_->data_reduction_proxy_params.get()) {
+    std::vector<GURL> data_reduction_proxies =
+        globals_->data_reduction_proxy_params->GetAllowedProxies();
+    if (!data_reduction_proxies.empty()) {
+      registry_factory->RegisterSchemeFactory(
+          "spdyproxy",
+          new data_reduction_proxy::HttpAuthHandlerDataReductionProxy::Factory(
+              data_reduction_proxies));
+    }
   }
 
   return registry_factory.release();
@@ -953,6 +963,8 @@ void IOThread::InitializeNetworkSessionParams(
   globals_->forced_spdy_exclusions = params->forced_spdy_exclusions;
   globals_->use_alternate_protocols.CopyToIfSet(
       &params->use_alternate_protocols);
+  globals_->enable_websocket_over_spdy.CopyToIfSet(
+      &params->enable_websocket_over_spdy);
 
   globals_->enable_quic.CopyToIfSet(&params->enable_quic);
   globals_->enable_quic_https.CopyToIfSet(&params->enable_quic_https);
@@ -965,6 +977,7 @@ void IOThread::InitializeNetworkSessionParams(
   globals_->enable_quic_port_selection.CopyToIfSet(
       &params->enable_quic_port_selection);
   globals_->quic_max_packet_length.CopyToIfSet(&params->quic_max_packet_length);
+  globals_->quic_user_agent_id.CopyToIfSet(&params->quic_user_agent_id);
   globals_->quic_supported_versions.CopyToIfSet(
       &params->quic_supported_versions);
   globals_->origin_to_force_quic_on.CopyToIfSet(
@@ -1071,6 +1084,13 @@ void IOThread::ConfigureQuic(const CommandLine& command_line) {
     globals_->quic_max_packet_length.set(max_packet_length);
   }
 
+  std::string quic_user_agent_id =
+      chrome::VersionInfo::GetVersionStringModifier();
+  quic_user_agent_id.append(1, ' ');
+  chrome::VersionInfo version_info;
+  quic_user_agent_id.append(version_info.ProductNameAndVersionForUserAgent());
+  globals_->quic_user_agent_id.set(quic_user_agent_id);
+
   net::QuicVersion version = GetQuicVersion(command_line);
   if (version != net::QUIC_VERSION_UNSUPPORTED) {
     net::QuicVersionVector supported_versions;
@@ -1146,16 +1166,9 @@ bool IOThread::ShouldEnableQuicTimeBasedLossDetection(
       kQuicFieldTrialTimeBasedLossDetectionSuffix);
 }
 
+// TODO(rtenneti): Delete this method after the merge.
 bool IOThread::ShouldEnableQuicPersistServerInfo(
     const CommandLine& command_line) {
-  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
-  // Avoid persisting of Quic server config information to disk cache when we
-  // have a beta or stable release.  Allow in all other cases, including when we
-  // do a developer build (CHANNEL_UNKNOWN).
-  if (channel == chrome::VersionInfo::CHANNEL_STABLE ||
-      channel == chrome::VersionInfo::CHANNEL_BETA) {
-    return false;
-  }
   return true;
 }
 

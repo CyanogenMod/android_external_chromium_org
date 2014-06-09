@@ -66,6 +66,7 @@ v8.log
 /chrome/gles2_conform_test_run.xml
 /chrome/tab_capture_performance_tests_run.xml
 /chrome/telemetry_gpu_test_run.xml
+/chrome/app/address_input_strings.grdp
 /chrome/app/theme/default_100_percent/google_chrome
 /chrome/app/theme/default_200_percent/google_chrome
 /chrome/app/theme/google_chrome
@@ -175,7 +176,6 @@ v8.log
 /net/testserver.log
 /out
 /out_*
-/pdf
 /ppapi/native_client/nacl_irt.xml
 /ppapi/native_client/ppapi_lib.xml
 /ppapi/native_client/src/shared/ppapi_proxy/nacl_ppapi_browser.xml
@@ -237,7 +237,8 @@ v8.log
 /third_party/cros_system_api
 /third_party/cygwin
 /third_party/directxsdk
-/third_party/drmemory
+/third_party/drmemory/drmemory-windows-sfx.exe
+/third_party/drmemory/unpacked
 /third_party/elfutils/src
 /third_party/eyesfree/src
 /third_party/ffmpeg

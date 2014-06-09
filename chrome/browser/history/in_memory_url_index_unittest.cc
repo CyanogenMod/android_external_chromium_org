@@ -28,6 +28,7 @@
 #include "chrome/test/base/history_index_restore_observer.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/bookmarks/test/bookmark_test_helpers.h"
+#include "components/history/core/browser/history_client.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/test/test_browser_thread.h"
@@ -277,8 +278,9 @@ void InMemoryURLIndexTest::SetUp() {
     transaction.Commit();
   }
 
-  url_index_.reset(
-      new InMemoryURLIndex(&profile_, base::FilePath(), "en,ja,hi,zh"));
+  url_index_.reset(new InMemoryURLIndex(
+      &profile_, base::FilePath(), "en,ja,hi,zh",
+      history_service_->history_client()));
   url_index_->Init();
   url_index_->RebuildFromHistory(history_database_);
 }
@@ -435,8 +437,9 @@ TEST_F(LimitedInMemoryURLIndexTest, Initialization) {
   uint64 row_count = 0;
   while (statement.Step()) ++row_count;
   EXPECT_EQ(1U, row_count);
-  url_index_.reset(
-      new InMemoryURLIndex(&profile_, base::FilePath(), "en,ja,hi,zh"));
+  url_index_.reset(new InMemoryURLIndex(
+      &profile_, base::FilePath(), "en,ja,hi,zh",
+      history_service_->history_client()));
   url_index_->Init();
   url_index_->RebuildFromHistory(history_database_);
   URLIndexPrivateData& private_data(*GetPrivateData());
@@ -447,7 +450,13 @@ TEST_F(LimitedInMemoryURLIndexTest, Initialization) {
   EXPECT_EQ(17U, private_data.word_map_.size());
 }
 
-TEST_F(InMemoryURLIndexTest, Retrieval) {
+#if defined(OS_WIN)
+// Flaky on windows trybots: http://crbug.com/351500
+#define MAYBE_Retrieval DISABLED_Retrieval
+#else
+#define MAYBE_Retrieval Retrieval
+#endif
+TEST_F(InMemoryURLIndexTest, MAYBE_Retrieval) {
   // See if a very specific term gives a single result.
   ScoredHistoryMatches matches = url_index_->HistoryItemsForTerms(
       ASCIIToUTF16("DrudgeReport"), base::string16::npos, kMaxMatches);
@@ -672,7 +681,13 @@ TEST_F(InMemoryURLIndexTest, HugeResultSet) {
   ASSERT_EQ(kMaxMatches, private_data.post_scoring_item_count_);
 }
 
-TEST_F(InMemoryURLIndexTest, TitleSearch) {
+#if defined(OS_WIN)
+// Flaky on windows trybots: http://crbug.com/351500
+#define MAYBE_TitleSearch DISABLED_TitleSearch
+#else
+#define MAYBE_TitleSearch TitleSearch
+#endif
+TEST_F(InMemoryURLIndexTest, MAYBE_TitleSearch) {
   // Signal if someone has changed the test DB.
   EXPECT_EQ(29U, GetPrivateData()->history_info_map_.size());
 
@@ -1157,9 +1172,10 @@ class InMemoryURLIndexCacheTest : public testing::Test {
 
 void InMemoryURLIndexCacheTest::SetUp() {
   ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
+  HistoryClient history_client;
   base::FilePath path(temp_dir_.path());
-  url_index_.reset(
-      new InMemoryURLIndex(NULL, path, "en,ja,hi,zh"));
+  url_index_.reset(new InMemoryURLIndex(
+      NULL, path, "en,ja,hi,zh", &history_client));
 }
 
 void InMemoryURLIndexCacheTest::set_history_dir(

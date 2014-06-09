@@ -23,8 +23,6 @@
 #include "extensions/common/extension_resource.h"
 #include "extensions/common/install_warning.h"
 #include "extensions/common/manifest.h"
-#include "extensions/common/permissions/api_permission.h"
-#include "extensions/common/url_pattern.h"
 #include "extensions/common/url_pattern_set.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/gfx/size.h"
@@ -43,10 +41,9 @@ class ImageSkia;
 }
 
 namespace extensions {
-class PermissionsData;
-class APIPermissionSet;
-class ManifestPermissionSet;
 class PermissionSet;
+class PermissionsData;
+class PermissionsParser;
 
 // Uniquely identifies an Extension, using 32 characters from the alphabet
 // 'a'-'p'.  An empty string represents "no extension".
@@ -249,12 +246,6 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // Returns the base extension url for a given |extension_id|.
   static GURL GetBaseURLFromExtensionId(const ExtensionId& extension_id);
 
-  // DEPRECATED: These methods have been moved to PermissionsData.
-  // TODO(rdevlin.cronin): remove these once all calls have been updated.
-  bool HasAPIPermission(APIPermission::ID permission) const;
-  bool HasAPIPermission(const std::string& permission_name) const;
-  scoped_refptr<const PermissionSet> GetActivePermissions() const;
-
   // Whether context menu should be shown for page and browser actions.
   bool ShowConfigureContextMenus() const;
 
@@ -309,7 +300,11 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   bool converted_from_user_script() const {
     return converted_from_user_script_;
   }
-  PermissionsData* permissions_data() { return permissions_data_.get(); }
+  PermissionsParser* permissions_parser() { return permissions_parser_.get(); }
+  const PermissionsParser* permissions_parser() const {
+    return permissions_parser_.get();
+  }
+
   const PermissionsData* permissions_data() const {
     return permissions_data_.get();
   }
@@ -428,6 +423,12 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // Defines the set of URLs in the extension's web content.
   URLPatternSet extent_;
 
+  // The parser for the manifest's permissions. This is NULL anytime not during
+  // initialization.
+  // TODO(rdevlin.cronin): This doesn't really belong here.
+  scoped_ptr<PermissionsParser> permissions_parser_;
+
+  // The active permissions for the extension.
   scoped_ptr<PermissionsData> permissions_data_;
 
   // Any warnings that occurred when trying to create/parse the extension.

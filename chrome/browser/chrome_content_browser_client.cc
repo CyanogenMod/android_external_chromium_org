@@ -77,7 +77,7 @@
 #include "chrome/browser/speech/tts_message_filter.h"
 #include "chrome/browser/ssl/ssl_add_certificate.h"
 #include "chrome/browser/ssl/ssl_blocking_page.h"
-#include "chrome/browser/ssl/ssl_tab_helper.h"
+#include "chrome/browser/ssl/ssl_client_certificate_selector.h"
 #include "chrome/browser/sync_file_system/local/sync_file_system_backend.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/ui/blocked_content/blocked_window_params.h"
@@ -192,13 +192,11 @@
 #include "components/breakpad/browser/crash_handler_host_linux.h"
 #endif
 
-#if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
-#include "chrome/browser/captive_portal/captive_portal_tab_helper.h"
-#endif
-
 #if defined(OS_ANDROID)
 #include "ui/base/ui_base_paths.h"
 #include "ui/gfx/android/device_display_info.h"
+#else
+#include "chrome/browser/media_galleries/fileapi/media_file_system_backend.h"
 #endif
 
 #if !defined(OS_CHROMEOS)
@@ -206,14 +204,6 @@
 #include "chrome/browser/signin/chrome_signin_client_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "components/signin/core/browser/signin_manager.h"
-#endif
-
-#if !defined(OS_ANDROID)
-#include "chrome/browser/media_galleries/fileapi/media_file_system_backend.h"
-#endif
-
-#if defined(ENABLE_WEBRTC)
-#include "chrome/browser/media/webrtc_logging_handler_host.h"
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -236,12 +226,24 @@
 #include "chrome/browser/chrome_browser_main_extra_parts_x11.h"
 #endif
 
+#if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
+#include "chrome/browser/captive_portal/captive_portal_tab_helper.h"
+#endif
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/renderer_host/chrome_extension_message_filter.h"
+#endif
+
 #if defined(ENABLE_SPELLCHECK)
 #include "chrome/browser/spellchecker/spellcheck_message_filter.h"
 #endif
 
 #if defined(ENABLE_SERVICE_DISCOVERY)
 #include "chrome/browser/local_discovery/storage/privet_filesystem_backend.h"
+#endif
+
+#if defined(ENABLE_WEBRTC)
+#include "chrome/browser/media/webrtc_logging_handler_host.h"
 #endif
 
 using blink::WebWindowFeatures;
@@ -768,7 +770,7 @@ void ChromeContentBrowserClient::GetStoragePartitionConfigForSite(
   partition_name->clear();
   *in_memory = false;
 
-  bool success = GuestViewBase::GetGuestPartitionConfigForSite(
+  bool success = WebViewGuest::GetGuestPartitionConfigForSite(
       site, partition_domain, partition_name, in_memory);
 
   if (!success && site.SchemeIs(extensions::kExtensionScheme)) {
@@ -899,8 +901,11 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
   net::URLRequestContextGetter* context =
       profile->GetRequestContextForRenderProcess(id);
 
-  host->AddFilter(new ChromeRenderMessageFilter(id, profile, context));
+  host->AddFilter(new ChromeRenderMessageFilter(id, profile));
+#if defined(ENABLE_EXTENSIONS)
+  host->AddFilter(new ChromeExtensionMessageFilter(id, profile));
   host->AddFilter(new extensions::ExtensionMessageFilter(id, profile));
+#endif
 #if defined(ENABLE_PLUGINS)
   host->AddFilter(new PluginInfoMessageFilter(id, profile));
 #endif
@@ -1035,7 +1040,8 @@ bool ChromeContentBrowserClient::ShouldUseProcessPerSite(
   // page, we want to give each instance its own process to improve
   // responsiveness.
   if (extension->GetType() == Manifest::TYPE_HOSTED_APP) {
-    if (!extension->HasAPIPermission(APIPermission::kBackground) ||
+    if (!extension->permissions_data()->HasAPIPermission(
+            APIPermission::kBackground) ||
         !extensions::BackgroundInfo::AllowJSAccess(extension)) {
       return false;
     }
@@ -1999,27 +2005,18 @@ void ChromeContentBrowserClient::SelectClientCertificate(
     }
   }
 
-  SSLTabHelper* ssl_tab_helper = SSLTabHelper::FromWebContents(tab);
-  if (!ssl_tab_helper) {
-    // If there is no SSLTabHelper for the given WebContents then we can't
-    // show the user a dialog to select a client certificate. So we simply
-    // proceed with no client certificate.
-    callback.Run(NULL);
-    return;
-  }
-  ssl_tab_helper->ShowClientCertificateRequestDialog(
-      network_session, cert_request_info, callback);
+  chrome::ShowSSLClientCertificateSelector(tab, network_session,
+                                           cert_request_info, callback);
 }
 
 void ChromeContentBrowserClient::AddCertificate(
-    net::URLRequest* request,
     net::CertificateMimeType cert_type,
     const void* cert_data,
     size_t cert_size,
     int render_process_id,
-    int render_view_id) {
-  chrome::SSLAddCertificate(request, cert_type, cert_data, cert_size,
-      render_process_id, render_view_id);
+    int render_frame_id) {
+  chrome::SSLAddCertificate(cert_type, cert_data, cert_size,
+                            render_process_id, render_frame_id);
 }
 
 content::MediaObserver* ChromeContentBrowserClient::GetMediaObserver() {
@@ -2507,19 +2504,18 @@ bool ChromeContentBrowserClient::AllowPepperSocketAPI(
         extension_set) {
       const Extension* extension = extension_set->GetByID(url.host());
       if (extension) {
+        const extensions::PermissionsData* permissions_data =
+            extension->permissions_data();
         if (params) {
           extensions::SocketPermission::CheckParam check_params(
               params->type, params->host, params->port);
-          if (extensions::PermissionsData::CheckAPIPermissionWithParam(
-                  extension, extensions::APIPermission::kSocket,
-                  &check_params)) {
+          if (permissions_data->CheckAPIPermissionWithParam(
+                  extensions::APIPermission::kSocket, &check_params)) {
             return true;
           }
-        } else {
-          if (extensions::PermissionsData::HasAPIPermission(
-                  extension, extensions::APIPermission::kSocket)) {
-            return true;
-          }
+        } else if (permissions_data->HasAPIPermission(
+                       extensions::APIPermission::kSocket)) {
+          return true;
         }
       }
     }

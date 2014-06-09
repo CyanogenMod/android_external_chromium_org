@@ -4,26 +4,26 @@
 
 #include "chrome/browser/services/gcm/gcm_profile_service.h"
 
-#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/services/gcm/gcm_utils.h"
+#include "chrome/common/pref_names.h"
+#include "components/pref_registry/pref_registry_syncable.h"
+
+#if defined(OS_ANDROID)
+#include "components/gcm_driver/gcm_driver_android.h"
+#else
+#include "base/files/file_path.h"
+#include "chrome/browser/services/gcm/gcm_desktop_utils.h"
 #include "chrome/browser/signin/profile_identity_provider.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/pref_names.h"
 #include "components/gcm_driver/gcm_client_factory.h"
-#include "components/gcm_driver/gcm_driver.h"
-#include "components/pref_registry/pref_registry_syncable.h"
 #include "components/signin/core/browser/signin_manager.h"
-#include "content/public/browser/browser_thread.h"
 #include "google_apis/gaia/identity_provider.h"
 #include "net/url_request/url_request_context_getter.h"
-
-#if !defined(OS_ANDROID)
-#include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #endif
 
 namespace gcm {
@@ -48,33 +48,18 @@ GCMProfileService::GCMProfileService(
     : profile_(profile) {
   DCHECK(!profile->IsOffTheRecord());
 
-  scoped_refptr<base::SequencedWorkerPool> worker_pool(
-      content::BrowserThread::GetBlockingPool());
-  scoped_refptr<base::SequencedTaskRunner> blocking_task_runner(
-      worker_pool->GetSequencedTaskRunnerWithShutdownBehavior(
-          worker_pool->GetSequenceToken(),
-          base::SequencedWorkerPool::SKIP_ON_SHUTDOWN));
-
 #if defined(OS_ANDROID)
-  LoginUIService* login_ui_service = NULL;
+  driver_.reset(new GCMDriverAndroid);
 #else
-  LoginUIService* login_ui_service =
-      LoginUIServiceFactory::GetForProfile(profile_);
-#endif
-  driver_.reset(new GCMDriver(
+  driver_ = CreateGCMDriverDesktop(
       gcm_client_factory.Pass(),
       scoped_ptr<IdentityProvider>(new ProfileIdentityProvider(
           SigninManagerFactory::GetForProfile(profile_),
           ProfileOAuth2TokenServiceFactory::GetForProfile(profile_),
-          login_ui_service)),
-      GetChromeBuildInfo(),
+          LoginUIServiceFactory::GetForProfile(profile_))),
       profile_->GetPath().Append(chrome::kGCMStoreDirname),
-      profile_->GetRequestContext(),
-      content::BrowserThread::GetMessageLoopProxyForThread(
-          content::BrowserThread::UI),
-      content::BrowserThread::GetMessageLoopProxyForThread(
-          content::BrowserThread::IO),
-      blocking_task_runner));
+      profile_->GetRequestContext());
+#endif
 }
 
 GCMProfileService::GCMProfileService() : profile_(NULL) {

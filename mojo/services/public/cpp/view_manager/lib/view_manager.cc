@@ -4,15 +4,28 @@
 
 #include "mojo/services/public/cpp/view_manager/view_manager.h"
 
+#include "base/bind.h"
+#include "base/run_loop.h"
+#include "mojo/public/cpp/application/application.h"
+#include "mojo/services/public/cpp/view_manager/lib/view_manager_private.h"
 #include "mojo/services/public/cpp/view_manager/lib/view_manager_synchronizer.h"
 #include "mojo/services/public/cpp/view_manager/lib/view_tree_node_private.h"
 #include "mojo/services/public/cpp/view_manager/view.h"
 
 namespace mojo {
 namespace view_manager {
+namespace {
 
-ViewManager::ViewManager(ServiceProvider* service_provider)
-    : service_provider_(service_provider) {}
+void OnViewManagerReady(base::RunLoop* loop,
+                        ViewManager* manager,
+                        ViewTreeNode* root) {
+  loop->Quit();
+}
+
+}  // namespace
+
+////////////////////////////////////////////////////////////////////////////////
+// ViewManager, public:
 
 ViewManager::~ViewManager() {
   while (!nodes_.empty()) {
@@ -31,8 +44,23 @@ ViewManager::~ViewManager() {
   }
 }
 
-void ViewManager::Init() {
-  synchronizer_.reset(new ViewManagerSynchronizer(this));
+// static
+ViewManager* ViewManager::CreateBlocking(Application* application) {
+  base::RunLoop init_loop;
+  ViewManager* manager = new ViewManager(
+      application,
+      base::Bind(&OnViewManagerReady, &init_loop),
+      RootCallback());
+  init_loop.Run();
+  return manager;
+}
+
+// static
+void ViewManager::Create(
+    Application* application,
+    const RootCallback& root_added_callback,
+    const RootCallback& root_removed_callback) {
+  new ViewManager(application, root_added_callback, root_removed_callback);
 }
 
 ViewTreeNode* ViewManager::GetNodeById(TransportNodeId id) {
@@ -43,6 +71,19 @@ ViewTreeNode* ViewManager::GetNodeById(TransportNodeId id) {
 View* ViewManager::GetViewById(TransportViewId id) {
   IdToViewMap::const_iterator it = views_.find(id);
   return it != views_.end() ? it->second : NULL;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// ViewManager, private:
+
+ViewManager::ViewManager(
+    Application* application,
+    const RootCallback& root_added_callback,
+    const RootCallback& root_removed_callback)
+    : root_added_callback_(root_added_callback),
+      root_removed_callback_(root_removed_callback),
+      synchronizer_(NULL) {
+  application->AddService<ViewManagerSynchronizer>(this);
 }
 
 }  // namespace view_manager

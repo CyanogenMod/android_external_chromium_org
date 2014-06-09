@@ -144,8 +144,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
                                       InputEventAckState ack_result) OVERRIDE;
   virtual void SetScrollOffsetPinning(
       bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE;
-  virtual void UnhandledWheelEvent(
-      const blink::WebMouseWheelEvent& event) OVERRIDE;
   virtual InputEventAckState FilterInputEvent(
       const blink::WebInputEvent& input_event) OVERRIDE;
   virtual void OnSetNeedsFlushInput() OVERRIDE;
@@ -176,7 +174,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   virtual void OnCompositingDidCommit() OVERRIDE;
   virtual void OnAttachCompositor() OVERRIDE {}
   virtual void OnDetachCompositor() OVERRIDE;
-  virtual void OnWillDestroyWindow() OVERRIDE;
   virtual void OnVSync(base::TimeTicks frame_time,
                        base::TimeDelta vsync_period) OVERRIDE;
   virtual void OnAnimate(base::TimeTicks begin_frame_time) OVERRIDE;

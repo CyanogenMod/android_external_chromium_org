@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import "../geometry/geometry.mojom"
+import "../input_events/input_events.mojom"
 
 module mojo.view_manager {
 
@@ -72,7 +73,7 @@ interface IViewManager {
   RemoveNodeFromParent(uint32 node_id,
                        uint32 server_change_id) => (bool success);
 
-  // Returns the nodes comprising the tree starting at |node_id|. |node_id| is 
+  // Returns the nodes comprising the tree starting at |node_id|. |node_id| is
   // the first result in the return value, unless |node_id| is invalid, in which
   // case an empty vector is returned. The nodes are visited using a depth first
   // search (pre-order).
@@ -99,6 +100,9 @@ interface IViewManager {
   // Connects to |url| creating a connection that has the roots |nodes|. Fails
   // if |nodes| is empty or contains nodes that were not created by this
   // connection.
+  // If a particular client invokes Connect() multiple times with the same url,
+  // the connection is reused. When this happens the IViewManagerClient is
+  // notified of the additional roots by way of OnRootsAdded().
   Connect(string url, uint32[] nodes) => (bool success);
 };
 
@@ -114,6 +118,10 @@ interface IViewManagerClient {
   OnViewManagerConnectionEstablished(uint16 connection_id,
                                      uint32 next_server_change_id,
                                      INode[] nodes);
+
+  // See description of IViewManager::Connect() for details as to when this is
+  // invoked.
+  OnRootsAdded(INode[] nodes);
 
   // This is sent to clients when a change is made to the server that results
   // in the |server_change_id| changing but the client isn't notified. This is
@@ -147,6 +155,9 @@ interface IViewManagerClient {
 
   // Invoked when a view is deleted.
   OnViewDeleted(uint32 view);
+
+  // Invoked when an event is targeted at the specified view.
+  OnViewInputEvent(uint32 view, mojo.Event event) => ();
 };
 
 }

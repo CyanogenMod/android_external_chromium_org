@@ -4,6 +4,8 @@
 LOCAL_PATH := $(call my-dir)
 GYP_CONFIGURATION ?= Debug
 GYP_VAR_PREFIX ?=
+GYP_HOST_VAR_PREFIX ?=
+GYP_HOST_MULTILIB ?=
 
 include $(LOCAL_PATH)/android_webview/android_webview_common.target.linux-mips.mk
 include $(LOCAL_PATH)/android_webview/android_webview_pak.target.linux-mips.mk
@@ -23,6 +25,7 @@ include $(LOCAL_PATH)/base/base_prefs.target.linux-mips.mk
 include $(LOCAL_PATH)/base/base_static.target.linux-mips.mk
 include $(LOCAL_PATH)/base/third_party/dynamic_annotations/dynamic_annotations.target.linux-mips.mk
 include $(LOCAL_PATH)/cc/cc.target.linux-mips.mk
+include $(LOCAL_PATH)/cc/cc_surfaces.target.linux-mips.mk
 include $(LOCAL_PATH)/components/auto_login_parser.target.linux-mips.mk
 include $(LOCAL_PATH)/components/autofill_content_browser.target.linux-mips.mk
 include $(LOCAL_PATH)/components/autofill_content_common.target.linux-mips.mk
@@ -60,6 +63,7 @@ include $(LOCAL_PATH)/content/content_browser.target.linux-mips.mk
 include $(LOCAL_PATH)/content/content_child.target.linux-mips.mk
 include $(LOCAL_PATH)/content/content_common.target.linux-mips.mk
 include $(LOCAL_PATH)/content/content_common_mojo_bindings.target.linux-mips.mk
+include $(LOCAL_PATH)/content/content_gamepad_mapping.target.linux-mips.mk
 include $(LOCAL_PATH)/content/content_gpu.target.linux-mips.mk
 include $(LOCAL_PATH)/content/content_jni_headers.target.linux-mips.mk
 include $(LOCAL_PATH)/content/content_renderer.target.linux-mips.mk
@@ -129,21 +133,25 @@ include $(LOCAL_PATH)/skia/skia_library.target.linux-mips.mk
 include $(LOCAL_PATH)/skia/skia_opts.target.linux-mips.mk
 include $(LOCAL_PATH)/sql/sql.target.linux-mips.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/core_global_constructors_idls.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/core_global_objects.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/interfaces_info_individual_core.target.linux-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/v8/bindings_core_generated.target.linux-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/v8/bindings_core_generated_aggregate.target.linux-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/v8/bindings_core_generated_individual.target.linux-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/generated_idls.target.linux-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/global_constructors_idls.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/v8/bindings_core_v8_generated.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/v8/bindings_core_v8_generated_aggregate.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/core/v8/bindings_core_v8_generated_individual.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/interfaces_info.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/interfaces_info_individual_modules.target.linux-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/v8/bindings_modules_generated.target.linux-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/v8/bindings_modules_generated_aggregate.target.linux-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/v8/bindings_modules_generated_individual.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/modules_core_global_constructors_idls.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/modules_event_generated.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/modules_global_constructors_idls.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/modules_global_objects.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/v8/bindings_modules_v8_generated.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/v8/bindings_modules_v8_generated_aggregate.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/modules/v8/bindings_modules_v8_generated_individual.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/scripts/cached_jinja_templates.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/scripts/cached_lex_yacc_tables.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/config.target.linux-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/core/core_bindings_generated.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/core/core_event_interfaces.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/debugger_script_source.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/generate_inspector_protocol_version.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/generated_testing_idls.target.linux-mips.mk
@@ -189,7 +197,6 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/generate_devtools_grd.t
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/supported_css_properties.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/modules/make_modules_generated.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/modules/modules.target.linux-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/modules/modules_bindings_generated.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_common.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_heap_asm_stubs.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_platform.target.linux-mips.mk

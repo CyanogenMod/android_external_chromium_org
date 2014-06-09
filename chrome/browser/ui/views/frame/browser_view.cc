@@ -36,7 +36,7 @@
 #include "chrome/browser/speech/tts_controller.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/themes/theme_service_factory.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog_queue.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar_constants.h"
@@ -1167,9 +1167,9 @@ void BrowserView::ShowTranslateBubble(content::WebContents* web_contents,
       return;
   }
 
-  TranslateTabHelper* translate_tab_helper =
-      TranslateTabHelper::FromWebContents(web_contents);
-  LanguageState& language_state = translate_tab_helper->GetLanguageState();
+  ChromeTranslateClient* chrome_translate_client =
+      ChromeTranslateClient::FromWebContents(web_contents);
+  LanguageState& language_state = chrome_translate_client->GetLanguageState();
   language_state.SetTranslateEnabled(true);
 
   TranslateBubbleView::ShowBubble(
@@ -1535,10 +1535,9 @@ views::View* BrowserView::GetInitiallyFocusedView() {
 }
 
 bool BrowserView::ShouldShowWindowTitle() const {
-  // For Ash only, app host windows do not show an icon, crbug.com/119411.
-  // Child windows (i.e. popups) do show an icon.
+  // For Ash only, trusted windows (apps and settings) do not show an icon,
+  // crbug.com/119411. Child windows (i.e. popups) do show an icon.
   if (browser_->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH &&
-      browser_->is_app() &&
       browser_->is_trusted_source())
     return false;
 
@@ -1565,10 +1564,9 @@ gfx::ImageSkia BrowserView::GetWindowIcon() {
 }
 
 bool BrowserView::ShouldShowWindowIcon() const {
-  // For Ash only, app host windows do not show an icon, crbug.com/119411.
-  // Child windows (i.e. popups) do show an icon.
+  // For Ash only, trusted windows (apps and settings) do not show an icon,
+  // crbug.com/119411. Child windows (i.e. popups) do show an icon.
   if (browser_->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH &&
-      browser_->is_app() &&
       browser_->is_trusted_source())
     return false;
 

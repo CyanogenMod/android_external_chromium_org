@@ -16,6 +16,7 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "base/message_loop/timer_slack.h"
 #include "base/process/kill.h"
 #include "base/process/process_handle.h"
 #include "base/strings/string_util.h"
@@ -225,13 +226,13 @@ void ChildThread::Init() {
   // the logger, and the logger does not like being created on the IO thread.
   IPC::Logging::GetInstance();
 #endif
-  channel_.reset(
-      new IPC::SyncChannel(channel_name_,
-                           IPC::Channel::MODE_CLIENT,
-                           this,
-                           ChildProcess::current()->io_message_loop_proxy(),
-                           true,
-                           ChildProcess::current()->GetShutDownEvent()));
+  channel_ =
+      IPC::SyncChannel::Create(channel_name_,
+                               IPC::Channel::MODE_CLIENT,
+                               this,
+                               ChildProcess::current()->io_message_loop_proxy(),
+                               true,
+                               ChildProcess::current()->GetShutDownEvent());
 #ifdef IPC_MESSAGE_LOG_ENABLED
   if (!in_browser_process_)
     IPC::Logging::GetInstance()->SetIPCSender(this);
@@ -354,8 +355,10 @@ void ChildThread::OnChannelError() {
 }
 
 void ChildThread::ConnectToService(
+    const mojo::String& service_url,
     const mojo::String& service_name,
-    mojo::ScopedMessagePipeHandle message_pipe) {
+    mojo::ScopedMessagePipeHandle message_pipe,
+    const mojo::String& requestor_url) {
   // By default, we don't expect incoming connections.
   NOTREACHED();
 }
@@ -440,6 +443,8 @@ bool ChildThread::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ChildProcessMsg_GetChildProfilerData,
                         OnGetChildProfilerData)
     IPC_MESSAGE_HANDLER(ChildProcessMsg_DumpHandles, OnDumpHandles)
+    IPC_MESSAGE_HANDLER(ChildProcessMsg_SetProcessBackgrounded,
+                        OnProcessBackgrounded)
 #if defined(USE_TCMALLOC)
     IPC_MESSAGE_HANDLER(ChildProcessMsg_GetTcmallocStats, OnGetTcmallocStats)
 #endif
@@ -546,6 +551,20 @@ void ChildThread::OnProcessFinalRelease() {
 void ChildThread::EnsureConnected() {
   VLOG(0) << "ChildThread::EnsureConnected()";
   base::KillProcess(base::GetCurrentProcessHandle(), 0, false);
+}
+
+void ChildThread::OnProcessBackgrounded(bool background) {
+  // Set timer slack to maximum on main thread when in background.
+  base::TimerSlack timer_slack = base::TIMER_SLACK_NONE;
+  if (background)
+    timer_slack = base::TIMER_SLACK_MAXIMUM;
+  base::MessageLoop::current()->SetTimerSlack(timer_slack);
+
+#ifdef OS_WIN
+  // Windows Vista+ has a fancy process backgrounding mode that can only be set
+  // from within the process.
+  base::Process::Current().SetProcessBackgrounded(background);
+#endif  // OS_WIN
 }
 
 }  // namespace content

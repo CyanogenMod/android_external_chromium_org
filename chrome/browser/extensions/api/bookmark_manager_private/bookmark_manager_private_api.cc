@@ -14,6 +14,7 @@
 #include "base/values.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_stats.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client.h"
 #include "chrome/browser/extensions/api/bookmarks/bookmark_api_constants.h"
 #include "chrome/browser/extensions/api/bookmarks/bookmark_api_helpers.h"
 #include "chrome/browser/extensions/extension_web_ui.h"
@@ -351,10 +352,15 @@ void BookmarkManagerPrivateDragEventRouter::ClearBookmarkNodeData() {
 
 bool ClipboardBookmarkManagerFunction::CopyOrCut(bool cut,
     const std::vector<std::string>& id_list) {
-  BookmarkModel* model = BookmarkModelFactory::GetForProfile(GetProfile());
+  ChromeBookmarkClient* client = GetChromeBookmarkClient();
   std::vector<const BookmarkNode*> nodes;
-  EXTENSION_FUNCTION_VALIDATE(GetNodesFromVector(model, id_list, &nodes));
-  bookmark_utils::CopyToClipboard(model, nodes, cut);
+  EXTENSION_FUNCTION_VALIDATE(
+      GetNodesFromVector(client->model(), id_list, &nodes));
+  if (cut && client->HasDescendantsOfManagedNode(nodes)) {
+    error_ = bookmark_keys::kModifyManagedError;
+    return false;
+  }
+  bookmark_utils::CopyToClipboard(client->model(), nodes, cut);
   return true;
 }
 
@@ -381,11 +387,9 @@ bool BookmarkManagerPrivatePasteFunction::RunOnReady() {
   EXTENSION_FUNCTION_VALIDATE(params);
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(GetProfile());
   const BookmarkNode* parent_node = GetNodeFromString(model, params->parent_id);
-  if (!parent_node) {
-    error_ = bookmark_keys::kNoParentError;
+  if (!CanBeModified(parent_node))
     return false;
-  }
-  bool can_paste = bookmark_utils::CanPasteFromClipboard(parent_node);
+  bool can_paste = bookmark_utils::CanPasteFromClipboard(model, parent_node);
   if (!can_paste)
     return false;
 
@@ -419,7 +423,8 @@ bool BookmarkManagerPrivateCanPasteFunction::RunOnReady() {
     error_ = bookmark_keys::kNoParentError;
     return false;
   }
-  bool can_paste = bookmark_utils::CanPasteFromClipboard(parent_node);
+  bool can_paste =
+      bookmark_utils::CanPasteFromClipboard(model, parent_node);
   SetResult(new base::FundamentalValue(can_paste));
   return true;
 }
@@ -433,10 +438,8 @@ bool BookmarkManagerPrivateSortChildrenFunction::RunOnReady() {
 
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(GetProfile());
   const BookmarkNode* parent_node = GetNodeFromString(model, params->parent_id);
-  if (!parent_node) {
-    error_ = bookmark_keys::kNoParentError;
+  if (!CanBeModified(parent_node))
     return false;
-  }
   model->SortChildren(parent_node);
   return true;
 }
@@ -564,10 +567,8 @@ bool BookmarkManagerPrivateDropFunction::RunOnReady() {
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(GetProfile());
 
   const BookmarkNode* drop_parent = GetNodeFromString(model, params->parent_id);
-  if (!drop_parent) {
-    error_ = bookmark_keys::kNoParentError;
+  if (!CanBeModified(drop_parent))
     return false;
-  }
 
   int drop_index;
   if (params->index)
@@ -619,10 +620,11 @@ bool BookmarkManagerPrivateGetSubtreeFunction::RunOnReady() {
   }
 
   std::vector<linked_ptr<api::bookmarks::BookmarkTreeNode> > nodes;
+  ChromeBookmarkClient* client = GetChromeBookmarkClient();
   if (params->folders_only)
-    bookmark_api_helpers::AddNodeFoldersOnly(node, &nodes, true);
+    bookmark_api_helpers::AddNodeFoldersOnly(client, node, &nodes, true);
   else
-    bookmark_api_helpers::AddNode(node, &nodes, true);
+    bookmark_api_helpers::AddNode(client, node, &nodes, true);
   results_ = GetSubtree::Results::Create(nodes);
   return true;
 }
@@ -651,7 +653,8 @@ bool BookmarkManagerPrivateCreateWithMetaInfoFunction::RunOnReady() {
     return false;
 
   scoped_ptr<api::bookmarks::BookmarkTreeNode> result_node(
-      bookmark_api_helpers::GetBookmarkTreeNode(node, false, false));
+      bookmark_api_helpers::GetBookmarkTreeNode(
+          GetChromeBookmarkClient(), node, false, false));
   results_ = CreateWithMetaInfo::Results::Create(*result_node);
 
   return true;
@@ -730,15 +733,15 @@ bool BookmarkManagerPrivateRemoveTreesFunction::RunOnReady() {
   scoped_ptr<RemoveTrees::Params> params(RemoveTrees::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  BookmarkModel* model = BookmarkModelFactory::GetForProfile(GetProfile());
+  ChromeBookmarkClient* client = GetChromeBookmarkClient();
 #if !defined(OS_ANDROID)
-  bookmarks::ScopedGroupBookmarkActions group_deletes(model);
+  bookmarks::ScopedGroupBookmarkActions group_deletes(client->model());
 #endif
   int64 id;
   for (size_t i = 0; i < params->id_list.size(); ++i) {
     if (!GetBookmarkIdAsInt64(params->id_list[i], &id))
       return false;
-    if (!bookmark_api_helpers::RemoveNode(model, id, true, &error_))
+    if (!bookmark_api_helpers::RemoveNode(client, id, true, &error_))
       return false;
   }
 

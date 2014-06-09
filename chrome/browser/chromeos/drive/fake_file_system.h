@@ -18,8 +18,7 @@
 namespace google_apis {
 
 class AboutResource;
-class ResourceEntry;
-class ResourceList;
+class FileResource;
 
 }  // namespace google_apis
 
@@ -142,12 +141,12 @@ class FakeFileSystem : public FileSystemInterface {
       const FileOperationCallback& completion_callback,
       FileError error,
       scoped_ptr<ResourceEntry> entry);
-  void GetFileContentAfterGetWapiResourceEntry(
+  void GetFileContentAfterGetFileResource(
       const GetFileContentInitializedCallback& initialized_callback,
       const google_apis::GetContentCallback& get_content_callback,
       const FileOperationCallback& completion_callback,
       google_apis::GDataErrorCode gdata_error,
-      scoped_ptr<google_apis::ResourceEntry> gdata_entry);
+      scoped_ptr<google_apis::FileResource> gdata_entry);
   void GetFileContentAfterDownloadFile(
       const FileOperationCallback& completion_callback,
       google_apis::GDataErrorCode gdata_error,
@@ -173,11 +172,11 @@ class FakeFileSystem : public FileSystemInterface {
       const GetResourceEntryCallback& callback,
       FileError error,
       scoped_ptr<ResourceEntry> parent_entry);
-  void GetResourceEntryAfterGetResourceList(
+  void GetResourceEntryAfterGetFileList(
       const base::FilePath& base_name,
       const GetResourceEntryCallback& callback,
       google_apis::GDataErrorCode gdata_error,
-      scoped_ptr<google_apis::ResourceList> resource_list);
+      scoped_ptr<google_apis::FileList> file_list);
 
   DriveServiceInterface* drive_service_;  // Not owned.
   base::ScopedTempDir cache_dir_;

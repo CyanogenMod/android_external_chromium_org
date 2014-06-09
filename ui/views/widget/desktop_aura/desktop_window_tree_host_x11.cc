@@ -72,12 +72,17 @@ namespace {
 const int k_NET_WM_STATE_ADD = 1;
 const int k_NET_WM_STATE_REMOVE = 0;
 
+// Special value of the _NET_WM_DESKTOP property which indicates that the window
+// should appear on all desktops.
+const int kAllDesktops = 0xFFFFFFFF;
+
 const char* kAtomsToCache[] = {
   "UTF8_STRING",
   "WM_DELETE_WINDOW",
   "WM_PROTOCOLS",
   "_NET_FRAME_EXTENTS",
   "_NET_WM_CM_S0",
+  "_NET_WM_DESKTOP",
   "_NET_WM_ICON",
   "_NET_WM_NAME",
   "_NET_WM_PID",
@@ -559,6 +564,29 @@ void DesktopWindowTreeHostX11::SetVisibleOnAllWorkspaces(bool always_visible) {
   SetWMSpecState(always_visible,
                  atom_cache_.GetAtom("_NET_WM_STATE_STICKY"),
                  None);
+
+  int new_desktop = 0;
+  if (always_visible) {
+    new_desktop = kAllDesktops;
+  } else {
+    if (!ui::GetCurrentDesktop(&new_desktop))
+      return;
+  }
+
+  XEvent xevent;
+  memset (&xevent, 0, sizeof (xevent));
+  xevent.type = ClientMessage;
+  xevent.xclient.window = xwindow_;
+  xevent.xclient.message_type = atom_cache_.GetAtom("_NET_WM_DESKTOP");
+  xevent.xclient.format = 32;
+  xevent.xclient.data.l[0] = new_desktop;
+  xevent.xclient.data.l[1] = 0;
+  xevent.xclient.data.l[2] = 0;
+  xevent.xclient.data.l[3] = 0;
+  xevent.xclient.data.l[4] = 0;
+  XSendEvent(xdisplay_, x_root_window_, False,
+             SubstructureRedirectMask | SubstructureNotifyMask,
+             &xevent);
 }
 
 bool DesktopWindowTreeHostX11::SetWindowTitle(const base::string16& title) {
@@ -1078,8 +1106,10 @@ void DesktopWindowTreeHostX11::InitX11Window(
   if (is_always_on_top_)
     state_atom_list.push_back(atom_cache_.GetAtom("_NET_WM_STATE_ABOVE"));
 
-  if (params.visible_on_all_workspaces)
+  if (params.visible_on_all_workspaces) {
     state_atom_list.push_back(atom_cache_.GetAtom("_NET_WM_STATE_STICKY"));
+    ui::SetIntProperty(xwindow_, "_NET_WM_DESKTOP", "CARDINAL", kAllDesktops);
+  }
 
   // Setting _NET_WM_STATE by sending a message to the root_window (with
   // SetWMSpecState) has no effect here since the window has not yet been
@@ -1189,6 +1219,29 @@ void DesktopWindowTreeHostX11::OnFrameExtentsUpdated() {
         insets[1]);
   } else {
     native_window_frame_borders_ = gfx::Insets();
+  }
+}
+
+void DesktopWindowTreeHostX11::UpdateWMUserTime(
+    const ui::PlatformEvent& event) {
+  if (!IsActive())
+    return;
+
+  ui::EventType type = ui::EventTypeFromNative(event);
+  if (type == ui::ET_MOUSE_PRESSED ||
+      type == ui::ET_KEY_PRESSED ||
+      type == ui::ET_TOUCH_PRESSED) {
+    unsigned long wm_user_time_ms = static_cast<unsigned long>(
+        ui::EventTimeFromNative(event).InMilliseconds());
+    XChangeProperty(xdisplay_,
+                    xwindow_,
+                    atom_cache_.GetAtom("_NET_WM_USER_TIME"),
+                    XA_CARDINAL,
+                    32,
+                    PropModeReplace,
+                    reinterpret_cast<const unsigned char *>(&wm_user_time_ms),
+                    1);
+    X11DesktopHandler::get()->set_wm_user_time_ms(wm_user_time_ms);
   }
 }
 
@@ -1405,22 +1458,17 @@ void DesktopWindowTreeHostX11::MapWindow(ui::WindowShowState show_state) {
   // If SHOW_STATE_INACTIVE, tell the window manager not to focus the window
   // when mapping. This is done by setting the _NET_WM_USER_TIME to 0. See e.g.
   // http://standards.freedesktop.org/wm-spec/latest/ar01s05.html
-  if (show_state == ui::SHOW_STATE_INACTIVE) {
-    unsigned long value = 0;
+  unsigned long wm_user_time_ms = (show_state == ui::SHOW_STATE_INACTIVE) ?
+      0 : X11DesktopHandler::get()->wm_user_time_ms();
+  if (show_state == ui::SHOW_STATE_INACTIVE || wm_user_time_ms != 0) {
     XChangeProperty(xdisplay_,
                     xwindow_,
                     atom_cache_.GetAtom("_NET_WM_USER_TIME"),
                     XA_CARDINAL,
                     32,
                     PropModeReplace,
-                    reinterpret_cast<const unsigned char *>(&value),
+                    reinterpret_cast<const unsigned char *>(&wm_user_time_ms),
                     1);
-  } else {
-    // TODO(piman): if this window was created in response to an X event, we
-    // should set the time to the server time of the event that caused this.
-    // https://crbug.com/355667
-    XDeleteProperty(
-        xdisplay_, xwindow_, atom_cache_.GetAtom("_NET_WM_USER_TIME"));
   }
 
   XMapWindow(xdisplay_, xwindow_);
@@ -1455,6 +1503,8 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
 
   TRACE_EVENT1("views", "DesktopWindowTreeHostX11::Dispatch",
                "event->type", event->type);
+
+  UpdateWMUserTime(event);
 
   // May want to factor CheckXEventForConsistency(xev); into a common location
   // since it is called here.

@@ -56,6 +56,10 @@
 #include "base/message_loop/message_pump_mac.h"
 #endif
 
+#if defined(ADDRESS_SANITIZER)
+#include <sanitizer/asan_interface.h>
+#endif
+
 const int kGpuTimeout = 10000;
 
 namespace content {
@@ -444,6 +448,17 @@ bool StartSandboxLinux(const gpu::GPUInfo& gpu_info,
     // has really been stopped.
     LinuxSandbox::StopThread(watchdog_thread);
   }
+
+#if defined(ADDRESS_SANITIZER)
+  const std::string sancov_file_name =
+      "gpu." + base::Uint64ToString(base::RandUint64());
+  LinuxSandbox* linux_sandbox = LinuxSandbox::GetInstance();
+  linux_sandbox->sanitizer_args()->coverage_sandboxed = 1;
+  linux_sandbox->sanitizer_args()->coverage_fd =
+      __sanitizer_maybe_open_cov_file(sancov_file_name.c_str());
+  linux_sandbox->sanitizer_args()->coverage_max_block_size = 0;
+#endif
+
   // LinuxSandbox::InitializeSandbox() must always be called
   // with only one thread.
   res = LinuxSandbox::InitializeSandbox();

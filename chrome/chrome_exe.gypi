@@ -360,15 +360,12 @@
               # application reads Keystone keys from this plist and not the
               # framework's, and the ticket will reference this Info.plist to
               # determine the tag of the installed product.  Use --scm=1 to
-              # include SCM information.  The --pdf flag controls whether
-              # to insert PDF as a supported type identifier that can be
-              # opened.
+              # include SCM information.
               'postbuild_name': 'Tweak Info.plist',
               'action': ['<(tweak_info_plist_path)',
                          '--breakpad=0',
                          '--keystone=<(mac_keystone)',
                          '--scm=1',
-                         '--pdf=1',
                          '--bundle_id=<(mac_bundle_id)'],
             },
             {
@@ -517,8 +514,13 @@
                 'oleaut32.dll',
               ],
               'AdditionalDependencies': [ 'wintrust.lib' ],
-              # Set /SUBSYSTEM:WINDOWS for chrome.exe itself.
-              'SubSystem': '2',
+              'conditions': [
+                ['asan==0', {
+                  # Set /SUBSYSTEM:WINDOWS for chrome.exe itself, except for the
+                  # AddressSanitizer build where console output is important.
+                  'SubSystem': '2',
+                }],
+              ],
             },
             'VCManifestTool': {
               'AdditionalManifestFiles': [
@@ -562,14 +564,6 @@
         }, {  # 'OS!="win"
           'sources!': [
             'app/client_util.cc',
-          ],
-        }],
-        ['OS=="win" and target_arch=="ia32"', {
-          'sources': [
-            # TODO(scottmg): This is a workaround for
-            # http://crbug.com/348525 that affects VS2013 before Update 2.
-            # This should be removed once Update 2 is released.
-            '../build/win/ftol3.obj',
           ],
         }],
         ['OS=="win" and component=="shared_library"', {

@@ -157,7 +157,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   // Overridden frm ui::EventSource
   virtual ui::EventProcessor* GetEventProcessor() OVERRIDE;
 
-private:
+ private:
   // Initializes our X11 surface to draw on. This method performs all
   // initialization related to talking to the X11 server.
   void InitX11Window(const Widget::InitParams& params);
@@ -171,6 +171,9 @@ private:
 
   // Called when |xwindow_|'s _NET_FRAME_EXTENTS property is updated.
   void OnFrameExtentsUpdated();
+
+  // Updates |xwindow_|'s _NET_WM_USER_TIME if |xwindow_| is active.
+  void UpdateWMUserTime(const ui::PlatformEvent& event);
 
   // Sends a message to the x11 window manager, enabling or disabling the
   // states |state1| and |state2|.

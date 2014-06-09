@@ -30,8 +30,8 @@
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/translate/translate_service.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/browser_instant_controller.h"
 #include "chrome/browser/ui/browser_list.h"
 #import "chrome/browser/ui/cocoa/content_settings/content_setting_bubble_cocoa.h"
@@ -93,11 +93,11 @@ class IsPageActionViewRightAligned {
       : extension_service_(extension_service) {}
 
   bool operator()(PageActionDecoration* page_action_decoration) {
-    return extensions::PermissionsData::HasAPIPermission(
-        extension_service_->GetExtensionById(
-            page_action_decoration->page_action()->extension_id(),
-            false),
-        extensions::APIPermission::kBookmarkManagerPrivate);
+    return extension_service_
+        ->GetExtensionById(
+              page_action_decoration->page_action()->extension_id(), false)
+        ->permissions_data()
+        ->HasAPIPermission(extensions::APIPermission::kBookmarkManagerPrivate);
   }
 
  private:
@@ -146,8 +146,6 @@ LocationBarViewMac::LocationBarViewMac(AutocompleteTextField* field,
       this, chrome::NOTIFICATION_EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED,
       content::NotificationService::AllSources());
   content::Source<Profile> profile_source = content::Source<Profile>(profile);
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOCATION_BAR_UPDATED,
-                 profile_source);
   registrar_.Add(
       this, chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED, profile_source);
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
@@ -583,6 +581,10 @@ void LocationBarViewMac::HideURL() {
   omnibox_view_->HideURL();
 }
 
+void LocationBarViewMac::EndOriginChipAnimations(bool cancel_fade) {
+  NOTIMPLEMENTED();
+}
+
 InstantController* LocationBarViewMac::GetInstant() {
   return browser_->instant_controller() ?
       browser_->instant_controller()->instant() : NULL;
@@ -623,14 +625,6 @@ void LocationBarViewMac::Observe(int type,
 
       [field_ updateMouseTracking];
       [field_ setNeedsDisplay:YES];
-      break;
-    }
-
-    case chrome::NOTIFICATION_EXTENSION_LOCATION_BAR_UPDATED: {
-      // Only update if the updated action box was for the active tab contents.
-      WebContents* target_tab = content::Details<WebContents>(details).ptr();
-      if (target_tab == GetWebContents())
-        UpdatePageActions();
       break;
     }
 
@@ -772,7 +766,7 @@ void LocationBarViewMac::UpdateTranslateDecoration() {
   if (!web_contents)
     return;
   LanguageState& language_state =
-      TranslateTabHelper::FromWebContents(web_contents)->GetLanguageState();
+      ChromeTranslateClient::FromWebContents(web_contents)->GetLanguageState();
   bool enabled = language_state.translate_enabled();
   command_updater()->UpdateCommandEnabled(IDC_TRANSLATE_PAGE, enabled);
   translate_decoration_->SetVisible(enabled);

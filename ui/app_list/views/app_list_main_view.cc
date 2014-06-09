@@ -21,6 +21,7 @@
 #include "ui/app_list/search_box_model.h"
 #include "ui/app_list/views/app_list_item_view.h"
 #include "ui/app_list/views/apps_container_view.h"
+#include "ui/app_list/views/apps_grid_view.h"
 #include "ui/app_list/views/contents_switcher_view.h"
 #include "ui/app_list/views/contents_view.h"
 #include "ui/app_list/views/search_box_view.h"
@@ -83,17 +84,13 @@ class AppListMainView::IconLoader : public AppListItemObserver {
 // AppListMainView:
 
 AppListMainView::AppListMainView(AppListViewDelegate* delegate,
-                                 PaginationModel* pagination_model,
+                                 int initial_apps_page,
                                  gfx::NativeView parent)
     : delegate_(delegate),
-      pagination_model_(pagination_model),
       model_(delegate->GetModel()),
       search_box_view_(NULL),
       contents_view_(NULL),
       weak_ptr_factory_(this) {
-  // Starts icon loading early.
-  PreloadIcons(parent);
-
   SetLayoutManager(new views::BoxLayout(views::BoxLayout::kVertical,
                                         kInnerPadding,
                                         kInnerPadding,
@@ -104,20 +101,25 @@ AppListMainView::AppListMainView(AppListViewDelegate* delegate,
   AddContentsView();
   if (app_list::switches::IsExperimentalAppListEnabled())
     AddChildView(new ContentsSwitcherView(contents_view_));
+
+  // Switch the apps grid view to the specified page.
+  app_list::PaginationModel* pagination_model = GetAppsPaginationModel();
+  if (pagination_model->is_valid_page(initial_apps_page))
+    pagination_model->SelectPage(initial_apps_page, false);
+
+  // Starts icon loading early.
+  PreloadIcons(parent);
 }
 
 void AppListMainView::AddContentsView() {
-  contents_view_ = new ContentsView(
-      this, pagination_model_, model_, delegate_);
+  contents_view_ = new ContentsView(this, model_, delegate_);
   AddChildViewAt(contents_view_, kContentsViewIndex);
 
   search_box_view_->set_contents_view(contents_view_);
 
-#if defined(USE_AURA)
   contents_view_->SetPaintToLayer(true);
   contents_view_->SetFillsBoundsOpaquely(false);
   contents_view_->layer()->SetMasksToBounds(true);
-#endif
 }
 
 AppListMainView::~AppListMainView() {
@@ -162,7 +164,6 @@ void AppListMainView::ModelChanged() {
   search_box_view_->ModelChanged();
   delete contents_view_;
   contents_view_ = NULL;
-  pagination_model_->SelectPage(0, false /* animate */);
   AddContentsView();
   Layout();
 }
@@ -187,16 +188,27 @@ bool AppListMainView::ShouldCenterWindow() const {
   return delegate_->ShouldCenterWindow();
 }
 
+PaginationModel* AppListMainView::GetAppsPaginationModel() {
+  return contents_view_->apps_container_view()
+      ->apps_grid_view()
+      ->pagination_model();
+}
+
 void AppListMainView::PreloadIcons(gfx::NativeView parent) {
   float scale_factor = 1.0f;
   if (parent)
     scale_factor = ui::GetScaleFactorForNativeView(parent);
 
-  // |pagination_model| could have -1 as the initial selected page and
+  // The PaginationModel could have -1 as the initial selected page and
   // assumes first page (i.e. index 0) will be used in this case.
-  const int selected_page = std::max(0, pagination_model_->selected_page());
+  const int selected_page =
+      std::max(0, GetAppsPaginationModel()->selected_page());
 
-  const int tiles_per_page = kPreferredCols * kPreferredRows;
+  const AppsGridView* const apps_grid_view =
+      contents_view_->apps_container_view()->apps_grid_view();
+  const int tiles_per_page =
+      apps_grid_view->cols() * apps_grid_view->rows_per_page();
+
   const int start_model_index = selected_page * tiles_per_page;
   const int end_model_index =
       std::min(static_cast<int>(model_->top_level_item_list()->item_count()),

@@ -9,7 +9,7 @@
 #include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
 #include "base/timer/elapsed_timer.h"
-#include "components/metrics/metrics_log_base.h"
+#include "components/metrics/metrics_log.h"
 #include "components/metrics/metrics_pref_names.h"
 
 namespace metrics {
@@ -54,7 +54,7 @@ MetricsLogManager::MetricsLogManager(PrefService* local_state,
 
 MetricsLogManager::~MetricsLogManager() {}
 
-void MetricsLogManager::BeginLoggingWithLog(scoped_ptr<MetricsLogBase> log) {
+void MetricsLogManager::BeginLoggingWithLog(scoped_ptr<MetricsLog> log) {
   DCHECK(!current_log_);
   current_log_ = log.Pass();
 }
@@ -101,13 +101,16 @@ void MetricsLogManager::ResumePausedLog() {
   current_log_.reset(paused_log_.release());
 }
 
-void MetricsLogManager::StoreLog(std::string* log, LogType log_type) {
-  DCHECK_NE(MetricsLogBase::NO_LOG, log_type);
-  metrics::PersistedLogs* destination_queue =
-      (log_type == MetricsLogBase::INITIAL_STABILITY_LOG) ?
-      &initial_log_queue_ : &ongoing_log_queue_;
-
-  destination_queue->StoreLog(log);
+void MetricsLogManager::StoreLog(std::string* log,
+                                 MetricsLog::LogType log_type) {
+  switch (log_type) {
+    case MetricsLog::INITIAL_STABILITY_LOG:
+      initial_log_queue_.StoreLog(log);
+      break;
+    case MetricsLog::ONGOING_LOG:
+      ongoing_log_queue_.StoreLog(log);
+      break;
+  }
 }
 
 void MetricsLogManager::StoreStagedLogAsUnsent(
@@ -146,4 +149,4 @@ void MetricsLogManager::LoadPersistedUnsentLogs() {
   unsent_logs_loaded_ = true;
 }
 
-} // namespace metrics
+}  // namespace metrics

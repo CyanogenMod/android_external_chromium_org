@@ -45,6 +45,7 @@
 #include "chrome/browser/ui/webui/print_preview/sticky_settings.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/cloud_print/cloud_print_cdd_conversion.h"
 #include "chrome/common/cloud_print/cloud_print_constants.h"
 #include "chrome/common/crash_keys.h"
 #include "chrome/common/pref_names.h"
@@ -189,9 +190,6 @@ const char kLocalPdfPrinterId[] = "Save as PDF";
 // Additional printer capability setting keys.
 const char kPrinterId[] = "printerId";
 const char kPrinterCapabilities[] = "capabilities";
-const char kDisableColorOption[] = "disableColorOption";
-const char kSetDuplexAsDefault[] = "setDuplexAsDefault";
-const char kPrinterDefaultDuplexValue[] = "printerDefaultDuplexValue";
 #if defined(USE_CUPS)
 const char kCUPSsColorModel[] = "cupsColorModel";
 const char kCUPSsBWModel[] = "cupsBWModel";
@@ -349,6 +347,43 @@ scoped_ptr<base::DictionaryValue> GetPdfCapabilitiesOnFileThread(
   return scoped_ptr<base::DictionaryValue>(description.root().DeepCopy());
 }
 
+scoped_ptr<base::DictionaryValue> GetLocalPrinterCapabilitiesOnFileThread(
+    const std::string& printer_name) {
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
+
+  scoped_refptr<printing::PrintBackend> print_backend(
+      printing::PrintBackend::CreateInstance(NULL));
+
+  VLOG(1) << "Get printer capabilities start for " << printer_name;
+  crash_keys::ScopedPrinterInfo crash_key(
+      print_backend->GetPrinterDriverInfo(printer_name));
+
+  if (!print_backend->IsValidPrinter(printer_name)) {
+    LOG(WARNING) << "Invalid printer " << printer_name;
+    return scoped_ptr<base::DictionaryValue>();
+  }
+
+  printing::PrinterSemanticCapsAndDefaults info;
+  if (!print_backend->GetPrinterSemanticCapsAndDefaults(printer_name, &info)) {
+    LOG(WARNING) << "Failed to get capabilities for " << printer_name;
+    return scoped_ptr<base::DictionaryValue>();
+  }
+
+  scoped_ptr<base::DictionaryValue> description(
+      cloud_print::PrinterSemanticCapsAndDefaultsToCdd(info));
+  if (!description) {
+    LOG(WARNING) << "Failed to convert capabilities for " << printer_name;
+    return scoped_ptr<base::DictionaryValue>();
+  }
+
+#if defined(USE_CUPS)
+  // TODO(alekseys): Use CUSTOM_COLOR/MONOCHROME instead.
+  description->SetInteger(kCUPSsColorModel, info.color_model);
+  description->SetInteger(kCUPSsBWModel, info.bw_model);
+#endif
+  return description.Pass();
+}
+
 void EnumeratePrintersOnFileThread(base::ListValue* printers) {
   DCHECK_CURRENTLY_ON(BrowserThread::FILE);
 
@@ -410,64 +445,23 @@ void GetPrinterCapabilitiesOnFileThread(
   DCHECK_CURRENTLY_ON(BrowserThread::FILE);
   DCHECK(!printer_name.empty());
 
-  // Special case for PDF printer.
-  if (printer_name == kLocalPdfPrinterId) {
-    scoped_ptr<base::DictionaryValue> printer_info(new base::DictionaryValue);
-    printer_info->SetString(kPrinterId, printer_name);
-    printer_info->Set(kPrinterCapabilities,
-                      GetPdfCapabilitiesOnFileThread(locale).release());
-    BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE,
-        base::Bind(success_cb, base::Owned(printer_info.release())));
-    return;
-  }
-
-  scoped_refptr<printing::PrintBackend> print_backend(
-      printing::PrintBackend::CreateInstance(NULL));
-
-  VLOG(1) << "Get printer capabilities start for " << printer_name;
-  crash_keys::ScopedPrinterInfo crash_key(
-      print_backend->GetPrinterDriverInfo(printer_name));
-
-  if (!print_backend->IsValidPrinter(printer_name)) {
-    // TODO(gene): Notify explicitly if printer is not valid, instead of
-    // failed to get capabilities.
+  scoped_ptr<base::DictionaryValue> printer_capabilities(
+      printer_name == kLocalPdfPrinterId ?
+      GetPdfCapabilitiesOnFileThread(locale) :
+      GetLocalPrinterCapabilitiesOnFileThread(printer_name));
+  if (!printer_capabilities) {
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
                             base::Bind(failure_cb, printer_name));
     return;
   }
 
-  printing::PrinterSemanticCapsAndDefaults info;
-  if (!print_backend->GetPrinterSemanticCapsAndDefaults(printer_name, &info)) {
-    LOG(WARNING) << "Failed to get capabilities for " << printer_name;
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                            base::Bind(failure_cb, printer_name));
-    return;
-  }
-
-  scoped_ptr<base::DictionaryValue> settings_info(new base::DictionaryValue);
-  settings_info->SetString(kPrinterId, printer_name);
-  settings_info->SetBoolean(kDisableColorOption, !info.color_changeable);
-  settings_info->SetBoolean(printing::kSettingSetColorAsDefault,
-                            info.color_default);
-#if defined(USE_CUPS)
-  settings_info->SetInteger(kCUPSsColorModel, info.color_model);
-  settings_info->SetInteger(kCUPSsBWModel, info.bw_model);
-#endif
-
-  // TODO(gene): Make new capabilities format for Print Preview
-  // that will suit semantic capabilities better.
-  // Refactor pld API code below
-  bool default_duplex = info.duplex_capable ?
-      (info.duplex_default != printing::SIMPLEX) : false;
-  int duplex_value = info.duplex_capable ?
-      printing::LONG_EDGE : printing::UNKNOWN_DUPLEX_MODE;
-  settings_info->SetBoolean(kSetDuplexAsDefault, default_duplex);
-  settings_info->SetInteger(kPrinterDefaultDuplexValue, duplex_value);
+  scoped_ptr<base::DictionaryValue> printer_info(new base::DictionaryValue);
+  printer_info->SetString(kPrinterId, printer_name);
+  printer_info->Set(kPrinterCapabilities, printer_capabilities.release());
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      base::Bind(success_cb, base::Owned(settings_info.release())));
+      base::Bind(success_cb, base::Owned(printer_info.release())));
 }
 
 base::LazyInstance<printing::StickySettings> g_sticky_settings =
@@ -643,7 +637,7 @@ void PrintPreviewHandler::RegisterMessages() {
 
 bool PrintPreviewHandler::PrivetPrintingEnabled() {
 #if defined(ENABLE_SERVICE_DISCOVERY)
-  return !CommandLine::ForCurrentProcess()->HasSwitch(
+  return !base::CommandLine::ForCurrentProcess()->HasSwitch(
     switches::kDisableDeviceDiscovery);
 #else
   return false;
@@ -1197,11 +1191,12 @@ void PrintPreviewHandler::SendInitialSettings(
   printing::StickySettings* sticky_settings = GetStickySettings();
   sticky_settings->RestoreFromPrefs(Profile::FromBrowserContext(
       preview_web_contents()->GetBrowserContext())->GetPrefs());
-  if (sticky_settings->printer_app_state())
+  if (sticky_settings->printer_app_state()) {
     initial_settings.SetString(kAppState,
                                *sticky_settings->printer_app_state());
+  }
 
-  CommandLine* cmdline = CommandLine::ForCurrentProcess();
+  base::CommandLine* cmdline = base::CommandLine::ForCurrentProcess();
   initial_settings.SetBoolean(kPrintAutomaticallyInKioskMode,
                               cmdline->HasSwitch(switches::kKioskModePrinting));
 #if defined(OS_WIN)
@@ -1420,10 +1415,16 @@ void PrintPreviewHandler::SaveCUPSColorSetting(
     const base::DictionaryValue* settings) {
   cups_printer_color_models_.reset(new CUPSPrinterColorModels);
   settings->GetString(kPrinterId, &cups_printer_color_models_->printer_name);
-  settings->GetInteger(
+  const base::DictionaryValue* capabilities = NULL;
+  if (!settings->GetDictionary(kPrinterCapabilities, &capabilities) ||
+      !capabilities) {
+    NOTREACHED();
+    return;
+  }
+  capabilities->GetInteger(
       kCUPSsColorModel,
       reinterpret_cast<int*>(&cups_printer_color_models_->color_model));
-  settings->GetInteger(
+  capabilities->GetInteger(
       kCUPSsBWModel,
       reinterpret_cast<int*>(&cups_printer_color_models_->bw_model));
 }
@@ -1460,7 +1461,7 @@ void PrintPreviewHandler::ConvertColorSettingToCUPSColorModel(
     settings->SetInteger(printing::kSettingColor, color_model);
 }
 
-#endif
+#endif  // defined(USE_CUPS)
 
 #if defined(ENABLE_SERVICE_DISCOVERY)
 void PrintPreviewHandler::LocalPrinterChanged(
@@ -1468,7 +1469,7 @@ void PrintPreviewHandler::LocalPrinterChanged(
     const std::string& name,
     bool has_local_printing,
     const local_discovery::DeviceDescription& description) {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (has_local_printing ||
       command_line->HasSwitch(switches::kEnablePrintPreviewRegisterPromos)) {
     base::DictionaryValue info;
@@ -1649,7 +1650,7 @@ void PrintPreviewHandler::FillPrinterDescription(
     const local_discovery::DeviceDescription& description,
     bool has_local_printing,
     base::DictionaryValue* printer_value) {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
 
   printer_value->SetString("serviceName", name);
   printer_value->SetString("name", description.name);
@@ -1661,4 +1662,4 @@ void PrintPreviewHandler::FillPrinterDescription(
   printer_value->SetString("cloudID", description.id);
 }
 
-#endif
+#endif  // defined(ENABLE_SERVICE_DISCOVERY)

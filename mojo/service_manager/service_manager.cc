@@ -29,15 +29,23 @@ class ServiceManager::ServiceFactory : public InterfaceImpl<ServiceProvider> {
   virtual ~ServiceFactory() {
   }
 
-  void ConnectToClient(ScopedMessagePipeHandle handle) {
-    if (handle.is_valid())
-      client()->ConnectToService(url_.spec(), handle.Pass());
+  void ConnectToClient(const std::string& service_name,
+                       ScopedMessagePipeHandle handle,
+                       const GURL& requestor_url) {
+    if (handle.is_valid()) {
+      client()->ConnectToService(
+          url_.spec(), service_name, handle.Pass(), requestor_url.spec());
+    }
   }
 
   // ServiceProvider implementation:
-  virtual void ConnectToService(const String& url,
-                                ScopedMessagePipeHandle client_pipe) OVERRIDE {
-    manager_->ConnectToService(GURL(url), client_pipe.Pass());
+  virtual void ConnectToService(const String& service_url,
+                                const String& service_name,
+                                ScopedMessagePipeHandle client_pipe,
+                                const String& requestor_url) OVERRIDE {
+    // Ignore provided requestor_url and use url from connection.
+    manager_->ConnectToService(
+        GURL(service_url), service_name, client_pipe.Pass(), url_);
   }
 
   const GURL& url() const { return url_; }
@@ -65,9 +73,14 @@ class ServiceManager::TestAPI::TestServiceProviderConnection
   }
 
   // ServiceProvider:
-  virtual void ConnectToService(const String& url,
-                                ScopedMessagePipeHandle client_pipe) OVERRIDE {
-    manager_->ConnectToService(GURL(url), client_pipe.Pass());
+  virtual void ConnectToService(const String& service_url,
+                                const String& service_name,
+                                ScopedMessagePipeHandle client_pipe,
+                                const String& requestor_url) OVERRIDE {
+    manager_->ConnectToService(GURL(service_url),
+                               service_name,
+                               client_pipe.Pass(),
+                               GURL(requestor_url));
   }
 
  private:
@@ -119,7 +132,9 @@ ServiceManager* ServiceManager::GetInstance() {
 }
 
 void ServiceManager::ConnectToService(const GURL& url,
-                                      ScopedMessagePipeHandle client_handle) {
+                                      const std::string& name,
+                                      ScopedMessagePipeHandle client_handle,
+                                      const GURL& requestor_url) {
   URLToServiceFactoryMap::const_iterator service_it =
       url_to_service_factory_.find(url);
   ServiceFactory* service_factory;
@@ -136,9 +151,11 @@ void ServiceManager::ConnectToService(const GURL& url,
   }
   if (interceptor_) {
     service_factory->ConnectToClient(
-        interceptor_->OnConnectToClient(url, client_handle.Pass()));
+        name,
+        interceptor_->OnConnectToClient(url, client_handle.Pass()),
+        requestor_url);
   } else {
-    service_factory->ConnectToClient(client_handle.Pass());
+    service_factory->ConnectToClient(name, client_handle.Pass(), requestor_url);
   }
 }
 
@@ -181,7 +198,9 @@ void ServiceManager::OnServiceFactoryError(ServiceFactory* service_factory) {
   DCHECK(it != url_to_service_factory_.end());
   delete it->second;
   url_to_service_factory_.erase(it);
-  GetLoaderForURL(url)->OnServiceError(this, url);
+  ServiceLoader* loader = GetLoaderForURL(url);
+  if (loader)
+    loader->OnServiceError(this, url);
 }
 
 }  // namespace mojo

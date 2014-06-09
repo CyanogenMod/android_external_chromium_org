@@ -13,6 +13,7 @@
       'dependencies': [
         '../base/base.gyp:base',
         'component_metrics_proto',
+        'variations',
       ],
       'sources': [
         'metrics/metrics_provider.h',
@@ -23,8 +24,10 @@
         'metrics/machine_id_provider_win.cc',
         'metrics/metrics_hashes.cc',
         'metrics/metrics_hashes.h',
-        'metrics/metrics_log_base.cc',
-        'metrics/metrics_log_base.h',
+        'metrics/metrics_log.cc',
+        'metrics/metrics_log.h',
+        'metrics/metrics_log_uploader.cc',
+        'metrics/metrics_log_uploader.h',
         'metrics/metrics_log_manager.cc',
         'metrics/metrics_log_manager.h',
         'metrics/metrics_pref_names.cc',
@@ -34,6 +37,10 @@
         'metrics/metrics_service_client.h',
         'metrics/metrics_service_observer.cc',
         'metrics/metrics_service_observer.h',
+        'metrics/metrics_state_manager.cc',
+        'metrics/metrics_state_manager.h',
+        'metrics/metrics_switches.cc',
+        'metrics/metrics_switches.h',
         'metrics/persisted_logs.cc',
         'metrics/persisted_logs.h',
       ],
@@ -48,6 +55,24 @@
             'metrics/machine_id_provider_stub.cc',
           ],
         }],
+      ],
+    },
+    {
+      'target_name': 'metrics_net',
+      'type': 'static_library',
+      'include_dirs': [
+        '..',
+      ],
+      'dependencies': [
+        '../net/net.gyp:net',
+        '../third_party/zlib/zlib.gyp:zlib',
+        'metrics',
+      ],
+      'sources': [
+        'metrics/net/compression_utils.cc',
+        'metrics/net/compression_utils.h',
+        'metrics/net/net_metrics_log_uploader.cc',
+        'metrics/net/net_metrics_log_uploader.h',
       ],
     },
     {

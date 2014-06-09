@@ -42,7 +42,7 @@ const size_t kDefaultMinTransferBufferSize = 1 * 256 * 1024;
 const size_t kDefaultMaxTransferBufferSize = 16 * 1024 * 1024;
 
 class WebGraphicsContext3DCommandBufferImpl
-    : public WebGraphicsContext3DImpl {
+    : public webkit::gpu::WebGraphicsContext3DImpl {
  public:
   enum MappedMemoryReclaimLimit {
     kNoLimit = 0,
@@ -213,6 +213,9 @@ class WebGraphicsContext3DCommandBufferImpl
   bool CreateContext(bool onscreen);
 
   virtual void OnGpuChannelLost();
+
+  bool lose_context_when_out_of_memory_;
+  blink::WebGraphicsContext3D::Attributes attributes_;
 
   bool visible_;
 

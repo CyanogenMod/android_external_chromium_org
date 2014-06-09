@@ -56,10 +56,9 @@
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/translate/translate_browser_test_utils.h"
-#include "chrome/browser/translate/translate_infobar_delegate.h"
 #include "chrome/browser/translate/translate_service.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -89,6 +88,7 @@
 #include "components/policy/core/common/policy_pref_names.h"
 #include "components/policy/core/common/policy_service.h"
 #include "components/policy/core/common/policy_service_impl.h"
+#include "components/translate/core/browser/translate_infobar_delegate.h"
 #include "content/public/browser/browser_child_process_host_iterator.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -219,8 +219,8 @@ void RedirectHostsToTestData(const char* const urls[], size_t size) {
   for (size_t i = 0; i < size; ++i) {
     const GURL url(urls[i]);
     EXPECT_TRUE(url.is_valid());
-    filter->AddUrlProtocolHandler(url,
-        URLRequestMockHTTPJob::CreateProtocolHandler(base_path));
+    filter->AddUrlInterceptor(
+        url, URLRequestMockHTTPJob::CreateInterceptor(base_path));
   }
 }
 
@@ -1898,10 +1898,10 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DISABLED_TranslateEnabled) {
   language_observer1.Wait();
 
   // Verify the translation detected for this tab.
-  TranslateTabHelper* translate_tab_helper =
-      TranslateTabHelper::FromWebContents(contents);
-  ASSERT_TRUE(translate_tab_helper);
-  LanguageState& language_state = translate_tab_helper->GetLanguageState();
+  ChromeTranslateClient* chrome_translate_client =
+      ChromeTranslateClient::FromWebContents(contents);
+  ASSERT_TRUE(chrome_translate_client);
+  LanguageState& language_state = chrome_translate_client->GetLanguageState();
   EXPECT_EQ("fr", language_state.original_language());
   EXPECT_TRUE(language_state.page_needs_translation());
   EXPECT_FALSE(language_state.translation_pending());
@@ -2642,7 +2642,7 @@ IN_PROC_BROWSER_TEST_F(PolicyStatisticsCollectorTest, Startup) {
   content::RunAllPendingInMessageLoop();
 
   GURL kAboutHistograms = GURL(std::string(content::kAboutScheme) +
-                               std::string(content::kStandardSchemeSeparator) +
+                               std::string(url::kStandardSchemeSeparator) +
                                std::string(content::kChromeUIHistogramHost));
   ui_test_utils::NavigateToURL(browser(), kAboutHistograms);
   content::WebContents* contents =

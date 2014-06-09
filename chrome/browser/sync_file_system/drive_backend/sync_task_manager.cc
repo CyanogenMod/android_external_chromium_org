@@ -65,6 +65,7 @@ SyncTaskManager::~SyncTaskManager() {
 }
 
 void SyncTaskManager::Initialize(SyncStatusCode status) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
   DCHECK(!token_);
   NotifyTaskDone(SyncTaskToken::CreateForForegroundTask(AsWeakPtr()),
                  status);
@@ -75,6 +76,8 @@ void SyncTaskManager::ScheduleTask(
     const Task& task,
     Priority priority,
     const SyncStatusCallback& callback) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   ScheduleSyncTask(from_here,
                    scoped_ptr<SyncTask>(new SyncTaskAdapter(task)),
                    priority,
@@ -86,6 +89,8 @@ void SyncTaskManager::ScheduleSyncTask(
     scoped_ptr<SyncTask> task,
     Priority priority,
     const SyncStatusCallback& callback) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   scoped_ptr<SyncTaskToken> token(GetToken(from_here, callback));
   if (!token) {
     PushPendingTask(
@@ -101,6 +106,8 @@ bool SyncTaskManager::ScheduleTaskIfIdle(
         const tracked_objects::Location& from_here,
         const Task& task,
         const SyncStatusCallback& callback) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   return ScheduleSyncTaskIfIdle(
       from_here,
       scoped_ptr<SyncTask>(new SyncTaskAdapter(task)),
@@ -111,6 +118,8 @@ bool SyncTaskManager::ScheduleSyncTaskIfIdle(
     const tracked_objects::Location& from_here,
     scoped_ptr<SyncTask> task,
     const SyncStatusCallback& callback) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   scoped_ptr<SyncTaskToken> token(GetToken(from_here, callback));
   if (!token)
     return false;
@@ -169,6 +178,8 @@ void SyncTaskManager::UpdateBlockingFactor(
 }
 
 bool SyncTaskManager::IsRunningTask(int64 token_id) const {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   // If the client is gone, all task should be aborted.
   if (!client_)
     return false;
@@ -179,8 +190,13 @@ bool SyncTaskManager::IsRunningTask(int64 token_id) const {
   return ContainsKey(running_background_tasks_, token_id);
 }
 
+void SyncTaskManager::DetachFromSequence() {
+  sequence_checker_.DetachFromSequence();
+}
+
 void SyncTaskManager::NotifyTaskDoneBody(scoped_ptr<SyncTaskToken> token,
                                          SyncStatusCode status) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
   DCHECK(token);
 
   DVLOG(3) << "NotifyTaskDone: " << "finished with status=" << status
@@ -192,8 +208,12 @@ void SyncTaskManager::NotifyTaskDoneBody(scoped_ptr<SyncTaskToken> token,
     token->clear_blocking_factor();
   }
 
-  if (client_)
-    client_->RecordTaskLog(token->PassTaskLog());
+  if (client_) {
+    if (token->has_task_log()) {
+      token->FinalizeTaskLog(SyncStatusCodeToString(status));
+      client_->RecordTaskLog(token->PassTaskLog());
+    }
+  }
 
   scoped_ptr<SyncTask> task;
   SyncStatusCallback callback = token->callback();
@@ -224,10 +244,13 @@ void SyncTaskManager::UpdateBlockingFactorBody(
     scoped_ptr<TaskLogger::TaskLog> task_log,
     scoped_ptr<BlockingFactor> blocking_factor,
     const Continuation& continuation) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   // Run the task directly if the parallelization is disabled.
   if (!maximum_background_task_) {
     DCHECK(foreground_task_token);
     DCHECK(!background_task_token);
+    foreground_task_token->SetTaskLog(task_log.Pass());
     continuation.Run(foreground_task_token.Pass());
     return;
   }
@@ -309,6 +332,8 @@ void SyncTaskManager::UpdateBlockingFactorBody(
 scoped_ptr<SyncTaskToken> SyncTaskManager::GetToken(
     const tracked_objects::Location& from_here,
     const SyncStatusCallback& callback) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   if (!token_)
     return scoped_ptr<SyncTaskToken>();
   token_->UpdateTask(from_here, callback);
@@ -317,20 +342,23 @@ scoped_ptr<SyncTaskToken> SyncTaskManager::GetToken(
 
 void SyncTaskManager::PushPendingTask(
     const base::Closure& closure, Priority priority) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   pending_tasks_.push(PendingTask(closure, priority, pending_task_seq_++));
 }
 
 void SyncTaskManager::RunTask(scoped_ptr<SyncTaskToken> token,
                               scoped_ptr<SyncTask> task) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
   DCHECK(!running_foreground_task_);
-
-  token->SetTaskLog(make_scoped_ptr(new TaskLogger::TaskLog));
 
   running_foreground_task_ = task.Pass();
   running_foreground_task_->RunPreflight(token.Pass());
 }
 
 void SyncTaskManager::StartNextTask() {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   if (!pending_backgrounding_task_.is_null()) {
     base::Closure closure = pending_backgrounding_task_;
     pending_backgrounding_task_.Reset();

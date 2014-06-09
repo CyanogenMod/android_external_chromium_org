@@ -14,18 +14,6 @@
 #include "jni/InfoBar_jni.h"
 
 
-// InfoBar --------------------------------------------------------------------
-
-// Static constants defined in infobar.h.  We don't really use them for anything
-// but they are required.  The values are copied from the GTK implementation.
-const int infobars::InfoBar::kSeparatorLineHeight = 1;
-const int infobars::InfoBar::kDefaultArrowTargetHeight = 9;
-const int infobars::InfoBar::kMaximumArrowTargetHeight = 24;
-const int infobars::InfoBar::kDefaultArrowTargetHalfWidth =
-    kDefaultArrowTargetHeight;
-const int infobars::InfoBar::kMaximumArrowTargetHalfWidth = 14;
-const int infobars::InfoBar::kDefaultBarTargetHeight = 36;
-
 // InfoBarAndroid -------------------------------------------------------------
 
 InfoBarAndroid::InfoBarAndroid(scoped_ptr<infobars::InfoBarDelegate> delegate)
@@ -62,6 +50,8 @@ void InfoBarAndroid::OnButtonClicked(JNIEnv* env,
 }
 
 void InfoBarAndroid::OnCloseButtonClicked(JNIEnv* env, jobject obj) {
+  if (!owner())
+    return; // We're closing; don't call anything, it might access the owner.
   delegate()->InfoBarDismissed();
   RemoveSelf();
 }

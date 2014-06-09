@@ -8,14 +8,12 @@
 #include "base/bind_helpers.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/policy/managed_bookmarks_policy_handler.h"
 #include "chrome/common/pref_names.h"
 #include "components/bookmarks/browser/bookmark_model.h"
+#include "components/policy/core/browser/managed_bookmarks_tracker.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "grit/components_strings.h"
 #include "ui/base/l10n/l10n_util.h"
-
-using policy::ManagedBookmarksPolicyHandler;
 
 ManagedBookmarksShim::ManagedBookmarksShim(PrefService* prefs)
     : prefs_(prefs) {
@@ -72,10 +70,10 @@ void ManagedBookmarksShim::Reload() {
   base::string16 root_node_name;
   if (domain.empty()) {
     root_node_name =
-        l10n_util::GetStringUTF16(IDS_POLICY_MANAGED_BOOKMARKS_DEFAULT_NAME);
+        l10n_util::GetStringUTF16(IDS_BOOKMARK_BAR_MANAGED_FOLDER_DEFAULT_NAME);
   } else {
-    root_node_name = l10n_util::GetStringFUTF16(IDS_POLICY_MANAGED_BOOKMARKS,
-                                                base::UTF8ToUTF16(domain));
+    root_node_name = l10n_util::GetStringFUTF16(
+        IDS_BOOKMARK_BAR_MANAGED_FOLDER_DOMAIN_NAME, base::UTF8ToUTF16(domain));
   }
 
   root_.reset(new BookmarkPermanentNode(0));
@@ -94,8 +92,8 @@ void ManagedBookmarksShim::Reload() {
 
       base::string16 name;
       std::string url;
-      if (!dict->GetString(ManagedBookmarksPolicyHandler::kName, &name) ||
-          !dict->GetString(ManagedBookmarksPolicyHandler::kUrl, &url)) {
+      if (!dict->GetString(policy::ManagedBookmarksTracker::kName, &name) ||
+          !dict->GetString(policy::ManagedBookmarksTracker::kUrl, &url)) {
         NOTREACHED();
         continue;
       }

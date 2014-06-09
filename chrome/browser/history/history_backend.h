@@ -15,7 +15,6 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/memory_pressure_listener.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/history/archived_database.h"
 #include "chrome/browser/history/expire_history_backend.h"
 #include "chrome/browser/history/history_database.h"
 #include "chrome/browser/history/history_marshaling.h"
@@ -26,7 +25,6 @@
 #include "sql/init_status.h"
 #include "ui/base/layout.h"
 
-class BookmarkService;
 class TestingProfile;
 class TypedUrlSyncableService;
 struct ThumbnailScore;
@@ -37,6 +35,7 @@ class AndroidProviderBackend;
 #endif
 
 class CommitLaterTask;
+class HistoryClient;
 class VisitFilter;
 struct DownloadRow;
 
@@ -105,13 +104,13 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   // See the definition of BroadcastNotificationsCallback above. This function
   // takes ownership of the callback pointer.
   //
-  // |bookmark_service| is used to determine bookmarked URLs when deleting and
+  // |history_client| is used to determine bookmarked URLs when deleting and
   // may be NULL.
   //
   // This constructor is fast and does no I/O, so can be called at any time.
   HistoryBackend(const base::FilePath& history_dir,
                  Delegate* delegate,
-                 BookmarkService* bookmark_service);
+                 HistoryClient* history_client);
 
   // Must be called after creation but before any objects are created. If this
   // fails, all other functions will fail as well. (Since this runs on another
@@ -607,11 +606,8 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   // The *Text() version performs a brute force query of the history DB to
   // search for results which match the given text query.
   // Both functions assume QueryHistory already checked the DB for validity.
-  void QueryHistoryBasic(URLDatabase* url_db, VisitDatabase* visit_db,
-                         const QueryOptions& options, QueryResults* result);
-  void QueryHistoryText(URLDatabase* url_db,
-                        VisitDatabase* visit_db,
-                        const base::string16& text_query,
+  void QueryHistoryBasic(const QueryOptions& options, QueryResults* result);
+  void QueryHistoryText(const base::string16& text_query,
                         const QueryOptions& options,
                         QueryResults* result);
 
@@ -768,7 +764,7 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
       scoped_ptr<HistoryDetails> details) OVERRIDE;
   virtual void NotifySyncURLsModified(URLRows* rows) OVERRIDE;
   virtual void NotifySyncURLsDeleted(bool all_history,
-                                     bool archived,
+                                     bool expired,
                                      URLRows* rows) OVERRIDE;
 
   // Deleting all history ------------------------------------------------------
@@ -776,9 +772,9 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   // Deletes all history. This is a special case of deleting that is separated
   // from our normal dependency-following method for performance reasons. The
   // logic lives here instead of ExpireHistoryBackend since it will cause
-  // re-initialization of some databases such as Thumbnails or Archived that
-  // could fail. When these databases are not valid, our pointers must be NULL,
-  // so we need to handle this type of operation to keep the pointers in sync.
+  // re-initialization of some databases (e.g. Thumbnails) that could fail.
+  // When these databases are not valid, our pointers must be NULL, so we need
+  // to handle this type of operation to keep the pointers in sync.
   void DeleteAllHistory();
 
   // Given a vector of all URLs that we will keep, removes all thumbnails
@@ -796,9 +792,9 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   // Deletes the FTS index database files, which are no longer used.
   void DeleteFTSIndexDatabases();
 
-  // Returns the BookmarkService, blocking until it is loaded. This may return
-  // NULL during testing.
-  BookmarkService* GetBookmarkService();
+  // Returns the HistoryClient, blocking until the bookmarks are loaded. This
+  // may return NULL during testing.
+  HistoryClient* GetHistoryClient();
 
   // Notify any observers of an addition to the visit database.
   void NotifyVisitObservers(const VisitRow& visit);
@@ -820,9 +816,6 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   scoped_ptr<HistoryDatabase> db_;
   bool scheduled_kill_db_;  // Database is being killed due to error.
   scoped_ptr<ThumbnailDatabase> thumbnail_db_;
-
-  // Stores old history in a larger, slower database.
-  scoped_ptr<ArchivedDatabase> archived_db_;
 
   // Manages expiration between the various databases.
   ExpireHistoryBackend expirer_;
@@ -863,12 +856,11 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   // done.
   std::list<HistoryDBTaskRequest*> db_task_requests_;
 
-  // Used to determine if a URL is bookmarked. This is owned by the Profile and
-  // may be NULL (during testing).
+  // Used to determine if a URL is bookmarked; may be NULL.
   //
-  // Use GetBookmarkService to access this, which makes sure the service is
-  // loaded.
-  BookmarkService* bookmark_service_;
+  // Use GetHistoryClient to access this, which makes sure the bookmarks are
+  // loaded before returning.
+  HistoryClient* history_client_;
 
 #if defined(OS_ANDROID)
   // Used to provide the Android ContentProvider APIs.

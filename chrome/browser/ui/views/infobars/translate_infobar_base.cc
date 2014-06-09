@@ -5,12 +5,12 @@
 #include "chrome/browser/ui/views/infobars/translate_infobar_base.h"
 
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/translate/translate_infobar_delegate.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/ui/views/infobars/after_translate_infobar.h"
 #include "chrome/browser/ui/views/infobars/before_translate_infobar.h"
 #include "chrome/browser/ui/views/infobars/translate_message_infobar.h"
 #include "components/infobars/core/infobar.h"
+#include "components/translate/core/browser/translate_infobar_delegate.h"
 #include "grit/theme_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/animation/slide_animation.h"
@@ -18,12 +18,11 @@
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/label.h"
 
+// ChromeTranslateClient
+// ----------------------------------------------------------
 
-// TranslateInfoBarDelegate ---------------------------------------------------
-
-// static
-scoped_ptr<infobars::InfoBar> TranslateInfoBarDelegate::CreateInfoBar(
-    scoped_ptr<TranslateInfoBarDelegate> delegate) {
+scoped_ptr<infobars::InfoBar> ChromeTranslateClient::CreateInfoBar(
+    scoped_ptr<TranslateInfoBarDelegate> delegate) const {
   if (delegate->translate_step() ==
       translate::TRANSLATE_STEP_BEFORE_TRANSLATE) {
     return scoped_ptr<infobars::InfoBar>(

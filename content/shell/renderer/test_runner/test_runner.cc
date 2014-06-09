@@ -19,6 +19,7 @@
 #include "gin/handle.h"
 #include "gin/object_template_builder.h"
 #include "gin/wrappable.h"
+#include "third_party/WebKit/public/platform/WebBatteryStatus.h"
 #include "third_party/WebKit/public/platform/WebCanvas.h"
 #include "third_party/WebKit/public/platform/WebData.h"
 #include "third_party/WebKit/public/platform/WebDeviceMotionData.h"
@@ -173,6 +174,11 @@ class TestRunnerBindings : public gin::Wrappable<TestRunnerBindings> {
   void SetMockDeviceMotion(gin::Arguments* args);
   void SetMockDeviceOrientation(gin::Arguments* args);
   void SetMockScreenOrientation(const std::string& orientation);
+  void DidChangeBatteryStatus(bool charging,
+                              double chargingTime,
+                              double dischargingTime,
+                              double level);
+  void ResetBatteryStatus();
   void DidAcquirePointerLock();
   void DidNotAcquirePointerLock();
   void DidLosePointerLock();
@@ -187,9 +193,11 @@ class TestRunnerBindings : public gin::Wrappable<TestRunnerBindings> {
   void SetAcceptLanguages(const std::string& accept_languages);
   void SetPluginsEnabled(bool enabled);
   void DumpEditingCallbacks();
+  void DumpAsMarkup();
   void DumpAsText();
   void DumpAsTextWithPixelResults();
   void DumpChildFrameScrollPositions();
+  void DumpChildFramesAsMarkup();
   void DumpChildFramesAsText();
   void DumpIconChanges();
   void SetAudioData(const gin::ArrayBufferView& view);
@@ -247,6 +255,7 @@ class TestRunnerBindings : public gin::Wrappable<TestRunnerBindings> {
   void DisplayAsync();
   void DisplayAsyncThen(v8::Handle<v8::Function> callback);
   void SetCustomTextOutput(std::string output);
+  void SetViewSourceForFrame(const std::string& name, bool enabled);
 
   bool GlobalFlag();
   void SetGlobalFlag(bool value);
@@ -364,6 +373,10 @@ gin::ObjectTemplateBuilder TestRunnerBindings::GetObjectTemplateBuilder(
                  &TestRunnerBindings::SetMockDeviceOrientation)
       .SetMethod("setMockScreenOrientation",
                  &TestRunnerBindings::SetMockScreenOrientation)
+      .SetMethod("didChangeBatteryStatus",
+                 &TestRunnerBindings::DidChangeBatteryStatus)
+      .SetMethod("resetBatteryStatus",
+                 &TestRunnerBindings::ResetBatteryStatus)
       .SetMethod("didAcquirePointerLock",
                  &TestRunnerBindings::DidAcquirePointerLock)
       .SetMethod("didNotAcquirePointerLock",
@@ -388,6 +401,7 @@ gin::ObjectTemplateBuilder TestRunnerBindings::GetObjectTemplateBuilder(
       .SetMethod("setPluginsEnabled", &TestRunnerBindings::SetPluginsEnabled)
       .SetMethod("dumpEditingCallbacks",
                  &TestRunnerBindings::DumpEditingCallbacks)
+      .SetMethod("dumpAsMarkup", &TestRunnerBindings::DumpAsMarkup)
       .SetMethod("dumpAsText", &TestRunnerBindings::DumpAsText)
       .SetMethod("dumpAsTextWithPixelResults",
                  &TestRunnerBindings::DumpAsTextWithPixelResults)
@@ -395,6 +409,8 @@ gin::ObjectTemplateBuilder TestRunnerBindings::GetObjectTemplateBuilder(
                  &TestRunnerBindings::DumpChildFrameScrollPositions)
       .SetMethod("dumpChildFramesAsText",
                  &TestRunnerBindings::DumpChildFramesAsText)
+      .SetMethod("dumpChildFramesAsMarkup",
+                 &TestRunnerBindings::DumpChildFramesAsMarkup)
       .SetMethod("dumpIconChanges", &TestRunnerBindings::DumpIconChanges)
       .SetMethod("setAudioData", &TestRunnerBindings::SetAudioData)
       .SetMethod("dumpFrameLoadCallbacks",
@@ -480,6 +496,8 @@ gin::ObjectTemplateBuilder TestRunnerBindings::GetObjectTemplateBuilder(
       .SetMethod("displayAsyncThen", &TestRunnerBindings::DisplayAsyncThen)
       .SetMethod("setCustomTextOutput",
                  &TestRunnerBindings::SetCustomTextOutput)
+      .SetMethod("setViewSourceForFrame",
+                 &TestRunnerBindings::SetViewSourceForFrame)
 
       // Properties.
       .SetProperty("globalFlag",
@@ -866,6 +884,21 @@ void TestRunnerBindings::SetMockScreenOrientation(const std::string& orientation
   runner_->SetMockScreenOrientation(orientation);
 }
 
+void TestRunnerBindings::DidChangeBatteryStatus(bool charging,
+                                                double chargingTime,
+                                                double dischargingTime,
+                                                double level) {
+  if (runner_) {
+    runner_->DidChangeBatteryStatus(charging, chargingTime,
+                                    dischargingTime, level);
+  }
+}
+
+void TestRunnerBindings::ResetBatteryStatus() {
+  if (runner_)
+    runner_->ResetBatteryStatus();
+}
+
 void TestRunnerBindings::DidAcquirePointerLock() {
   if (runner_)
     runner_->DidAcquirePointerLock();
@@ -940,6 +973,11 @@ void TestRunnerBindings::DumpEditingCallbacks() {
     runner_->DumpEditingCallbacks();
 }
 
+void TestRunnerBindings::DumpAsMarkup() {
+  if (runner_)
+    runner_->DumpAsMarkup();
+}
+
 void TestRunnerBindings::DumpAsText() {
   if (runner_)
     runner_->DumpAsText();
@@ -958,6 +996,11 @@ void TestRunnerBindings::DumpChildFrameScrollPositions() {
 void TestRunnerBindings::DumpChildFramesAsText() {
   if (runner_)
     runner_->DumpChildFramesAsText();
+}
+
+void TestRunnerBindings::DumpChildFramesAsMarkup() {
+  if (runner_)
+    runner_->DumpChildFramesAsMarkup();
 }
 
 void TestRunnerBindings::DumpIconChanges() {
@@ -1246,6 +1289,16 @@ void TestRunnerBindings::SetCustomTextOutput(std::string output) {
   runner_->setCustomTextOutput(output);
 }
 
+void TestRunnerBindings::SetViewSourceForFrame(const std::string& name,
+                                               bool enabled) {
+  if (runner_ && runner_->web_view_) {
+    WebFrame* target_frame =
+        runner_->web_view_->findFrameByName(WebString::fromUTF8(name));
+    if (target_frame)
+      target_frame->enableViewSourceMode(enabled);
+  }
+}
+
 bool TestRunnerBindings::GlobalFlag() {
   if (runner_)
     return runner_->global_flag_;
@@ -1447,6 +1500,7 @@ void TestRunner::Reset() {
     delegate_->disableAutoResizeMode(WebSize());
     delegate_->deleteAllCookies();
     delegate_->resetScreenOrientation();
+    ResetBatteryStatus();
   }
 
   dump_editting_callbacks_ = false;
@@ -1454,6 +1508,7 @@ void TestRunner::Reset() {
   dump_as_markup_ = false;
   generate_pixel_results_ = true;
   dump_child_frame_scroll_positions_ = false;
+  dump_child_frames_as_markup_ = false;
   dump_child_frames_as_text_ = false;
   dump_icon_changes_ = false;
   dump_as_audio_ = false;
@@ -1558,6 +1613,10 @@ void TestRunner::setShouldGeneratePixelResults(bool value) {
 
 bool TestRunner::shouldDumpChildFrameScrollPositions() const {
   return dump_child_frame_scroll_positions_;
+}
+
+bool TestRunner::shouldDumpChildFramesAsMarkup() const {
+  return dump_child_frames_as_markup_;
 }
 
 bool TestRunner::shouldDumpChildFramesAsText() const {
@@ -2237,6 +2296,23 @@ void TestRunner::SetMockScreenOrientation(const std::string& orientation_str) {
   delegate_->setScreenOrientation(orientation);
 }
 
+void TestRunner::DidChangeBatteryStatus(bool charging,
+                                        double chargingTime,
+                                        double dischargingTime,
+                                        double level) {
+  blink::WebBatteryStatus status;
+  status.charging = charging;
+  status.chargingTime = chargingTime;
+  status.dischargingTime = dischargingTime;
+  status.level = level;
+  delegate_->didChangeBatteryStatus(status);
+}
+
+void TestRunner::ResetBatteryStatus() {
+  blink::WebBatteryStatus status;
+  delegate_->didChangeBatteryStatus(status);
+}
+
 void TestRunner::DidAcquirePointerLock() {
   DidAcquirePointerLockInternal();
 }
@@ -2345,6 +2421,11 @@ void TestRunner::DumpEditingCallbacks() {
   dump_editting_callbacks_ = true;
 }
 
+void TestRunner::DumpAsMarkup() {
+  dump_as_markup_ = true;
+  generate_pixel_results_ = false;
+}
+
 void TestRunner::DumpAsText() {
   dump_as_text_ = true;
   generate_pixel_results_ = false;
@@ -2357,6 +2438,10 @@ void TestRunner::DumpAsTextWithPixelResults() {
 
 void TestRunner::DumpChildFrameScrollPositions() {
   dump_child_frame_scroll_positions_ = true;
+}
+
+void TestRunner::DumpChildFramesAsMarkup() {
+  dump_child_frames_as_markup_ = true;
 }
 
 void TestRunner::DumpChildFramesAsText() {

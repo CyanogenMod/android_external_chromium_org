@@ -20,7 +20,6 @@
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/history_service.h"
@@ -32,13 +31,11 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/importer/imported_favicon_usage.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/bookmarks/browser/bookmark_model.h"
-#include "components/bookmarks/browser/bookmark_utils.h"
-#include "components/bookmarks/test/bookmark_test_helpers.h"
-#include "components/bookmarks/test/test_bookmark_client.h"
+#include "components/history/core/test/history_client_fake_bookmarks.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/test/test_browser_thread.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
@@ -66,6 +63,11 @@ bool FaviconBitmapLessThan(const history::FaviconBitmap& a,
                            const history::FaviconBitmap& b) {
   return a.pixel_size.GetArea() < b.pixel_size.GetArea();
 }
+
+class HistoryClientMock : public history::HistoryClientFakeBookmarks {
+ public:
+  MOCK_METHOD0(BlockUntilBookmarksLoaded, void());
+};
 
 }  // namespace
 
@@ -116,8 +118,7 @@ class HistoryBackendTestBase : public testing::Test {
   typedef std::vector<std::pair<int, HistoryDetails*> > NotificationList;
 
   HistoryBackendTestBase()
-      : bookmark_model_(bookmark_client_.CreateModel(false)),
-        loaded_(false),
+      : loaded_(false),
         ui_thread_(content::BrowserThread::UI, &message_loop_) {}
 
   virtual ~HistoryBackendTestBase() {
@@ -152,10 +153,9 @@ class HistoryBackendTestBase : public testing::Test {
         std::make_pair(type, details.release()));
   }
 
-  test::TestBookmarkClient bookmark_client_;
+  history::HistoryClientFakeBookmarks history_client_;
   scoped_refptr<HistoryBackend> backend_;  // Will be NULL on init failure.
   scoped_ptr<InMemoryHistoryBackend> mem_backend_;
-  scoped_ptr<BookmarkModel> bookmark_model_;
   bool loaded_;
 
  private:
@@ -167,7 +167,7 @@ class HistoryBackendTestBase : public testing::Test {
                                       &test_dir_))
       return;
     backend_ = new HistoryBackend(
-        test_dir_, new HistoryBackendTestDelegate(this), bookmark_model_.get());
+        test_dir_, new HistoryBackendTestDelegate(this), &history_client_);
     backend_->Init(std::string(), false);
   }
 
@@ -178,6 +178,7 @@ class HistoryBackendTestBase : public testing::Test {
     mem_backend_.reset();
     base::DeleteFile(test_dir_, true);
     base::RunLoop().RunUntilIdle();
+    history_client_.ClearAllBookmarks();
   }
 
   void SetInMemoryBackend(scoped_ptr<InMemoryHistoryBackend> backend) {
@@ -611,8 +612,7 @@ TEST_F(HistoryBackendTest, DeleteAll) {
   EXPECT_TRUE(mem_backend_->db_->GetRowForURL(row1.url(), NULL));
 
   // Star row1.
-  bookmark_model_->AddURL(
-      bookmark_model_->bookmark_bar_node(), 0, base::string16(), row1.url());
+  history_client_.AddBookmark(row1.url());
 
   // Now finally clear all history.
   ClearBroadcastedNotifications();
@@ -676,7 +676,7 @@ TEST_F(HistoryBackendTest, DeleteAll) {
   EXPECT_EQ(out_favicon1, mappings[0].icon_id);
 
   // The first URL should still be bookmarked.
-  EXPECT_TRUE(bookmark_model_->IsBookmarked(row1.url()));
+  EXPECT_TRUE(history_client_.IsBookmarked(row1.url()));
 
   // Check that we fire the notification about all history having been deleted.
   ASSERT_EQ(1u, broadcasted_notifications().size());
@@ -685,7 +685,7 @@ TEST_F(HistoryBackendTest, DeleteAll) {
   const URLsDeletedDetails* details = static_cast<const URLsDeletedDetails*>(
       broadcasted_notifications()[0].second);
   EXPECT_TRUE(details->all_history);
-  EXPECT_FALSE(details->archived);
+  EXPECT_FALSE(details->expired);
 }
 
 // Checks that adding a visit, then calling DeleteAll, and then trying to add
@@ -774,10 +774,8 @@ TEST_F(HistoryBackendTest, URLsNoLongerBookmarked) {
   URLID row2_id = backend_->db_->GetRowForURL(row2.url(), NULL);
 
   // Star the two URLs.
-  bookmark_utils::AddIfNotBookmarked(
-      bookmark_model_.get(), row1.url(), base::string16());
-  bookmark_utils::AddIfNotBookmarked(
-      bookmark_model_.get(), row2.url(), base::string16());
+  history_client_.AddBookmark(row1.url());
+  history_client_.AddBookmark(row2.url());
 
   // Delete url 2. Because url 2 is starred this won't delete the URL, only
   // the visits.
@@ -795,7 +793,7 @@ TEST_F(HistoryBackendTest, URLsNoLongerBookmarked) {
                 favicon_url2, favicon_base::FAVICON, NULL));
 
   // Unstar row2.
-  bookmark_utils::RemoveAllBookmarks(bookmark_model_.get(), row2.url());
+  history_client_.DelBookmark(row2.url());
 
   // Tell the backend it was unstarred. We have to explicitly do this as
   // BookmarkModel isn't wired up to the backend during testing.
@@ -811,7 +809,8 @@ TEST_F(HistoryBackendTest, URLsNoLongerBookmarked) {
                 favicon_url2, favicon_base::FAVICON, NULL));
 
   // Unstar row 1.
-  bookmark_utils::RemoveAllBookmarks(bookmark_model_.get(), row1.url());
+  history_client_.DelBookmark(row1.url());
+
   // Tell the backend it was unstarred. We have to explicitly do this as
   // BookmarkModel isn't wired up to the backend during testing.
   unstarred_urls.clear();
@@ -914,7 +913,7 @@ TEST_F(HistoryBackendTest, ClientRedirect) {
 TEST_F(HistoryBackendTest, AddPagesWithDetails) {
   ASSERT_TRUE(backend_.get());
 
-  // Import one non-typed URL, two non-archived and one archived typed URLs.
+  // Import one non-typed URL, and two recent and one expired typed URLs.
   URLRow row1(GURL("https://news.google.com/"));
   row1.set_visit_count(1);
   row1.set_last_visit(Time::Now());
@@ -937,18 +936,13 @@ TEST_F(HistoryBackendTest, AddPagesWithDetails) {
   rows.push_back(row4);
   backend_->AddPagesWithDetails(rows, history::SOURCE_BROWSED);
 
-  // Verify that recent URLs have ended up in the main |db_|, while expired URLs
-  // have ended up in the |archived_db_|.
+  // Verify that recent URLs have ended up in the main |db_|, while the already
+  // expired URL has been ignored.
   URLRow stored_row1, stored_row2, stored_row3, stored_row4;
   EXPECT_NE(0, backend_->db_->GetRowForURL(row1.url(), &stored_row1));
   EXPECT_NE(0, backend_->db_->GetRowForURL(row2.url(), &stored_row2));
   EXPECT_NE(0, backend_->db_->GetRowForURL(row3.url(), &stored_row3));
   EXPECT_EQ(0, backend_->db_->GetRowForURL(row4.url(), &stored_row4));
-
-  EXPECT_EQ(0, backend_->archived_db_->GetRowForURL(row1.url(), &stored_row1));
-  EXPECT_EQ(0, backend_->archived_db_->GetRowForURL(row2.url(), &stored_row2));
-  EXPECT_EQ(0, backend_->archived_db_->GetRowForURL(row3.url(), &stored_row3));
-  EXPECT_NE(0, backend_->archived_db_->GetRowForURL(row4.url(), &stored_row4));
 
   // Ensure that a notification was fired, and further verify that the IDs in
   // the notification are set to those that are in effect in the main database.
@@ -1083,8 +1077,7 @@ TEST_F(HistoryBackendTest, ImportedFaviconsTest) {
   EXPECT_TRUE(backend_->db_->GetRowForURL(url3, &url_row3) == 0);
 
   // If the URL is bookmarked, it should get added to history with 0 visits.
-  bookmark_model_->AddURL(
-      bookmark_model_->bookmark_bar_node(), 0, base::string16(), url3);
+  history_client_.AddBookmark(url3);
   backend_->SetImportedFavicons(favicons);
   EXPECT_FALSE(backend_->db_->GetRowForURL(url3, &url_row3) == 0);
   EXPECT_TRUE(url_row3.visit_count() == 0);
@@ -1484,9 +1477,8 @@ TEST_F(HistoryBackendTest, MigrationVisitSource) {
       new_history_path.Append(chrome::kHistoryFilename);
   ASSERT_TRUE(base::CopyFile(old_history_path, new_history_file));
 
-  backend_ = new HistoryBackend(new_history_path,
-                                new HistoryBackendTestDelegate(this),
-                                bookmark_model_.get());
+  backend_ = new HistoryBackend(
+      new_history_path, new HistoryBackendTestDelegate(this), &history_client_);
   backend_->Init(std::string(), false);
   backend_->Closing();
   backend_ = NULL;
@@ -2869,11 +2861,10 @@ TEST_F(HistoryBackendTest, MigrationVisitDuration) {
   backend_->Closing();
   backend_ = NULL;
 
-  base::FilePath old_history_path, old_history, old_archived;
+  base::FilePath old_history_path, old_history;
   ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &old_history_path));
   old_history_path = old_history_path.AppendASCII("History");
   old_history = old_history_path.AppendASCII("HistoryNoDuration");
-  old_archived = old_history_path.AppendASCII("ArchivedNoDuration");
 
   // Copy history database file to current directory so that it will be deleted
   // in Teardown.
@@ -2882,19 +2873,15 @@ TEST_F(HistoryBackendTest, MigrationVisitDuration) {
   base::CreateDirectory(new_history_path);
   base::FilePath new_history_file =
       new_history_path.Append(chrome::kHistoryFilename);
-  base::FilePath new_archived_file =
-      new_history_path.Append(chrome::kArchivedHistoryFilename);
   ASSERT_TRUE(base::CopyFile(old_history, new_history_file));
-  ASSERT_TRUE(base::CopyFile(old_archived, new_archived_file));
 
-  backend_ = new HistoryBackend(new_history_path,
-                                new HistoryBackendTestDelegate(this),
-                                bookmark_model_.get());
+  backend_ = new HistoryBackend(
+      new_history_path, new HistoryBackendTestDelegate(this), &history_client_);
   backend_->Init(std::string(), false);
   backend_->Closing();
   backend_ = NULL;
 
-  // Now both history and archived_history databases should already be migrated.
+  // Now the history database should already be migrated.
 
   // Check version in history database first.
   int cur_version = HistoryDatabase::GetCurrentVersion();
@@ -2911,23 +2898,6 @@ TEST_F(HistoryBackendTest, MigrationVisitDuration) {
       "SELECT visit_duration FROM visits LIMIT 1"));
   ASSERT_TRUE(s.Step());
   EXPECT_EQ(0, s.ColumnInt(0));
-
-  // Repeat version and visit_duration checks in archived history database
-  // also.
-  cur_version = ArchivedDatabase::GetCurrentVersion();
-  sql::Connection archived_db;
-  ASSERT_TRUE(archived_db.Open(new_archived_file));
-  sql::Statement s1(archived_db.GetUniqueStatement(
-      "SELECT value FROM meta WHERE key = 'version'"));
-  ASSERT_TRUE(s1.Step());
-  file_version = s1.ColumnInt(0);
-  EXPECT_EQ(cur_version, file_version);
-
-  // Check visit_duration column in visits table is created and set to 0.
-  s1.Assign(archived_db.GetUniqueStatement(
-      "SELECT visit_duration FROM visits LIMIT 1"));
-  ASSERT_TRUE(s1.Step());
-  EXPECT_EQ(0, s1.ColumnInt(0));
 }
 
 TEST_F(HistoryBackendTest, AddPageNoVisitForBookmark) {
@@ -3125,17 +3095,13 @@ TEST_F(HistoryBackendTest, DeleteMatchingUrlsForKeyword) {
 TEST_F(HistoryBackendTest, RemoveNotification) {
   scoped_ptr<TestingProfile> profile(new TestingProfile());
 
-  ASSERT_TRUE(profile->CreateHistoryService(false, false));
-  profile->CreateBookmarkModel(true);
-  BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile.get());
-  test::WaitForBookmarkModelToLoad(model);
-
   // Add a URL.
   GURL url("http://www.google.com");
-  bookmark_utils::AddIfNotBookmarked(model, url, base::string16());
-
-  HistoryService* service = HistoryServiceFactory::GetForProfile(
-      profile.get(), Profile::EXPLICIT_ACCESS);
+  HistoryClientMock history_client;
+  history_client.AddBookmark(url);
+  scoped_ptr<HistoryService> service(
+      new HistoryService(&history_client, profile.get()));
+  EXPECT_TRUE(service->Init(profile->GetPath()));
 
   service->AddPage(
       url, base::Time::Now(), NULL, 1, GURL(), RedirectList(),
@@ -3143,6 +3109,7 @@ TEST_F(HistoryBackendTest, RemoveNotification) {
 
   // This won't actually delete the URL, rather it'll empty out the visits.
   // This triggers blocking on the BookmarkModel.
+  EXPECT_CALL(history_client, BlockUntilBookmarksLoaded());
   service->DeleteURL(url);
 }
 

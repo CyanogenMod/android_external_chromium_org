@@ -16,6 +16,7 @@
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_resource.h"
 #include "extensions/common/manifest_constants.h"
+#include "extensions/common/manifest_handlers/permissions_parser.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/url_pattern.h"
 #include "extensions/common/url_pattern_set.h"
@@ -30,6 +31,9 @@ namespace values = manifest_values;
 namespace errors = manifest_errors;
 
 namespace {
+
+// The globally-unique id for a user script.
+int64 g_next_user_script_id = 0;
 
 // Helper method that loads either the include_globs or exclude_globs list
 // from an entry in the content_script lists of the manifest.
@@ -424,13 +428,13 @@ bool ContentScriptsHandler::Parse(Extension* extension, base::string16* error) {
       // Greasemonkey matches all frames.
       user_script.set_match_all_frames(true);
     }
+    user_script.set_id(g_next_user_script_id++);
     content_scripts_info->content_scripts.push_back(user_script);
   }
   extension->SetManifestData(keys::kContentScripts,
                              content_scripts_info.release());
-  PermissionsData::SetInitialScriptableHosts(
-      extension,
-      ContentScriptsInfo::GetScriptableHosts(extension));
+  PermissionsParser::SetScriptableHosts(
+      extension, ContentScriptsInfo::GetScriptableHosts(extension));
   return true;
 }
 

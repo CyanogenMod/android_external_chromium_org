@@ -38,8 +38,8 @@ enum EventType {
   ET_GESTURE_TAP_CANCEL,
   ET_GESTURE_TAP_UNCONFIRMED, // User tapped, but the tap delay hasn't expired.
   ET_GESTURE_DOUBLE_TAP,
-  ET_GESTURE_BEGIN,  // Sent before any other gesture types.
-  ET_GESTURE_END,    // Sent after any other gestures.
+  ET_GESTURE_BEGIN,  // The first event sent when each finger is pressed.
+  ET_GESTURE_END,    // Sent for each released finger.
   ET_GESTURE_TWO_FINGER_TAP,
   ET_GESTURE_PINCH_BEGIN,
   ET_GESTURE_PINCH_END,
@@ -100,6 +100,8 @@ enum KeyEventFlags {
   EF_IME_FABRICATED_KEY = 1 << 17,  // Key event fabricated by the underlying
                                     // IME without a user action.
                                     // (Linux X11 only)
+  EF_IS_REPEAT          = 1 << 18,
+  EF_FUNCTION_KEY       = 1 << 19,  // Key originates from function key row
 };
 
 // Flags specific to mouse events

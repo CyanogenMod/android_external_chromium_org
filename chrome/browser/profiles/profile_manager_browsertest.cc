@@ -368,3 +368,4 @@ IN_PROC_BROWSER_TEST_F(ProfileManagerBrowserTest, EphemeralProfile) {
   EXPECT_EQ(1U, browser_list->size());
   ASSERT_EQ(1U, cache.GetNumberOfProfiles());
 }
+

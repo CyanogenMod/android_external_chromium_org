@@ -648,7 +648,7 @@ static SkBitmap ApplyImageFilter(
   };
   // Place the platform texture inside an SkBitmap.
   SkBitmap source;
-  source.setConfig(info);
+  source.setInfo(info);
   skia::RefPtr<SkGrPixelRef> pixel_ref =
       skia::AdoptRef(new SkGrPixelRef(info, texture.get()));
   source.setPixelRef(pixel_ref.get());
@@ -665,10 +665,18 @@ static SkBitmap ApplyImageFilter(
       use_gr_context->context(), desc, GrContext::kExact_ScratchTexMatch);
   skia::RefPtr<GrTexture> backing_store =
       skia::AdoptRef(scratch_texture.detach());
+  if (backing_store.get() == NULL) {
+    TRACE_EVENT_INSTANT0("cc",
+                         "ApplyImageFilter scratch texture allocation failed",
+                         TRACE_EVENT_SCOPE_THREAD);
+    return SkBitmap();
+  }
 
   // Create a device and canvas using that backing store.
-  SkGpuDevice device(use_gr_context->context(), backing_store.get());
-  SkCanvas canvas(&device);
+  skia::RefPtr<SkGpuDevice> device =
+      skia::AdoptRef(SkGpuDevice::Create(backing_store->asRenderTarget()));
+  DCHECK(device.get());
+  SkCanvas canvas(device.get());
 
   // Draw the source bitmap through the filter to the canvas.
   SkPaint paint;
@@ -686,7 +694,7 @@ static SkBitmap ApplyImageFilter(
   // GL context again.
   use_gr_context->context()->flush();
 
-  return device.accessBitmap(false);
+  return device->accessBitmap(false);
 }
 
 static SkBitmap ApplyBlendModeWithBackdrop(
@@ -752,7 +760,7 @@ static SkBitmap ApplyBlendModeWithBackdrop(
   };
   // Place the platform texture inside an SkBitmap.
   SkBitmap source;
-  source.setConfig(source_info);
+  source.setInfo(source_info);
   skia::RefPtr<SkGrPixelRef> source_pixel_ref =
       skia::AdoptRef(new SkGrPixelRef(source_info, source_texture.get()));
   source.setPixelRef(source_pixel_ref.get());
@@ -765,7 +773,7 @@ static SkBitmap ApplyBlendModeWithBackdrop(
   };
 
   SkBitmap background;
-  background.setConfig(background_info);
+  background.setInfo(background_info);
   skia::RefPtr<SkGrPixelRef> background_pixel_ref =
       skia::AdoptRef(new SkGrPixelRef(
           background_info, background_texture.get()));
@@ -783,10 +791,19 @@ static SkBitmap ApplyBlendModeWithBackdrop(
       use_gr_context->context(), desc, GrContext::kExact_ScratchTexMatch);
   skia::RefPtr<GrTexture> backing_store =
       skia::AdoptRef(scratch_texture.detach());
+  if (backing_store.get() == NULL) {
+    TRACE_EVENT_INSTANT0(
+        "cc",
+        "ApplyBlendModeWithBackdrop scratch texture allocation failed",
+        TRACE_EVENT_SCOPE_THREAD);
+    return source_bitmap_with_filters;
+  }
 
   // Create a device and canvas using that backing store.
-  SkGpuDevice device(use_gr_context->context(), backing_store.get());
-  SkCanvas canvas(&device);
+  skia::RefPtr<SkGpuDevice> device =
+      skia::AdoptRef(SkGpuDevice::Create(backing_store->asRenderTarget()));
+  DCHECK(device.get());
+  SkCanvas canvas(device.get());
 
   // Draw the source bitmap through the filter to the canvas.
   canvas.clear(SK_ColorTRANSPARENT);
@@ -800,7 +817,7 @@ static SkBitmap ApplyBlendModeWithBackdrop(
   // GL context again.
   use_gr_context->context()->flush();
 
-  return device.accessBitmap(false);
+  return device->accessBitmap(false);
 }
 
 scoped_ptr<ScopedResource> GLRenderer::GetBackgroundWithFilters(

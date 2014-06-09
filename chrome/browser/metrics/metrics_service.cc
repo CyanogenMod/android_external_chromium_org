@@ -181,27 +181,22 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/tracked_objects.h"
 #include "base/values.h"
-#include "chrome/browser/browser_process.h"
-#include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/io_thread.h"
 #include "chrome/browser/metrics/chrome_stability_metrics_provider.h"
-#include "chrome/browser/metrics/compression_utils.h"
 #include "chrome/browser/metrics/gpu_metrics_provider.h"
-#include "chrome/browser/metrics/metrics_log.h"
-#include "chrome/browser/metrics/metrics_state_manager.h"
 #include "chrome/browser/metrics/network_metrics_provider.h"
 #include "chrome/browser/metrics/omnibox_metrics_provider.h"
+#include "chrome/browser/metrics/profiler_metrics_provider.h"
 #include "chrome/browser/metrics/tracking_synchronizer.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/variations/variations_util.h"
-#include "components/metrics/metrics_log_base.h"
+#include "components/metrics/metrics_log.h"
 #include "components/metrics/metrics_log_manager.h"
+#include "components/metrics/metrics_log_uploader.h"
 #include "components/metrics/metrics_pref_names.h"
 #include "components/metrics/metrics_reporting_scheduler.h"
 #include "components/metrics/metrics_service_client.h"
+#include "components/metrics/metrics_state_manager.h"
 #include "components/variations/entropy_provider.h"
-#include "net/base/load_flags.h"
-#include "net/url_request/url_fetcher.h"
+#include "content/public/browser/browser_thread.h"
 
 #if defined(ENABLE_PLUGINS)
 // TODO(asvitkine): Move this out of MetricsService.
@@ -270,12 +265,12 @@ enum ResponseStatus {
 
 ResponseStatus ResponseCodeToStatus(int response_code) {
   switch (response_code) {
+    case -1:
+      return NO_RESPONSE;
     case 200:
       return SUCCESS;
     case 400:
       return BAD_REQUEST;
-    case net::URLFetcher::RESPONSE_CODE_INVALID:
-      return NO_RESPONSE;
     default:
       return UNKNOWN_FAILURE;
   }
@@ -311,6 +306,7 @@ MetricsService::ExecutionPhase MetricsService::execution_phase_ =
 void MetricsService::RegisterPrefs(PrefRegistrySimple* registry) {
   DCHECK(IsSingleThreaded());
   metrics::MetricsStateManager::RegisterPrefs(registry);
+  MetricsLog::RegisterPrefs(registry);
 
   registry->RegisterInt64Pref(prefs::kStabilityLaunchTimeSec, 0);
   registry->RegisterInt64Pref(prefs::kStabilityLastTimestampSec, 0);
@@ -320,20 +316,7 @@ void MetricsService::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterIntegerPref(prefs::kStabilityExecutionPhase,
                                 UNINITIALIZED_PHASE);
   registry->RegisterBooleanPref(prefs::kStabilitySessionEndCompleted, true);
-  registry->RegisterIntegerPref(prefs::kMetricsSessionID, -1);
-  registry->RegisterIntegerPref(prefs::kStabilityLaunchCount, 0);
-  registry->RegisterIntegerPref(prefs::kStabilityCrashCount, 0);
-  registry->RegisterIntegerPref(prefs::kStabilityIncompleteSessionEndCount, 0);
-  registry->RegisterIntegerPref(prefs::kStabilityBreakpadRegistrationFail, 0);
-  registry->RegisterIntegerPref(prefs::kStabilityBreakpadRegistrationSuccess,
-                                0);
-  registry->RegisterIntegerPref(prefs::kStabilityDebuggerPresent, 0);
-  registry->RegisterIntegerPref(prefs::kStabilityDebuggerNotPresent, 0);
-
-  registry->RegisterStringPref(prefs::kStabilitySavedSystemProfile,
-                               std::string());
-  registry->RegisterStringPref(prefs::kStabilitySavedSystemProfileHash,
-                               std::string());
+  registry->RegisterIntegerPref(metrics::prefs::kMetricsSessionID, -1);
 
   registry->RegisterListPref(metrics::prefs::kMetricsInitialLogs);
   registry->RegisterListPref(metrics::prefs::kMetricsOngoingLogs);
@@ -371,11 +354,11 @@ MetricsService::MetricsService(metrics::MetricsStateManager* state_manager,
       test_mode_active_(false),
       state_(INITIALIZED),
       has_initial_stability_log_(false),
+      log_upload_in_progress_(false),
       idle_since_last_transmission_(false),
       session_id_(-1),
       self_ptr_factory_(this),
-      state_saver_factory_(this),
-      waiting_for_asynchronous_reporting_step_(false) {
+      state_saver_factory_(this) {
   DCHECK(IsSingleThreaded());
   DCHECK(state_manager_);
   DCHECK(client_);
@@ -397,6 +380,9 @@ MetricsService::MetricsService(metrics::MetricsStateManager* state_manager,
       scoped_ptr<metrics::MetricsProvider>(new ChromeStabilityMetricsProvider));
   RegisterMetricsProvider(
       scoped_ptr<metrics::MetricsProvider>(new GPUMetricsProvider()));
+  profiler_metrics_provider_ = new ProfilerMetricsProvider;
+  RegisterMetricsProvider(
+      scoped_ptr<metrics::MetricsProvider>(profiler_metrics_provider_));
 
 #if defined(OS_WIN)
   google_update_metrics_provider_ = new GoogleUpdateMetricsProviderWin;
@@ -605,16 +591,16 @@ void MetricsService::SetExecutionPhase(ExecutionPhase execution_phase,
 
 void MetricsService::RecordBreakpadRegistration(bool success) {
   if (!success)
-    IncrementPrefValue(prefs::kStabilityBreakpadRegistrationFail);
+    IncrementPrefValue(metrics::prefs::kStabilityBreakpadRegistrationFail);
   else
-    IncrementPrefValue(prefs::kStabilityBreakpadRegistrationSuccess);
+    IncrementPrefValue(metrics::prefs::kStabilityBreakpadRegistrationSuccess);
 }
 
 void MetricsService::RecordBreakpadHasDebugger(bool has_debugger) {
   if (!has_debugger)
-    IncrementPrefValue(prefs::kStabilityDebuggerNotPresent);
+    IncrementPrefValue(metrics::prefs::kStabilityDebuggerNotPresent);
   else
-    IncrementPrefValue(prefs::kStabilityDebuggerPresent);
+    IncrementPrefValue(metrics::prefs::kStabilityDebuggerPresent);
 }
 
 //------------------------------------------------------------------------------
@@ -631,10 +617,10 @@ void MetricsService::InitializeMetricsState() {
   local_state_->SetInt64(prefs::kStabilityStatsBuildTime,
                          MetricsLog::GetBuildTime());
 
-  session_id_ = local_state_->GetInteger(prefs::kMetricsSessionID);
+  session_id_ = local_state_->GetInteger(metrics::prefs::kMetricsSessionID);
 
   if (!local_state_->GetBoolean(prefs::kStabilityExitedCleanly)) {
-    IncrementPrefValue(prefs::kStabilityCrashCount);
+    IncrementPrefValue(metrics::prefs::kStabilityCrashCount);
     // Reset flag, and wait until we call LogNeedForCleanShutdown() before
     // monitoring.
     local_state_->SetBoolean(prefs::kStabilityExitedCleanly, true);
@@ -654,16 +640,16 @@ void MetricsService::InitializeMetricsState() {
 
   // Update session ID.
   ++session_id_;
-  local_state_->SetInteger(prefs::kMetricsSessionID, session_id_);
+  local_state_->SetInteger(metrics::prefs::kMetricsSessionID, session_id_);
 
   // Stability bookkeeping
-  IncrementPrefValue(prefs::kStabilityLaunchCount);
+  IncrementPrefValue(metrics::prefs::kStabilityLaunchCount);
 
   DCHECK_EQ(UNINITIALIZED_PHASE, execution_phase_);
   SetExecutionPhase(START_METRICS_RECORDING, local_state_);
 
   if (!local_state_->GetBoolean(prefs::kStabilitySessionEndCompleted)) {
-    IncrementPrefValue(prefs::kStabilityIncompleteSessionEndCount);
+    IncrementPrefValue(metrics::prefs::kStabilityIncompleteSessionEndCount);
     // This is marked false when we get a WM_ENDSESSION.
     local_state_->SetBoolean(prefs::kStabilitySessionEndCompleted, true);
   }
@@ -737,19 +723,19 @@ void MetricsService::ReceivedProfilerData(
     int process_type) {
   DCHECK_EQ(INIT_TASK_SCHEDULED, state_);
 
-  // Upon the first callback, create the initial log so that we can immediately
-  // save the profiler data.
-  if (!initial_metrics_log_.get()) {
-    initial_metrics_log_ = CreateLog(MetricsLog::ONGOING_LOG);
-    NotifyOnDidCreateMetricsLog();
-  }
-
-  initial_metrics_log_->RecordProfilerData(process_data, process_type);
+  profiler_metrics_provider_->RecordProfilerData(process_data, process_type);
 }
 
 void MetricsService::FinishedReceivingProfilerData() {
   DCHECK_EQ(INIT_TASK_SCHEDULED, state_);
   state_ = INIT_TASK_DONE;
+
+  // Create the initial log.
+  if (!initial_metrics_log_.get()) {
+    initial_metrics_log_ = CreateLog(MetricsLog::ONGOING_LOG);
+    NotifyOnDidCreateMetricsLog();
+  }
+
   scheduler_->InitTaskComplete();
 }
 
@@ -819,8 +805,7 @@ void MetricsService::SaveLocalState() {
 void MetricsService::OpenNewLog() {
   DCHECK(!log_manager_.current_log());
 
-  log_manager_.BeginLoggingWithLog(
-      CreateLog(MetricsLog::ONGOING_LOG).PassAs<metrics::MetricsLogBase>());
+  log_manager_.BeginLoggingWithLog(CreateLog(MetricsLog::ONGOING_LOG));
   NotifyOnDidCreateMetricsLog();
   if (state_ == INITIALIZED) {
     // We only need to schedule that run once.
@@ -885,7 +870,7 @@ void MetricsService::PushPendingLogsToPersistentStorage() {
   if (log_manager_.has_staged_log()) {
     // We may race here, and send second copy of the log later.
     metrics::PersistedLogs::StoreType store_type;
-    if (current_fetch_.get())
+    if (log_upload_in_progress_)
       store_type = metrics::PersistedLogs::PROVISIONAL_STORE;
     else
       store_type = metrics::PersistedLogs::NORMAL_STORE;
@@ -960,11 +945,11 @@ void MetricsService::StartScheduledUpload() {
 }
 
 void MetricsService::OnFinalLogInfoCollectionDone() {
-  // If somehow there is a fetch in progress, we return and hope things work
-  // out. The scheduler isn't informed since if this happens, the scheduler
+  // If somehow there is a log upload in progress, we return and hope things
+  // work out. The scheduler isn't informed since if this happens, the scheduler
   // will get a response from the upload.
-  DCHECK(!current_fetch_.get());
-  if (current_fetch_.get())
+  DCHECK(!log_upload_in_progress_);
+  if (log_upload_in_progress_)
     return;
 
   // Abort if metrics were turned off during the final info gathering.
@@ -1037,7 +1022,7 @@ void MetricsService::StageNewLog() {
 
 void MetricsService::PrepareInitialStabilityLog() {
   DCHECK_EQ(INITIALIZED, state_);
-  DCHECK_NE(0, local_state_->GetInteger(prefs::kStabilityCrashCount));
+  DCHECK_NE(0, local_state_->GetInteger(metrics::prefs::kStabilityCrashCount));
 
   scoped_ptr<MetricsLog> initial_stability_log(
       CreateLog(MetricsLog::INITIAL_STABILITY_LOG));
@@ -1051,15 +1036,12 @@ void MetricsService::PrepareInitialStabilityLog() {
   log_manager_.LoadPersistedUnsentLogs();
 
   log_manager_.PauseCurrentLog();
-  log_manager_.BeginLoggingWithLog(
-      initial_stability_log.PassAs<metrics::MetricsLogBase>());
+  log_manager_.BeginLoggingWithLog(initial_stability_log.Pass());
 
   // Note: Some stability providers may record stability stats via histograms,
   //       so this call has to be after BeginLoggingWithLog().
-  MetricsLog* current_log =
-      static_cast<MetricsLog*>(log_manager_.current_log());
-  current_log->RecordStabilityMetrics(metrics_providers_.get(),
-                                      base::TimeDelta(), base::TimeDelta());
+  log_manager_.current_log()->RecordStabilityMetrics(
+      metrics_providers_.get(), base::TimeDelta(), base::TimeDelta());
   RecordCurrentStabilityHistograms();
 
   // Note: RecordGeneralMetrics() intentionally not called since this log is for
@@ -1089,8 +1071,7 @@ void MetricsService::PrepareInitialMetricsLog() {
   // Histograms only get written to the current log, so make the new log current
   // before writing them.
   log_manager_.PauseCurrentLog();
-  log_manager_.BeginLoggingWithLog(
-      initial_metrics_log_.PassAs<metrics::MetricsLogBase>());
+  log_manager_.BeginLoggingWithLog(initial_metrics_log_.Pass());
 
   // Note: Some stability providers may record stability stats via histograms,
   //       so this call has to be after BeginLoggingWithLog().
@@ -1111,78 +1092,39 @@ void MetricsService::PrepareInitialMetricsLog() {
 
 void MetricsService::SendStagedLog() {
   DCHECK(log_manager_.has_staged_log());
+  if (!log_manager_.has_staged_log())
+    return;
 
-  PrepareFetchWithStagedLog();
+  DCHECK(!log_upload_in_progress_);
+  log_upload_in_progress_ = true;
 
-  bool upload_created = (current_fetch_.get() != NULL);
-  UMA_HISTOGRAM_BOOLEAN("UMA.UploadCreation", upload_created);
-  if (!upload_created) {
-    // Compression failed, and log discarded :-/.
+  if (!log_uploader_) {
+    log_uploader_ = client_->CreateUploader(
+        kServerUrl, kMimeType,
+        base::Bind(&MetricsService::OnLogUploadComplete,
+                   self_ptr_factory_.GetWeakPtr()));
+  }
+
+  const std::string hash =
+      base::HexEncode(log_manager_.staged_log_hash().data(),
+                      log_manager_.staged_log_hash().size());
+  bool success = log_uploader_->UploadLog(log_manager_.staged_log(), hash);
+  UMA_HISTOGRAM_BOOLEAN("UMA.UploadCreation", success);
+  if (!success) {
     // Skip this upload and hope things work out next time.
     log_manager_.DiscardStagedLog();
     scheduler_->UploadCancelled();
+    log_upload_in_progress_ = false;
     return;
   }
-
-  DCHECK(!waiting_for_asynchronous_reporting_step_);
-  waiting_for_asynchronous_reporting_step_ = true;
-
-  current_fetch_->Start();
 
   HandleIdleSinceLastTransmission(true);
 }
 
-void MetricsService::PrepareFetchWithStagedLog() {
-  DCHECK(log_manager_.has_staged_log());
 
-  // Prepare the protobuf version.
-  DCHECK(!current_fetch_.get());
-  if (log_manager_.has_staged_log()) {
-    current_fetch_.reset(net::URLFetcher::Create(
-        GURL(kServerUrl), net::URLFetcher::POST, this));
-    current_fetch_->SetRequestContext(
-        g_browser_process->system_request_context());
-
-    std::string log_text = log_manager_.staged_log();
-    std::string compressed_log_text;
-    bool compression_successful = chrome::GzipCompress(log_text,
-                                                       &compressed_log_text);
-    DCHECK(compression_successful);
-    if (compression_successful) {
-      current_fetch_->SetUploadData(kMimeType, compressed_log_text);
-      // Tell the server that we're uploading gzipped protobufs.
-      current_fetch_->SetExtraRequestHeaders("content-encoding: gzip");
-      const std::string hash =
-          base::HexEncode(log_manager_.staged_log_hash().data(),
-                          log_manager_.staged_log_hash().size());
-      DCHECK(!hash.empty());
-      current_fetch_->AddExtraRequestHeader("X-Chrome-UMA-Log-SHA1: " + hash);
-      UMA_HISTOGRAM_PERCENTAGE(
-          "UMA.ProtoCompressionRatio",
-          100 * compressed_log_text.size() / log_text.size());
-      UMA_HISTOGRAM_CUSTOM_COUNTS(
-          "UMA.ProtoGzippedKBSaved",
-          (log_text.size() - compressed_log_text.size()) / 1024,
-          1, 2000, 50);
-    }
-
-    // We already drop cookies server-side, but we might as well strip them out
-    // client-side as well.
-    current_fetch_->SetLoadFlags(net::LOAD_DO_NOT_SAVE_COOKIES |
-                                 net::LOAD_DO_NOT_SEND_COOKIES);
-  }
-}
-
-void MetricsService::OnURLFetchComplete(const net::URLFetcher* source) {
-  DCHECK(waiting_for_asynchronous_reporting_step_);
-
-  // We're not allowed to re-use the existing |URLFetcher|s, so free them here.
-  // Note however that |source| is aliased to the fetcher, so we should be
-  // careful not to delete it too early.
-  DCHECK_EQ(current_fetch_.get(), source);
-  scoped_ptr<net::URLFetcher> s(current_fetch_.Pass());
-
-  int response_code = source->GetResponseCode();
+void MetricsService::OnLogUploadComplete(int response_code) {
+  DCHECK(log_upload_in_progress_);
+  log_upload_in_progress_ = false;
 
   // Log a histogram to track response success vs. failure rates.
   UMA_HISTOGRAM_ENUMERATION("UMA.UploadResponseStatus.Protobuf",
@@ -1209,8 +1151,6 @@ void MetricsService::OnURLFetchComplete(const net::URLFetcher* source) {
 
   if (upload_succeeded || discard_log)
     log_manager_.DiscardStagedLog();
-
-  waiting_for_asynchronous_reporting_step_ = false;
 
   if (!log_manager_.has_staged_log()) {
     switch (state_) {
@@ -1356,7 +1296,6 @@ void MetricsService::LogCleanShutdown() {
 
 void MetricsService::LogPluginLoadingError(const base::FilePath& plugin_path) {
 #if defined(ENABLE_PLUGINS)
-  // TODO(asvitkine): Move this out of here.
   plugin_metrics_provider_->LogPluginLoadingError(plugin_path);
 #endif
 }
@@ -1377,7 +1316,6 @@ void MetricsService::RecordBooleanPrefValue(const char* path, bool value) {
 void MetricsService::RecordCurrentState(PrefService* pref) {
   pref->SetInt64(prefs::kStabilityLastTimestampSec, Time::Now().ToTimeT());
 
-#if defined(ENABLE_PLUGINS)
-  plugin_metrics_provider_->RecordPluginChanges();
-#endif
+  for (size_t i = 0; i < metrics_providers_.size(); ++i)
+    metrics_providers_[i]->RecordCurrentState();
 }

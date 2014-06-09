@@ -14,6 +14,7 @@
 #include "sync/api/fake_syncable_service.h"
 #include "sync/api/sync_change.h"
 #include "sync/api/sync_merge_result.h"
+#include "sync/internal_api/public/attachments/fake_attachment_downloader.h"
 #include "sync/internal_api/public/attachments/fake_attachment_store.h"
 #include "sync/internal_api/public/attachments/fake_attachment_uploader.h"
 #include "sync/internal_api/public/base/model_type.h"
@@ -51,6 +52,8 @@ MockAttachmentService::MockAttachmentService()
               base::MessageLoopProxy::current())),
           scoped_ptr<syncer::AttachmentUploader>(
               new syncer::FakeAttachmentUploader),
+          scoped_ptr<syncer::AttachmentDownloader>(
+              new syncer::FakeAttachmentDownloader),
           NULL) {
 }
 
@@ -138,8 +141,7 @@ class SyncGenericChangeProcessorTest : public testing::Test {
   void BuildChildNodes(int n) {
     syncer::WriteTransaction trans(FROM_HERE, user_share());
     syncer::ReadNode root(&trans);
-    ASSERT_EQ(syncer::BaseNode::INIT_OK,
-              root.InitByTagLookup(syncer::ModelTypeToRootTag(kType)));
+    ASSERT_EQ(syncer::BaseNode::INIT_OK, root.InitTypeRoot(kType));
     for (int i = 0; i < n; ++i) {
       syncer::WriteNode node(&trans);
       node.InitUniqueByCreation(kType, root, base::StringPrintf("node%05d", i));

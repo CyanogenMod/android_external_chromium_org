@@ -86,7 +86,6 @@ scoped_refptr<Layer> ParseTreeFromValue(base::Value* val,
   } else {  // Type "Layer" or "unknown"
     new_layer = Layer::Create();
   }
-  new_layer->SetAnchorPoint(gfx::Point());
   new_layer->SetPosition(gfx::PointF(position_x, position_y));
   new_layer->SetBounds(gfx::Size(width, height));
   new_layer->SetIsDrawable(draws_content);
@@ -129,6 +128,10 @@ scoped_refptr<Layer> ParseTreeFromValue(base::Value* val,
   bool scroll_handler;
   if (dict->GetBoolean("ScrollHandler", &scroll_handler))
     new_layer->SetHaveScrollEventHandlers(scroll_handler);
+
+  bool is_3d_sorted;
+  if (dict->GetBoolean("Is3DSorted", &is_3d_sorted))
+    new_layer->SetIs3dSorted(is_3d_sorted);
 
   if (dict->HasKey("TouchRegion")) {
     success &= dict->GetList("TouchRegion", &list);

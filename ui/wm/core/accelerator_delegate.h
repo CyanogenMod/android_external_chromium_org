@@ -16,20 +16,16 @@ class AcceleratorDelegate {
  public:
   virtual ~AcceleratorDelegate() {}
 
-  // TODO(oshima): Move the repeat detection to AcceleratorFilter.
-  virtual void PreProcessAccelerator(const ui::Accelerator& accelerator) = 0;
-
-  // Returns true if the window should be allowed a chance to handle
-  // system keys.
-  virtual bool CanConsumeSystemKeys(const ui::KeyEvent& event) = 0;
-
-  // Returns true if the |accelerator| should be processed.
-  virtual bool ShouldProcessAcceleratorNow(
-      const ui::KeyEvent& key_event,
-      const ui::Accelerator& accelerator) = 0;
+  // Type of keys that triggers accelerators.
+  enum KeyType {
+    KEY_TYPE_SYSTEM,
+    KEY_TYPE_OTHER,
+  };
 
   // Return true if the |accelerator| has been processed.
-  virtual bool ProcessAccelerator(const ui::Accelerator& accelerator) = 0;
+  virtual bool ProcessAccelerator(const ui::KeyEvent& event,
+                                  const ui::Accelerator& accelerator,
+                                  KeyType key_type) = 0;
 };
 
 }  // namespace wm

@@ -35,9 +35,6 @@ namespace input_method {
 
 namespace {
 
-const char nacl_mozc_jp_id[] =
-    "_comp_ime_fpfbhcjppmaeaijcidgiibchfbnhbeljnacl_mozc_jp";
-
 bool Contains(const std::vector<std::string>& container,
               const std::string& value) {
   return std::find(container.begin(), container.end(), value) !=
@@ -51,9 +48,9 @@ bool InputMethodManagerImpl::IsLoginKeyboard(
   return util_.IsLoginKeyboard(layout);
 }
 
-bool InputMethodManagerImpl::MigrateXkbInputMethods(
+bool InputMethodManagerImpl::MigrateInputMethods(
     std::vector<std::string>* input_method_ids) {
-  return util_.MigrateXkbInputMethods(input_method_ids);
+  return util_.MigrateInputMethods(input_method_ids);
 }
 
 InputMethodManagerImpl::InputMethodManagerImpl(
@@ -113,10 +110,8 @@ void InputMethodManagerImpl::SetState(State new_state) {
 
 scoped_ptr<InputMethodDescriptors>
 InputMethodManagerImpl::GetSupportedInputMethods() const {
-  scoped_ptr<InputMethodDescriptors> whitelist_imes =
-      whitelist_.GetSupportedInputMethods();
-  if (!extension_ime_util::UseWrappedExtensionKeyboardLayouts())
-    return whitelist_imes.Pass();
+  if (!IsXkbComponentExtensionAvailable())
+    return whitelist_.GetSupportedInputMethods().Pass();
   return scoped_ptr<InputMethodDescriptors>(new InputMethodDescriptors).Pass();
 }
 
@@ -218,7 +213,7 @@ void InputMethodManagerImpl::EnableLoginLayouts(
       layouts.push_back(candidate);
   }
 
-  MigrateXkbInputMethods(&layouts);
+  MigrateInputMethods(&layouts);
   active_input_method_ids_.swap(layouts);
 
   // Initialize candidate window controller and widgets such as
@@ -229,8 +224,7 @@ void InputMethodManagerImpl::EnableLoginLayouts(
 
   // you can pass empty |initial_layout|.
   ChangeInputMethod(initial_layouts.empty() ? "" :
-      extension_ime_util::GetInputMethodIDByKeyboardLayout(
-          initial_layouts[0]));
+      extension_ime_util::GetInputMethodIDByEngineID(initial_layouts[0]));
 }
 
 // Adds new input method to given list.
@@ -293,7 +287,7 @@ bool InputMethodManagerImpl::ReplaceEnabledInputMethods(
       new_active_input_method_ids_filtered.push_back(input_method_id);
   }
   active_input_method_ids_.swap(new_active_input_method_ids_filtered);
-  MigrateXkbInputMethods(&active_input_method_ids_);
+  MigrateInputMethods(&active_input_method_ids_);
 
   ReconfigureIMFramework();
 
@@ -329,9 +323,7 @@ bool InputMethodManagerImpl::ChangeInputMethodInternal(
   }
 
   if (!component_extension_ime_manager_->IsInitialized() &&
-      (!InputMethodUtil::IsKeyboardLayout(input_method_id_to_switch) ||
-       extension_ime_util::IsKeyboardLayoutExtension(
-           input_method_id_to_switch))) {
+      !InputMethodUtil::IsKeyboardLayout(input_method_id_to_switch)) {
     // We can't change input method before the initialization of
     // component extension ime manager.  ChangeInputMethod will be
     // called with |pending_input_method_| when the initialization is
@@ -386,6 +378,8 @@ bool InputMethodManagerImpl::ChangeInputMethodInternal(
     } else {
       descriptor =
           util_.GetInputMethodDescriptorFromId(input_method_id_to_switch);
+      if (!descriptor)
+        LOG(ERROR) << "Unknown input method id: " << input_method_id_to_switch;
     }
     DCHECK(descriptor);
 
@@ -407,12 +401,31 @@ bool InputMethodManagerImpl::ChangeInputMethodInternal(
   return true;
 }
 
+bool InputMethodManagerImpl::IsXkbComponentExtensionAvailable() const {
+  if (!component_extension_ime_manager_->IsInitialized())
+    return false;
+  InputMethodDescriptors imes =
+      component_extension_ime_manager_->GetAllIMEAsInputMethodDescriptor();
+  for (size_t i = 0; i < imes.size(); ++i) {
+    if (StartsWithASCII(extension_ime_util::MaybeGetLegacyXkbId(
+        imes[i].id()), "xkb:", true))
+      return true;
+  }
+  return false;
+}
+
 void InputMethodManagerImpl::OnComponentExtensionInitialized(
     scoped_ptr<ComponentExtensionIMEManagerDelegate> delegate) {
   DCHECK(thread_checker_.CalledOnValidThread());
   component_extension_ime_manager_->Initialize(delegate.Pass());
-  util_.SetComponentExtensions(
-      component_extension_ime_manager_->GetAllIMEAsInputMethodDescriptor());
+  InputMethodDescriptors imes =
+      component_extension_ime_manager_->GetAllIMEAsInputMethodDescriptor();
+  // In case of XKB extension is not available (e.g. linux_chromeos), don't
+  // reset the input methods in InputMethodUtil, Instead append input methods.
+  if (IsXkbComponentExtensionAvailable())
+    util_.ResetInputMethods(imes);
+  else
+    util_.AppendInputMethods(imes);
 
   LoadNecessaryComponentExtensions();
 
@@ -655,15 +668,19 @@ bool InputMethodManagerImpl::SwitchInputMethod(
   std::vector<std::string> input_method_ids_to_switch;
   switch (accelerator.key_code()) {
     case ui::VKEY_CONVERT:  // Henkan key on JP106 keyboard
-      input_method_ids_to_switch.push_back(nacl_mozc_jp_id);
+      input_method_ids_to_switch.push_back(
+          extension_ime_util::GetInputMethodIDByEngineID("nacl_mozc_jp"));
       break;
     case ui::VKEY_NONCONVERT:  // Muhenkan key on JP106 keyboard
-      input_method_ids_to_switch.push_back("xkb:jp::jpn");
+      input_method_ids_to_switch.push_back(
+          extension_ime_util::GetInputMethodIDByEngineID("xkb:jp::jpn"));
       break;
     case ui::VKEY_DBE_SBCSCHAR:  // ZenkakuHankaku key on JP106 keyboard
     case ui::VKEY_DBE_DBCSCHAR:
-      input_method_ids_to_switch.push_back(nacl_mozc_jp_id);
-      input_method_ids_to_switch.push_back("xkb:jp::jpn");
+      input_method_ids_to_switch.push_back(
+          extension_ime_util::GetInputMethodIDByEngineID("nacl_mozc_jp"));
+      input_method_ids_to_switch.push_back(
+          extension_ime_util::GetInputMethodIDByEngineID("xkb:jp::jpn"));
       break;
     default:
       NOTREACHED();
@@ -673,8 +690,6 @@ bool InputMethodManagerImpl::SwitchInputMethod(
     DVLOG(1) << "Unexpected VKEY: " << accelerator.key_code();
     return false;
   }
-
-  MigrateXkbInputMethods(&input_method_ids_to_switch);
 
   // Obtain the intersection of input_method_ids_to_switch and
   // active_input_method_ids_. The order of IDs in active_input_method_ids_ is

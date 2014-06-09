@@ -374,12 +374,12 @@ bool SyscallSets::IsAllowedProcessStartOrDeath(int sysno) {
 }
 
 // It's difficult to restrict those, but there is attack surface here.
-bool SyscallSets::IsFutex(int sysno) {
+bool SyscallSets::IsAllowedFutex(int sysno) {
   switch (sysno) {
-    case __NR_futex:
     case __NR_get_robust_list:
     case __NR_set_robust_list:
       return true;
+    case __NR_futex:
     default:
       return false;
   }
@@ -546,14 +546,14 @@ bool SyscallSets::IsAllowedGeneralIo(int sysno) {
   }
 }
 
-bool SyscallSets::IsAllowedPrctl(int sysno) {
+bool SyscallSets::IsPrctl(int sysno) {
   switch (sysno) {
-    case __NR_prctl:
-      return true;
-    default:
 #if defined(__x86_64__)
     case __NR_arch_prctl:
 #endif
+    case __NR_prctl:
+      return true;
+    default:
       return false;
   }
 }

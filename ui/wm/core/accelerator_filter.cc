@@ -11,9 +11,6 @@
 namespace wm {
 namespace {
 
-const int kModifierFlagMask =
-    (ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN);
-
 // Returns true if |key_code| is a key usually handled directly by the shell.
 bool IsSystemKey(ui::KeyboardCode key_code) {
 #if defined(OS_CHROMEOS)
@@ -52,34 +49,32 @@ AcceleratorFilter::~AcceleratorFilter() {
 
 void AcceleratorFilter::OnKeyEvent(ui::KeyEvent* event) {
   const ui::EventType type = event->type();
-  if (type != ui::ET_KEY_PRESSED && type != ui::ET_KEY_RELEASED)
-    return;
-  if (event->is_char())
-    return;
-
-  ui::Accelerator accelerator(event->key_code(),
-                              event->flags() & kModifierFlagMask);
-  accelerator.set_type(event->type());
-
-  delegate_->PreProcessAccelerator(accelerator);
-
-  // Handle special hardware keys like brightness and volume. However, some
-  // windows can override this behavior (e.g. Chrome v1 apps by default and
-  // Chrome v2 apps with permission) by setting a window property.
-  if (IsSystemKey(event->key_code()) &&
-      !delegate_->CanConsumeSystemKeys(*event)) {
-    delegate_->ProcessAccelerator(accelerator);
-    // These keys are always consumed regardless of whether they trigger an
-    // accelerator to prevent windows from seeing unexpected key up events.
-    event->StopPropagation();
+  DCHECK(event->target());
+  if ((type != ui::ET_KEY_PRESSED && type != ui::ET_KEY_RELEASED) ||
+      event->is_char() || !event->target()) {
     return;
   }
 
-  if (!delegate_->ShouldProcessAcceleratorNow(*event, accelerator))
-    return;
+  ui::Accelerator accelerator = CreateAcceleratorFromKeyEvent(*event);
 
-  if (delegate_->ProcessAccelerator(accelerator))
+  AcceleratorDelegate::KeyType key_type =
+      IsSystemKey(event->key_code()) ? AcceleratorDelegate::KEY_TYPE_SYSTEM
+                                     : AcceleratorDelegate::KEY_TYPE_OTHER;
+
+  if (delegate_->ProcessAccelerator(*event, accelerator, key_type))
     event->StopPropagation();
+}
+
+ui::Accelerator CreateAcceleratorFromKeyEvent(const ui::KeyEvent& key_event) {
+  const int kModifierFlagMask =
+      (ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN);
+
+  ui::Accelerator accelerator(key_event.key_code(),
+                              key_event.flags() & kModifierFlagMask);
+  if (key_event.type() == ui::ET_KEY_RELEASED)
+    accelerator.set_type(ui::ET_KEY_RELEASED);
+  accelerator.set_is_repeat(key_event.IsRepeat());
+  return accelerator;
 }
 
 }  // namespace wm

@@ -44,13 +44,24 @@ void ArraySerializationHelper<Handle, true>::EncodePointersAndHandles(
 }
 
 // static
-bool ArraySerializationHelper<Handle, true>::DecodePointersAndHandles(
+void ArraySerializationHelper<Handle, true>::DecodePointersAndHandles(
     const ArrayHeader* header,
     ElementType* elements,
-    Message* message) {
+    std::vector<Handle>* handles) {
+  for (uint32_t i = 0; i < header->num_elements; ++i)
+    DecodeHandle(&elements[i], handles);
+}
+
+// static
+bool ArraySerializationHelper<Handle, true>::ValidateElements(
+    const ArrayHeader* header,
+    const ElementType* elements,
+    BoundsChecker* bounds_checker) {
   for (uint32_t i = 0; i < header->num_elements; ++i) {
-    if (!DecodeHandle(&elements[i], message->mutable_handles()))
+    if (!bounds_checker->ClaimHandle(elements[i])) {
+      ReportValidationError(VALIDATION_ERROR_ILLEGAL_HANDLE);
       return false;
+    }
   }
   return true;
 }

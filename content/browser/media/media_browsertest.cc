@@ -217,12 +217,15 @@ IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv422pTheora)) {
 }
 
 IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv444pTheora)) {
-  // TODO(scherkus): Support YUV444 http://crbug.com/104711
-  RunColorFormatTest("yuv424p.ogv", "ERROR");
+  RunColorFormatTest("yuv444p.ogv", "ENDED");
 }
 
 IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv420pVp8)) {
   RunColorFormatTest("yuv420p.webm", "ENDED");
+}
+
+IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv444pVp9)) {
+  RunColorFormatTest("yuv444p.webm", "ENDED");
 }
 
 #if defined(USE_PROPRIETARY_CODECS)
@@ -239,8 +242,7 @@ IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv422pH264)) {
 }
 
 IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv444pH264)) {
-  // TODO(scherkus): Support YUV444 http://crbug.com/104711
-  RunColorFormatTest("yuv444p.mp4", "ERROR");
+  RunColorFormatTest("yuv444p.mp4", "ENDED");
 }
 
 #if defined(OS_CHROMEOS)

@@ -17,12 +17,14 @@
 #include "content/browser/frame_host/navigation_entry_screenshot_manager.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/browser/web_contents/web_contents_view.h"
+#include "content/common/view_messages.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
+#include "content/public/test/test_renderer_host.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
 #include "ui/aura/test/event_generator.h"
@@ -30,6 +32,7 @@
 #include "ui/aura/window_tree_host.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/events/event_processor.h"
+#include "ui/events/event_utils.h"
 
 namespace content {
 
@@ -159,9 +162,6 @@ class WebContentsViewAuraTest : public ContentBrowserTest {
         static_cast<WebContentsImpl*>(shell()->web_contents());
     NavigationController& controller = web_contents->GetController();
     RenderFrameHost* main_frame = web_contents->GetMainFrame();
-    WebContentsViewAura* view_aura = static_cast<WebContentsViewAura*>(
-        web_contents->GetView());
-    view_aura->SetupOverlayWindowForTesting();
 
     EXPECT_FALSE(controller.CanGoBack());
     EXPECT_FALSE(controller.CanGoForward());
@@ -320,7 +320,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
   ui::EventProcessor* dispatcher = content->GetHost()->event_processor();
   gfx::Rect bounds = content->GetBoundsInRootWindow();
 
-  base::TimeDelta timestamp;
+  base::TimeDelta timestamp = ui::EventTimeForNow();
   ui::TouchEvent press(ui::ET_TOUCH_PRESSED,
       gfx::Point(bounds.x() + bounds.width() / 2, bounds.y() + 5),
       0, timestamp);
@@ -609,10 +609,11 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, ContentWindowClose) {
 }
 
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) || (defined(OS_LINUX) && !defined(OS_CHROMEOS))
 // This appears to be flaky in the same was as the other overscroll
 // tests. Enabling for non-Windows platforms.
 // See http://crbug.com/369871.
+// For linux, see http://crbug.com/381294
 #define MAYBE_RepeatedQuickOverscrollGestures DISABLED_RepeatedQuickOverscrollGestures
 #else
 #define MAYBE_RepeatedQuickOverscrollGestures RepeatedQuickOverscrollGestures
@@ -627,9 +628,6 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
       static_cast<WebContentsImpl*>(shell()->web_contents());
   NavigationController& controller = web_contents->GetController();
   RenderFrameHost* main_frame = web_contents->GetMainFrame();
-  WebContentsViewAura* view_aura = static_cast<WebContentsViewAura*>(
-      web_contents->GetView());
-  view_aura->SetupOverlayWindowForTesting();
   ExecuteSyncJSFunction(main_frame, "install_touch_handler()");
 
   // Navigate twice, then navigate back in history once.

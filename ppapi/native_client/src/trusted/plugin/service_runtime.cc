@@ -358,39 +358,6 @@ void PluginReverseInterface::OpenManifestEntry_MainThreadContinuation(
     return;
   }
 
-  if (PnaclUrls::IsPnaclComponent(mapped_url)) {
-    // Special PNaCl support files, that are installed on the
-    // user machine.
-    PP_FileHandle handle = plugin_->nacl_interface()->GetReadonlyPnaclFd(
-        PnaclUrls::PnaclComponentURLToFilename(mapped_url).c_str());
-    int32_t fd = -1;
-    if (handle != PP_kInvalidFileHandle)
-      fd = ConvertFileDescriptor(handle, true);
-
-    if (fd < 0) {
-      // We checked earlier if the pnacl component wasn't installed
-      // yet, so this shouldn't happen. At this point, we can't do much
-      // anymore, so just continue with an invalid fd.
-      NaClLog(4,
-              "OpenManifestEntry_MainThreadContinuation: "
-              "GetReadonlyPnaclFd failed\n");
-    }
-    {
-      nacl::MutexLocker take(&mu_);
-      *p->op_complete_ptr = true;  // done!
-      // TODO(ncbray): enable the fast loading and validation paths for this
-      // type of file.
-      p->file_info->desc = fd;
-      NaClXCondVarBroadcast(&cv_);
-    }
-    NaClLog(4,
-            "OpenManifestEntry_MainThreadContinuation: GetPnaclFd okay\n");
-    p->MaybeRunCallback(PP_OK);
-    return;
-  }
-
-  // Hereafter, normal files.
-
   // Because p is owned by the callback of this invocation, so it is necessary
   // to create another instance.
   OpenManifestEntryResource* open_cont = new OpenManifestEntryResource(*p);
@@ -479,7 +446,8 @@ ServiceRuntime::ServiceRuntime(Plugin* plugin,
       anchor_(new nacl::WeakRefAnchor()),
       rev_interface_(new PluginReverseInterface(anchor_, plugin, this,
                                                 init_done_cb, crash_cb)),
-      start_sel_ldr_done_(false) {
+      start_sel_ldr_done_(false),
+      nexe_started_(false) {
   NaClSrpcChannelInitialize(&command_channel_);
   NaClXMutexCtor(&mu_);
   NaClXCondVarCtor(&cond_);
@@ -607,8 +575,13 @@ bool ServiceRuntime::StartModule() {
   }
 
   NaClLog(4, "ServiceRuntime::StartModule (load_status=%d)\n", load_status);
-  if (main_service_runtime_)
-    plugin_->ReportSelLdrLoadStatus(load_status);
+  if (main_service_runtime_) {
+    if (load_status < 0 || load_status > NACL_ERROR_CODE_MAX)
+      load_status = LOAD_STATUS_UNKNOWN;
+    GetNaClInterface()->ReportSelLdrStatus(plugin_->pp_instance(),
+                                           load_status,
+                                           NACL_ERROR_CODE_MAX);
+  }
 
   if (LOAD_OK != load_status) {
     if (main_service_runtime_) {
@@ -644,13 +617,16 @@ void ServiceRuntime::StartSelLdr(const SelLdrStartParams& params,
 
   ManifestService* manifest_service =
       new ManifestService(anchor_->Ref(), rev_interface_);
+  bool enable_dev_interfaces =
+      GetNaClInterface()->DevInterfacesEnabled(plugin_->pp_instance());
+
   tmp_subprocess->Start(plugin_->pp_instance(),
                         main_service_runtime_,
                         params.url.c_str(),
                         params.uses_irt,
                         params.uses_ppapi,
                         params.uses_nonsfi_mode,
-                        params.enable_dev_interfaces,
+                        enable_dev_interfaces,
                         params.enable_dyncode_syscalls,
                         params.enable_exception_handling,
                         params.enable_crash_throttling,
@@ -692,7 +668,22 @@ void ServiceRuntime::SignalStartSelLdrDone() {
   NaClXCondVarSignal(&cond_);
 }
 
-bool ServiceRuntime::LoadNexeAndStart(PP_NaClFileInfo file_info,
+void ServiceRuntime::WaitForNexeStart() {
+  nacl::MutexLocker take(&mu_);
+  while (!nexe_started_)
+    NaClXCondVarWait(&cond_, &mu_);
+  // Reset nexe_started_ here in case we run again.
+  nexe_started_ = false;
+}
+
+void ServiceRuntime::SignalNexeStarted() {
+  nacl::MutexLocker take(&mu_);
+  nexe_started_ = true;
+  NaClXCondVarSignal(&cond_);
+}
+
+void ServiceRuntime::LoadNexeAndStart(PP_NaClFileInfo file_info,
+                                      const pp::CompletionCallback& started_cb,
                                       const pp::CompletionCallback& crash_cb) {
   NaClLog(4, "ServiceRuntime::LoadNexeAndStart (handle_valid=%d "
              "token_lo=%" NACL_PRIu64 " token_hi=%" NACL_PRIu64 ")\n",
@@ -721,11 +712,12 @@ bool ServiceRuntime::LoadNexeAndStart(PP_NaClFileInfo file_info,
     } else {
       NaClLog(LOG_ERROR, "Reverse service thread will pick up crash log\n");
     }
-    return false;
+    pp::Module::Get()->core()->CallOnMainThread(0, started_cb, PP_ERROR_FAILED);
+    return;
   }
 
   NaClLog(4, "ServiceRuntime::LoadNexeAndStart (return 1)\n");
-  return true;
+  pp::Module::Get()->core()->CallOnMainThread(0, started_cb, PP_OK);
 }
 
 SrpcClient* ServiceRuntime::SetupAppChannel() {

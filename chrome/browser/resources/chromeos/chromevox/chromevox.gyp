@@ -9,34 +9,35 @@
         # Whether to compress the 4 main ChromeVox scripts.  Applicable if
         # use_migrated_chromevox is true.
         'chromevox_compress_js%': '1',
-        'chromevox_third_party_dir': '<(DEPTH)/chrome/third_party/chromevox',
-        'closure_goog_dir': '<(chromevox_third_party_dir)/third_party/closure-library/closure/goog',
-        'chromevox_dest_dir': '<(PRODUCT_DIR)/resources/chromeos/chromevox',
-        'js_root_flags': [
-          '-r', '.',
-          '-r', '<(closure_goog_dir)',
-        ],
-        'path_rewrite_flags': [
-          '-w', '<(closure_goog_dir):closure',
-        ],
         'background_script_loader_file': 'chromevox/background/loader.js',
         'content_script_loader_file': 'chromevox/injected/loader.js',
         'options_script_loader_file': 'chromevox/background/options_loader.js',
         'kbexplorer_loader_file': 'chromevox/background/kbexplorer_loader.js',
-        'template_manifest_path': 'manifest.json.jinja2',
       },
+      'includes': [
+        'chromevox_tests.gypi',
+        'common.gypi',
+      ],
       'targets': [
+        {
+          'target_name': 'chromevox',
+          'type': 'none',
+          'dependencies': [
+            'chromevox_resources',
+            'chromevox_manifest',
+            'chromevox_guest_manifest',
+          ],
+        },
         {
           'target_name': 'chromevox_resources',
           'type': 'none',
           'dependencies': [
             'chromevox_assets',
             'chromevox_static_files',
-            'chromevox_manifest',
-            'chromevox_guest_manifest',
             'chromevox_strings',
             'chromevox_uncompiled_js_files',
             '<(chromevox_third_party_dir)/chromevox.gyp:chromevox_third_party_resources',
+            '../braille_ime/braille_ime.gyp:braille_ime_manifest',
           ],
           'conditions': [
             ['disable_nacl==0 and disable_nacl_untrusted==0', {
@@ -131,9 +132,7 @@
               'action_name': 'chromevox_strings',
               'variables': {
                 'grit_grd_file': 'strings/chromevox_strings.grd',
-                # TODO(plundblad): Change to use PRODUCT_DIR when we have
-                # translations.
-                'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/resources/chromeos/chromevox',
+                'grit_out_dir': '<(chromevox_dest_dir)',
                 # We don't generate any RC files, so no resource_ds file is needed.
                 'grit_resource_ids': '',
               },

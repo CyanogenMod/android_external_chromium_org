@@ -8,6 +8,7 @@
 #include "chrome/browser/signin/fake_profile_oauth2_token_service_builder.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/gcm_driver/fake_gcm_driver.h"
 #include "components/gcm_driver/gcm_driver.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "google_apis/gaia/fake_identity_provider.h"
@@ -19,22 +20,27 @@ namespace {
 
 // Implementation of GCMDriver::Register that always succeeds with the same
 // registrationId.
-class FakeGCMDriver : public gcm::GCMDriver {
+class CustomFakeGCMDriver : public gcm::FakeGCMDriver {
  public:
-  FakeGCMDriver() {}
-  virtual ~FakeGCMDriver() {}
+  CustomFakeGCMDriver() {}
+  virtual ~CustomFakeGCMDriver() {}
 
-  virtual void Register(const std::string& app_id,
-                        const std::vector<std::string>& sender_ids,
-                        const RegisterCallback& callback) OVERRIDE {
+ protected:
+  // FakeGCMDriver override:
+  virtual void RegisterImpl(
+      const std::string& app_id,
+      const std::vector<std::string>& sender_ids) OVERRIDE {
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
-        base::Bind(
-            callback, std::string("registration.id"), gcm::GCMClient::SUCCESS));
+        base::Bind(&CustomFakeGCMDriver::RegisterFinished,
+                   base::Unretained(this),
+                   app_id,
+                   std::string("registration.id"),
+                   gcm::GCMClient::SUCCESS));
   }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(FakeGCMDriver);
+  DISALLOW_COPY_AND_ASSIGN(CustomFakeGCMDriver);
 };
 
 class GCMInvalidationBridgeTest : public ::testing::Test {
@@ -53,7 +59,7 @@ class GCMInvalidationBridgeTest : public ::testing::Test {
         (FakeProfileOAuth2TokenService*)
         ProfileOAuth2TokenServiceFactory::GetForProfile(profile_.get());
     token_service->IssueRefreshTokenForUser("", "fake_refresh_token");
-    gcm_driver_.reset(new FakeGCMDriver());
+    gcm_driver_.reset(new CustomFakeGCMDriver());
 
     identity_provider_.reset(new FakeIdentityProvider(token_service));
     bridge_.reset(new GCMInvalidationBridge(gcm_driver_.get(),

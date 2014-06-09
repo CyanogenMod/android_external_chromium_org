@@ -41,7 +41,7 @@
               ['OS=="win" or OS=="mac" or OS=="ios"', {
                 'host_arch%': 'ia32',
               }, {
-                'host_arch%': '<!(python <(DEPTH)/build/linux/detect_host_arch.py)',
+                'host_arch%': '<!pymod_do_main(detect_host_arch)',
               }],
             ],
           },
@@ -166,6 +166,9 @@
         'sysroot%': '',
         'chroot_cmd%': '',
 
+        # The system libdir used for this ABI.
+        'system_libdir%': 'lib',
+
         'conditions': [
           # Ash needs Aura.
           ['use_aura==0', {
@@ -261,6 +264,7 @@
       'arm_version%': '<(arm_version)',
       'sysroot%': '<(sysroot)',
       'chroot_cmd%': '<(chroot_cmd)',
+      'system_libdir%': '<(system_libdir)',
 
       # Set to 1 to enable fast builds. Set to 2 for even faster builds
       # (it disables debug info for fastest compilation - only for use
@@ -288,8 +292,6 @@
       # Detect NEON support at run-time.
       'arm_neon_optional%': 0,
 
-      # The system libdir used for this ABI.
-      'system_libdir%': 'lib',
 
       # Use libjpeg-turbo as the JPEG codec used by Chromium.
       'use_libjpeg_turbo%': 1,
@@ -362,17 +364,22 @@
       # See https://sites.google.com/a/chromium.org/dev/developers/testing/leaksanitizer
       'lsan%': 0,
 
-      # Enable building with TSAN (Clang's -fsanitize=thread option).
+      # Enable building with TSan (Clang's -fsanitize=thread option).
       # -fsanitize=thread only works with clang, but tsan=1 implies clang=1
       # See http://clang.llvm.org/docs/ThreadSanitizer.html
       'tsan%': 0,
       'tsan_blacklist%': '<(PRODUCT_DIR)/../../tools/valgrind/tsan_v2/ignores.txt',
 
-      # Enable building with MSAN (Clang's -fsanitize=memory option).
+      # Enable building with MSan (Clang's -fsanitize=memory option).
       # MemorySanitizer only works with clang, but msan=1 implies clang=1
       # See http://clang.llvm.org/docs/MemorySanitizer.html
       'msan%': 0,
       'msan_blacklist%': '<(PRODUCT_DIR)/../../tools/msan/blacklist.txt',
+
+      # Enable building with UBSan (Clang's -fsanitize=undefined option).
+      # -fsanitize=undefined only works with clang, but ubsan=1 implies clang=1
+      # See http://clang.llvm.org/docs/UsersManual.html
+      'ubsan%': 0,
 
       # Use the dynamic libraries instrumented by one of the sanitizers
       # instead of the standard system libraries.
@@ -550,6 +557,9 @@
       'spdy_proxy_auth_property%' : '',
       'spdy_proxy_auth_value%' : '',
       'data_reduction_proxy_probe_url%' : '',
+      'data_reduction_proxy_ssl_origin%' : '',
+      'data_reduction_proxy_alt_origin%' : '',
+      'data_reduction_proxy_alt_fallback_origin%' : '',
       'enable_mdns%' : 0,
       'enable_service_discovery%': 0,
       'enable_wifi_bootstrapping%': 0,
@@ -745,7 +755,7 @@
           'chromium_win_pch%': 1
         }],
 
-        ['chromeos==1 or OS=="android" or OS=="ios"', {
+        ['chromeos==1 or OS=="android" or OS=="ios" or desktop_linux==1', {
           'enable_plugin_installation%': 0,
         }, {
           'enable_plugin_installation%': 1,
@@ -972,6 +982,8 @@
       'google_api_key%': '',
       'google_default_client_id%': '',
       'google_default_client_secret%': '',
+      # Native Client is enabled by default.
+      'disable_nacl%': '0',
     },
 
     # Copy conditionally-set variables out one scope.
@@ -1042,6 +1054,7 @@
     'msan_blacklist%': '<(msan_blacklist)',
     'tsan%': '<(tsan)',
     'tsan_blacklist%': '<(tsan_blacklist)',
+    'ubsan%': '<(ubsan)',
     'use_instrumented_libraries%': '<(use_instrumented_libraries)',
     'use_custom_libcxx%': '<(use_custom_libcxx)',
     'clang_type_profiler%': '<(clang_type_profiler)',
@@ -1099,6 +1112,9 @@
     'spdy_proxy_auth_property%': '<(spdy_proxy_auth_property)',
     'spdy_proxy_auth_value%': '<(spdy_proxy_auth_value)',
     'data_reduction_proxy_probe_url%': '<(data_reduction_proxy_probe_url)',
+    'data_reduction_proxy_ssl_origin%' : '<(data_reduction_proxy_ssl_origin)',
+    'data_reduction_proxy_alt_origin%' : '<(data_reduction_proxy_alt_origin)',
+    'data_reduction_proxy_alt_fallback_origin%' : '<(data_reduction_proxy_alt_fallback_origin)',
     'enable_mdns%' : '<(enable_mdns)',
     'enable_service_discovery%' : '<(enable_service_discovery)',
     'enable_wifi_bootstrapping%': '<(enable_wifi_bootstrapping)',
@@ -1333,8 +1349,8 @@
     # Disable Dart by default.
     'enable_dart%': 0,
 
-    # Native Client is enabled by default.
-    'disable_nacl%': 0,
+    # Copy out the setting of disable_nacl.
+    'disable_nacl%': '<(disable_nacl)',
 
     # Portable Native Client is enabled by default.
     'disable_pnacl%': 0,
@@ -1429,7 +1445,7 @@
           # compiler_version works with clang.
           # TODO(glider): set clang to 1 earlier for ASan and TSan builds so
           # that it takes effect here.
-          ['clang==0 and asan==0 and lsan==0 and tsan==0 and msan==0', {
+          ['clang==0 and asan==0 and lsan==0 and tsan==0 and msan==0 and ubsan==0', {
             'binutils_version%': '<!pymod_do_main(compiler_version target assembler)',
           }],
           # On Android we know the binutils version in the toolchain.
@@ -2018,6 +2034,9 @@
         'clang%': 1,
         'use_allocator%': 'none',
       }],
+      ['ubsan==1', {
+        'clang%': 1,
+      }],
       ['asan==1 and OS=="mac"', {
         # TODO(glider): we do not strip ASan binaries until the dynamic ASan
         # runtime is fully adopted. See http://crbug.com/242503.
@@ -2289,11 +2308,6 @@
       # Targets are by default not nacl untrusted code.
       'nacl_untrusted_build%': 0,
 
-      # Enable a new Gamepad interface.
-      # TODO(cdumez): This is temporary and should go away once the chromium
-      # and blink interfaces are in sync, http://crbug.com/344556.
-      'enable_new_gamepad_api%': 1,
-
       'pnacl_compile_flags': [
         # pnacl uses the clang compiler so we need to suppress all the
         # same warnings as we do for clang.
@@ -2462,9 +2476,6 @@
       }],
       ['enable_hidpi==1', {
         'defines': ['ENABLE_HIDPI=1'],
-      }],
-      ['enable_new_gamepad_api==1', {
-        'defines': ['ENABLE_NEW_GAMEPAD_API=1'],
       }],
       ['native_discardable_memory==1', {
         'defines': ['DISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY'],
@@ -2718,6 +2729,18 @@
         'defines': [
           'DATA_REDUCTION_PROXY_PROBE_URL="<(data_reduction_proxy_probe_url)"'],
       }],
+      ['data_reduction_proxy_ssl_origin != ""', {
+        'defines': [
+          'DATA_REDUCTION_PROXY_SSL_ORIGIN="<(data_reduction_proxy_ssl_origin)"'],
+      }],
+      ['data_reduction_proxy_alt_origin != ""', {
+        'defines': [
+          'DATA_REDUCTION_PROXY_ALT_ORIGIN="<(data_reduction_proxy_alt_origin)"'],
+      }],
+      ['data_reduction_proxy_alt_fallback_origin != ""', {
+        'defines': [
+          'DATA_REDUCTION_PROXY_ALT_FALLBACK_ORIGIN="<(data_reduction_proxy_alt_fallback_origin)"'],
+      }],
       ['enable_mdns==1', {
         'defines': ['ENABLE_MDNS=1'],
       }],
@@ -2950,6 +2973,9 @@
         'msvs_configuration_platform': 'x64',
         'msvs_settings': {
           'VCLinkerTool': {
+            # Make sure to understand http://crbug.com/361720 if you want to
+            # increase this.
+            'MinimumRequiredVersion': '5.02',  # Server 2003.
             'TargetMachine': '17', # x86 - 64
             'AdditionalLibraryDirectories!':
               ['<(windows_sdk_path)/Lib/win8/um/x86'],
@@ -3781,7 +3807,7 @@
           }],
           # Common options for AddressSanitizer, LeakSanitizer,
           # ThreadSanitizer and MemorySanitizer.
-          ['asan==1 or lsan==1 or tsan==1 or msan==1', {
+          ['asan==1 or lsan==1 or tsan==1 or msan==1 or ubsan==1', {
             'target_conditions': [
               ['_toolset=="target"', {
                 'cflags': [
@@ -3791,6 +3817,12 @@
                 'cflags!': [
                   '-fomit-frame-pointer',
                 ],
+              }],
+            ],
+          }],
+          ['asan==1 or lsan==1 or tsan==1 or msan==1', {
+            'target_conditions': [
+              ['_toolset=="target"', {
                 'ldflags!': [
                   # Functions interposed by the sanitizers can make ld think
                   # that some libraries aren't needed when they actually are,
@@ -3827,6 +3859,23 @@
               ['OS=="mac"', {
                 'cflags': [
                   '-mllvm -asan-globals=0',  # http://crbug.com/352073
+                ],
+              }],
+            ],
+          }],
+          ['ubsan==1', {
+            'target_conditions': [
+              ['_toolset=="target"', {
+                'cflags': [
+                  '-fsanitize=undefined',
+                  # -fsanitize=vptr is incompatible with -fno-rtti.
+                  '-fno-sanitize=vptr',
+                  '-w',  # http://crbug.com/162783
+                ],
+                'ldflags': [
+                  '-fsanitize=undefined',
+                  # -fsanitize=vptr is incompatible with -fno-rtti.
+                  '-fno-sanitize=vptr',
                 ],
               }],
             ],

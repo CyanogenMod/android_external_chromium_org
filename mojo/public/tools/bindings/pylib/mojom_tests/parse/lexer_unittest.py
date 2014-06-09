@@ -77,6 +77,14 @@ class LexerTest(unittest.TestCase):
                       _MakeLexTokenForKeyword("interface"))
     self.assertEquals(self._SingleTokenForInput("enum"),
                       _MakeLexTokenForKeyword("enum"))
+    self.assertEquals(self._SingleTokenForInput("const"),
+                      _MakeLexTokenForKeyword("const"))
+    self.assertEquals(self._SingleTokenForInput("true"),
+                      _MakeLexTokenForKeyword("true"))
+    self.assertEquals(self._SingleTokenForInput("false"),
+                      _MakeLexTokenForKeyword("false"))
+    self.assertEquals(self._SingleTokenForInput("default"),
+                      _MakeLexTokenForKeyword("default"))
 
   def testValidIdentifiers(self):
     """Tests identifiers."""
@@ -127,22 +135,6 @@ class LexerTest(unittest.TestCase):
                       _MakeLexToken("PLUS", "+"))
     self.assertEquals(self._SingleTokenForInput("-"),
                       _MakeLexToken("MINUS", "-"))
-    self.assertEquals(self._SingleTokenForInput("*"),
-                      _MakeLexToken("TIMES", "*"))
-    self.assertEquals(self._SingleTokenForInput("/"),
-                      _MakeLexToken("DIVIDE", "/"))
-    self.assertEquals(self._SingleTokenForInput("%"),
-                      _MakeLexToken("MOD", "%"))
-    self.assertEquals(self._SingleTokenForInput("|"),
-                      _MakeLexToken("OR", "|"))
-    self.assertEquals(self._SingleTokenForInput("~"),
-                      _MakeLexToken("NOT", "~"))
-    self.assertEquals(self._SingleTokenForInput("^"),
-                      _MakeLexToken("XOR", "^"))
-    self.assertEquals(self._SingleTokenForInput("<<"),
-                      _MakeLexToken("LSHIFT", "<<"))
-    self.assertEquals(self._SingleTokenForInput(">>"),
-                      _MakeLexToken("RSHIFT", ">>"))
     self.assertEquals(self._SingleTokenForInput("&"),
                       _MakeLexToken("AMP", "&"))
     self.assertEquals(self._SingleTokenForInput("="),

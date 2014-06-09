@@ -83,6 +83,7 @@ void Preferences::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterBooleanPref(prefs::kOwnerPrimaryMouseButtonRight, false);
   registry->RegisterBooleanPref(prefs::kOwnerTapToClickEnabled, true);
   registry->RegisterBooleanPref(prefs::kVirtualKeyboardEnabled, false);
+  registry->RegisterStringPref(prefs::kLogoutStartedLast, std::string());
 }
 
 // static
@@ -584,10 +585,8 @@ void Preferences::SetLanguageConfigStringListAsCSV(const char* section,
   if (!value.empty())
     base::SplitString(value, ',', &split_values);
 
-  // TODO(shuchen): migration of the xkb id to extension-xkb id.
-  // Remove this function after few milestones are passed.
-  // See: http://crbug.com/345604
-  if (input_method_manager_->MigrateXkbInputMethods(&split_values))
+  // Transfers the xkb id to extension-xkb id.
+  if (input_method_manager_->MigrateInputMethods(&split_values))
     preload_engines_.SetValue(JoinString(split_values, ','));
 
   if (section == std::string(language_prefs::kGeneralSectionName) &&

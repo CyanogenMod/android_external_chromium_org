@@ -60,26 +60,6 @@ def IsMoveOnlyKind(kind):
 def StudlyCapsToCamel(studly):
   return studly[0].lower() + studly[1:]
 
-def VerifyTokenType(token, expected):
-  """Used to check that arrays and objects are used correctly as default
-  values. Arrays are tokens that look like ('ARRAY', element0, element1...).
-  See mojom_parser.py for their representation.
-  """
-  if not isinstance(token, tuple):
-    raise Exception("Expected token type '%s'. Invalid token '%s'." %
-        (expected, token))
-  if token[0] != expected:
-    raise Exception("Expected token type '%s'. Got '%s'." %
-        (expected, token[0]))
-
-def ExpressionMapper(expression, mapper):
-  if isinstance(expression, tuple) and expression[0] == 'EXPRESSION':
-    result = []
-    for each in expression[1]:
-      result.extend(ExpressionMapper(each, mapper))
-    return result
-  return [mapper(expression)]
-
 class Generator(object):
   # Pass |output_dir| to emit files to disk. Omit |output_dir| to echo all
   # files to stdout.

@@ -544,19 +544,16 @@ class AndroidCommands(object):
       raise errors.MsgException('Remount failed: %s' % out)
 
   def RestartAdbdOnDevice(self):
-    logging.info('Killing adbd on the device...')
-    adb_pids = self.ExtractPid('adbd')
-    if not adb_pids:
-      raise errors.MsgException('Unable to obtain adbd pid')
-    try:
-      self.KillAll('adbd', signum=signal.SIGTERM, with_su=True)
-      logging.info('Waiting for device to settle...')
+    logging.info('Restarting adbd on the device...')
+    with DeviceTempFile(self, suffix=".sh") as temp_script_file:
+      host_script_path = os.path.join(constants.DIR_SOURCE_ROOT,
+                                      'build',
+                                      'android',
+                                      'pylib',
+                                      'restart_adbd.sh')
+      self._adb.Push(host_script_path, temp_script_file.name)
+      self.RunShellCommand('. %s' % temp_script_file.name)
       self._adb.SendCommand('wait-for-device')
-      new_adb_pids = self.ExtractPid('adbd')
-      if new_adb_pids == adb_pids:
-        logging.warning('adbd on the device may not have been restarted.')
-    except Exception as e:
-      logging.error('Exception when trying to kill adbd on the device [%s]', e)
 
   def RestartAdbServer(self):
     """Restart the adb server."""
@@ -985,8 +982,12 @@ class AndroidCommands(object):
     md5sum_dist_path = os.path.join(constants.GetOutDirectory(),
                                     'md5sum_dist')
     assert os.path.exists(md5sum_dist_path), 'Please build md5sum.'
-    command = 'push %s %s' % (md5sum_dist_path, MD5SUM_DEVICE_FOLDER)
-    assert _HasAdbPushSucceeded(self._adb.SendCommand(command))
+    md5sum_dist_mtime = os.stat(md5sum_dist_path).st_mtime
+    if (md5sum_dist_path not in self._push_if_needed_cache or
+        self._push_if_needed_cache[md5sum_dist_path] != md5sum_dist_mtime):
+      command = 'push %s %s' % (md5sum_dist_path, MD5SUM_DEVICE_FOLDER)
+      assert _HasAdbPushSucceeded(self._adb.SendCommand(command))
+      self._push_if_needed_cache[md5sum_dist_path] = md5sum_dist_mtime
 
     (_, md5_device_output) = self.GetAndroidToolStatusAndOutput(
         self._util_wrapper + ' ' + MD5SUM_DEVICE_PATH + ' ' + device_path,

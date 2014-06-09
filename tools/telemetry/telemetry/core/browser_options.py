@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -204,6 +204,11 @@ class BrowserOptions(object):
 
     self.platform = None
 
+    # Whether to use the new code path for choosing an ephemeral port for
+    # DevTools. The bots set this to true. When Chrome 37 reaches stable,
+    # remove this setting and the old code path. http://crbug.com/379980
+    self.use_devtools_active_port = False
+
   def __repr__(self):
     return str(sorted(self.__dict__.items()))
 
@@ -244,6 +249,11 @@ class BrowserOptions(object):
     group.add_option('--show-stdout',
         action='store_true',
         help='When possible, will display the stdout of the process')
+    # This hidden option is to be removed, and the older code path deleted,
+    # once Chrome 37 reaches Stable. http://crbug.com/379980
+    group.add_option('--use-devtools-active-port',
+        action='store_true',
+        help=optparse.SUPPRESS_HELP)
     parser.add_option_group(group)
 
     group = optparse.OptionGroup(parser, 'Compatibility options')
@@ -274,6 +284,7 @@ class BrowserOptions(object):
         'profile_type',
         'show_stdout',
         'synthetic_gesture_source_type',
+        'use_devtools_active_port',
         ]
     for o in browser_options_list:
       a = getattr(finder_options, o, None)
@@ -297,12 +308,17 @@ class BrowserOptions(object):
       self.dont_override_profile = True
 
     if self.profile_dir and self.profile_type != 'clean':
-      raise Exception("It's illegal to specify both --profile-type and"
-          " --profile-dir.")
+      logging.critical(
+          "It's illegal to specify both --profile-type and --profile-dir.\n"
+          "For more information see: http://goo.gl/ngdGD5")
+      sys.exit(1)
 
     if self.profile_dir and not os.path.isdir(self.profile_dir):
-      raise Exception("Directory specified by --profile-dir (%s) doesn't"
-          " exist or isn't a directory." % (self.profile_dir))
+      logging.critical(
+          "Directory specified by --profile-dir (%s) doesn't exist "
+          "or isn't a directory.\n"
+          "For more information see: http://goo.gl/ngdGD5" % self.profile_dir)
+      sys.exit(1)
 
     if not self.profile_dir:
       self.profile_dir = profile_types.GetProfileDir(self.profile_type)

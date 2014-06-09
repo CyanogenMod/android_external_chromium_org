@@ -14,6 +14,7 @@
 #include "chrome/browser/chromeos/drive/file_errors.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/resource_entry_conversion.h"
+#include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/drive/drive_service_interface.h"
 #include "content/public/browser/browser_thread.h"
 #include "google_apis/drive/drive_api_parser.h"
@@ -254,23 +255,23 @@ void FakeFileSystem::GetFileContentAfterGetResourceEntry(
     return;
   }
 
-  // Fetch google_apis::ResourceEntry for its |download_url|.
-  drive_service_->GetResourceEntry(
+  // Fetch google_apis::FileResource for its |download_url|.
+  drive_service_->GetFileResource(
       entry->resource_id(),
       base::Bind(
-          &FakeFileSystem::GetFileContentAfterGetWapiResourceEntry,
+          &FakeFileSystem::GetFileContentAfterGetFileResource,
           weak_ptr_factory_.GetWeakPtr(),
           initialized_callback,
           get_content_callback,
           completion_callback));
 }
 
-void FakeFileSystem::GetFileContentAfterGetWapiResourceEntry(
+void FakeFileSystem::GetFileContentAfterGetFileResource(
     const GetFileContentInitializedCallback& initialized_callback,
     const google_apis::GetContentCallback& get_content_callback,
     const FileOperationCallback& completion_callback,
     google_apis::GDataErrorCode gdata_error,
-    scoped_ptr<google_apis::ResourceEntry> gdata_entry) {
+    scoped_ptr<google_apis::FileResource> gdata_entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   FileError error = GDataToFileError(gdata_error);
@@ -282,8 +283,9 @@ void FakeFileSystem::GetFileContentAfterGetWapiResourceEntry(
 
   scoped_ptr<ResourceEntry> entry(new ResourceEntry);
   std::string parent_resource_id;
-  bool converted =
-      ConvertToResourceEntry(*gdata_entry, entry.get(), &parent_resource_id);
+  bool converted = ConvertToResourceEntry(
+      *util::ConvertFileResourceToResourceEntry(*gdata_entry),
+      entry.get(), &parent_resource_id);
   DCHECK(converted);
   entry->set_parent_local_id(parent_resource_id);
 
@@ -299,7 +301,7 @@ void FakeFileSystem::GetFileContentAfterGetWapiResourceEntry(
   initialized_callback.Run(FILE_ERROR_OK, base::FilePath(), entry.Pass());
   drive_service_->DownloadFile(
       cache_path,
-      gdata_entry->resource_id(),
+      gdata_entry->file_id(),
       base::Bind(&FakeFileSystem::GetFileContentAfterDownloadFile,
                  weak_ptr_factory_.GetWeakPtr(),
                  completion_callback),
@@ -349,18 +351,18 @@ void FakeFileSystem::GetResourceEntryAfterGetParentEntryInfo(
   }
 
   DCHECK(parent_entry);
-  drive_service_->GetResourceListInDirectory(
+  drive_service_->GetFileListInDirectory(
       parent_entry->resource_id(),
       base::Bind(
-          &FakeFileSystem::GetResourceEntryAfterGetResourceList,
+          &FakeFileSystem::GetResourceEntryAfterGetFileList,
           weak_ptr_factory_.GetWeakPtr(), base_name, callback));
 }
 
-void FakeFileSystem::GetResourceEntryAfterGetResourceList(
+void FakeFileSystem::GetResourceEntryAfterGetFileList(
     const base::FilePath& base_name,
     const GetResourceEntryCallback& callback,
     google_apis::GDataErrorCode gdata_error,
-    scoped_ptr<google_apis::ResourceList> resource_list) {
+    scoped_ptr<google_apis::FileList> file_list) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   FileError error = GDataToFileError(gdata_error);
@@ -369,14 +371,14 @@ void FakeFileSystem::GetResourceEntryAfterGetResourceList(
     return;
   }
 
-  DCHECK(resource_list);
-  const ScopedVector<google_apis::ResourceEntry>& entries =
-      resource_list->entries();
+  DCHECK(file_list);
+  const ScopedVector<google_apis::FileResource>& entries = file_list->items();
   for (size_t i = 0; i < entries.size(); ++i) {
     scoped_ptr<ResourceEntry> entry(new ResourceEntry);
     std::string parent_resource_id;
-    bool converted =
-        ConvertToResourceEntry(*entries[i], entry.get(), &parent_resource_id);
+    bool converted = ConvertToResourceEntry(
+        *util::ConvertFileResourceToResourceEntry(*entries[i]), entry.get(),
+        &parent_resource_id);
     DCHECK(converted);
     entry->set_parent_local_id(parent_resource_id);
 

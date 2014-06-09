@@ -40,6 +40,7 @@
 #include "net/quic/quic_received_packet_manager.h"
 #include "net/quic/quic_sent_entropy_manager.h"
 #include "net/quic/quic_sent_packet_manager.h"
+#include "net/quic/quic_types.h"
 
 namespace net {
 
@@ -111,10 +112,11 @@ class NET_EXPORT_PRIVATE QuicConnectionVisitorInterface {
 // Interface which gets callbacks from the QuicConnection at interesting
 // points.  Implementations must not mutate the state of the connection
 // as a result of these callbacks.
-class NET_EXPORT_PRIVATE QuicConnectionDebugVisitorInterface
-    : public QuicPacketGenerator::DebugDelegateInterface {
+class NET_EXPORT_PRIVATE QuicConnectionDebugVisitor
+    : public QuicPacketGenerator::DebugDelegate,
+      public QuicSentPacketManager::DebugDelegate {
  public:
-  virtual ~QuicConnectionDebugVisitorInterface() {}
+  virtual ~QuicConnectionDebugVisitor() {}
 
   // Called when a packet has been sent.
   virtual void OnPacketSent(QuicPacketSequenceNumber sequence_number,
@@ -344,17 +346,22 @@ class NET_EXPORT_PRIVATE QuicConnection
   void set_visitor(QuicConnectionVisitorInterface* visitor) {
     visitor_ = visitor;
   }
-  void set_debug_visitor(QuicConnectionDebugVisitorInterface* debug_visitor) {
+  void set_debug_visitor(QuicConnectionDebugVisitor* debug_visitor) {
     debug_visitor_ = debug_visitor;
     packet_generator_.set_debug_delegate(debug_visitor);
+    sent_packet_manager_.set_debug_delegate(debug_visitor);
   }
   const IPEndPoint& self_address() const { return self_address_; }
   const IPEndPoint& peer_address() const { return peer_address_; }
   QuicConnectionId connection_id() const { return connection_id_; }
   const QuicClock* clock() const { return clock_; }
   QuicRandom* random_generator() const { return random_generator_; }
-
-  QuicPacketCreator::Options* options() { return packet_creator_.options(); }
+  size_t max_packet_length() const {
+    return packet_creator_.max_packet_length();
+  }
+  void set_max_packet_length(size_t length) {
+    return packet_creator_.set_max_packet_length(length);
+  }
 
   bool connected() const { return connected_; }
 
@@ -455,8 +462,7 @@ class NET_EXPORT_PRIVATE QuicConnection
     return sent_packet_manager_;
   }
 
-  bool CanWrite(TransmissionType transmission_type,
-                HasRetransmittableData retransmittable);
+  bool CanWrite(HasRetransmittableData retransmittable);
 
   // Stores current batch state for connection, puts the connection
   // into batch mode, and destruction restores the stored batch state.
@@ -695,7 +701,7 @@ class NET_EXPORT_PRIVATE QuicConnection
   scoped_ptr<QuicAlarm> ping_alarm_;
 
   QuicConnectionVisitorInterface* visitor_;
-  QuicConnectionDebugVisitorInterface* debug_visitor_;
+  QuicConnectionDebugVisitor* debug_visitor_;
   QuicPacketCreator packet_creator_;
   QuicPacketGenerator packet_generator_;
 

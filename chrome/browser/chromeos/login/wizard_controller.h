@@ -30,7 +30,7 @@ class DictionaryValue;
 
 namespace chromeos {
 
-class AutoEnrollmentCheckStep;
+class AutoEnrollmentCheckScreen;
 class EnrollmentScreen;
 class ErrorScreen;
 class EulaScreen;
@@ -112,6 +112,9 @@ class WizardController : public ScreenObserver {
   // Called right after the browser session has started.
   void OnSessionStart();
 
+  // Skip update, go straight to enrollment after EULA is accepted.
+  void SkipUpdateEnrollAfterEula();
+
   // TODO(antrim) : temporary hack. Should be removed once screen system is
   // reworked at hackaton.
   void EnableUserImageScreenReturnToPreviousHack();
@@ -127,6 +130,7 @@ class WizardController : public ScreenObserver {
   KioskEnableScreen* GetKioskEnableScreen();
   TermsOfServiceScreen* GetTermsOfServiceScreen();
   WrongHWIDScreen* GetWrongHWIDScreen();
+  AutoEnrollmentCheckScreen* GetAutoEnrollmentCheckScreen();
   HIDDetectionScreen* GetHIDDetectionScreen();
   LocallyManagedUserCreationScreen* GetLocallyManagedUserCreationScreen();
 
@@ -150,6 +154,7 @@ class WizardController : public ScreenObserver {
   static const char kKioskAutolaunchScreenName[];
   static const char kErrorScreenName[];
   static const char kTermsOfServiceScreenName[];
+  static const char kAutoEnrollmentCheckScreenName[];
   static const char kWrongHWIDScreenName[];
   static const char kLocallyManagedUserCreationScreenName[];
   static const char kAppLaunchSplashScreenName[];
@@ -170,6 +175,7 @@ class WizardController : public ScreenObserver {
   void ShowKioskEnableScreen();
   void ShowTermsOfServiceScreen();
   void ShowWrongHWIDScreen();
+  void ShowAutoEnrollmentCheckScreen();
   void ShowLocallyManagedUserCreationScreen();
   void ShowHIDDetectionScreen();
 
@@ -257,10 +263,6 @@ class WizardController : public ScreenObserver {
   // Called when LocalState is initialized.
   void OnLocalStateInitialized(bool /* succeeded */);
 
-  // Kicks off the auto-enrollment check step. Once it finishes, it'll call
-  // back via ScreenObserver::OnExit().
-  void StartAutoEnrollmentCheck();
-
   // Returns local state.
   PrefService* GetLocalState();
 
@@ -307,6 +309,7 @@ class WizardController : public ScreenObserver {
   scoped_ptr<ErrorScreen> error_screen_;
   scoped_ptr<TermsOfServiceScreen> terms_of_service_screen_;
   scoped_ptr<WrongHWIDScreen> wrong_hwid_screen_;
+  scoped_ptr<AutoEnrollmentCheckScreen> auto_enrollment_check_screen_;
   scoped_ptr<LocallyManagedUserCreationScreen>
       locally_managed_user_creation_screen_;
   scoped_ptr<HIDDetectionScreen> hid_detection_screen_;
@@ -335,9 +338,6 @@ class WizardController : public ScreenObserver {
   // Default WizardController.
   static WizardController* default_controller_;
 
-  // The auto-enrollment check step, currently active.
-  scoped_ptr<AutoEnrollmentCheckStep> auto_enrollment_check_step_;
-
   // Parameters for the first screen. May be NULL.
   scoped_ptr<base::DictionaryValue> screen_parameters_;
 
@@ -348,6 +348,10 @@ class WizardController : public ScreenObserver {
   // State of Usage stat/error reporting checkbox on EULA screen
   // during wizard lifetime.
   bool usage_statistics_reporting_;
+
+  // If true then update check is cancelled and enrollment is started after
+  // EULA is accepted.
+  bool skip_update_enroll_after_eula_;
 
   // Time when the EULA was accepted. Used to measure the duration from the EULA
   // acceptance until the Sign-In screen is displayed.

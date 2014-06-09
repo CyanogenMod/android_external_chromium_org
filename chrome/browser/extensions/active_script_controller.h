@@ -70,6 +70,7 @@ class ActiveScriptController : public LocationBarController::ActionProvider,
   virtual LocationBarController::Action OnClicked(
       const Extension* extension) OVERRIDE;
   virtual void OnNavigated() OVERRIDE;
+  virtual void OnExtensionUnloaded(const Extension* extension) OVERRIDE;
 
  private:
   // A single pending request. This could be a pair, but we'd have way too many

@@ -161,7 +161,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkPtrRecorder.cpp \
 	third_party/skia/src/core/SkQuadClipper.cpp \
 	third_party/skia/src/core/SkQuadTree.cpp \
-	third_party/skia/src/core/SkQuadTreePicture.cpp \
 	third_party/skia/src/core/SkRasterClip.cpp \
 	third_party/skia/src/core/SkRasterizer.cpp \
 	third_party/skia/src/core/SkReadBuffer.cpp \
@@ -171,7 +170,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkRegion_path.cpp \
 	third_party/skia/src/core/SkRRect.cpp \
 	third_party/skia/src/core/SkRTree.cpp \
-	third_party/skia/src/core/SkRTreePicture.cpp \
 	third_party/skia/src/core/SkScaledImageCache.cpp \
 	third_party/skia/src/core/SkScalar.cpp \
 	third_party/skia/src/core/SkScalerContext.cpp \
@@ -190,7 +188,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkStrokeRec.cpp \
 	third_party/skia/src/core/SkStrokerPriv.cpp \
 	third_party/skia/src/core/SkTileGrid.cpp \
-	third_party/skia/src/core/SkTileGridPicture.cpp \
 	third_party/skia/src/core/SkTLS.cpp \
 	third_party/skia/src/core/SkTSearch.cpp \
 	third_party/skia/src/core/SkTypeface.cpp \
@@ -198,6 +195,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkUnPreMultiply.cpp \
 	third_party/skia/src/core/SkUtils.cpp \
 	third_party/skia/src/core/SkValidatingReadBuffer.cpp \
+	third_party/skia/src/core/SkVertState.cpp \
 	third_party/skia/src/core/SkWriteBuffer.cpp \
 	third_party/skia/src/core/SkWriter32.cpp \
 	third_party/skia/src/core/SkXfermode.cpp \
@@ -462,7 +460,6 @@ MY_DEFS_Debug := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
@@ -482,11 +479,11 @@ MY_DEFS_Debug := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_ASIMAGEINFO' \
+	'-DSK_SUPPORT_LEGACY_SETCONFIG_INFO' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_IGNORE_CORRECT_HIGH_QUALITY_IMAGE_SCALE' \
+	'-DSK_IGNORE_ETC1_SUPPORT' \
 	'-DSK_SUPPORT_LEGACY_INSTALLPIXELSPARAMS' \
-	'-DSK_SUPPORT_LEGACY_IMAGEGENERATORAPI' \
+	'-DSK_SUPPORT_LEGACY_DRAWPICTURE_API' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
@@ -498,7 +495,6 @@ MY_DEFS_Debug := \
 	'-DSK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS' \
 	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(1*1024*1024)' \
 	'-DSK_USE_DISCARDABLE_SCALEDIMAGECACHE' \
-	'-DSK_IGNORE_DWRITE_BITMAP_FIX' \
 	'-DSK_FONTHOST_DOES_NOT_USE_FONTMGR' \
 	'-DSK_GAMMA_APPLY_TO_A8' \
 	'-DSK_GAMMA_EXPONENT=1.4' \
@@ -610,7 +606,6 @@ MY_DEFS_Release := \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_NEW_GAMEPAD_API=1' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
@@ -630,11 +625,11 @@ MY_DEFS_Release := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_ASIMAGEINFO' \
+	'-DSK_SUPPORT_LEGACY_SETCONFIG_INFO' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_IGNORE_CORRECT_HIGH_QUALITY_IMAGE_SCALE' \
+	'-DSK_IGNORE_ETC1_SUPPORT' \
 	'-DSK_SUPPORT_LEGACY_INSTALLPIXELSPARAMS' \
-	'-DSK_SUPPORT_LEGACY_IMAGEGENERATORAPI' \
+	'-DSK_SUPPORT_LEGACY_DRAWPICTURE_API' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
@@ -646,7 +641,6 @@ MY_DEFS_Release := \
 	'-DSK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS' \
 	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(1*1024*1024)' \
 	'-DSK_USE_DISCARDABLE_SCALEDIMAGECACHE' \
-	'-DSK_IGNORE_DWRITE_BITMAP_FIX' \
 	'-DSK_FONTHOST_DOES_NOT_USE_FONTMGR' \
 	'-DSK_GAMMA_APPLY_TO_A8' \
 	'-DSK_GAMMA_EXPONENT=1.4' \

@@ -287,12 +287,12 @@ TEST_F('OptionsWebUITest', 'emptySelectedIndexesDoesntCrash', function() {
   setTimeout(testDone);
 });
 
-// Flaky on win. See http://crbug.com/315250
-GEN('#if defined(OS_WIN)');
+// Flaky on win and Linux. See http://crbug.com/315250
+GEN('#if defined(OS_WIN) || defined(OS_LINUX)');
 GEN('#define MAYBE_OverlayShowDoesntShift DISABLED_OverlayShowDoesntShift');
 GEN('#else');
 GEN('#define MAYBE_OverlayShowDoesntShift OverlayShowDoesntShift');
-GEN('#endif  // defined(OS_WIN)');
+GEN('#endif  // defined(OS_WIN) || defined(OS_LINUX)');
 
 // An overlay's position should remain the same as it shows.
 TEST_F('OptionsWebUITest', 'MAYBE_OverlayShowDoesntShift', function() {
@@ -634,6 +634,21 @@ TEST_F('OptionsWebUIExtendedTest', 'CloseOverlay', function() {
           testDone);
     });
   });
+});
+
+// Test that closing an overlay that did not push history when opening does not
+// again push history.
+TEST_F('OptionsWebUIExtendedTest', 'CloseOverlayNoHistory', function() {
+  // Open the do not track confirmation prompt.
+  OptionsPage.showPageByName('doNotTrackConfirm', false);
+
+  // Opening the prompt does not add to the history.
+  this.verifyHistory_([''], function() {
+    // Close the overlay.
+    OptionsPage.closeOverlay();
+    // Still no history changes.
+    this.verifyHistory_([''], testDone);
+  }.bind(this));
 });
 
 // Make sure an overlay isn't closed (even temporarily) when another overlay is

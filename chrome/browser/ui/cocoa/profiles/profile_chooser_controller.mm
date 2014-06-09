@@ -22,6 +22,7 @@
 #include "chrome/browser/profiles/profile_window.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/signin_header_helper.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/ui/browser.h"
@@ -110,11 +111,8 @@ void SetWindowSize(NSWindow* window, NSSize size) {
 }
 
 NSString* ElideEmail(const std::string& email, CGFloat width) {
-  base::string16 elidedEmail = gfx::ElideEmail(
-      base::UTF8ToUTF16(email),
-      ui::ResourceBundle::GetSharedInstance().GetFontList(
-          ui::ResourceBundle::BaseFont),
-      width);
+  const base::string16 elidedEmail = gfx::ElideText(
+      base::UTF8ToUTF16(email), gfx::FontList(), width, gfx::ELIDE_EMAIL);
   return base::SysUTF16ToNSString(elidedEmail);
 }
 
@@ -363,12 +361,14 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   base::scoped_nsobject<TransparentBackgroundButton> changePhotoButton_;
   // Used to display the "Change" button on hover.
   ui::ScopedCrTrackingArea trackingArea_;
+  ProfileChooserController* controller_;
 }
 
 - (id)initWithFrame:(NSRect)frameRect
          avatarMenu:(AvatarMenu*)avatarMenu
         profileIcon:(const gfx::Image&)profileIcon
-     editingAllowed:(BOOL)editingAllowed;
+     editingAllowed:(BOOL)editingAllowed
+     withController:(ProfileChooserController*)controller;
 
 // Called when the "Change" button is clicked.
 - (void)editPhoto:(id)sender;
@@ -389,9 +389,11 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 - (id)initWithFrame:(NSRect)frameRect
          avatarMenu:(AvatarMenu*)avatarMenu
         profileIcon:(const gfx::Image&)profileIcon
-     editingAllowed:(BOOL)editingAllowed {
+     editingAllowed:(BOOL)editingAllowed
+     withController:(ProfileChooserController*)controller {
   if ((self = [super initWithFrame:frameRect])) {
     avatarMenu_ = avatarMenu;
+    controller_ = controller;
     [self setImage:CreateProfileImage(
         profileIcon, kLargeImageSide).ToNSImage()];
 
@@ -430,6 +432,8 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 
 - (void)editPhoto:(id)sender {
   avatarMenu_->EditProfile(avatarMenu_->GetActiveProfileIndex());
+  [controller_
+      postActionPerformed:ProfileMetrics::PROFILE_DESKTOP_MENU_EDIT_IMAGE];
 }
 
 - (void)mouseEntered:(NSEvent*)event {
@@ -457,12 +461,14 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
  @private
   base::scoped_nsobject<NSTextField> profileNameTextField_;
   Profile* profile_;  // Weak.
+  ProfileChooserController* controller_;
 }
 
 - (id)initWithFrame:(NSRect)frameRect
             profile:(Profile*)profile
         profileName:(NSString*)profileName
-     editingAllowed:(BOOL)editingAllowed;
+     editingAllowed:(BOOL)editingAllowed
+     withController:(ProfileChooserController*)controller;
 
 // Called when the button is clicked.
 - (void)showEditableView:(id)sender;
@@ -475,9 +481,11 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 - (id)initWithFrame:(NSRect)frameRect
             profile:(Profile*)profile
         profileName:(NSString*)profileName
-     editingAllowed:(BOOL)editingAllowed {
+     editingAllowed:(BOOL)editingAllowed
+     withController:(ProfileChooserController*)controller {
   if ((self = [super initWithFrame:frameRect])) {
     profile_ = profile;
+    controller_ = controller;
 
     [self setBordered:NO];
     [self setFont:[NSFont labelFontOfSize:kTitleFontSize]];
@@ -533,6 +541,8 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   // Empty profile names are not allowed, and are treated as a cancel.
   if ([text length] > 0) {
     profiles::UpdateProfileName(profile_, base::SysNSStringToUTF16(text));
+    [controller_
+        postActionPerformed:ProfileMetrics::PROFILE_DESKTOP_MENU_EDIT_NAME];
     [self setTitle:text];
   }
   [profileNameTextField_ setHidden:YES];
@@ -741,7 +751,6 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 - (NSButton*)accountButtonWithRect:(NSRect)rect
                              title:(const std::string&)title
                                tag:(int)tag;
-
 @end
 
 @implementation ProfileChooserController
@@ -777,6 +786,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 
 - (IBAction)lockProfile:(id)sender {
   profiles::LockProfile(browser_->profile());
+  [self postActionPerformed:ProfileMetrics::PROFILE_DESKTOP_MENU_LOCK];
 }
 
 - (IBAction)showInlineSigninPage:(id)sender {
@@ -789,6 +799,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 
 - (IBAction)addAccount:(id)sender {
   [self initMenuContentsWithView:profiles::BUBBLE_VIEW_MODE_GAIA_ADD_ACCOUNT];
+  [self postActionPerformed:ProfileMetrics::PROFILE_DESKTOP_MENU_ADD_ACCT];
 }
 
 - (IBAction)navigateBackFromSigninPage:(id)sender {
@@ -820,6 +831,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   DCHECK(!accountIdToRemove_.empty());
   ProfileOAuth2TokenServiceFactory::GetPlatformSpecificForProfile(
       browser_->profile())->RevokeCredentials(accountIdToRemove_);
+  [self postActionPerformed:ProfileMetrics::PROFILE_DESKTOP_MENU_REMOVE_ACCT];
   accountIdToRemove_.clear();
 
   [self initMenuContentsWithView:profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT];
@@ -879,7 +891,8 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 
 - (id)initWithBrowser:(Browser*)browser
            anchoredAt:(NSPoint)point
-             withMode:(profiles::BubbleViewMode)mode {
+             withMode:(profiles::BubbleViewMode)mode
+      withServiceType:(signin::GAIAServiceType)serviceType {
   base::scoped_nsobject<InfoBubbleWindow> window([[InfoBubbleWindow alloc]
       initWithContentRect:ui::kWindowSizeDeterminedLater
                 styleMask:NSBorderlessWindowMask
@@ -893,6 +906,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
     viewMode_ = mode;
     tutorialMode_ = profiles::TUTORIAL_MODE_NONE;
     observer_.reset(new ActiveProfileObserverBridge(self, browser_));
+    serviceType_ = serviceType;
 
     avatarMenu_.reset(new AvatarMenu(
         &g_browser_process->profile_manager()->GetProfileInfoCache(),
@@ -1050,7 +1064,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   }
 
   [container setFrameSize:NSMakeSize(kFixedMenuWidth, yOffset)];
-  return container.autorelease();;
+  return container.autorelease();
 }
 
 - (NSView*)buildPreviewTutorialIfNeeded:(const AvatarMenu::Item&)item {
@@ -1234,7 +1248,8 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
                 profile:browser_->profile()
             profileName:base::SysUTF16ToNSString(
                 profiles::GetAvatarNameForProfile(browser_->profile()))
-         editingAllowed:editingAllowed]);
+         editingAllowed:editingAllowed
+         withController:self]);
 
   [container addSubview:profileName];
   yOffset = NSMaxY([profileName frame]);
@@ -1247,10 +1262,25 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
                                    kLargeImageSide, kLargeImageSide)
              avatarMenu:avatarMenu_.get()
             profileIcon:item.icon
-         editingAllowed:!isGuestSession_]);
+         editingAllowed:!isGuestSession_
+         withController:self]);
 
   [container addSubview:iconView];
   yOffset = NSMaxY([iconView frame]);
+
+  if (browser_->profile()->IsManaged()) {
+    base::scoped_nsobject<NSImageView> supervisedIcon(
+        [[NSImageView alloc] initWithFrame:NSZeroRect]);
+    ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
+    [supervisedIcon setImage:rb->GetNativeImageNamed(
+        IDR_ICON_PROFILES_MENU_SUPERVISED).ToNSImage()];
+    NSSize size = [[supervisedIcon image] size];
+    [supervisedIcon setFrameSize:size];
+    NSRect parentFrame = [iconView frame];
+    [supervisedIcon setFrameOrigin:NSMakePoint(NSMaxX(parentFrame) - size.width,
+                                               NSMinY(parentFrame))];
+    [container addSubview:supervisedIcon];
+  }
 
   if (switches::IsNewProfileManagementPreviewEnabled()) {
     base::scoped_nsobject<HoverImageButton> questionButton(
@@ -1319,10 +1349,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
         l10n_util::GetStringFUTF16(
             IDS_SYNC_START_SYNC_BUTTON_LABEL,
             l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME)),
-        ui::ResourceBundle::GetSharedInstance().GetFontList(
-            ui::ResourceBundle::BaseFont),
-        rect.size.width,
-        gfx::ELIDE_AT_END));
+        gfx::FontList(), rect.size.width, gfx::ELIDE_TAIL));
 
     [link setTitle:elidedButtonText];
     [link setTarget:self];
@@ -1449,10 +1476,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   NSString* elidedButtonText = base::SysUTF16ToNSString(gfx::ElideText(
       l10n_util::GetStringFUTF16(
           IDS_PROFILES_PROFILE_ADD_ACCOUNT_BUTTON, item.name),
-      ui::ResourceBundle::GetSharedInstance().GetFontList(
-          ui::ResourceBundle::BaseFont),
-      rect.size.width,
-      gfx::ELIDE_AT_END));
+      gfx::FontList(), rect.size.width, gfx::ELIDE_TAIL));
 
   NSButton* addAccountsButton =
       [self linkButtonWithTitle:elidedButtonText
@@ -1757,6 +1781,11 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 
   [button addSubview:deleteButton];
   return button.autorelease();
+}
+
+- (void)postActionPerformed:(ProfileMetrics::ProfileDesktopMenu)action {
+  ProfileMetrics::LogProfileDesktopMenu(action, serviceType_);
+  serviceType_ = signin::GAIA_SERVICE_TYPE_NONE;
 }
 
 @end

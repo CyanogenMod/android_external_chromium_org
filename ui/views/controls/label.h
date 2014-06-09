@@ -42,15 +42,6 @@ class VIEWS_EXPORT Label : public View {
     AUTO_DETECT_DIRECTIONALITY
   };
 
-  enum ElideBehavior {
-    NO_ELIDE,            // Do not elide the label text; truncate as needed.
-    ELIDE_AT_BEGINNING,  // Add ellipsis at the start of the string as needed.
-    ELIDE_IN_MIDDLE,     // Add ellipsis in the middle of the string as needed.
-    ELIDE_AT_END,        // Add ellipsis at the end of the string as needed.
-    ELIDE_AS_EMAIL,      // Elide while retaining username/domain chars
-                         // as needed.
-  };
-
   // Internal class name.
   static const char kViewClassName[];
 
@@ -100,6 +91,9 @@ class VIEWS_EXPORT Label : public View {
   // Disables shadows.
   void ClearEmbellishing();
 
+  // Set the color of a halo on the painted text (use transparent for none).
+  void set_halo_color(SkColor halo_color) { halo_color_ = halo_color; }
+
   // Sets horizontal alignment. If the locale is RTL, and the directionality
   // mode is USE_UI_DIRECTIONALITY, the alignment is flipped around.
   //
@@ -147,10 +141,9 @@ class VIEWS_EXPORT Label : public View {
   // Default is false. This only works when is_multi_line is true.
   void SetAllowCharacterBreak(bool allow_character_break);
 
-  // Sets whether the label text should be elided in the middle or end (if
-  // necessary). The default is to elide at the end.
-  // NOTE: Eliding in the middle is not supported for multi-line strings.
-  void SetElideBehavior(ElideBehavior elide_behavior);
+  // Sets the eliding or fading behavior, applied as necessary. The default is
+  // to elide at the end. Eliding is not well supported for multi-line labels.
+  void SetElideBehavior(gfx::ElideBehavior elide_behavior);
 
   // Sets the tooltip text.  Default behavior for a label (single-line) is to
   // show the full text if it is wider than its bounds.  Calling this overrides
@@ -172,7 +165,7 @@ class VIEWS_EXPORT Label : public View {
   void set_collapse_when_hidden(bool value) { collapse_when_hidden_ = value; }
   bool collapse_when_hidden() const { return collapse_when_hidden_; }
 
-  // Overridden from View:
+  // View:
   virtual gfx::Insets GetInsets() const OVERRIDE;
   virtual int GetBaseline() const OVERRIDE;
   // Overridden to compute the size required to display this label.
@@ -185,7 +178,7 @@ class VIEWS_EXPORT Label : public View {
   virtual int GetHeightForWidth(int w) const OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
   virtual View* GetTooltipHandlerForPoint(const gfx::Point& point) OVERRIDE;
-  virtual bool HitTestRect(const gfx::Rect& rect) const OVERRIDE;
+  virtual bool CanProcessEventsWithinSubtree() const OVERRIDE;
   virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   // Gets the tooltip text for labels that are wider than their bounds, except
   // when the label is multiline, in which case it just returns false (no
@@ -270,13 +263,11 @@ class VIEWS_EXPORT Label : public View {
   bool auto_color_readability_;
   mutable gfx::Size text_size_;
   mutable bool text_size_valid_;
-  // Indicates the level of shadow blurring. Default is zero.
-  double shadow_blur_;
   int line_height_;
   bool is_multi_line_;
   bool is_obscured_;
   bool allow_character_break_;
-  ElideBehavior elide_behavior_;
+  gfx::ElideBehavior elide_behavior_;
   gfx::HorizontalAlignment horizontal_alignment_;
   base::string16 tooltip_text_;
   // Whether to collapse the label when it's not visible.
@@ -295,6 +286,12 @@ class VIEWS_EXPORT Label : public View {
 
   // Should a shadow be drawn behind the text?
   bool has_shadow_;
+
+  // Indicates the level of shadow blurring. Default is zero.
+  double shadow_blur_;
+
+  // The halo color drawn around the text if it is not transparent.
+  SkColor halo_color_;
 
   // The cached heights to avoid recalculation in GetHeightForWidth().
   mutable std::vector<gfx::Size> cached_heights_;

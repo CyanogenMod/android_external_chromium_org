@@ -69,7 +69,6 @@
       'public/browser/browser_main_runner.h',
       'public/browser/browser_message_filter.cc',
       'public/browser/browser_message_filter.h',
-      'public/browser/browser_plugin_guest_delegate.cc',
       'public/browser/browser_plugin_guest_delegate.h',
       'public/browser/browser_plugin_guest_manager.cc',
       'public/browser/browser_plugin_guest_manager.h',
@@ -337,7 +336,6 @@
       'browser/browser_plugin/browser_plugin_embedder.h',
       'browser/browser_plugin/browser_plugin_guest.cc',
       'browser/browser_plugin/browser_plugin_guest.h',
-      'browser/browser_plugin/browser_plugin_host_factory.h',
       'browser/browser_plugin/browser_plugin_message_filter.cc',
       'browser/browser_plugin/browser_plugin_message_filter.h',
       'browser/browser_plugin/browser_plugin_popup_menu_helper_mac.h',
@@ -374,6 +372,8 @@
       'browser/compositor/image_transport_factory.h',
       'browser/compositor/no_transport_image_transport_factory.cc',
       'browser/compositor/no_transport_image_transport_factory.h',
+      'browser/compositor/onscreen_display_client.cc',
+      'browser/compositor/onscreen_display_client.h',
       'browser/compositor/overlay_candidate_validator_ozone.cc',
       'browser/compositor/overlay_candidate_validator_ozone.h',
       'browser/compositor/owned_mailbox.h',
@@ -394,6 +394,8 @@
       'browser/compositor/software_output_device_win.h',
       'browser/compositor/software_output_device_x11.cc',
       'browser/compositor/software_output_device_x11.h',
+      'browser/compositor/surface_display_output_surface.cc',
+      'browser/compositor/surface_display_output_surface.h',
       'browser/context_factory.cc',
       'browser/cross_site_request_manager.cc',
       'browser/cross_site_request_manager.h',
@@ -593,6 +595,8 @@
       'browser/gamepad/gamepad_consumer.h',
       'browser/gamepad/gamepad_data_fetcher.h',
       'browser/gamepad/gamepad_platform_data_fetcher.h',
+      'browser/gamepad/gamepad_platform_data_fetcher_android.cc',
+      'browser/gamepad/gamepad_platform_data_fetcher_android.h',
       'browser/gamepad/gamepad_platform_data_fetcher_linux.cc',
       'browser/gamepad/gamepad_platform_data_fetcher_linux.h',
       'browser/gamepad/gamepad_platform_data_fetcher_mac.h',
@@ -813,13 +817,6 @@
       'browser/media/webrtc_identity_store.h',
       'browser/media/webrtc_identity_store_backend.cc',
       'browser/media/webrtc_identity_store_backend.h',
-      'browser/media/webrtc_internals.cc',
-      'browser/media/webrtc_internals.h',
-      'browser/media/webrtc_internals_message_handler.cc',
-      'browser/media/webrtc_internals_message_handler.h',
-      'browser/media/webrtc_internals_ui.cc',
-      'browser/media/webrtc_internals_ui.h',
-      'browser/media/webrtc_internals_ui_observer.h',
       'browser/message_port_message_filter.cc',
       'browser/message_port_message_filter.h',
       'browser/message_port_service.cc',
@@ -1423,7 +1420,7 @@
         'browser/power_profiler/power_data_provider_dummy.cc'
       ]
     }],
-    ['OS!="win" and OS!="mac" and (OS!="linux" or use_udev==0)', {
+    ['OS!="win" and OS!="mac" and OS!="android" and (OS!="linux" or use_udev==0)', {
       'sources': [
         'browser/gamepad/gamepad_platform_data_fetcher.cc',
       ]
@@ -1459,6 +1456,7 @@
         'browser/devtools/devtools_resources.gyp:devtools_resources',
         'content_common_mojo_bindings',
         '../cc/cc.gyp:cc',
+        '../cc/cc.gyp:cc_surfaces',
         '../mojo/mojo.gyp:mojo_cpp_bindings',
         '../mojo/mojo.gyp:mojo_js_bindings',
         '../mojo/mojo.gyp:mojo_service_provider_bindings',
@@ -1503,6 +1501,13 @@
         '../jingle/jingle.gyp:jingle_glue',
       ],
       'sources': [
+        'browser/media/webrtc_internals.cc',
+        'browser/media/webrtc_internals.h',
+        'browser/media/webrtc_internals_message_handler.cc',
+        'browser/media/webrtc_internals_message_handler.h',
+        'browser/media/webrtc_internals_ui.cc',
+        'browser/media/webrtc_internals_ui.h',
+        'browser/media/webrtc_internals_ui_observer.h',
         'browser/renderer_host/media/peer_connection_tracker_host.cc',
         'browser/renderer_host/media/peer_connection_tracker_host.h',
         'browser/renderer_host/media/webrtc_identity_service_host.cc',
@@ -1694,8 +1699,6 @@
         ['exclude', '^browser/web_contents/touch_editable_impl_aura.h'],
         ['exclude', '^browser/renderer_host/ui_events_helper.cc'],
         ['exclude', '^browser/renderer_host/ui_events_helper.h'],
-        ['exclude', '^browser/context_factory.cc'],
-        ['exclude', '^public/browser/context_factory.h'],
       ],
     }],
     ['use_aura==1 or OS=="mac"', {
@@ -1705,6 +1708,8 @@
     }, {
       'sources/': [
         ['exclude', '^browser/compositor/'],
+        ['exclude', '^browser/context_factory.cc'],
+        ['exclude', '^public/browser/context_factory.h'],
       ]
     }],
     ['enable_plugins==1', {

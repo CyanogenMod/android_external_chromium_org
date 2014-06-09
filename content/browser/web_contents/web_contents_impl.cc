@@ -103,7 +103,6 @@
 
 #if defined(OS_MACOSX)
 #include "base/mac/foundation_util.h"
-#include "ui/gl/io_surface_support_mac.h"
 #endif
 
 // Cross-Site Navigations
@@ -1233,7 +1232,7 @@ bool WebContentsImpl::HandleGestureEvent(
   // Some platforms (eg. Mac) send GesturePinch events for trackpad pinch-zoom.
   // Use them to implement browser zoom, as for HandleWheelEvent above.
   if (event.type == blink::WebInputEvent::GesturePinchUpdate &&
-      event.sourceDevice == blink::WebGestureEvent::Touchpad) {
+      event.sourceDevice == blink::WebGestureDeviceTouchpad) {
     // The scale difference necessary to trigger a zoom action. Derived from
     // experimentation to find a value that feels reasonable.
     const float kZoomStepValue = 0.6f;
@@ -1660,6 +1659,10 @@ SessionStorageNamespace* WebContentsImpl::GetSessionStorageNamespace(
   return controller_.GetSessionStorageNamespace(instance);
 }
 
+SessionStorageNamespaceMap WebContentsImpl::GetSessionStorageNamespaceMap() {
+  return controller_.GetSessionStorageNamespaceMap();
+}
+
 FrameTree* WebContentsImpl::GetFrameTree() {
   return &frame_tree_;
 }
@@ -2062,15 +2065,6 @@ void WebContentsImpl::GenerateMHTML(
     const base::FilePath& file,
     const base::Callback<void(int64)>& callback) {
   MHTMLGenerationManager::GetInstance()->SaveMHTML(this, file, callback);
-}
-
-// TODO(nasko): Rename this method to IsVisibleEntry.
-bool WebContentsImpl::IsActiveEntry(int32 page_id) {
-  NavigationEntryImpl* visible_entry =
-      NavigationEntryImpl::FromNavigationEntry(controller_.GetVisibleEntry());
-  return (visible_entry != NULL &&
-          visible_entry->site_instance() == GetSiteInstance() &&
-          visible_entry->GetPageID() == page_id);
 }
 
 const std::string& WebContentsImpl::GetContentsMimeType() const {
@@ -2489,7 +2483,7 @@ void WebContentsImpl::SetMainFrameMimeType(const std::string& mime_type) {
   contents_mime_type_ = mime_type;
 }
 
-bool WebContentsImpl::CanOverscrollContent() {
+bool WebContentsImpl::CanOverscrollContent() const {
   if (delegate_)
     return delegate_->CanOverscrollContent();
 
@@ -2923,8 +2917,8 @@ void WebContentsImpl::OnFirstVisuallyNonEmptyPaint() {
 }
 
 void WebContentsImpl::DidChangeVisibleSSLState() {
-  FOR_EACH_OBSERVER(WebContentsObserver, observers_,
-                    DidChangeVisibleSSLState());
+  if (delegate_)
+    delegate_->VisibleSSLStateChanged(this);
 }
 
 void WebContentsImpl::NotifyBeforeFormRepostWarningShow() {

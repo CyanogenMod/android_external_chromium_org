@@ -21,21 +21,24 @@
 namespace chromeos {
 namespace file_system_provider {
 
+// Request type, passed to RequestManager::CreateRequest. For logging purposes.
+enum RequestType {
+  REQUEST_UNMOUNT,
+  GET_METADATA,
+  READ_DIRECTORY,
+  OPEN_FILE,
+  CLOSE_FILE,
+  READ_FILE,
+  TESTING
+};
+
+// Converts a request type to human-readable format.
+std::string RequestTypeToString(RequestType type);
+
 // Manages requests between the service, async utils and the providing
 // extensions.
 class RequestManager {
  public:
-  // Request type, passed to |CreateRequest|. For logging purposes.
-  enum RequestType {
-    REQUEST_UNMOUNT,
-    GET_METADATA,
-    READ_DIRECTORY,
-    OPEN_FILE,
-    CLOSE_FILE,
-    READ_FILE,
-    TESTING
-  };
-
   // Handles requests. Each request implementation must implement
   // this interface.
   class HandlerInterface {
@@ -47,11 +50,11 @@ class RequestManager {
     virtual bool Execute(int request_id) = 0;
 
     // Success callback invoked by the providing extension in response to
-    // Execute(). It may be called more than once, until |has_next| is set to
+    // Execute(). It may be called more than once, until |has_more| is set to
     // false.
     virtual void OnSuccess(int request_id,
                            scoped_ptr<RequestValue> result,
-                           bool has_next) = 0;
+                           bool has_more) = 0;
 
     // Error callback invoked by the providing extension in response to
     // Execute(). It can be called at most once. It can be also called if the
@@ -91,12 +94,12 @@ class RequestManager {
   // what kind of request it is.
   int CreateRequest(RequestType type, scoped_ptr<HandlerInterface> handler);
 
-  // Handles successful response for the |request_id|. If |has_next| is false,
+  // Handles successful response for the |request_id|. If |has_more| is false,
   // then the request is disposed, after handling the |response|. On error,
   // returns false, and the request is disposed.
   bool FulfillRequest(int request_id,
                       scoped_ptr<RequestValue> response,
-                      bool has_next);
+                      bool has_more);
 
   // Handles error response for the |request_id|. If handling the error fails,
   // returns false. Always disposes the request.

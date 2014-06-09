@@ -91,7 +91,7 @@ class InputMethodManagerImpl : public InputMethodManager,
       GetComponentExtensionIMEManager() OVERRIDE;
   virtual bool IsLoginKeyboard(const std::string& layout) const OVERRIDE;
 
-  virtual bool MigrateXkbInputMethods(
+  virtual bool MigrateInputMethods(
       std::vector<std::string>* input_method_ids) OVERRIDE;
 
   // Sets |candidate_window_controller_|.
@@ -141,6 +141,10 @@ class InputMethodManagerImpl : public InputMethodManager,
   // Returns true if the system input method is changed.
   bool ChangeInputMethodInternal(const std::string& input_method_id,
                                  bool show_message);
+
+  // Gets whether the XKB extension is loaded successfully by checking the XKB
+  // input methods in input methods in |component_extension_ime_manager_|.
+  bool IsXkbComponentExtensionAvailable() const;
 
   // Called when the ComponentExtensionIMEManagerDelegate is initialized.
   void OnComponentExtensionInitialized(

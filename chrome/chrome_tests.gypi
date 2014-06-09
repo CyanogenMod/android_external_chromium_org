@@ -260,7 +260,7 @@
         }],
         ['chromeos==1', {
           'dependencies': [
-            '../ash/ash.gyp:ash_resources',
+            '../ash/ash_resources.gyp:ash_resources',
             '../chromeos/chromeos.gyp:chromeos',
           ],
           'conditions': [
@@ -564,7 +564,7 @@
           'inputs': [
             'test/chromedriver/cpp_source.py',
             'test/chromedriver/embed_mobile_devices_in_cpp.py',
-            '../third_party/WebKit/Source/devtools/front_end/elements/OverridesView.js',
+            '../third_party/WebKit/Source/devtools/front_end/sdk/OverridesSupport.js',
           ],
           'outputs': [
             '<(SHARED_INTERMEDIATE_DIR)/chrome/test/chromedriver/chrome/mobile_device_list.cc',
@@ -574,7 +574,7 @@
                       'test/chromedriver/embed_mobile_devices_in_cpp.py',
                       '--directory',
                       '<(SHARED_INTERMEDIATE_DIR)/chrome/test/chromedriver/chrome',
-                      '../third_party/WebKit/Source/devtools/front_end/elements/OverridesView.js',
+                      '../third_party/WebKit/Source/devtools/front_end/sdk/OverridesSupport.js',
           ],
           'message': 'Generating sources for embedding mobile devices in chromedriver',
         },
@@ -949,6 +949,8 @@
         'browser/chromeos/login/crash_restore_browsertest.cc',
         'browser/chromeos/login/demo_mode/demo_app_launcher_browsertest.cc',
         'browser/chromeos/login/enrollment/enrollment_screen_browsertest.cc',
+        'browser/chromeos/login/enrollment/mock_auto_enrollment_check_screen.cc',
+        'browser/chromeos/login/enrollment/mock_auto_enrollment_check_screen.h',
         'browser/chromeos/login/enrollment/mock_enrollment_screen.cc',
         'browser/chromeos/login/enrollment/mock_enrollment_screen.h',
         'browser/chromeos/login/existing_user_controller_browsertest.cc',
@@ -1025,6 +1027,7 @@
         'browser/devtools/device/adb/mock_adb_server.cc',
         'browser/devtools/device/adb/mock_adb_server.h',
         'browser/devtools/device/port_forwarding_browsertest.cc',
+        'browser/devtools/device/usb/devtools_android_bridge_browsertest.cc',
         'browser/devtools/devtools_sanity_browsertest.cc',
         'browser/dom_distiller/dom_distiller_viewer_source_browsertest.cc',
         'browser/dom_distiller/tab_utils_browsertest.cc',
@@ -1234,7 +1237,6 @@
         'browser/geolocation/access_token_store_browsertest.cc',
         'browser/geolocation/geolocation_browsertest.cc',
         'browser/history/history_browsertest.cc',
-        'browser/history/multipart_browsertest.cc',
         'browser/history/redirect_browsertest.cc',
         'browser/iframe_browsertest.cc',
         'browser/importer/firefox_importer_browsertest.cc',
@@ -1324,10 +1326,10 @@
         'browser/renderer_context_menu/render_view_context_menu_test_util.h',
         'browser/renderer_context_menu/spellchecker_submenu_observer_browsertest.cc',
         'browser/renderer_context_menu/spelling_menu_observer_browsertest.cc',
+        'browser/renderer_host/chrome_resource_dispatcher_host_delegate_browsertest.cc',
         'browser/renderer_host/render_process_host_chrome_browsertest.cc',
         'browser/renderer_host/web_cache_manager_browsertest.cc',
         'browser/repost_form_warning_browsertest.cc',
-        'browser/resources/chromeos/chromevox/common/aria_util_test.js',
         'browser/safe_browsing/local_safebrowsing_test_server.cc',
         'browser/safe_browsing/safe_browsing_blocking_page_test.cc',
         'browser/safe_browsing/safe_browsing_service_browsertest.cc',
@@ -1535,8 +1537,9 @@
         'test/base/browser_tests_main.cc',
         'test/base/chrome_render_view_test.cc',
         'test/base/chrome_render_view_test.h',
-        'test/base/web_ui_browsertest.cc',
-        'test/base/web_ui_browsertest.h',
+        'test/base/web_ui_browser_test.cc',
+        'test/base/web_ui_browser_test.h',
+        'test/base/web_ui_browser_test_browsertest.cc',
         'test/base/in_process_browser_test_browsertest.cc',
         'test/base/tracing_browsertest.cc',
         'test/base/test_chrome_web_ui_controller_factory.cc',
@@ -1595,8 +1598,6 @@
         'test/remoting/remote_desktop_browsertest.h',
         'test/remoting/waiter.cc',
         'test/remoting/waiter.h',
-        'test/security_tests/sandbox_browsertest_linux.cc',
-        'test/security_tests/sandbox_browsertest_win.cc',
         # TODO(craig): Rename this and run from base_unittests when the test
         # is safe to run there. See http://crbug.com/78722 for details.
         '../base/files/file_path_watcher_browsertest.cc',
@@ -1610,7 +1611,6 @@
             '<(gypv8sh)',
             '<(PRODUCT_DIR)/d8<(EXECUTABLE_SUFFIX)',
             '<(mock_js)',
-            '<(accessibility_audit_js)',
             '<(test_api_js)',
             '<(js2gtest)',
           ],
@@ -1825,7 +1825,6 @@
           ],
           'dependencies': [
             'chrome_version_resources',
-            'security_tests',  # run time dependency
           ],
           'conditions': [
             ['win_use_allocator_shim==1', {
@@ -2041,6 +2040,11 @@
             ['exclude', '^test/remoting'],
           ],
         }],
+        ['use_x11==1', {
+          'dependencies': [
+            '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
+          ],
+        }],
       ],  # conditions
     },  # target browser_tests
     {
@@ -2113,7 +2117,6 @@
             '<(gypv8sh)',
             '<(PRODUCT_DIR)/d8<(EXECUTABLE_SUFFIX)',
             '<(mock_js)',
-            '<(accessibility_audit_js)',
             '<(test_api_js)',
             '<(js2gtest)',
           ],
@@ -2604,31 +2607,6 @@
     ['OS=="mac"', {
       'targets': [
         {
-          # This is the mac equivalent of the security_tests target below. It
-          # generates a framework bundle which bundles tests to be run in a
-          # renderer process. The test code is built as a framework so it can be
-          # run in the context of a renderer without shipping the code to end
-          # users.
-          'target_name': 'renderer_sandbox_tests',
-          'type': 'shared_library',
-          'product_name': 'Renderer Sandbox Tests',
-          'mac_bundle': 1,
-          'xcode_settings': {
-            'INFOPLIST_FILE': 'test/security_tests/sandbox_tests_mac-Info.plist',
-          },
-          'sources': [
-            'test/security_tests/renderer_sandbox_tests_mac.mm',
-          ],
-          'include_dirs': [
-            '..',
-          ],
-          'link_settings': {
-            'libraries': [
-              '$(SDKROOT)/System/Library/Frameworks/Cocoa.framework',
-            ],
-          },
-        },  # target renderer_sandbox_tests
-        {
           # Tests for Mac app launcher.
           'target_name': 'app_mode_app_tests',
           'type': 'executable',
@@ -2727,24 +2705,6 @@
         },
       ],
     },],  # OS!="mac"
-    ['OS=="win"', {
-      'targets': [
-        {
-          'target_name': 'security_tests',
-          'type': 'shared_library',
-          'include_dirs': [
-            '..',
-          ],
-          'sources': [
-            'test/security_tests/ipc_security_tests.cc',
-            'test/security_tests/ipc_security_tests.h',
-            'test/security_tests/security_tests.cc',
-            '../sandbox/win/tests/validation_tests/commands.cc',
-            '../sandbox/win/tests/validation_tests/commands.h',
-          ],
-        },
-      ]},  # 'targets'
-    ],  # OS=="win"
     ['OS == "android"', {
       'targets': [
         {

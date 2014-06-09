@@ -867,7 +867,10 @@ class ChunkDemuxerTest : public ::testing::TestWithParam<bool> {
     base::SplitString(expected, ' ', &timestamps);
     std::stringstream ss;
     for (size_t i = 0; i < timestamps.size(); ++i) {
-      DemuxerStream::Status status;
+      // Initialize status to kAborted since it's possible for Read() to return
+      // without calling StoreStatusAndBuffer() if it doesn't have any buffers
+      // left to return.
+      DemuxerStream::Status status = DemuxerStream::kAborted;
       scoped_refptr<DecoderBuffer> buffer;
       stream->Read(base::Bind(&ChunkDemuxerTest::StoreStatusAndBuffer,
                               base::Unretained(this), &status, &buffer));
@@ -878,6 +881,13 @@ class ChunkDemuxerTest : public ::testing::TestWithParam<bool> {
       if (i > 0)
         ss << " ";
       ss << buffer->timestamp().InMilliseconds();
+
+      // Handle preroll buffers.
+      if (EndsWith(timestamps[i], "P", true)) {
+        ASSERT_EQ(kInfiniteDuration(), buffer->discard_padding().first);
+        ASSERT_EQ(base::TimeDelta(), buffer->discard_padding().second);
+        ss << "P";
+      }
     }
     EXPECT_EQ(expected, ss.str());
   }
@@ -3020,23 +3030,12 @@ TEST_P(ChunkDemuxerTest, GCDuringSeek) {
   CheckExpectedRanges(kSourceId, "{ [500,592) [792,815) }");
 }
 
-TEST_P(ChunkDemuxerTest, RemoveBeforeInitSegment) {
-    EXPECT_CALL(*this, DemuxerOpened());
-    demuxer_->Initialize(
-        &host_, CreateInitDoneCB(kNoTimestamp(), PIPELINE_OK), true);
-
-    EXPECT_EQ(ChunkDemuxer::kOk, AddId(kSourceId, HAS_AUDIO | HAS_VIDEO));
-
-    demuxer_->Remove(kSourceId, base::TimeDelta::FromMilliseconds(0),
-                     base::TimeDelta::FromMilliseconds(1));
-}
-
 TEST_P(ChunkDemuxerTest, AppendWindow_Video) {
   ASSERT_TRUE(InitDemuxer(HAS_VIDEO));
   DemuxerStream* stream = demuxer_->GetStream(DemuxerStream::VIDEO);
 
-  // Set the append window to [20,280).
-  append_window_start_for_next_append_ = base::TimeDelta::FromMilliseconds(20);
+  // Set the append window to [50,280).
+  append_window_start_for_next_append_ = base::TimeDelta::FromMilliseconds(50);
   append_window_end_for_next_append_ = base::TimeDelta::FromMilliseconds(280);
 
   // Append a cluster that starts before and ends after the append window.
@@ -3049,7 +3048,7 @@ TEST_P(ChunkDemuxerTest, AppendWindow_Video) {
   CheckExpectedRanges(kSourceId, "{ [120,270) }");
   CheckExpectedBuffers(stream, "120 150 180 210 240");
 
-  // Extend the append window to [20,650).
+  // Extend the append window to [50,650).
   append_window_end_for_next_append_ = base::TimeDelta::FromMilliseconds(650);
 
   // Append more data and verify that adding buffers start at the next
@@ -3063,8 +3062,8 @@ TEST_P(ChunkDemuxerTest, AppendWindow_Audio) {
   ASSERT_TRUE(InitDemuxer(HAS_AUDIO));
   DemuxerStream* stream = demuxer_->GetStream(DemuxerStream::AUDIO);
 
-  // Set the append window to [20,280).
-  append_window_start_for_next_append_ = base::TimeDelta::FromMilliseconds(20);
+  // Set the append window to [50,280).
+  append_window_start_for_next_append_ = base::TimeDelta::FromMilliseconds(50);
   append_window_end_for_next_append_ = base::TimeDelta::FromMilliseconds(280);
 
   // Append a cluster that starts before and ends after the append window.
@@ -3076,19 +3075,22 @@ TEST_P(ChunkDemuxerTest, AppendWindow_Audio) {
   // in the buffer. Also verify that buffers that start inside the
   // window and extend beyond the end of the window are not included.
   //
-  // The first 20ms of the first buffer should be trimmed off since it
-  // overlaps the start of the append window.
-  CheckExpectedRanges(kSourceId, "{ [20,270) }");
-  CheckExpectedBuffers(stream, "20 30 60 90 120 150 180 210 240");
+  // The first 50ms of the range should be truncated since it overlaps
+  // the start of the append window.
+  CheckExpectedRanges(kSourceId, "{ [50,270) }");
 
-  // Extend the append window to [20,650).
+  // The "50P" buffer is the "0" buffer marked for complete discard.  The next
+  // "50" buffer is the "30" buffer marked with 20ms of start discard.
+  CheckExpectedBuffers(stream, "50P 50 60 90 120 150 180 210 240");
+
+  // Extend the append window to [50,650).
   append_window_end_for_next_append_ = base::TimeDelta::FromMilliseconds(650);
 
   // Append more data and verify that a new range is created.
   AppendSingleStreamCluster(
       kSourceId, kAudioTrackNum,
       "360K 390K 420K 450K 480K 510K 540K 570K 600K 630K");
-  CheckExpectedRanges(kSourceId, "{ [20,270) [360,630) }");
+  CheckExpectedRanges(kSourceId, "{ [50,270) [360,630) }");
 }
 
 TEST_P(ChunkDemuxerTest, AppendWindow_AudioOverlapStartAndEnd) {
@@ -3104,6 +3106,69 @@ TEST_P(ChunkDemuxerTest, AppendWindow_AudioOverlapStartAndEnd) {
   // Verify that everything is dropped in this case.  No partial append should
   // be generated.
   CheckExpectedRanges(kSourceId, "{ }");
+}
+
+TEST_P(ChunkDemuxerTest, AppendWindow_WebMFile_AudioOnly) {
+  EXPECT_CALL(*this, DemuxerOpened());
+  demuxer_->Initialize(
+      &host_,
+      CreateInitDoneCB(base::TimeDelta::FromMilliseconds(2744), PIPELINE_OK),
+      true);
+  ASSERT_EQ(ChunkDemuxer::kOk, AddId(kSourceId, HAS_AUDIO));
+
+  // Set the append window to [50,150).
+  append_window_start_for_next_append_ = base::TimeDelta::FromMilliseconds(50);
+  append_window_end_for_next_append_ = base::TimeDelta::FromMilliseconds(150);
+
+  // Read a WebM file into memory and send the data to the demuxer.  The chunk
+  // size has been chosen carefully to ensure the preroll buffer used by the
+  // partial append window trim must come from a previous Append() call.
+  scoped_refptr<DecoderBuffer> buffer =
+      ReadTestDataFile("bear-320x240-audio-only.webm");
+  AppendDataInPieces(buffer->data(), buffer->data_size(), 128);
+
+  DemuxerStream* stream = demuxer_->GetStream(DemuxerStream::AUDIO);
+  CheckExpectedBuffers(stream, "50P 50 62 86 109 122 125 128");
+}
+
+TEST_P(ChunkDemuxerTest, AppendWindow_AudioConfigUpdateRemovesPreroll) {
+  EXPECT_CALL(*this, DemuxerOpened());
+  demuxer_->Initialize(
+      &host_,
+      CreateInitDoneCB(base::TimeDelta::FromMilliseconds(2744), PIPELINE_OK),
+      true);
+  ASSERT_EQ(ChunkDemuxer::kOk, AddId(kSourceId, HAS_AUDIO));
+
+  // Set the append window such that the first file is completely before the
+  // append window.
+  // TODO(wolenetz/acolwell): Update this duration once the files are fixed to
+  // have the correct duration in their init segments, and the
+  // CreateInitDoneCB() call, above, is fixed to used that duration. See
+  // http://crbug.com/354284.
+  const base::TimeDelta duration_1 = base::TimeDelta::FromMilliseconds(2746);
+  append_window_start_for_next_append_ = duration_1;
+
+  // Read a WebM file into memory and append the data.
+  scoped_refptr<DecoderBuffer> buffer =
+      ReadTestDataFile("bear-320x240-audio-only.webm");
+  AppendDataInPieces(buffer->data(), buffer->data_size(), 512);
+  CheckExpectedRanges(kSourceId, "{ }");
+
+  DemuxerStream* stream = demuxer_->GetStream(DemuxerStream::AUDIO);
+  AudioDecoderConfig config_1 = stream->audio_decoder_config();
+
+  // Read a second WebM with a different config in and append the data.
+  scoped_refptr<DecoderBuffer> buffer2 =
+      ReadTestDataFile("bear-320x240-audio-only-48khz.webm");
+  EXPECT_CALL(host_, SetDuration(_)).Times(AnyNumber());
+  ASSERT_TRUE(SetTimestampOffset(kSourceId, duration_1));
+  AppendDataInPieces(buffer2->data(), buffer2->data_size(), 512);
+  CheckExpectedRanges(kSourceId, "{ [2746,5519) }");
+
+  Seek(duration_1);
+  ExpectConfigChanged(DemuxerStream::AUDIO);
+  ASSERT_FALSE(config_1.Matches(stream->audio_decoder_config()));
+  CheckExpectedBuffers(stream, "2746 2767 2789 2810");
 }
 
 TEST_P(ChunkDemuxerTest, AppendWindow_Text) {
@@ -3191,6 +3256,33 @@ TEST_P(ChunkDemuxerTest, Remove_AudioVideoText) {
   CheckExpectedBuffers(audio_stream, "1 21 41 61 81 101 121 141");
   CheckExpectedBuffers(video_stream, "1 31 61 91 121 151 181");
   CheckExpectedBuffers(text_stream, "1 101 201");
+}
+
+TEST_P(ChunkDemuxerTest, Remove_StartAtDuration) {
+  ASSERT_TRUE(InitDemuxer(HAS_AUDIO));
+  DemuxerStream* audio_stream = demuxer_->GetStream(DemuxerStream::AUDIO);
+
+  // Set the duration to something small so that the append that
+  // follows updates the duration to reflect the end of the appended data.
+  EXPECT_CALL(host_, SetDuration(
+      base::TimeDelta::FromMilliseconds(1)));
+  demuxer_->SetDuration(0.001);
+
+  EXPECT_CALL(host_, SetDuration(
+      base::TimeDelta::FromMilliseconds(160)));
+  AppendSingleStreamCluster(kSourceId, kAudioTrackNum,
+                            "0K 20K 40K 60K 80K 100K 120K 140K");
+
+  CheckExpectedRanges(kSourceId, "{ [0,160) }");
+  CheckExpectedBuffers(audio_stream, "0 20 40 60 80 100 120 140");
+
+  demuxer_->Remove(kSourceId,
+                   base::TimeDelta::FromSecondsD(demuxer_->GetDuration()),
+                   kInfiniteDuration());
+
+  Seek(base::TimeDelta());
+  CheckExpectedRanges(kSourceId, "{ [0,160) }");
+  CheckExpectedBuffers(audio_stream, "0 20 40 60 80 100 120 140");
 }
 
 // Verifies that a Seek() will complete without text cues for

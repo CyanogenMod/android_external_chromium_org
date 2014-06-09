@@ -73,12 +73,12 @@ void GpuChannelHost::Connect(const IPC::ChannelHandle& channel_handle,
   // Open a channel to the GPU process. We pass NULL as the main listener here
   // since we need to filter everything to route it to the right thread.
   scoped_refptr<base::MessageLoopProxy> io_loop = factory_->GetIOLoopProxy();
-  channel_.reset(new IPC::SyncChannel(channel_handle,
+  channel_ = IPC::SyncChannel::Create(channel_handle,
                                       IPC::Channel::MODE_CLIENT,
                                       NULL,
                                       io_loop.get(),
                                       true,
-                                      shutdown_event));
+                                      shutdown_event);
 
   sync_filter_ = new IPC::SyncMessageFilter(shutdown_event);
 
@@ -266,7 +266,7 @@ base::SharedMemoryHandle GpuChannelHost::ShareToGpuProcess(
   // Windows needs to explicitly duplicate the handle out to another process.
   base::SharedMemoryHandle target_handle;
   if (!BrokerDuplicateHandle(source_handle,
-                             channel_->peer_pid(),
+                             channel_->GetPeerPID(),
                              &target_handle,
                              FILE_GENERIC_READ | FILE_GENERIC_WRITE,
                              0)) {

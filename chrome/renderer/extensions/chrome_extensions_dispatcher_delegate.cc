@@ -19,6 +19,7 @@
 #include "chrome/renderer/extensions/file_browser_handler_custom_bindings.h"
 #include "chrome/renderer/extensions/file_browser_private_custom_bindings.h"
 #include "chrome/renderer/extensions/media_galleries_custom_bindings.h"
+#include "chrome/renderer/extensions/notifications_native_handler.h"
 #include "chrome/renderer/extensions/page_actions_custom_bindings.h"
 #include "chrome/renderer/extensions/page_capture_custom_bindings.h"
 #include "chrome/renderer/extensions/pepper_request_natives.h"
@@ -74,7 +75,8 @@ void ChromeExtensionsDispatcherDelegate::InitOriginPermissions(
   // whitelist entries need to be updated when the kManagement permission
   // changes.
   if (context_type == extensions::Feature::BLESSED_EXTENSION_CONTEXT &&
-      extension->HasAPIPermission(extensions::APIPermission::kManagement)) {
+      extension->permissions_data()->HasAPIPermission(
+          extensions::APIPermission::kManagement)) {
     blink::WebSecurityPolicy::addOriginAccessWhitelistEntry(
         extension->url(),
         blink::WebString::fromUTF8(content::kChromeUIScheme),
@@ -110,6 +112,10 @@ void ChromeExtensionsDispatcherDelegate::RegisterNativeHandlers(
       "file_browser_private",
       scoped_ptr<NativeHandler>(
           new extensions::FileBrowserPrivateCustomBindings(context)));
+  module_system->RegisterNativeHandler(
+      "notifications_private",
+      scoped_ptr<NativeHandler>(
+          new extensions::NotificationsNativeHandler(context)));
   module_system->RegisterNativeHandler(
       "mediaGalleries",
       scoped_ptr<NativeHandler>(
@@ -271,7 +277,8 @@ void ChromeExtensionsDispatcherDelegate::RequireAdditionalModules(
   // The API will be automatically set up when first used.
   if (context_type == extensions::Feature::BLESSED_EXTENSION_CONTEXT ||
       context_type == extensions::Feature::UNBLESSED_EXTENSION_CONTEXT) {
-    if (extension->HasAPIPermission(extensions::APIPermission::kWebView)) {
+    if (extension->permissions_data()->HasAPIPermission(
+            extensions::APIPermission::kWebView)) {
       module_system->Require("webView");
       if (extensions::GetCurrentChannel() <= chrome::VersionInfo::CHANNEL_DEV) {
         module_system->Require("webViewExperimental");
@@ -298,7 +305,8 @@ void ChromeExtensionsDispatcherDelegate::RequireAdditionalModules(
       is_within_platform_app) {
     if (CommandLine::ForCurrentProcess()->HasSwitch(
             ::switches::kEnableAdview)) {
-      if (extension->HasAPIPermission(extensions::APIPermission::kAdView)) {
+      if (extension->permissions_data()->HasAPIPermission(
+              extensions::APIPermission::kAdView)) {
         module_system->Require("adView");
       } else {
         module_system->Require("denyAdView");
@@ -330,8 +338,7 @@ void ChromeExtensionsDispatcherDelegate::ClearTabSpecificPermissions(
     const extensions::Extension* extension =
         dispatcher->extensions()->GetByID(*it);
     if (extension)
-      extensions::PermissionsData::ClearTabSpecificPermissions(extension,
-                                                               tab_id);
+      extension->permissions_data()->ClearTabSpecificPermissions(tab_id);
   }
 }
 
@@ -355,8 +362,7 @@ void ChromeExtensionsDispatcherDelegate::UpdateTabSpecificPermissions(
   if (!extension)
     return;
 
-  extensions::PermissionsData::UpdateTabSpecificPermissions(
-      extension,
+  extension->permissions_data()->UpdateTabSpecificPermissions(
       tab_id,
       new extensions::PermissionSet(extensions::APIPermissionSet(),
                                     extensions::ManifestPermissionSet(),

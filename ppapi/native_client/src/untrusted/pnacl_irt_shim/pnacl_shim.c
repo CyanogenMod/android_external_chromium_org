@@ -19,6 +19,8 @@
 #include "ppapi/c/dev/ppb_video_capture_dev.h"
 #include "ppapi/c/dev/ppb_video_decoder_dev.h"
 #include "ppapi/c/dev/ppp_selection_dev.h"
+#include "ppapi/c/ppb_compositor.h"
+#include "ppapi/c/ppb_compositor_layer.h"
 #include "ppapi/c/ppb_console.h"
 #include "ppapi/c/ppb_core.h"
 #include "ppapi/c/ppb_file_io.h"
@@ -94,6 +96,8 @@ static int mystrcmp(const char* s1, const char *s2) {
 
 /* BEGIN Declarations for all Wrapper Infos */
 
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Compositor_0_1;
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_CompositorLayer_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Console_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Core_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_FileIO_1_0;
@@ -119,6 +123,7 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_MediaStreamVideoTrack_0_1
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_MediaStreamVideoTrack_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_MessageLoop_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Messaging_1_0;
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Messaging_1_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_MouseLock_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_NetAddress_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_NetworkList_1_0;
@@ -209,6 +214,89 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPP_Instance_Private_0_1;
 /* Not generating wrapper methods for PPB_AudioConfig_1_0 */
 
 /* Not generating wrapper methods for PPB_AudioConfig_1_1 */
+
+/* Begin wrapper methods for PPB_Compositor_0_1 */
+
+static PP_Bool Pnacl_M37_PPB_Compositor_IsCompositor(PP_Resource resource) {
+  const struct PPB_Compositor_0_1 *iface = Pnacl_WrapperInfo_PPB_Compositor_0_1.real_iface;
+  return iface->IsCompositor(resource);
+}
+
+static PP_Resource Pnacl_M37_PPB_Compositor_Create(PP_Instance instance) {
+  const struct PPB_Compositor_0_1 *iface = Pnacl_WrapperInfo_PPB_Compositor_0_1.real_iface;
+  return iface->Create(instance);
+}
+
+static PP_Resource Pnacl_M37_PPB_Compositor_AddLayer(PP_Resource compositor) {
+  const struct PPB_Compositor_0_1 *iface = Pnacl_WrapperInfo_PPB_Compositor_0_1.real_iface;
+  return iface->AddLayer(compositor);
+}
+
+static int32_t Pnacl_M37_PPB_Compositor_CommitLayers(PP_Resource compositor, struct PP_CompletionCallback* cc) {
+  const struct PPB_Compositor_0_1 *iface = Pnacl_WrapperInfo_PPB_Compositor_0_1.real_iface;
+  return iface->CommitLayers(compositor, *cc);
+}
+
+static int32_t Pnacl_M37_PPB_Compositor_ResetLayers(PP_Resource compositor) {
+  const struct PPB_Compositor_0_1 *iface = Pnacl_WrapperInfo_PPB_Compositor_0_1.real_iface;
+  return iface->ResetLayers(compositor);
+}
+
+/* End wrapper methods for PPB_Compositor_0_1 */
+
+/* Begin wrapper methods for PPB_CompositorLayer_0_1 */
+
+static PP_Bool Pnacl_M37_PPB_CompositorLayer_IsCompositorLayer(PP_Resource resource) {
+  const struct PPB_CompositorLayer_0_1 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_1.real_iface;
+  return iface->IsCompositorLayer(resource);
+}
+
+static int32_t Pnacl_M37_PPB_CompositorLayer_SetColor(PP_Resource layer, float red, float green, float blue, float alpha, const struct PP_Size* size) {
+  const struct PPB_CompositorLayer_0_1 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_1.real_iface;
+  return iface->SetColor(layer, red, green, blue, alpha, size);
+}
+
+static int32_t Pnacl_M37_PPB_CompositorLayer_SetTexture(PP_Resource layer, PP_Resource context, uint32_t texture, const struct PP_Size* size, struct PP_CompletionCallback* cc) {
+  const struct PPB_CompositorLayer_0_1 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_1.real_iface;
+  return iface->SetTexture(layer, context, texture, size, *cc);
+}
+
+static int32_t Pnacl_M37_PPB_CompositorLayer_SetImage(PP_Resource layer, PP_Resource image_data, const struct PP_Size* size, struct PP_CompletionCallback* cc) {
+  const struct PPB_CompositorLayer_0_1 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_1.real_iface;
+  return iface->SetImage(layer, image_data, size, *cc);
+}
+
+static int32_t Pnacl_M37_PPB_CompositorLayer_SetClipRect(PP_Resource layer, const struct PP_Rect* rect) {
+  const struct PPB_CompositorLayer_0_1 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_1.real_iface;
+  return iface->SetClipRect(layer, rect);
+}
+
+static int32_t Pnacl_M37_PPB_CompositorLayer_SetTransform(PP_Resource layer, const float matrix[16]) {
+  const struct PPB_CompositorLayer_0_1 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_1.real_iface;
+  return iface->SetTransform(layer, matrix);
+}
+
+static int32_t Pnacl_M37_PPB_CompositorLayer_SetOpacity(PP_Resource layer, float opacity) {
+  const struct PPB_CompositorLayer_0_1 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_1.real_iface;
+  return iface->SetOpacity(layer, opacity);
+}
+
+static int32_t Pnacl_M37_PPB_CompositorLayer_SetBlendMode(PP_Resource layer, PP_BlendMode mode) {
+  const struct PPB_CompositorLayer_0_1 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_1.real_iface;
+  return iface->SetBlendMode(layer, mode);
+}
+
+static int32_t Pnacl_M37_PPB_CompositorLayer_SetSourceRect(PP_Resource layer, const struct PP_FloatRect* rect) {
+  const struct PPB_CompositorLayer_0_1 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_1.real_iface;
+  return iface->SetSourceRect(layer, rect);
+}
+
+static int32_t Pnacl_M37_PPB_CompositorLayer_SetPremultipliedAlpha(PP_Resource layer, PP_Bool premult) {
+  const struct PPB_CompositorLayer_0_1 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_1.real_iface;
+  return iface->SetPremultipliedAlpha(layer, premult);
+}
+
+/* End wrapper methods for PPB_CompositorLayer_0_1 */
 
 /* Begin wrapper methods for PPB_Console_1_0 */
 
@@ -1185,6 +1273,25 @@ static void Pnacl_M14_PPB_Messaging_PostMessage(PP_Instance instance, struct PP_
 
 /* End wrapper methods for PPB_Messaging_1_0 */
 
+/* Begin wrapper methods for PPB_Messaging_1_1 */
+
+static void Pnacl_M37_PPB_Messaging_PostMessage(PP_Instance instance, struct PP_Var* message) {
+  const struct PPB_Messaging_1_1 *iface = Pnacl_WrapperInfo_PPB_Messaging_1_1.real_iface;
+  iface->PostMessage(instance, *message);
+}
+
+static int32_t Pnacl_M37_PPB_Messaging_RegisterMessageHandler(PP_Instance instance, void* user_data, const struct PPP_MessageHandler_0_1* handler, PP_Resource message_loop) {
+  const struct PPB_Messaging_1_1 *iface = Pnacl_WrapperInfo_PPB_Messaging_1_1.real_iface;
+  return iface->RegisterMessageHandler(instance, user_data, handler, message_loop);
+}
+
+static void Pnacl_M37_PPB_Messaging_UnregisterMessageHandler(PP_Instance instance) {
+  const struct PPB_Messaging_1_1 *iface = Pnacl_WrapperInfo_PPB_Messaging_1_1.real_iface;
+  iface->UnregisterMessageHandler(instance);
+}
+
+/* End wrapper methods for PPB_Messaging_1_1 */
+
 /* Not generating wrapper methods for PPB_MouseCursor_1_0 */
 
 /* Begin wrapper methods for PPB_MouseLock_1_0 */
@@ -1895,6 +2002,8 @@ static void Pnacl_M18_PPB_WebSocket_GetURL(struct PP_Var* _struct_result, PP_Res
 /* Not generating wrapper methods for PPP_Instance_1_0 */
 
 /* Not generating wrapper methods for PPP_Instance_1_1 */
+
+/* Not generating wrapper methods for PPP_MessageHandler_0_1 */
 
 /* Begin wrapper methods for PPP_Messaging_1_0 */
 
@@ -3219,9 +3328,9 @@ static int32_t Pnacl_M25_PPB_NaCl_Private_BrokerDuplicateHandle(PP_FileHandle so
   return iface->BrokerDuplicateHandle(source_handle, process_id, target_handle, desired_access, options);
 }
 
-static PP_FileHandle Pnacl_M25_PPB_NaCl_Private_GetReadonlyPnaclFd(const char* filename) {
+static PP_FileHandle Pnacl_M25_PPB_NaCl_Private_GetReadonlyPnaclFd(const char* url) {
   const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
-  return iface->GetReadonlyPnaclFd(filename);
+  return iface->GetReadonlyPnaclFd(url);
 }
 
 static PP_FileHandle Pnacl_M25_PPB_NaCl_Private_CreateTemporaryFile(PP_Instance instance) {
@@ -3259,9 +3368,9 @@ static void Pnacl_M25_PPB_NaCl_Private_ReportLoadSuccess(PP_Instance instance, c
   iface->ReportLoadSuccess(instance, url, loaded_bytes, total_bytes);
 }
 
-static void Pnacl_M25_PPB_NaCl_Private_ReportLoadError(PP_Instance instance, PP_NaClError error, const char* error_message, const char* console_message) {
+static void Pnacl_M25_PPB_NaCl_Private_ReportLoadError(PP_Instance instance, PP_NaClError error, const char* error_message) {
   const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
-  iface->ReportLoadError(instance, error, error_message, console_message);
+  iface->ReportLoadError(instance, error, error_message);
 }
 
 static void Pnacl_M25_PPB_NaCl_Private_ReportLoadAbort(PP_Instance instance) {
@@ -3304,11 +3413,6 @@ static PP_NaClReadyState Pnacl_M25_PPB_NaCl_Private_GetNaClReadyState(PP_Instanc
   return iface->GetNaClReadyState(instance);
 }
 
-static PP_Bool Pnacl_M25_PPB_NaCl_Private_GetIsInstalled(PP_Instance instance) {
-  const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
-  return iface->GetIsInstalled(instance);
-}
-
 static int32_t Pnacl_M25_PPB_NaCl_Private_GetExitStatus(PP_Instance instance) {
   const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
   return iface->GetExitStatus(instance);
@@ -3334,9 +3438,9 @@ static int64_t Pnacl_M25_PPB_NaCl_Private_GetNexeSize(PP_Instance instance) {
   return iface->GetNexeSize(instance);
 }
 
-static void Pnacl_M25_PPB_NaCl_Private_RequestNaClManifest(PP_Instance instance, const char* manifest_url, struct PP_CompletionCallback* callback) {
+static void Pnacl_M25_PPB_NaCl_Private_RequestNaClManifest(PP_Instance instance, struct PP_CompletionCallback* callback) {
   const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
-  iface->RequestNaClManifest(instance, manifest_url, *callback);
+  iface->RequestNaClManifest(instance, *callback);
 }
 
 static void Pnacl_M25_PPB_NaCl_Private_GetManifestBaseURL(struct PP_Var* _struct_result, PP_Instance instance) {
@@ -3347,11 +3451,6 @@ static void Pnacl_M25_PPB_NaCl_Private_GetManifestBaseURL(struct PP_Var* _struct
 static void Pnacl_M25_PPB_NaCl_Private_ProcessNaClManifest(PP_Instance instance, const char* program_url) {
   const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
   iface->ProcessNaClManifest(instance, program_url);
-}
-
-static void Pnacl_M25_PPB_NaCl_Private_GetManifestURLArgument(struct PP_Var* _struct_result, PP_Instance instance) {
-  const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
-  *_struct_result = iface->GetManifestURLArgument(instance);
 }
 
 static PP_Bool Pnacl_M25_PPB_NaCl_Private_DevInterfacesEnabled(PP_Instance instance) {
@@ -3392,6 +3491,11 @@ static void Pnacl_M25_PPB_NaCl_Private_DownloadNexe(PP_Instance instance, const 
 static void Pnacl_M25_PPB_NaCl_Private_DownloadFile(PP_Instance instance, const char* url, struct PP_NaClFileInfo* file_info, struct PP_CompletionCallback* callback) {
   const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
   iface->DownloadFile(instance, url, file_info, *callback);
+}
+
+static void Pnacl_M25_PPB_NaCl_Private_ReportSelLdrStatus(PP_Instance instance, int32_t load_status, int32_t max_status) {
+  const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
+  iface->ReportSelLdrStatus(instance, load_status, max_status);
 }
 
 /* End wrapper methods for PPB_NaCl_Private_1_0 */
@@ -4258,6 +4362,27 @@ static struct PP_Var Pnacl_M18_PPP_Instance_Private_GetInstanceObject(PP_Instanc
 
 /* Not generating wrapper interface for PPB_AudioConfig_1_1 */
 
+static const struct PPB_Compositor_0_1 Pnacl_Wrappers_PPB_Compositor_0_1 = {
+    .IsCompositor = (PP_Bool (*)(PP_Resource resource))&Pnacl_M37_PPB_Compositor_IsCompositor,
+    .Create = (PP_Resource (*)(PP_Instance instance))&Pnacl_M37_PPB_Compositor_Create,
+    .AddLayer = (PP_Resource (*)(PP_Resource compositor))&Pnacl_M37_PPB_Compositor_AddLayer,
+    .CommitLayers = (int32_t (*)(PP_Resource compositor, struct PP_CompletionCallback cc))&Pnacl_M37_PPB_Compositor_CommitLayers,
+    .ResetLayers = (int32_t (*)(PP_Resource compositor))&Pnacl_M37_PPB_Compositor_ResetLayers
+};
+
+static const struct PPB_CompositorLayer_0_1 Pnacl_Wrappers_PPB_CompositorLayer_0_1 = {
+    .IsCompositorLayer = (PP_Bool (*)(PP_Resource resource))&Pnacl_M37_PPB_CompositorLayer_IsCompositorLayer,
+    .SetColor = (int32_t (*)(PP_Resource layer, float red, float green, float blue, float alpha, const struct PP_Size* size))&Pnacl_M37_PPB_CompositorLayer_SetColor,
+    .SetTexture = (int32_t (*)(PP_Resource layer, PP_Resource context, uint32_t texture, const struct PP_Size* size, struct PP_CompletionCallback cc))&Pnacl_M37_PPB_CompositorLayer_SetTexture,
+    .SetImage = (int32_t (*)(PP_Resource layer, PP_Resource image_data, const struct PP_Size* size, struct PP_CompletionCallback cc))&Pnacl_M37_PPB_CompositorLayer_SetImage,
+    .SetClipRect = (int32_t (*)(PP_Resource layer, const struct PP_Rect* rect))&Pnacl_M37_PPB_CompositorLayer_SetClipRect,
+    .SetTransform = (int32_t (*)(PP_Resource layer, const float matrix[16]))&Pnacl_M37_PPB_CompositorLayer_SetTransform,
+    .SetOpacity = (int32_t (*)(PP_Resource layer, float opacity))&Pnacl_M37_PPB_CompositorLayer_SetOpacity,
+    .SetBlendMode = (int32_t (*)(PP_Resource layer, PP_BlendMode mode))&Pnacl_M37_PPB_CompositorLayer_SetBlendMode,
+    .SetSourceRect = (int32_t (*)(PP_Resource layer, const struct PP_FloatRect* rect))&Pnacl_M37_PPB_CompositorLayer_SetSourceRect,
+    .SetPremultipliedAlpha = (int32_t (*)(PP_Resource layer, PP_Bool premult))&Pnacl_M37_PPB_CompositorLayer_SetPremultipliedAlpha
+};
+
 static const struct PPB_Console_1_0 Pnacl_Wrappers_PPB_Console_1_0 = {
     .Log = (void (*)(PP_Instance instance, PP_LogLevel level, struct PP_Var value))&Pnacl_M25_PPB_Console_Log,
     .LogWithSource = (void (*)(PP_Instance instance, PP_LogLevel level, struct PP_Var source, struct PP_Var value))&Pnacl_M25_PPB_Console_LogWithSource
@@ -4516,6 +4641,12 @@ static const struct PPB_Messaging_1_0 Pnacl_Wrappers_PPB_Messaging_1_0 = {
     .PostMessage = (void (*)(PP_Instance instance, struct PP_Var message))&Pnacl_M14_PPB_Messaging_PostMessage
 };
 
+static const struct PPB_Messaging_1_1 Pnacl_Wrappers_PPB_Messaging_1_1 = {
+    .PostMessage = (void (*)(PP_Instance instance, struct PP_Var message))&Pnacl_M37_PPB_Messaging_PostMessage,
+    .RegisterMessageHandler = (int32_t (*)(PP_Instance instance, void* user_data, const struct PPP_MessageHandler_0_1* handler, PP_Resource message_loop))&Pnacl_M37_PPB_Messaging_RegisterMessageHandler,
+    .UnregisterMessageHandler = (void (*)(PP_Instance instance))&Pnacl_M37_PPB_Messaging_UnregisterMessageHandler
+};
+
 /* Not generating wrapper interface for PPB_MouseCursor_1_0 */
 
 static const struct PPB_MouseLock_1_0 Pnacl_Wrappers_PPB_MouseLock_1_0 = {
@@ -4714,6 +4845,8 @@ static const struct PPB_WebSocket_1_0 Pnacl_Wrappers_PPB_WebSocket_1_0 = {
 /* Not generating wrapper interface for PPP_Instance_1_0 */
 
 /* Not generating wrapper interface for PPP_Instance_1_1 */
+
+/* Not generating wrapper interface for PPP_MessageHandler_0_1 */
 
 static const struct PPP_Messaging_1_0 Pnacl_Wrappers_PPP_Messaging_1_0 = {
     .HandleMessage = &Pnacl_M14_PPP_Messaging_HandleMessage
@@ -5119,7 +5252,7 @@ static const struct PPB_NaCl_Private_1_0 Pnacl_Wrappers_PPB_NaCl_Private_1_0 = {
     .UrandomFD = (int32_t (*)(void))&Pnacl_M25_PPB_NaCl_Private_UrandomFD,
     .Are3DInterfacesDisabled = (PP_Bool (*)(void))&Pnacl_M25_PPB_NaCl_Private_Are3DInterfacesDisabled,
     .BrokerDuplicateHandle = (int32_t (*)(PP_FileHandle source_handle, uint32_t process_id, PP_FileHandle* target_handle, uint32_t desired_access, uint32_t options))&Pnacl_M25_PPB_NaCl_Private_BrokerDuplicateHandle,
-    .GetReadonlyPnaclFd = (PP_FileHandle (*)(const char* filename))&Pnacl_M25_PPB_NaCl_Private_GetReadonlyPnaclFd,
+    .GetReadonlyPnaclFd = (PP_FileHandle (*)(const char* url))&Pnacl_M25_PPB_NaCl_Private_GetReadonlyPnaclFd,
     .CreateTemporaryFile = (PP_FileHandle (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_CreateTemporaryFile,
     .GetNumberOfProcessors = (int32_t (*)(void))&Pnacl_M25_PPB_NaCl_Private_GetNumberOfProcessors,
     .IsNonSFIModeEnabled = (PP_Bool (*)(void))&Pnacl_M25_PPB_NaCl_Private_IsNonSFIModeEnabled,
@@ -5127,7 +5260,7 @@ static const struct PPB_NaCl_Private_1_0 Pnacl_Wrappers_PPB_NaCl_Private_1_0 = {
     .ReportTranslationFinished = (void (*)(PP_Instance instance, PP_Bool success))&Pnacl_M25_PPB_NaCl_Private_ReportTranslationFinished,
     .DispatchEvent = (void (*)(PP_Instance instance, PP_NaClEventType event_type, const char* resource_url, PP_Bool length_is_computable, uint64_t loaded_bytes, uint64_t total_bytes))&Pnacl_M25_PPB_NaCl_Private_DispatchEvent,
     .ReportLoadSuccess = (void (*)(PP_Instance instance, const char* url, uint64_t loaded_bytes, uint64_t total_bytes))&Pnacl_M25_PPB_NaCl_Private_ReportLoadSuccess,
-    .ReportLoadError = (void (*)(PP_Instance instance, PP_NaClError error, const char* error_message, const char* console_message))&Pnacl_M25_PPB_NaCl_Private_ReportLoadError,
+    .ReportLoadError = (void (*)(PP_Instance instance, PP_NaClError error, const char* error_message))&Pnacl_M25_PPB_NaCl_Private_ReportLoadError,
     .ReportLoadAbort = (void (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_ReportLoadAbort,
     .NexeDidCrash = (void (*)(PP_Instance instance, const char* crash_log))&Pnacl_M25_PPB_NaCl_Private_NexeDidCrash,
     .InstanceCreated = (void (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_InstanceCreated,
@@ -5136,16 +5269,14 @@ static const struct PPB_NaCl_Private_1_0 Pnacl_Wrappers_PPB_NaCl_Private_1_0 = {
     .GetSandboxArch = (const char* (*)(void))&Pnacl_M25_PPB_NaCl_Private_GetSandboxArch,
     .LogToConsole = (void (*)(PP_Instance instance, const char* message))&Pnacl_M25_PPB_NaCl_Private_LogToConsole,
     .GetNaClReadyState = (PP_NaClReadyState (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_GetNaClReadyState,
-    .GetIsInstalled = (PP_Bool (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_GetIsInstalled,
     .GetExitStatus = (int32_t (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_GetExitStatus,
     .SetExitStatus = (void (*)(PP_Instance instance, int32_t exit_status))&Pnacl_M25_PPB_NaCl_Private_SetExitStatus,
     .Vlog = (void (*)(const char* message))&Pnacl_M25_PPB_NaCl_Private_Vlog,
     .InitializePlugin = (void (*)(PP_Instance instance, uint32_t argc, const char* argn[], const char* argv[]))&Pnacl_M25_PPB_NaCl_Private_InitializePlugin,
     .GetNexeSize = (int64_t (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_GetNexeSize,
-    .RequestNaClManifest = (void (*)(PP_Instance instance, const char* manifest_url, struct PP_CompletionCallback callback))&Pnacl_M25_PPB_NaCl_Private_RequestNaClManifest,
+    .RequestNaClManifest = (void (*)(PP_Instance instance, struct PP_CompletionCallback callback))&Pnacl_M25_PPB_NaCl_Private_RequestNaClManifest,
     .GetManifestBaseURL = (struct PP_Var (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_GetManifestBaseURL,
     .ProcessNaClManifest = (void (*)(PP_Instance instance, const char* program_url))&Pnacl_M25_PPB_NaCl_Private_ProcessNaClManifest,
-    .GetManifestURLArgument = (struct PP_Var (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_GetManifestURLArgument,
     .DevInterfacesEnabled = (PP_Bool (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_DevInterfacesEnabled,
     .GetManifestProgramURL = (PP_Bool (*)(PP_Instance instance, struct PP_Var* full_url, struct PP_PNaClOptions* pnacl_options, PP_Bool* uses_nonsfi_mode))&Pnacl_M25_PPB_NaCl_Private_GetManifestProgramURL,
     .ManifestResolveKey = (PP_Bool (*)(PP_Instance instance, PP_Bool helper_process, const char* key, struct PP_Var* full_url, struct PP_PNaClOptions* pnacl_options))&Pnacl_M25_PPB_NaCl_Private_ManifestResolveKey,
@@ -5153,7 +5284,8 @@ static const struct PPB_NaCl_Private_1_0 Pnacl_Wrappers_PPB_NaCl_Private_1_0 = {
     .GetCpuFeatureAttrs = (struct PP_Var (*)(void))&Pnacl_M25_PPB_NaCl_Private_GetCpuFeatureAttrs,
     .PostMessageToJavaScript = (void (*)(PP_Instance instance, const char* message))&Pnacl_M25_PPB_NaCl_Private_PostMessageToJavaScript,
     .DownloadNexe = (void (*)(PP_Instance instance, const char* url, struct PP_NaClFileInfo* file_info, struct PP_CompletionCallback callback))&Pnacl_M25_PPB_NaCl_Private_DownloadNexe,
-    .DownloadFile = (void (*)(PP_Instance instance, const char* url, struct PP_NaClFileInfo* file_info, struct PP_CompletionCallback callback))&Pnacl_M25_PPB_NaCl_Private_DownloadFile
+    .DownloadFile = (void (*)(PP_Instance instance, const char* url, struct PP_NaClFileInfo* file_info, struct PP_CompletionCallback callback))&Pnacl_M25_PPB_NaCl_Private_DownloadFile,
+    .ReportSelLdrStatus = (void (*)(PP_Instance instance, int32_t load_status, int32_t max_status))&Pnacl_M25_PPB_NaCl_Private_ReportSelLdrStatus
 };
 
 static const struct PPB_NetAddress_Private_0_1 Pnacl_Wrappers_PPB_NetAddress_Private_0_1 = {
@@ -5376,6 +5508,18 @@ static const struct PPP_Instance_Private_0_1 Pnacl_Wrappers_PPP_Instance_Private
     .GetInstanceObject = &Pnacl_M18_PPP_Instance_Private_GetInstanceObject
 };
 
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Compositor_0_1 = {
+  .iface_macro = PPB_COMPOSITOR_INTERFACE_0_1,
+  .wrapped_iface = (const void *) &Pnacl_Wrappers_PPB_Compositor_0_1,
+  .real_iface = NULL
+};
+
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_CompositorLayer_0_1 = {
+  .iface_macro = PPB_COMPOSITORLAYER_INTERFACE_0_1,
+  .wrapped_iface = (const void *) &Pnacl_Wrappers_PPB_CompositorLayer_0_1,
+  .real_iface = NULL
+};
+
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Console_1_0 = {
   .iface_macro = PPB_CONSOLE_INTERFACE_1_0,
   .wrapped_iface = (const void *) &Pnacl_Wrappers_PPB_Console_1_0,
@@ -5523,6 +5667,12 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_MessageLoop_1_0 = {
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Messaging_1_0 = {
   .iface_macro = PPB_MESSAGING_INTERFACE_1_0,
   .wrapped_iface = (const void *) &Pnacl_Wrappers_PPB_Messaging_1_0,
+  .real_iface = NULL
+};
+
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Messaging_1_1 = {
+  .iface_macro = PPB_MESSAGING_INTERFACE_1_1,
+  .wrapped_iface = (const void *) &Pnacl_Wrappers_PPB_Messaging_1_1,
   .real_iface = NULL
 };
 
@@ -6001,6 +6151,8 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPP_Instance_Private_0_1 = {
 };
 
 static struct __PnaclWrapperInfo *s_ppb_wrappers[] = {
+  &Pnacl_WrapperInfo_PPB_Compositor_0_1,
+  &Pnacl_WrapperInfo_PPB_CompositorLayer_0_1,
   &Pnacl_WrapperInfo_PPB_Console_1_0,
   &Pnacl_WrapperInfo_PPB_Core_1_0,
   &Pnacl_WrapperInfo_PPB_FileIO_1_0,
@@ -6026,6 +6178,7 @@ static struct __PnaclWrapperInfo *s_ppb_wrappers[] = {
   &Pnacl_WrapperInfo_PPB_MediaStreamVideoTrack_1_0,
   &Pnacl_WrapperInfo_PPB_MessageLoop_1_0,
   &Pnacl_WrapperInfo_PPB_Messaging_1_0,
+  &Pnacl_WrapperInfo_PPB_Messaging_1_1,
   &Pnacl_WrapperInfo_PPB_MouseLock_1_0,
   &Pnacl_WrapperInfo_PPB_NetAddress_1_0,
   &Pnacl_WrapperInfo_PPB_NetworkList_1_0,

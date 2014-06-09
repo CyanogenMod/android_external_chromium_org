@@ -32,13 +32,12 @@ bool IsBaselinePolicyAllowed(int sysno) {
          SyscallSets::IsAllowedBasicScheduler(sysno) ||
          SyscallSets::IsAllowedEpoll(sysno) ||
          SyscallSets::IsAllowedFileSystemAccessViaFd(sysno) ||
+         SyscallSets::IsAllowedFutex(sysno) ||
          SyscallSets::IsAllowedGeneralIo(sysno) ||
          SyscallSets::IsAllowedGetOrModifySocket(sysno) ||
          SyscallSets::IsAllowedGettime(sysno) ||
-         SyscallSets::IsAllowedPrctl(sysno) ||
          SyscallSets::IsAllowedProcessStartOrDeath(sysno) ||
          SyscallSets::IsAllowedSignalHandling(sysno) ||
-         SyscallSets::IsFutex(sysno) ||
          SyscallSets::IsGetSimpleId(sysno) ||
          SyscallSets::IsKernelInternalApi(sysno) ||
 #if defined(__arm__)
@@ -71,6 +70,7 @@ bool IsBaselinePolicyWatched(int sysno) {
          SyscallSets::IsNetworkSocketInformation(sysno) ||
 #endif
          SyscallSets::IsNuma(sysno) ||
+         SyscallSets::IsPrctl(sysno) ||
          SyscallSets::IsProcessGroupOrSession(sysno) ||
 #if defined(__i386__)
          SyscallSets::IsSocketCall(sysno) ||
@@ -121,6 +121,9 @@ ErrorCode EvaluateSyscallImpl(int fs_denied_errno,
     return RestrictFcntlCommands(sandbox);
 #endif
 
+  if (sysno == __NR_futex)
+    return RestrictFutex(sandbox);
+
   if (sysno == __NR_madvise) {
     // Only allow MADV_DONTNEED (aka MADV_FREE).
     return sandbox->Cond(2, ErrorCode::TP_32BIT,
@@ -141,6 +144,9 @@ ErrorCode EvaluateSyscallImpl(int fs_denied_errno,
 
   if (sysno == __NR_mprotect)
     return RestrictMprotectFlags(sandbox);
+
+  if (sysno == __NR_prctl)
+    return sandbox::RestrictPrctl(sandbox);
 
 #if defined(__x86_64__) || defined(__arm__)
   if (sysno == __NR_socketpair) {

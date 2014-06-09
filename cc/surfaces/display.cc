@@ -17,11 +17,15 @@
 
 namespace cc {
 
-Display::Display(DisplayClient* client, SurfaceManager* manager)
+Display::Display(DisplayClient* client,
+                 SurfaceManager* manager,
+                 SharedBitmapManager* bitmap_manager)
     : scheduled_draw_(false),
       client_(client),
       manager_(manager),
-      aggregator_(manager) {
+      aggregator_(manager),
+      bitmap_manager_(bitmap_manager),
+      schedule_draw_factory_(this) {
 }
 
 Display::~Display() {
@@ -47,8 +51,8 @@ bool Display::Draw() {
     // TODO(jbauman): Switch to use ResourceProvider and GLRenderer directly,
     // as using LayerTreeHost from here is a layering violation.
     LayerTreeSettings settings;
-    layer_tree_host_ =
-        LayerTreeHost::CreateSingleThreaded(this, this, NULL, settings);
+    layer_tree_host_ = LayerTreeHost::CreateSingleThreaded(
+        this, this, bitmap_manager_, settings);
     resource_collection_ = new DelegatedFrameResourceCollection;
     resource_collection_->SetClient(this);
     layer_tree_host_->SetLayerTreeHostClientReady();
@@ -85,7 +89,8 @@ void Display::ScheduleComposite() {
   scheduled_draw_ = true;
 
   base::MessageLoop::current()->PostTask(
-      FROM_HERE, base::Bind(&Display::DoComposite, base::Unretained(this)));
+      FROM_HERE,
+      base::Bind(&Display::DoComposite, schedule_draw_factory_.GetWeakPtr()));
 }
 
 void Display::ScheduleAnimation() {

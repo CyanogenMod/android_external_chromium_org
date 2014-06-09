@@ -13,9 +13,9 @@
 #include "chrome/browser/google/google_url_tracker_infobar_delegate.h"
 #include "chrome/browser/google/google_url_tracker_navigation_helper.h"
 #include "chrome/browser/google/google_util.h"
-#include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "components/google/core/browser/google_pref_names.h"
+#include "components/google/core/browser/google_switches.h"
 #include "components/google/core/browser/google_url_tracker_client.h"
 #include "components/infobars/core/infobar.h"
 #include "components/infobars/core/infobar_manager.h"
@@ -31,15 +31,12 @@ const char GoogleURLTracker::kDefaultGoogleHomepage[] =
 const char GoogleURLTracker::kSearchDomainCheckURL[] =
     "https://www.google.com/searchdomaincheck?format=url&type=chrome";
 
-GoogleURLTracker::GoogleURLTracker(Profile* profile,
-                                   scoped_ptr<GoogleURLTrackerClient> client,
+GoogleURLTracker::GoogleURLTracker(scoped_ptr<GoogleURLTrackerClient> client,
                                    Mode mode)
-    : profile_(profile),
-      client_(client.Pass()),
-      infobar_creator_(base::Bind(&GoogleURLTrackerInfoBarDelegate::Create)),
+    : client_(client.Pass()),
       google_url_(mode == UNIT_TEST_MODE ?
           kDefaultGoogleHomepage :
-          profile->GetPrefs()->GetString(prefs::kLastKnownGoogleURL)),
+          client_->GetPrefs()->GetString(prefs::kLastKnownGoogleURL)),
       fetcher_id_(0),
       in_startup_sleep_(true),
       already_fetched_(false),
@@ -74,36 +71,30 @@ GoogleURLTracker::~GoogleURLTracker() {
   DCHECK(entry_map_.empty());
 }
 
-// static
-GURL GoogleURLTracker::GoogleURL(Profile* profile) {
-  const GoogleURLTracker* tracker =
-      GoogleURLTrackerFactory::GetForProfile(profile);
-  return tracker ? tracker->google_url_ : GURL(kDefaultGoogleHomepage);
-}
-
-// static
-void GoogleURLTracker::RequestServerCheck(Profile* profile, bool force) {
-  GoogleURLTracker* tracker = GoogleURLTrackerFactory::GetForProfile(profile);
-  // If the tracker already has a fetcher, SetNeedToFetch() is unnecessary, and
-  // changing |already_fetched_| is wrong.
-  if (tracker && !tracker->fetcher_) {
+void GoogleURLTracker::RequestServerCheck(bool force) {
+  // If this instance already has a fetcher, SetNeedToFetch() is unnecessary,
+  // and changing |already_fetched_| is wrong.
+  if (!fetcher_) {
     if (force)
-      tracker->already_fetched_ = false;
-    tracker->SetNeedToFetch();
+      already_fetched_ = false;
+    SetNeedToFetch();
   }
 }
 
-// static
-void GoogleURLTracker::GoogleURLSearchCommitted(Profile* profile) {
-  GoogleURLTracker* tracker = GoogleURLTrackerFactory::GetForProfile(profile);
-  if (tracker)
-    tracker->SearchCommitted();
+void GoogleURLTracker::SearchCommitted() {
+  if (need_to_prompt_) {
+    search_committed_ = true;
+    // These notifications will fire a bit later in the same call chain we're
+    // currently in.
+    if (!client_->IsListeningForNavigationStart())
+      client_->SetListeningForNavigationStart(true);
+  }
 }
 
 void GoogleURLTracker::AcceptGoogleURL(bool redo_searches) {
   GURL old_google_url = google_url_;
   google_url_ = fetched_google_url_;
-  PrefService* prefs = profile_->GetPrefs();
+  PrefService* prefs = client_->GetPrefs();
   prefs->SetString(prefs::kLastKnownGoogleURL, google_url_.spec());
   prefs->SetString(prefs::kLastPromptedGoogleURL, google_url_.spec());
   NotifyGoogleURLUpdated(old_google_url, google_url_);
@@ -113,8 +104,8 @@ void GoogleURLTracker::AcceptGoogleURL(bool redo_searches) {
 }
 
 void GoogleURLTracker::CancelGoogleURL() {
-  profile_->GetPrefs()->SetString(prefs::kLastPromptedGoogleURL,
-                                  fetched_google_url_.spec());
+  client_->GetPrefs()->SetString(prefs::kLastPromptedGoogleURL,
+                                 fetched_google_url_.spec());
   need_to_prompt_ = false;
   CloseAllEntries(false);
 }
@@ -143,7 +134,7 @@ void GoogleURLTracker::OnURLFetchComplete(const net::URLFetcher* source) {
 
   std::swap(url, fetched_google_url_);
   GURL last_prompted_url(
-      profile_->GetPrefs()->GetString(prefs::kLastPromptedGoogleURL));
+      client_->GetPrefs()->GetString(prefs::kLastPromptedGoogleURL));
 
   if (last_prompted_url.is_empty()) {
     // On the very first run of Chrome, when we've never looked up the URL at
@@ -241,8 +232,7 @@ void GoogleURLTracker::StartFetchIfDesirable() {
   // do background networking, we can't do the necessary fetch, and if the user
   // specified a Google base URL manually, we shouldn't bother to look up any
   // alternatives or offer to switch to them.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDisableBackgroundNetworking) ||
+  if (!client_->IsBackgroundNetworkingEnabled() ||
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kGoogleBaseURL))
     return;
 
@@ -254,23 +244,13 @@ void GoogleURLTracker::StartFetchIfDesirable() {
   // we alarm the user.
   fetcher_->SetLoadFlags(net::LOAD_DISABLE_CACHE |
                          net::LOAD_DO_NOT_SAVE_COOKIES);
-  fetcher_->SetRequestContext(profile_->GetRequestContext());
+  fetcher_->SetRequestContext(client_->GetRequestContext());
 
   // Configure to max_retries at most kMaxRetries times for 5xx errors.
   static const int kMaxRetries = 5;
   fetcher_->SetMaxRetriesOn5xx(kMaxRetries);
 
   fetcher_->Start();
-}
-
-void GoogleURLTracker::SearchCommitted() {
-  if (need_to_prompt_) {
-    search_committed_ = true;
-    // These notifications will fire a bit later in the same call chain we're
-    // currently in.
-    if (!client_->IsListeningForNavigationStart())
-      client_->SetListeningForNavigationStart(true);
-  }
 }
 
 void GoogleURLTracker::OnNavigationPending(
@@ -344,7 +324,7 @@ void GoogleURLTracker::OnNavigationCommitted(
   if (map_entry->has_infobar_delegate()) {
     map_entry->infobar_delegate()->Update(search_url);
   } else {
-    infobars::InfoBar* infobar = infobar_creator_.Run(
+    infobars::InfoBar* infobar = GoogleURLTrackerInfoBarDelegate::Create(
         infobar_manager, this, search_url);
     if (infobar) {
       map_entry->SetInfoBarDelegate(

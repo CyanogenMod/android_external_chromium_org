@@ -102,11 +102,13 @@ SyncWorker::SyncWorker(
       network_available_(false),
       extension_service_(extension_service),
       context_(sync_engine_context.Pass()),
+      has_refresh_token_(false),
       weak_ptr_factory_(this) {}
 
 SyncWorker::~SyncWorker() {}
 
 void SyncWorker::Initialize() {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
   DCHECK(!task_manager_);
 
   task_manager_.reset(new SyncTaskManager(
@@ -124,7 +126,9 @@ void SyncWorker::Initialize() {
 void SyncWorker::RegisterOrigin(
     const GURL& origin,
     const SyncStatusCallback& callback) {
-  if (!GetMetadataDatabase() && GetDriveService()->HasRefreshToken())
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
+  if (!GetMetadataDatabase() && has_refresh_token_)
     PostInitializeTask();
 
   scoped_ptr<RegisterAppTask> task(
@@ -145,6 +149,8 @@ void SyncWorker::RegisterOrigin(
 void SyncWorker::EnableOrigin(
     const GURL& origin,
     const SyncStatusCallback& callback) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   task_manager_->ScheduleTask(
       FROM_HERE,
       base::Bind(&SyncWorker::DoEnableApp,
@@ -157,6 +163,8 @@ void SyncWorker::EnableOrigin(
 void SyncWorker::DisableOrigin(
     const GURL& origin,
     const SyncStatusCallback& callback) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   task_manager_->ScheduleTask(
       FROM_HERE,
       base::Bind(&SyncWorker::DoDisableApp,
@@ -170,6 +178,8 @@ void SyncWorker::UninstallOrigin(
     const GURL& origin,
     RemoteFileSyncService::UninstallFlag flag,
     const SyncStatusCallback& callback) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   task_manager_->ScheduleSyncTask(
       FROM_HERE,
       scoped_ptr<SyncTask>(
@@ -180,6 +190,8 @@ void SyncWorker::UninstallOrigin(
 
 void SyncWorker::ProcessRemoteChange(
     const SyncFileCallback& callback) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   RemoteToLocalSyncer* syncer = new RemoteToLocalSyncer(context_.get());
   task_manager_->ScheduleSyncTask(
       FROM_HERE,
@@ -193,10 +205,14 @@ void SyncWorker::ProcessRemoteChange(
 
 void SyncWorker::SetRemoteChangeProcessor(
     RemoteChangeProcessorOnWorker* remote_change_processor_on_worker) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   context_->SetRemoteChangeProcessor(remote_change_processor_on_worker);
 }
 
 RemoteServiceState SyncWorker::GetCurrentState() const {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   if (!sync_enabled_)
     return REMOTE_SERVICE_DISABLED;
   return service_state_;
@@ -204,6 +220,8 @@ RemoteServiceState SyncWorker::GetCurrentState() const {
 
 void SyncWorker::GetOriginStatusMap(
     const RemoteFileSyncService::StatusMapCallback& callback) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   if (!GetMetadataDatabase())
     return;
 
@@ -224,18 +242,24 @@ void SyncWorker::GetOriginStatusMap(
 }
 
 scoped_ptr<base::ListValue> SyncWorker::DumpFiles(const GURL& origin) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   if (!GetMetadataDatabase())
     return scoped_ptr<base::ListValue>();
   return GetMetadataDatabase()->DumpFiles(origin.host());
 }
 
 scoped_ptr<base::ListValue> SyncWorker::DumpDatabase() {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   if (!GetMetadataDatabase())
     return scoped_ptr<base::ListValue>();
   return GetMetadataDatabase()->DumpDatabase();
 }
 
 void SyncWorker::SetSyncEnabled(bool enabled) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   if (sync_enabled_ == enabled)
     return;
 
@@ -245,14 +269,30 @@ void SyncWorker::SetSyncEnabled(bool enabled) {
     return;
 
   FOR_EACH_OBSERVER(
-      Observer, observers_,
+      Observer,
+      observers_,
       UpdateServiceState(
           GetCurrentState(),
           enabled ? "Sync is enabled" : "Sync is disabled"));
 }
 
+void SyncWorker::PromoteDemotedChanges() {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
+  MetadataDatabase* metadata_db = GetMetadataDatabase();
+  if (metadata_db && metadata_db->HasLowPriorityDirtyTracker()) {
+    metadata_db->PromoteLowerPriorityTrackersToNormal();
+    FOR_EACH_OBSERVER(
+        Observer,
+        observers_,
+        OnPendingFileListUpdated(metadata_db->CountDirtyTracker()));
+  }
+}
+
 SyncStatusCode SyncWorker::SetDefaultConflictResolutionPolicy(
     ConflictResolutionPolicy policy) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   default_conflict_resolution_policy_ = policy;
   return SYNC_STATUS_OK;
 }
@@ -282,6 +322,8 @@ void SyncWorker::ApplyLocalChange(
     const SyncFileMetadata& local_metadata,
     const fileapi::FileSystemURL& url,
     const SyncStatusCallback& callback) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   LocalToRemoteSyncer* syncer = new LocalToRemoteSyncer(
       context_.get(), local_metadata, local_change, local_path, url);
   task_manager_->ScheduleSyncTask(
@@ -295,6 +337,8 @@ void SyncWorker::ApplyLocalChange(
 }
 
 void SyncWorker::MaybeScheduleNextTask() {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   if (GetCurrentState() == REMOTE_SERVICE_DISABLED)
     return;
 
@@ -308,6 +352,8 @@ void SyncWorker::MaybeScheduleNextTask() {
 void SyncWorker::NotifyLastOperationStatus(
     SyncStatusCode status,
     bool used_network) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   UpdateServiceStateFromSyncStatusCode(status, used_network);
 
   if (GetMetadataDatabase()) {
@@ -318,6 +364,8 @@ void SyncWorker::NotifyLastOperationStatus(
 }
 
 void SyncWorker::RecordTaskLog(scoped_ptr<TaskLogger::TaskLog> task_log) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   context_->GetUITaskRunner()->PostTask(
       FROM_HERE,
       base::Bind(&TaskLogger::RecordLog,
@@ -326,6 +374,8 @@ void SyncWorker::RecordTaskLog(scoped_ptr<TaskLogger::TaskLog> task_log) {
 }
 
 void SyncWorker::OnNotificationReceived() {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   if (service_state_ == REMOTE_SERVICE_TEMPORARY_UNAVAILABLE)
     UpdateServiceState(REMOTE_SERVICE_OK, "Got push notification for Drive.");
 
@@ -334,6 +384,10 @@ void SyncWorker::OnNotificationReceived() {
 }
 
 void SyncWorker::OnReadyToSendRequests(const std::string& account_id) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
+  has_refresh_token_ = true;
+
   if (service_state_ == REMOTE_SERVICE_OK)
     return;
   UpdateServiceState(REMOTE_SERVICE_OK, "Authenticated");
@@ -349,6 +403,10 @@ void SyncWorker::OnReadyToSendRequests(const std::string& account_id) {
 }
 
 void SyncWorker::OnRefreshTokenInvalid() {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
+  has_refresh_token_ = false;
+
   UpdateServiceState(
       REMOTE_SERVICE_AUTHENTICATION_REQUIRED,
       "Found invalid refresh token.");
@@ -356,6 +414,8 @@ void SyncWorker::OnRefreshTokenInvalid() {
 
 void SyncWorker::OnNetworkChanged(
     net::NetworkChangeNotifier::ConnectionType type) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   bool new_network_availability =
       type != net::NetworkChangeNotifier::CONNECTION_NONE;
 
@@ -370,18 +430,22 @@ void SyncWorker::OnNetworkChanged(
 }
 
 drive::DriveServiceInterface* SyncWorker::GetDriveService() {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
   return context_->GetDriveService();
 }
 
 drive::DriveUploaderInterface* SyncWorker::GetDriveUploader() {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
   return context_->GetDriveUploader();
 }
 
 MetadataDatabase* SyncWorker::GetMetadataDatabase() {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
   return context_->GetMetadataDatabase();
 }
 
 SyncTaskManager* SyncWorker::GetSyncTaskManager() {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
   return task_manager_.get();
 }
 
@@ -389,8 +453,15 @@ void SyncWorker::AddObserver(Observer* observer) {
   observers_.AddObserver(observer);
 }
 
+void SyncWorker::DetachFromSequence() {
+  context_->DetachFromSequence();
+  sequence_checker_.DetachFromSequence();
+}
+
 void SyncWorker::DoDisableApp(const std::string& app_id,
                               const SyncStatusCallback& callback) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   if (GetMetadataDatabase()) {
     GetMetadataDatabase()->DisableApp(app_id, callback);
   } else {
@@ -401,6 +472,8 @@ void SyncWorker::DoDisableApp(const std::string& app_id,
 
 void SyncWorker::DoEnableApp(const std::string& app_id,
                              const SyncStatusCallback& callback) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   if (GetMetadataDatabase()) {
     GetMetadataDatabase()->EnableApp(app_id, callback);
   } else {
@@ -410,6 +483,7 @@ void SyncWorker::DoEnableApp(const std::string& app_id,
 }
 
 void SyncWorker::PostInitializeTask() {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
   DCHECK(!GetMetadataDatabase());
 
   // This initializer task may not run if MetadataDatabase in context_ is
@@ -429,8 +503,10 @@ void SyncWorker::PostInitializeTask() {
 
 void SyncWorker::DidInitialize(SyncEngineInitializer* initializer,
                                SyncStatusCode status) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   if (status != SYNC_STATUS_OK) {
-    if (GetDriveService()->HasRefreshToken()) {
+    if (has_refresh_token_) {
       UpdateServiceState(REMOTE_SERVICE_TEMPORARY_UNAVAILABLE,
                          "Could not initialize remote service");
     } else {
@@ -450,6 +526,7 @@ void SyncWorker::DidInitialize(SyncEngineInitializer* initializer,
 
 void SyncWorker::UpdateRegisteredApp() {
   MetadataDatabase* metadata_db = GetMetadataDatabase();
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
   DCHECK(metadata_db);
 
   scoped_ptr<std::vector<std::string> > app_ids(new std::vector<std::string>);
@@ -473,6 +550,8 @@ void SyncWorker::UpdateRegisteredApp() {
 }
 
 void SyncWorker::DidQueryAppStatus(const AppStatusMap* app_status) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   MetadataDatabase* metadata_db = GetMetadataDatabase();
   DCHECK(metadata_db);
 
@@ -513,6 +592,8 @@ void SyncWorker::DidQueryAppStatus(const AppStatusMap* app_status) {
 void SyncWorker::DidProcessRemoteChange(RemoteToLocalSyncer* syncer,
                                         const SyncFileCallback& callback,
                                         SyncStatusCode status) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   if (syncer->is_sync_root_deletion()) {
     MetadataDatabase::ClearDatabase(context_->PassMetadataDatabase());
     PostInitializeTask();
@@ -545,6 +626,8 @@ void SyncWorker::DidProcessRemoteChange(RemoteToLocalSyncer* syncer,
 void SyncWorker::DidApplyLocalChange(LocalToRemoteSyncer* syncer,
                                      const SyncStatusCallback& callback,
                                      SyncStatusCode status) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   if ((status == SYNC_STATUS_OK || status == SYNC_STATUS_RETRY) &&
       syncer->url().is_valid() &&
       syncer->sync_action() != SYNC_ACTION_NONE) {
@@ -587,6 +670,8 @@ void SyncWorker::DidApplyLocalChange(LocalToRemoteSyncer* syncer,
 }
 
 void SyncWorker::MaybeStartFetchChanges() {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   if (GetCurrentState() == REMOTE_SERVICE_DISABLED)
     return;
 
@@ -623,11 +708,15 @@ void SyncWorker::MaybeStartFetchChanges() {
 }
 
 void SyncWorker::DidResolveConflict(SyncStatusCode status) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   if (status == SYNC_STATUS_OK)
     should_check_conflict_ = true;
 }
 
 void SyncWorker::DidFetchChanges(SyncStatusCode status) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   if (status == SYNC_STATUS_OK)
     should_check_conflict_ = true;
   listing_remote_changes_ = false;
@@ -659,7 +748,7 @@ void SyncWorker::UpdateServiceStateFromSyncStatusCode(
     case SYNC_STATUS_NETWORK_ERROR:
     case SYNC_STATUS_ABORT:
     case SYNC_STATUS_FAILED:
-      if (GetDriveService()->HasRefreshToken()) {
+      if (has_refresh_token_) {
         UpdateServiceState(REMOTE_SERVICE_TEMPORARY_UNAVAILABLE,
                            "Network or temporary service error.");
       } else {
@@ -684,6 +773,8 @@ void SyncWorker::UpdateServiceStateFromSyncStatusCode(
 
 void SyncWorker::UpdateServiceState(RemoteServiceState state,
                                     const std::string& description) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+
   RemoteServiceState old_state = GetCurrentState();
   service_state_ = state;
 

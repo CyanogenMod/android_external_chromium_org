@@ -69,6 +69,7 @@ namespace content {
 class LegacyRenderWidgetHostHWND;
 #endif
 
+class OverscrollController;
 class RenderFrameHostImpl;
 class RenderWidgetHostImpl;
 class RenderWidgetHostView;
@@ -205,6 +206,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual bool HasAcceleratedSurface(const gfx::Size& desired_size) OVERRIDE;
   virtual void GetScreenInfo(blink::WebScreenInfo* results) OVERRIDE;
   virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
+  virtual void WheelEventAck(const blink::WebMouseWheelEvent& event,
+                             InputEventAckState ack_result) OVERRIDE;
   virtual void GestureEventAck(const blink::WebGestureEvent& event,
                                InputEventAckState ack_result) OVERRIDE;
   virtual void ProcessAckedTouchEvent(
@@ -214,6 +217,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
       OVERRIDE;
   virtual void SetScrollOffsetPinning(
       bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE;
+  virtual InputEventAckState FilterInputEvent(
+      const blink::WebInputEvent& input_event) OVERRIDE;
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
   virtual void CreateBrowserAccessibilityManagerIfNeeded() OVERRIDE;
   virtual bool LockMouse() OVERRIDE;
@@ -258,6 +263,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void OnCandidateWindowShown() OVERRIDE;
   virtual void OnCandidateWindowUpdated() OVERRIDE;
   virtual void OnCandidateWindowHidden() OVERRIDE;
+  virtual bool IsEditingCommandEnabled(int command_id) OVERRIDE;
+  virtual void ExecuteEditingCommand(int command_id) OVERRIDE;
 
   // Overridden from gfx::DisplayObserver:
   virtual void OnDisplayAdded(const gfx::Display& new_display) OVERRIDE;
@@ -327,6 +334,13 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // as part of RenderWidgetHostView.
   bool IsClosing() const { return in_shutdown_; }
 
+  // Sets whether the overscroll controller should be enabled for this page.
+  void SetOverscrollControllerEnabled(bool enabled);
+
+  OverscrollController* overscroll_controller() const {
+    return overscroll_controller_.get();
+  }
+
  protected:
   virtual ~RenderWidgetHostViewAura();
 
@@ -354,11 +368,15 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
                            DestroyedAfterCopyRequest);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
                            VisibleViewportTest);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
+                           OverscrollResetsOnBlur);
 
   class WindowObserver;
   friend class WindowObserver;
 
   void UpdateCursorIfOverSelf();
+
+  void SnapToPhysicalPixelBoundary();
 
   // Set the bounds of the window and handle size changes.  Assumes the caller
   // has already adjusted the origin of |rect| to conform to whatever coordinate
@@ -406,6 +424,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual RenderWidgetHostImpl* GetHost() OVERRIDE;
   virtual void SchedulePaintInRect(
       const gfx::Rect& damage_rect_in_dip) OVERRIDE;
+  virtual void DelegatedCompositorDidSwapBuffers() OVERRIDE {}
+  virtual void DelegatedCompositorAbortedSwapBuffers() OVERRIDE {}
   virtual bool IsVisible() OVERRIDE;
   virtual scoped_ptr<ResizeLock> CreateResizeLock(
       bool defer_compositor_lock) OVERRIDE;
@@ -548,6 +568,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 #endif
 
   TouchEditingClient* touch_editing_client_;
+
+  scoped_ptr<OverscrollController> overscroll_controller_;
 
   gfx::Insets insets_;
 

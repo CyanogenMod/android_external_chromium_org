@@ -76,6 +76,9 @@ class AppListViewTestContext {
   // Tests displaying of the experimental app list and shows the start page.
   void RunStartPageTest();
 
+  // Tests that changing the App List profile.
+  void RunProfileChangeTest();
+
   // A standard set of checks on a view, e.g., ensuring it is drawn and visible.
   static void CheckView(views::View* subview);
 
@@ -99,9 +102,11 @@ class AppListViewTestContext {
   // Closes the app list. This sets |view_| to NULL.
   void Close();
 
+  // Gets the PaginationModel owned by |view_|.
+  PaginationModel* GetPaginationModel();
+
   const TestType test_type_;
   scoped_ptr<base::RunLoop> run_loop_;
-  PaginationModel pagination_model_;
   app_list::AppListView* view_;  // Owned by native widget.
   app_list::test::AppListTestViewDelegate* delegate_;  // Owned by |view_|;
 
@@ -153,7 +158,7 @@ AppListViewTestContext::AppListViewTestContext(int test_type,
 
   // Initialize centered around a point that ensures the window is wholly shown.
   view_->InitAsBubbleAtFixedLocation(parent,
-                                     &pagination_model_,
+                                     0,
                                      gfx::Point(300, 300),
                                      views::BubbleBorder::FLOAT,
                                      false /* border_accepts_events */);
@@ -192,17 +197,21 @@ void AppListViewTestContext::Close() {
   EXPECT_FALSE(view_);
 }
 
+PaginationModel* AppListViewTestContext::GetPaginationModel() {
+  return view_->GetAppsPaginationModel();
+}
+
 void AppListViewTestContext::RunDisplayTest() {
   EXPECT_FALSE(view_->GetWidget()->IsVisible());
-  EXPECT_EQ(-1, pagination_model_.total_pages());
+  EXPECT_EQ(-1, GetPaginationModel()->total_pages());
   delegate_->GetTestModel()->PopulateApps(kInitialItems);
 
   Show();
   if (is_landscape())
-    EXPECT_EQ(2, pagination_model_.total_pages());
+    EXPECT_EQ(2, GetPaginationModel()->total_pages());
   else
-    EXPECT_EQ(3, pagination_model_.total_pages());
-  EXPECT_EQ(0, pagination_model_.selected_page());
+    EXPECT_EQ(3, GetPaginationModel()->total_pages());
+  EXPECT_EQ(0, GetPaginationModel()->selected_page());
 
   // Checks on the main view.
   AppListMainView* main_view = view_->app_list_main_view();
@@ -215,7 +224,7 @@ void AppListViewTestContext::RunDisplayTest() {
 
 void AppListViewTestContext::RunReshowWithOpenFolderTest() {
   EXPECT_FALSE(view_->GetWidget()->IsVisible());
-  EXPECT_EQ(-1, pagination_model_.total_pages());
+  EXPECT_EQ(-1, GetPaginationModel()->total_pages());
 
   AppListTestModel* model = delegate_->GetTestModel();
   model->PopulateApps(kInitialItems);
@@ -259,7 +268,7 @@ void AppListViewTestContext::RunReshowWithOpenFolderTest() {
 
 void AppListViewTestContext::RunStartPageTest() {
   EXPECT_FALSE(view_->GetWidget()->IsVisible());
-  EXPECT_EQ(-1, pagination_model_.total_pages());
+  EXPECT_EQ(-1, GetPaginationModel()->total_pages());
   AppListTestModel* model = delegate_->GetTestModel();
   model->PopulateApps(3);
 
@@ -297,6 +306,50 @@ void AppListViewTestContext::RunStartPageTest() {
   } else {
     EXPECT_EQ(NULL, start_page_view);
   }
+
+  Close();
+}
+
+void AppListViewTestContext::RunProfileChangeTest() {
+  EXPECT_FALSE(view_->GetWidget()->IsVisible());
+  EXPECT_EQ(-1, GetPaginationModel()->total_pages());
+  delegate_->GetTestModel()->PopulateApps(kInitialItems);
+
+  Show();
+
+  if (is_landscape())
+    EXPECT_EQ(2, GetPaginationModel()->total_pages());
+  else
+    EXPECT_EQ(3, GetPaginationModel()->total_pages());
+
+  // Change the profile. The original model needs to be kept alive for
+  // observers to unregister themselves.
+  scoped_ptr<AppListTestModel> original_test_model(
+      delegate_->ReleaseTestModel());
+  delegate_->set_next_profile_app_count(1);
+
+  // The original ContentsView is destroyed here.
+  view_->SetProfileByPath(base::FilePath());
+  EXPECT_EQ(1, GetPaginationModel()->total_pages());
+
+  StartPageView* start_page_view =
+      view_->app_list_main_view()->contents_view()->start_page_view();
+  if (test_type_ == EXPERIMENTAL) {
+    EXPECT_NO_FATAL_FAILURE(CheckView(start_page_view));
+    EXPECT_EQ(1u, GetVisibleTileItemViews(start_page_view->tile_views()));
+  } else {
+    EXPECT_EQ(NULL, start_page_view);
+  }
+
+  // New model updates should be processed by the start page view.
+  delegate_->GetTestModel()->CreateAndAddItem("Test App");
+  if (test_type_ == EXPERIMENTAL)
+    EXPECT_EQ(2u, GetVisibleTileItemViews(start_page_view->tile_views()));
+
+  // Old model updates should be ignored.
+  original_test_model->CreateAndAddItem("Test App 2");
+  if (test_type_ == EXPERIMENTAL)
+    EXPECT_EQ(2u, GetVisibleTileItemViews(start_page_view->tile_views()));
 
   Close();
 }
@@ -412,6 +465,15 @@ TEST_P(AppListViewTestAura, StartPageTest) {
 
 TEST_P(AppListViewTestDesktop, StartPageTest) {
   EXPECT_NO_FATAL_FAILURE(test_context_->RunStartPageTest());
+}
+
+// Tests that the profile changes operate correctly.
+TEST_P(AppListViewTestAura, ProfileChangeTest) {
+  EXPECT_NO_FATAL_FAILURE(test_context_->RunProfileChangeTest());
+}
+
+TEST_P(AppListViewTestDesktop, ProfileChangeTest) {
+  EXPECT_NO_FATAL_FAILURE(test_context_->RunProfileChangeTest());
 }
 
 INSTANTIATE_TEST_CASE_P(AppListViewTestAuraInstance,
