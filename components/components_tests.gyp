@@ -104,6 +104,7 @@
             'gcm_driver/gcm_client_impl_unittest.cc',
             'gcm_driver/gcm_driver_desktop_unittest.cc',
             'gcm_driver/gcm_stats_recorder_impl_unittest.cc',
+            'history/core/common/thumbnail_score_unittest.cc',
             'invalidation/invalidation_logger_unittest.cc',
             'json_schema/json_schema_validator_unittest.cc',
             'json_schema/json_schema_validator_unittest_base.cc',
@@ -111,13 +112,13 @@
             'keyed_service/content/browser_context_dependency_manager_unittest.cc',
             'keyed_service/core/dependency_graph_unittest.cc',
             'language_usage_metrics/language_usage_metrics_unittest.cc',
+            'metrics/compression_utils_unittest.cc',
             'metrics/machine_id_provider_win_unittest.cc',
             'metrics/metrics_hashes_unittest.cc',
             'metrics/metrics_log_manager_unittest.cc',
             'metrics/metrics_log_unittest.cc',
             'metrics/metrics_reporting_scheduler_unittest.cc',
             'metrics/metrics_state_manager_unittest.cc',
-            'metrics/net/compression_utils_unittest.cc',
             'metrics/persisted_logs_unittest.cc',
             'navigation_interception/intercept_navigation_resource_throttle_unittest.cc',
             'network_time/network_time_tracker_unittest.cc',
@@ -259,6 +260,9 @@
             'components.gyp:gcm_driver',
             'components.gyp:gcm_driver_test_support',
 
+            # Dependencies of history
+            'components.gyp:history_core_common',
+
             # Dependencies of invalidation
             'components.gyp:invalidation',
             'components.gyp:invalidation_test_support',
@@ -385,6 +389,7 @@
                 ['include', '^data_reduction_proxy/'],
                 ['include', '^dom_distiller/'],
                 ['include', '^gcm_driver/'],
+                ['include', '^history/'],
                 ['include', '^invalidation/'],
                 ['include', '^json_schema/'],
                 ['include', '^keyed_service/core/'],
