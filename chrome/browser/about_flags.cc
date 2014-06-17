@@ -1443,14 +1443,16 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_NEW_PROFILE_MANAGEMENT_NAME,
     IDS_FLAGS_ENABLE_NEW_PROFILE_MANAGEMENT_DESCRIPTION,
     kOsAndroid | kOsMac | kOsWin | kOsLinux | kOsCrOS,
-    SINGLE_VALUE_TYPE(switches::kNewProfileManagement)
+    ENABLE_DISABLE_VALUE_TYPE(switches::kEnableNewProfileManagement,
+                              switches::kDisableNewProfileManagement)
   },
   {
     "enable-account-consistency",
     IDS_FLAGS_ENABLE_ACCOUNT_CONSISTENCY_NAME,
     IDS_FLAGS_ENABLE_ACCOUNT_CONSISTENCY_DESCRIPTION,
     kOsAndroid | kOsMac | kOsWin | kOsLinux | kOsCrOS,
-    SINGLE_VALUE_TYPE(switches::kEnableAccountConsistency)
+    ENABLE_DISABLE_VALUE_TYPE(switches::kEnableAccountConsistency,
+                              switches::kDisableAccountConsistency)
   },
   {
     "enable-fast-user-switching",
@@ -1740,14 +1742,14 @@ const Experiment kExperiments[] = {
     kOsAndroid,
     SINGLE_VALUE_TYPE(switches::kDisableCast)
   },
-#endif
   {
     "prefetch-search-results",
     IDS_FLAGS_PREFETCH_SEARCH_RESULTS_NAME,
     IDS_FLAGS_PREFETCH_SEARCH_RESULTS_DESCRIPTION,
-    kOsDesktop,
+    kOsAndroid,
     SINGLE_VALUE_TYPE(switches::kPrefetchSearchResults)
   },
+#endif
 #if defined(ENABLE_APP_LIST)
   {
     "enable-experimental-app-list",
