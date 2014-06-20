@@ -41,14 +41,13 @@
 #include "chrome/browser/extensions/extension_webkit_preferences.h"
 #include "chrome/browser/extensions/suggest_permission_util.h"
 #include "chrome/browser/geolocation/chrome_access_token_store.h"
+#include "chrome/browser/geolocation/geolocation_permission_context.h"
+#include "chrome/browser/geolocation/geolocation_permission_context_factory.h"
 #include "chrome/browser/google/google_util.h"
-#include "chrome/browser/guest_view/ad_view/ad_view_guest.h"
-#include "chrome/browser/guest_view/guest_view_base.h"
-#include "chrome/browser/guest_view/guest_view_constants.h"
-#include "chrome/browser/guest_view/guest_view_manager.h"
-#include "chrome/browser/guest_view/web_view/web_view_guest.h"
 #include "chrome/browser/media/cast_transport_host_filter.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
+#include "chrome/browser/media/midi_permission_context.h"
+#include "chrome/browser/media/midi_permission_context_factory.h"
 #include "chrome/browser/metrics/chrome_browser_main_extra_parts_metrics.h"
 #include "chrome/browser/nacl_host/nacl_browser_delegate_impl.h"
 #include "chrome/browser/net/chrome_net_log.h"
@@ -180,6 +179,8 @@
 #include "chrome/browser/android/new_tab_page_url_handler.h"
 #include "chrome/browser/android/webapps/single_tab_mode_tab_helper.h"
 #include "chrome/browser/chrome_browser_main_android.h"
+#include "chrome/browser/media/protected_media_identifier_permission_context.h"
+#include "chrome/browser/media/protected_media_identifier_permission_context_factory.h"
 #include "chrome/common/descriptors_android.h"
 #include "components/breakpad/browser/crash_dump_manager_android.h"
 #elif defined(OS_POSIX)
@@ -231,6 +232,10 @@
 #endif
 
 #if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/guest_view/guest_view_base.h"
+#include "chrome/browser/guest_view/guest_view_constants.h"
+#include "chrome/browser/guest_view/guest_view_manager.h"
+#include "chrome/browser/guest_view/web_view/web_view_guest.h"
 #include "chrome/browser/renderer_host/chrome_extension_message_filter.h"
 #endif
 
@@ -770,7 +775,9 @@ void ChromeContentBrowserClient::GetStoragePartitionConfigForSite(
   partition_name->clear();
   *in_memory = false;
 
-  bool success = WebViewGuest::GetGuestPartitionConfigForSite(
+  bool success = false;
+#if defined(ENABLE_EXTENSIONS)
+  success = WebViewGuest::GetGuestPartitionConfigForSite(
       site, partition_domain, partition_name, in_memory);
 
   if (!success && site.SchemeIs(extensions::kExtensionScheme)) {
@@ -795,7 +802,11 @@ void ChromeContentBrowserClient::GetStoragePartitionConfigForSite(
       *in_memory = false;
       partition_name->clear();
     }
-  } else if (site.GetOrigin().spec() == kChromeUIChromeSigninURL) {
+    success = true;
+  }
+#endif
+
+  if (!success && (site.GetOrigin().spec() == kChromeUIChromeSigninURL)) {
     // Chrome signin page has an embedded iframe of extension and web content,
     // thus it must be isolated from other webUI pages.
     *partition_domain = chrome::kChromeUIChromeSigninHost;
@@ -821,6 +832,7 @@ void ChromeContentBrowserClient::GuestWebContentsCreated(
     WebContents* opener_web_contents,
     content::BrowserPluginGuestDelegate** guest_delegate,
     scoped_ptr<base::DictionaryValue> extra_params) {
+#if defined(ENABLE_EXTENSIONS)
   if (!guest_site_instance) {
     NOTREACHED();
     return;
@@ -848,10 +860,7 @@ void ChromeContentBrowserClient::GuestWebContentsCreated(
 
   if (opener_web_contents) {
     GuestViewBase* guest = GuestViewBase::FromWebContents(opener_web_contents);
-    if (!guest) {
-      NOTREACHED();
-      return;
-    }
+    DCHECK(guest);
 
     // Create a new GuestViewBase of the same type as the opener.
     *guest_delegate = GuestViewBase::Create(
@@ -877,12 +886,16 @@ void ChromeContentBrowserClient::GuestWebContentsCreated(
                             guest_web_contents,
                             extension_id,
                             api_type);
+#else
+  NOTREACHED();
+#endif  // defined(ENABLE_EXTENSIONS)
 }
 
 void ChromeContentBrowserClient::GuestWebContentsAttached(
     WebContents* guest_web_contents,
     WebContents* embedder_web_contents,
     const base::DictionaryValue& extra_params) {
+#if defined(ENABLE_EXTENSIONS)
   GuestViewBase* guest = GuestViewBase::FromWebContents(guest_web_contents);
   if (!guest) {
     // It's ok to return here, since we could be running a browser plugin
@@ -892,6 +905,9 @@ void ChromeContentBrowserClient::GuestWebContentsAttached(
     return;
   }
   guest->Attach(embedder_web_contents, extra_params);
+#else
+  NOTREACHED();
+#endif  // defined(ENABLE_EXTENSIONS)
 }
 
 void ChromeContentBrowserClient::RenderProcessWillLaunch(
@@ -951,8 +967,12 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
 
   RendererContentSettingRules rules;
   if (host->IsIsolatedGuest()) {
+#if defined(ENABLE_EXTENSIONS)
     GuestViewBase::GetDefaultContentSettingRules(&rules,
                                                  profile->IsOffTheRecord());
+#else
+    NOTREACHED();
+#endif
   } else {
     GetRendererContentSettingRules(
         profile->GetHostContentSettingsMap(), &rules);
@@ -1478,6 +1498,43 @@ std::string ChromeContentBrowserClient::GetCanonicalEncodingNameByAliasName(
   return CharacterEncoding::GetCanonicalEncodingNameByAliasName(alias_name);
 }
 
+namespace {
+
+bool IsAutoReloadEnabled() {
+  std::string group = base::FieldTrialList::FindFullName(
+      "AutoReloadExperiment");
+  const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
+  if (browser_command_line.HasSwitch(switches::kEnableOfflineAutoReload))
+    return true;
+  if (browser_command_line.HasSwitch(switches::kDisableOfflineAutoReload))
+    return false;
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
+  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
+  chrome::VersionInfo::Channel kForceChannel =
+      chrome::VersionInfo::CHANNEL_CANARY;
+  return (channel <= kForceChannel || group == "Enabled");
+#else
+  return group == "Enabled";
+#endif
+}
+
+bool IsAutoReloadVisibleOnlyEnabled() {
+  std::string group = base::FieldTrialList::FindFullName(
+      "AutoReloadVisibleOnlyExperiment");
+  const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
+  if (browser_command_line.HasSwitch(
+      switches::kEnableOfflineAutoReloadVisibleOnly)) {
+    return true;
+  }
+  if (browser_command_line.HasSwitch(
+      switches::kDisableOfflineAutoReloadVisibleOnly)) {
+    return false;
+  }
+  return group == "Enabled";
+}
+
+}  // namespace
+
 void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
     CommandLine* command_line, int child_process_id) {
 #if defined(OS_POSIX)
@@ -1577,29 +1634,11 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
 #endif
     }
 
-    {
-      // Enable auto-reload if this session is in the field trial or the user
-      // explicitly enabled it.
-      bool hard_enabled =
-          browser_command_line.HasSwitch(switches::kEnableOfflineAutoReload);
-      bool hard_disabled =
-          browser_command_line.HasSwitch(switches::kDisableOfflineAutoReload);
-      if (hard_enabled) {
-        command_line->AppendSwitch(switches::kEnableOfflineAutoReload);
-      } else if (!hard_disabled) {
-        std::string group =
-            base::FieldTrialList::FindFullName("AutoReloadExperiment");
-#if !defined(OS_ANDROID) && !defined(OS_IOS)
-        chrome::VersionInfo::Channel channel =
-          chrome::VersionInfo::GetChannel();
-        chrome::VersionInfo::Channel kForceChannel =
-            chrome::VersionInfo::CHANNEL_CANARY;
-        if (channel <= kForceChannel || group == "Enabled")
-#else
-        if (group == "Enabled")
-#endif
-          command_line->AppendSwitch(switches::kEnableOfflineAutoReload);
-      }
+    if (IsAutoReloadEnabled())
+      command_line->AppendSwitch(switches::kEnableOfflineAutoReload);
+    if (IsAutoReloadVisibleOnlyEnabled()) {
+      command_line->AppendSwitch(
+          switches::kEnableOfflineAutoReloadVisibleOnly);
     }
 
     {
@@ -1653,16 +1692,15 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       switches::kCloudPrintURL,
       switches::kCloudPrintXmppEndpoint,
       switches::kDisableBundledPpapiFlash,
-      switches::kDisableExtensionsResourceWhitelist,
       switches::kDisablePnacl,
       switches::kDisableScriptedPrintThrottling,
-      switches::kEnableAdview,
       switches::kEnableAppWindowControls,
       switches::kEnableBenchmarking,
       switches::kEnableNaCl,
       switches::kEnableNaClDebug,
       switches::kEnableNaClNonSfiMode,
       switches::kEnableNetBenchmarking,
+      switches::kEnableShowModalDialog,
       switches::kEnableStreamlinedHostedApps,
       switches::kEnableWatchdog,
       switches::kEnableWebBasedSignin,
@@ -1677,7 +1715,6 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       switches::kProfilingFile,
       switches::kProfilingFlush,
       switches::kRecordMode,
-      switches::kSilentDumpOnDCHECK,
       translate::switches::kTranslateSecurityOrigin,
     };
 
@@ -1699,7 +1736,6 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       chromeos::switches::kLoginProfile,
 #endif
       switches::kMemoryProfiling,
-      switches::kSilentDumpOnDCHECK,
     };
 
     command_line->CopySwitchesFrom(browser_command_line, kSwitchNames,
@@ -1743,9 +1779,9 @@ std::string ChromeContentBrowserClient::GetAcceptLangs(
   return profile->GetPrefs()->GetString(prefs::kAcceptLanguages);
 }
 
-gfx::ImageSkia* ChromeContentBrowserClient::GetDefaultFavicon() {
+const gfx::ImageSkia* ChromeContentBrowserClient::GetDefaultFavicon() {
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  return rb.GetImageSkiaNamed(IDR_DEFAULT_FAVICON);
+  return rb.GetNativeImageNamed(IDR_DEFAULT_FAVICON).ToImageSkia();
 }
 
 bool ChromeContentBrowserClient::AllowAppCache(
@@ -2125,6 +2161,54 @@ void ChromeContentBrowserClient::ShowDesktopNotification(
 #else
   NOTIMPLEMENTED();
 #endif
+}
+
+void ChromeContentBrowserClient::RequestGeolocationPermission(
+    content::WebContents* web_contents,
+    int bridge_id,
+    const GURL& requesting_frame,
+    bool user_gesture,
+    base::Callback<void(bool)> result_callback,
+    base::Closure* cancel_callback) {
+  GeolocationPermissionContextFactory::GetForProfile(
+      Profile::FromBrowserContext(web_contents->GetBrowserContext()))->
+          RequestGeolocationPermission(web_contents, bridge_id,
+                                       requesting_frame, user_gesture,
+                                       result_callback, cancel_callback);
+}
+
+void ChromeContentBrowserClient::RequestMidiSysExPermission(
+    content::WebContents* web_contents,
+    int bridge_id,
+    const GURL& requesting_frame,
+    bool user_gesture,
+    base::Callback<void(bool)> result_callback,
+    base::Closure* cancel_callback) {
+  MidiPermissionContext* context =
+      MidiPermissionContextFactory::GetForProfile(
+          Profile::FromBrowserContext(web_contents->GetBrowserContext()));
+  context->RequestMidiSysExPermission(web_contents, bridge_id, requesting_frame,
+                                      user_gesture, result_callback,
+                                      cancel_callback);
+}
+
+void ChromeContentBrowserClient::RequestProtectedMediaIdentifierPermission(
+    content::WebContents* web_contents,
+    const GURL& origin,
+    base::Callback<void(bool)> result_callback,
+    base::Closure* cancel_callback) {
+#if defined(OS_ANDROID)
+  ProtectedMediaIdentifierPermissionContext* context =
+      ProtectedMediaIdentifierPermissionContextFactory::GetForProfile(
+          Profile::FromBrowserContext(web_contents->GetBrowserContext()));
+  context->RequestProtectedMediaIdentifierPermission(web_contents,
+                                                     origin,
+                                                     result_callback,
+                                                     cancel_callback);
+#else
+  NOTIMPLEMENTED();
+  result_callback.Run(false);
+#endif  // defined(OS_ANDROID)
 }
 
 bool ChromeContentBrowserClient::CanCreateWindow(
@@ -2638,6 +2722,18 @@ void ChromeContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
     }
   }
 
+  base::FilePath app_data_path;
+  PathService::Get(base::DIR_ANDROID_APP_DATA, &app_data_path);
+  DCHECK(!app_data_path.empty());
+
+  flags = base::File::FLAG_OPEN | base::File::FLAG_READ;
+  base::FilePath icudata_path =
+      app_data_path.AppendASCII("icudtl.dat");
+  base::File icudata_file(icudata_path, flags);
+  DCHECK(icudata_file.IsValid());
+  mappings->push_back(FileDescriptorInfo(kAndroidICUDataDescriptor,
+                                         FileDescriptor(icudata_file.Pass())));
+
 #else
   int crash_signal_fd = GetCrashSignalFD(command_line);
   if (crash_signal_fd >= 0) {
@@ -2682,6 +2778,11 @@ void ChromeContentBrowserClient::PreSpawnRenderer(
 }
 #endif
 
+content::DevToolsManagerDelegate*
+ChromeContentBrowserClient::GetDevToolsManagerDelegate() {
+  return new ChromeDevToolsManagerDelegate();
+}
+
 bool ChromeContentBrowserClient::IsPluginAllowedToCallRequestOSFileHandle(
     content::BrowserContext* browser_context,
     const GURL& url) {
@@ -2719,11 +2820,6 @@ bool ChromeContentBrowserClient::IsPluginAllowedToUseDevChannelAPIs() {
 #else
   return false;
 #endif
-}
-
-content::DevToolsManagerDelegate*
-ChromeContentBrowserClient::GetDevToolsManagerDelegate() {
-  return new ChromeDevToolsManagerDelegate();
 }
 
 net::CookieStore*

@@ -24,6 +24,7 @@ from telemetry.core.backends.chrome import extension_backend
 from telemetry.core.backends.chrome import system_info_backend
 from telemetry.core.backends.chrome import tab_list_backend
 from telemetry.core.backends.chrome import tracing_backend
+from telemetry.timeline import tracing_timeline_data
 from telemetry.unittest import options_for_unittests
 
 
@@ -88,15 +89,6 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
     args.append('--metrics-recording-only')
     args.append('--no-default-browser-check')
     args.append('--no-first-run')
-
-    # TODO(tonyg): Telemetry runs on release build bots which enable DCHECKs.
-    # While, we'd really like for Chrome to be DCHECK clean, pragmatically, it
-    # is far from it and the Telemetry unittests are hitting DCHECKS so often
-    # that the flakiness is becoming untenable.
-    #
-    # We should remove this as soon as we're ready to get serious about the
-    # DCHECK problem and keep Chrome clean.
-    args.append('--silent-dump-on-dcheck')
 
     # Turn on GPU benchmarking extension for all runs. The only side effect of
     # the extension being on is that render stats are tracked. This is believed
@@ -291,17 +283,21 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
 
   def StopTracing(self):
     """ Stops tracing and returns the result as TimelineData object. """
-    for (i, debugger_url) in enumerate(self._browser.tabs):
+    tab_ids_list = []
+    for (i, _) in enumerate(self._browser.tabs):
       tab = self.tab_list_backend.Get(i, None)
       if tab:
         success = tab.EvaluateJavaScript(
-            "console.time('" + debugger_url + "');" +
-            "console.timeEnd('" + debugger_url + "');" +
+            "console.time('" + tab.id + "');" +
+            "console.timeEnd('" + tab.id + "');" +
             "console.time.toString().indexOf('[native code]') != -1;")
         if not success:
           raise Exception('Page stomped on console.time')
-        self._tracing_backend.AddTabToMarkerMapping(tab, debugger_url)
-    return self._tracing_backend.StopTracing()
+        tab_ids_list.append(tab.id)
+    trace_events = self._tracing_backend.StopTracing()
+    # Augment tab_ids data to trace events.
+    event_data = {'traceEvents' : trace_events, 'tabIds': tab_ids_list}
+    return tracing_timeline_data.TracingTimelineData(event_data)
 
   def GetProcessName(self, cmd_line):
     """Returns a user-friendly name for the process of the given |cmd_line|."""

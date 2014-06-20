@@ -6,10 +6,15 @@
 #define ATHENA_INPUT_PUBLIC_ACCELERATOR_MANAGER_H_
 
 #include "athena/athena_export.h"
+#include "base/memory/scoped_ptr.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
 namespace ui {
 class Accelerator;
+}
+
+namespace views {
+class FocusManager;
 }
 
 namespace athena {
@@ -53,9 +58,23 @@ class ATHENA_EXPORT AcceleratorHandler {
                                   const ui::Accelerator& accelerator) = 0;
 };
 
-class AcceleratorManager {
+class ATHENA_EXPORT AcceleratorManager {
  public:
+  // Returns an AccelerarManager for global acelerators.
+  static AcceleratorManager* Get();
+
+  // Creates an AcceleratorManager for application windows that
+  // define their own accelerators.
+  static scoped_ptr<AcceleratorManager> CreateForFocusManager(
+      views::FocusManager* focus_manager);
+
   virtual ~AcceleratorManager() {}
+
+  // Tells if the accelerator is registered with the given flag.  If
+  // flags is AF_NONE, it simply tells if the accelerator is
+  // registered with any flags.
+  virtual bool IsRegistered(const ui::Accelerator& accelerator,
+                            int flags) const = 0;
 
   // Register accelerators and its handler that will be invoked when
   // one of accelerator is fired.
@@ -63,8 +82,8 @@ class AcceleratorManager {
                                     size_t num_accelerators,
                                     AcceleratorHandler* handler) = 0;
 
-  // Enables accelerators that has a AF_DEBUG flag.
-  virtual void EnableDebugAccelerators() = 0;
+  // Enables/Disables accelerators that has a AF_DEBUG flag.
+  virtual void SetDebugAcceleratorsEnabled(bool enabled) = 0;
 };
 
 }  // namespace athena

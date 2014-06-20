@@ -54,7 +54,6 @@ CONTENT_EXPORT extern const char kDisableFileSystem[];
 CONTENT_EXPORT extern const char kDisableFlash3d[];
 CONTENT_EXPORT extern const char kDisableFlashStage3d[];
 CONTENT_EXPORT extern const char kDisableGestureTapHighlight[];
-CONTENT_EXPORT extern const char kDisableGLMultisampling[];
 CONTENT_EXPORT extern const char kDisableGpu[];
 CONTENT_EXPORT extern const char kDisableGpuCompositing[];
 extern const char kDisableGpuProcessCrashLimit[];
@@ -90,7 +89,6 @@ CONTENT_EXPORT extern const char kDisableSmoothScrolling[];
 CONTENT_EXPORT extern const char kDisableSoftwareRasterizer[];
 CONTENT_EXPORT extern const char kDisableSSLFalseStart[];
 CONTENT_EXPORT extern const char kDisableThreadedCompositing[];
-CONTENT_EXPORT extern const char kDisableUniversalAcceleratedOverflowScroll[];
 CONTENT_EXPORT extern const char kDisableWebSecurity[];
 extern const char kDisableXSLT[];
 extern const char kDisableXSSAuditor[];
@@ -146,7 +144,6 @@ CONTENT_EXPORT extern const char kEnableServiceWorkerSync[];
 CONTENT_EXPORT extern const char kEnableTargetedStyleRecalc[];
 CONTENT_EXPORT extern const char kEnableTcpFastOpen[];
 CONTENT_EXPORT extern const char kEnableThreadedCompositing[];
-CONTENT_EXPORT extern const char kEnableUniversalAcceleratedOverflowScroll[];
 CONTENT_EXPORT extern const char kEnableUserMediaScreenCapturing[];
 CONTENT_EXPORT extern const char kEnableViewport[];
 CONTENT_EXPORT extern const char kEnableViewportMeta[];
@@ -158,7 +155,6 @@ CONTENT_EXPORT extern const char kEnableWebGLImageChromium[];
 CONTENT_EXPORT extern const char kEnableWebMIDI[];
 CONTENT_EXPORT extern const char kEnableZeroCopy[];
 CONTENT_EXPORT extern const char kExtraPluginDir[];
-CONTENT_EXPORT extern const char kForceCompositingMode[];
 CONTENT_EXPORT extern const char kForceFieldTrials[];
 CONTENT_EXPORT extern const char kForceGpuRasterization[];
 CONTENT_EXPORT extern const char kForceRendererAccessibility[];
@@ -285,8 +281,8 @@ extern const char kDisableCoreAnimationPlugins[];
 // This switch contains the device scale factor passed to certain processes
 // like renderers, etc.
 CONTENT_EXPORT extern const char kDeviceScaleFactor[];
+CONTENT_EXPORT extern const char kDisableDirectWrite[];
 CONTENT_EXPORT extern const char kDisableLegacyIntermediateWindow[];
-CONTENT_EXPORT extern const char kEnableDirectWrite[];
 CONTENT_EXPORT extern const char kEnableHighResolutionTime[];
 // This switch will be removed when we enable the win32K lockdown process
 // mitigation.

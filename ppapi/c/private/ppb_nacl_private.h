@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From private/ppb_nacl_private.idl modified Thu Jun  5 08:59:03 2014. */
+/* From private/ppb_nacl_private.idl modified Fri Jun 13 15:14:51 2014. */
 
 #ifndef PPAPI_C_PRIVATE_PPB_NACL_PRIVATE_H_
 #define PPAPI_C_PRIVATE_PPB_NACL_PRIVATE_H_
@@ -331,7 +331,12 @@ struct PPB_NaCl_Private_1_0 {
    * the browser is in incognito mode, no notification will be delivered to
    * the plugin.)
    */
-  void (*ReportTranslationFinished)(PP_Instance instance, PP_Bool success);
+  void (*ReportTranslationFinished)(PP_Instance instance,
+                                    PP_Bool success,
+                                    int32_t opt_level,
+                                    int64_t pexe_size,
+                                    int64_t compile_time_us,
+                                    int64_t total_time_us);
   /* Dispatch a progress event on the DOM element where the given instance is
    * embedded.
    */
@@ -440,6 +445,10 @@ struct PPB_NaCl_Private_1_0 {
   void (*ReportSelLdrStatus)(PP_Instance instance,
                              int32_t load_status,
                              int32_t max_status);
+  /* Logs time taken by an operation to UMA histograms.
+   * This function is safe to call on any thread.
+   */
+  void (*LogTranslateTime)(const char* histogram_name, int64_t time_us);
 };
 
 typedef struct PPB_NaCl_Private_1_0 PPB_NaCl_Private;

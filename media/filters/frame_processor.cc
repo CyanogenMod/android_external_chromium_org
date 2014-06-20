@@ -107,14 +107,12 @@ bool FrameProcessor::ProcessFrame(
              << ", DUR=" << frame_duration.InSecondsF();
 
     // Sanity check the timestamps.
-    if (presentation_timestamp < base::TimeDelta()) {
-      DVLOG(2) << __FUNCTION__ << ": Negative or unknown frame PTS: "
-               << presentation_timestamp.InSecondsF();
+    if (presentation_timestamp == kNoTimestamp()) {
+      DVLOG(2) << __FUNCTION__ << ": Unknown frame PTS";
       return false;
     }
-    if (decode_timestamp < base::TimeDelta()) {
-      DVLOG(2) << __FUNCTION__ << ": Negative or unknown frame DTS: "
-               << decode_timestamp.InSecondsF();
+    if (decode_timestamp == kNoTimestamp()) {
+      DVLOG(2) << __FUNCTION__ << ": Unknown frame DTS";
       return false;
     }
     if (decode_timestamp > presentation_timestamp) {
@@ -263,13 +261,15 @@ bool FrameProcessor::ProcessFrame(
       if (frame->timestamp() != presentation_timestamp && !sequence_mode_)
         *new_media_segment = true;
 
-      // |frame| has been partially trimmed or had preroll added.
+      // |frame| has been partially trimmed or had preroll added.  Though
+      // |frame|'s duration may have changed, do not update |frame_duration|
+      // here, so |track_buffer|'s last frame duration update uses original
+      // frame duration and reduces spurious discontinuity detection.
       decode_timestamp = frame->GetDecodeTimestamp();
       presentation_timestamp = frame->timestamp();
-      frame_duration = frame->duration();
 
       // The end timestamp of the frame should be unchanged.
-      DCHECK(frame_end_timestamp == presentation_timestamp + frame_duration);
+      DCHECK(frame_end_timestamp == presentation_timestamp + frame->duration());
     }
 
     if (presentation_timestamp < append_window_start ||
@@ -339,7 +339,10 @@ bool FrameProcessor::ProcessFrame(
     // See http://crbug.com/371197.
     StreamParser::BufferQueue buffer_to_append;
     buffer_to_append.push_back(frame);
-    track_buffer->stream()->Append(buffer_to_append);
+    if (!track_buffer->stream()->Append(buffer_to_append)) {
+      DVLOG(3) << __FUNCTION__ << ": Failure appending frame to stream";
+      return false;
+    }
 
     // 19. Set last decode timestamp for track buffer to decode timestamp.
     track_buffer->set_last_decode_timestamp(decode_timestamp);
@@ -365,13 +368,6 @@ bool FrameProcessor::ProcessFrame(
 
   NOTREACHED();
   return false;
-}
-
-void FrameProcessor::SetAllTrackBuffersNeedRandomAccessPoint() {
-  for (TrackBufferMap::iterator itr = track_buffers_.begin();
-       itr != track_buffers_.end(); ++itr) {
-    itr->second->set_needs_random_access_point(true);
-  }
 }
 
 }  // namespace media

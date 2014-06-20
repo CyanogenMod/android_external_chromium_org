@@ -13,6 +13,19 @@ namespace media {
 namespace cast {
 namespace transport {
 
+namespace {
+
+// If there is only one referecne to the packet then copy the
+// reference and return.
+// Otherwise return a deep copy of the packet.
+PacketRef FastCopyPacket(const PacketRef& packet) {
+  if (packet->HasOneRef())
+    return packet;
+  return make_scoped_refptr(new base::RefCountedData<Packet>(packet->data));
+}
+
+}  // namespace
+
 RtpSender::RtpSender(
     base::TickClock* clock,
     const scoped_refptr<base::SingleThreadTaskRunner>& transport_task_runner,
@@ -61,7 +74,8 @@ void RtpSender::SendFrame(const EncodedFrame& frame) {
 }
 
 void RtpSender::ResendPackets(
-    const MissingFramesAndPacketsMap& missing_frames_and_packets) {
+    const MissingFramesAndPacketsMap& missing_frames_and_packets,
+    bool cancel_rtx_if_not_in_list) {
   DCHECK(storage_);
   // Iterate over all frames in the list.
   for (MissingFramesAndPacketsMap::const_iterator it =
@@ -73,29 +87,46 @@ void RtpSender::ResendPackets(
     // Set of packets that the receiver wants us to re-send.
     // If empty, we need to re-send all packets for this frame.
     const PacketIdSet& missing_packet_set = it->second;
-    bool success = false;
 
-    for (uint16 packet_id = 0; ; packet_id++) {
-      // Get packet from storage.
-      success = storage_->GetPacket(frame_id, packet_id, &packets_to_resend);
+    bool resend_all = missing_packet_set.find(kRtcpCastAllPacketsLost) !=
+        missing_packet_set.end();
+    bool resend_last = missing_packet_set.find(kRtcpCastLastPacket) !=
+        missing_packet_set.end();
 
-      // Check that we got at least one packet.
-      DCHECK(packet_id != 0 || success)
-          << "Failed to resend frame " << static_cast<int>(frame_id);
+    const SendPacketVector* stored_packets = storage_->GetFrame8(frame_id);
+    if (!stored_packets)
+      continue;
 
-      if (!success) break;
+    for (SendPacketVector::const_iterator it = stored_packets->begin();
+         it != stored_packets->end(); ++it) {
+      const PacketKey& packet_key = it->first;
+      const uint16 packet_id = packet_key.second.second;
 
-      if (!missing_packet_set.empty() &&
-          missing_packet_set.find(packet_id) == missing_packet_set.end()) {
-        transport_->CancelSendingPacket(packets_to_resend.back().first);
-        packets_to_resend.pop_back();
-      } else {
+      // Should we resend the packet?
+      bool resend = resend_all;
+
+      // Should we resend it because it's in the missing_packet_set?
+      if (!resend &&
+          missing_packet_set.find(packet_id) != missing_packet_set.end()) {
+        resend = true;
+      }
+
+      // If we were asked to resend the last packet, check if it's the
+      // last packet.
+      if (!resend && resend_last && (it + 1) == stored_packets->end()) {
+        resend = true;
+      }
+
+      if (resend) {
         // Resend packet to the network.
         VLOG(3) << "Resend " << static_cast<int>(frame_id) << ":"
                 << packet_id;
         // Set a unique incremental sequence number for every packet.
-        PacketRef packet = packets_to_resend.back().second;
-        UpdateSequenceNumber(&packet->data);
+        PacketRef packet_copy = FastCopyPacket(it->second);
+        UpdateSequenceNumber(&packet_copy->data);
+        packets_to_resend.push_back(std::make_pair(packet_key, packet_copy));
+      } else if (cancel_rtx_if_not_in_list) {
+        transport_->CancelSendingPacket(it->first);
       }
     }
     transport_->ResendPackets(packets_to_resend);

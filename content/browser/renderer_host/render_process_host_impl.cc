@@ -30,6 +30,7 @@
 #include "base/path_service.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/supports_user_data.h"
 #include "base/sys_info.h"
@@ -64,6 +65,7 @@
 #include "content/browser/loader/resource_scheduler_filter.h"
 #include "content/browser/media/capture/audio_mirroring_manager.h"
 #include "content/browser/media/media_internals.h"
+#include "content/browser/media/midi_host.h"
 #include "content/browser/message_port_message_filter.h"
 #include "content/browser/mime_registry_message_filter.h"
 #include "content/browser/mojo/mojo_application_host.h"
@@ -80,8 +82,6 @@
 #include "content/browser/renderer_host/media/audio_renderer_host.h"
 #include "content/browser/renderer_host/media/device_request_message_filter.h"
 #include "content/browser/renderer_host/media/media_stream_dispatcher_host.h"
-#include "content/browser/renderer_host/media/midi_dispatcher_host.h"
-#include "content/browser/renderer_host/media/midi_host.h"
 #include "content/browser/renderer_host/media/peer_connection_tracker_host.h"
 #include "content/browser/renderer_host/media/video_capture_host.h"
 #include "content/browser/renderer_host/memory_benchmark_message_filter.h"
@@ -97,7 +97,6 @@
 #include "content/browser/renderer_host/text_input_client_message_filter.h"
 #include "content/browser/renderer_host/websocket_dispatcher_host.h"
 #include "content/browser/resolve_proxy_msg_helper.h"
-#include "content/browser/screen_orientation/screen_orientation_dispatcher_host.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_dispatcher_host.h"
 #include "content/browser/shared_worker/shared_worker_message_filter.h"
@@ -175,6 +174,7 @@
 #include "content/browser/media/webrtc_internals.h"
 #include "content/browser/renderer_host/media/media_stream_track_metrics_host.h"
 #include "content/browser/renderer_host/media/webrtc_identity_service_host.h"
+#include "content/common/media/aec_dump_messages.h"
 #include "content/common/media/media_stream_messages.h"
 #endif
 
@@ -461,7 +461,6 @@ RenderProcessHostImpl::RenderProcessHostImpl(
       delayed_cleanup_needed_(false),
       within_process_died_observer_(false),
       power_monitor_broadcaster_(this),
-      screen_orientation_dispatcher_host_(NULL),
       worker_ref_count_(0),
       weak_factory_(this) {
   widget_helper_ = new RenderWidgetHelper();
@@ -741,7 +740,6 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   AddFilter(audio_renderer_host_);
   AddFilter(
       new MidiHost(GetID(), BrowserMainLoop::GetInstance()->midi_manager()));
-  AddFilter(new MidiDispatcherHost(GetID(), browser_context));
   AddFilter(new VideoCaptureHost(media_stream_manager));
   AddFilter(new AppCacheDispatcherHost(
       storage_partition_impl_->GetAppCacheService(),
@@ -791,8 +789,10 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   AddFilter(new TextInputClientMessageFilter(GetID()));
 #elif defined(OS_WIN)
   // The FontCacheDispatcher is required only when we're using GDI rendering.
-  if (!ShouldUseDirectWrite())
-    channel_->AddFilter(new FontCacheDispatcher());
+  // TODO(scottmg): pdf/ppapi still require the renderer to be able to precache
+  // GDI fonts (http://crbug.com/383227), even when using DirectWrite. This
+  // should eventually be if (!ShouldUseDirectWrite()) guarded.
+  channel_->AddFilter(new FontCacheDispatcher());
 #elif defined(OS_ANDROID)
   browser_demuxer_android_ = new BrowserDemuxerAndroid();
   AddFilter(browser_demuxer_android_);
@@ -884,9 +884,7 @@ void RenderProcessHostImpl::CreateMessageFilters() {
     AddFilter(new MemoryBenchmarkMessageFilter());
 #endif
   AddFilter(new VibrationMessageFilter());
-  screen_orientation_dispatcher_host_ = new ScreenOrientationDispatcherHost();
-  AddFilter(screen_orientation_dispatcher_host_);
-  AddFilter(new PushMessagingMessageFilter());
+  AddFilter(new PushMessagingMessageFilter(GetID()));
   AddFilter(new BatteryStatusMessageFilter());
 }
 
@@ -1115,7 +1113,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableTouchAdjustment,
     switches::kDisableTouchDragDrop,
     switches::kDisableTouchEditing,
-    switches::kDisableUniversalAcceleratedOverflowScroll,
     switches::kDisableZeroCopy,
     switches::kDomAutomationController,
     switches::kEnableAcceleratedFixedRootBackground,
@@ -1155,7 +1152,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableStatsTable,
     switches::kEnableStrictSiteIsolation,
     switches::kEnableTargetedStyleRecalc,
-    switches::kEnableUniversalAcceleratedOverflowScroll,
     switches::kEnableTouchDragDrop,
     switches::kEnableTouchEditing,
     switches::kEnableViewport,
@@ -1167,7 +1163,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableWebGLImageChromium,
     switches::kEnableWebMIDI,
     switches::kEnableZeroCopy,
-    switches::kForceCompositingMode,
     switches::kForceDeviceScaleFactor,
     switches::kFullMemoryCrashReport,
     switches::kIgnoreResolutionLimitsForAcceleratedVideoDecode,
@@ -1251,7 +1246,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableSandboxLogging,
 #endif
 #if defined(OS_WIN)
-    switches::kEnableDirectWrite,
+    switches::kDisableDirectWrite,
     switches::kEnableHighResolutionTime,
 #endif
   };
@@ -1375,6 +1370,12 @@ bool RenderProcessHostImpl::OnMessageReceived(const IPC::Message& msg) {
           ChildProcessHostMsg_SyncAllocateGpuMemoryBuffer,
           OnAllocateGpuMemoryBuffer)
       IPC_MESSAGE_HANDLER(ViewHostMsg_Close_ACK, OnCloseACK)
+#if defined(ENABLE_WEBRTC)
+      IPC_MESSAGE_HANDLER(AecDumpMsg_RegisterAecDumpConsumer,
+                          OnRegisterAecDumpConsumer)
+      IPC_MESSAGE_HANDLER(AecDumpMsg_UnregisterAecDumpConsumer,
+                          OnUnregisterAecDumpConsumer)
+#endif
       // Adding single handlers for your service here is fine, but once your
       // service needs more than one handler, please extract them into a new
       // message filter and add that filter to CreateMessageFilters().
@@ -1505,7 +1506,6 @@ void RenderProcessHostImpl::Cleanup() {
     channel_.reset();
     gpu_message_filter_ = NULL;
     message_port_message_filter_ = NULL;
-    screen_orientation_dispatcher_host_ = NULL;
     RemoveUserData(kSessionStorageHolderKey);
 
     // Remove ourself from the list of renderer processes so that we can't be
@@ -1546,11 +1546,11 @@ void RenderProcessHostImpl::FilterURL(bool empty_allowed, GURL* url) {
 #if defined(ENABLE_WEBRTC)
 void RenderProcessHostImpl::EnableAecDump(const base::FilePath& file) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  BrowserThread::PostTaskAndReplyWithResult(
-      BrowserThread::FILE, FROM_HERE,
-      base::Bind(&CreateAecDumpFileForProcess, file, GetHandle()),
-      base::Bind(&RenderProcessHostImpl::SendAecDumpFileToRenderer,
-                 weak_factory_.GetWeakPtr()));
+  // Enable AEC dump for each registered consumer.
+  for (std::vector<int>::iterator it = aec_dump_consumers_.begin();
+       it != aec_dump_consumers_.end(); ++it) {
+    EnableAecDumpForId(file, *it);
+  }
 }
 
 void RenderProcessHostImpl::DisableAecDump() {
@@ -1654,15 +1654,15 @@ void RenderProcessHostImpl::FilterURL(RenderProcessHost* rph,
     // This is because the browser treats navigation to an empty GURL as a
     // navigation to the home page. This is often a privileged page
     // (chrome://newtab/) which is exactly what we don't want.
-    *url = GURL(kAboutBlankURL);
+    *url = GURL(url::kAboutBlankURL);
     RecordAction(base::UserMetricsAction("FilterURLTermiate_Invalid"));
     return;
   }
 
-  if (url->SchemeIs(kAboutScheme)) {
+  if (url->SchemeIs(url::kAboutScheme)) {
     // The renderer treats all URLs in the about: scheme as being about:blank.
     // Canonicalize about: URLs to about:blank.
-    *url = GURL(kAboutBlankURL);
+    *url = GURL(url::kAboutBlankURL);
     RecordAction(base::UserMetricsAction("FilterURLTermiate_About"));
   }
 
@@ -1676,7 +1676,7 @@ void RenderProcessHostImpl::FilterURL(RenderProcessHost* rph,
     // URL.  This prevents us from storing the blocked URL and becoming confused
     // later.
     VLOG(1) << "Blocked URL " << url->spec();
-    *url = GURL(kAboutBlankURL);
+    *url = GURL(url::kAboutBlankURL);
     RecordAction(base::UserMetricsAction("FilterURLTermiate_Blocked"));
   }
 }
@@ -1919,7 +1919,6 @@ void RenderProcessHostImpl::ProcessDied(bool already_dead) {
   channel_.reset();
   gpu_message_filter_ = NULL;
   message_port_message_filter_ = NULL;
-  screen_orientation_dispatcher_host_ = NULL;
   RemoveUserData(kSessionStorageHolderKey);
 
   IDMap<IPC::Listener>::iterator iter(&listeners_);
@@ -1983,11 +1982,6 @@ void RenderProcessHostImpl::WebRtcLogMessage(const std::string& message) {
     webrtc_log_message_callback_.Run(message);
 }
 #endif
-
-scoped_refptr<ScreenOrientationDispatcherHost>
-RenderProcessHostImpl::screen_orientation_dispatcher_host() const {
-  return make_scoped_refptr(screen_orientation_dispatcher_host_);
-}
 
 void RenderProcessHostImpl::ReleaseOnCloseACK(
     RenderProcessHost* host,
@@ -2168,15 +2162,78 @@ void RenderProcessHostImpl::OnGpuSwitching() {
 }
 
 #if defined(ENABLE_WEBRTC)
+void RenderProcessHostImpl::OnRegisterAecDumpConsumer(int id) {
+  BrowserThread::PostTask(
+      BrowserThread::UI,
+      FROM_HERE,
+      base::Bind(
+          &RenderProcessHostImpl::RegisterAecDumpConsumerOnUIThread,
+          weak_factory_.GetWeakPtr(),
+          id));
+}
+
+void RenderProcessHostImpl::OnUnregisterAecDumpConsumer(int id) {
+  BrowserThread::PostTask(
+      BrowserThread::UI,
+      FROM_HERE,
+      base::Bind(
+          &RenderProcessHostImpl::UnregisterAecDumpConsumerOnUIThread,
+          weak_factory_.GetWeakPtr(),
+          id));
+}
+
+void RenderProcessHostImpl::RegisterAecDumpConsumerOnUIThread(int id) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  aec_dump_consumers_.push_back(id);
+  if (WebRTCInternals::GetInstance()->aec_dump_enabled()) {
+    EnableAecDumpForId(WebRTCInternals::GetInstance()->aec_dump_file_path(),
+                       id);
+  }
+}
+
+void RenderProcessHostImpl::UnregisterAecDumpConsumerOnUIThread(int id) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  for (std::vector<int>::iterator it = aec_dump_consumers_.begin();
+       it != aec_dump_consumers_.end(); ++it) {
+    if (*it == id) {
+      aec_dump_consumers_.erase(it);
+      break;
+    }
+  }
+}
+
+#if defined(OS_WIN)
+#define IntToStringType base::IntToString16
+#else
+#define IntToStringType base::IntToString
+#endif
+
+void RenderProcessHostImpl::EnableAecDumpForId(const base::FilePath& file,
+                                               int id) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  base::FilePath unique_file =
+      file.AddExtension(IntToStringType(GetID()))
+          .AddExtension(IntToStringType(id));
+  BrowserThread::PostTaskAndReplyWithResult(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(&CreateAecDumpFileForProcess, unique_file, GetHandle()),
+      base::Bind(&RenderProcessHostImpl::SendAecDumpFileToRenderer,
+                 weak_factory_.GetWeakPtr(),
+                 id));
+}
+
+#undef IntToStringType
+
 void RenderProcessHostImpl::SendAecDumpFileToRenderer(
+    int id,
     IPC::PlatformFileForTransit file_for_transit) {
   if (file_for_transit == IPC::InvalidPlatformFileForTransit())
     return;
-  Send(new MediaStreamMsg_EnableAecDump(file_for_transit));
+  Send(new AecDumpMsg_EnableAecDump(id, file_for_transit));
 }
 
 void RenderProcessHostImpl::SendDisableAecDumpToRenderer() {
-  Send(new MediaStreamMsg_DisableAecDump());
+  Send(new AecDumpMsg_DisableAecDump());
 }
 #endif
 

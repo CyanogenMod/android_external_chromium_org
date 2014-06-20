@@ -19,6 +19,7 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/render_frame.h"
+#include "content/renderer/compositor_bindings/web_layer_impl.h"
 #include "content/renderer/media/android/renderer_demuxer_android.h"
 #include "content/renderer/media/android/renderer_media_player_manager.h"
 #include "content/renderer/media/crypto/key_systems.h"
@@ -51,7 +52,6 @@
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkTypeface.h"
 #include "ui/gfx/image/image.h"
-#include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
 static const uint32 kGLTextureExternalOES = 0x8D65;
 
@@ -173,6 +173,8 @@ WebMediaPlayerAndroid::~WebMediaPlayerAndroid() {
 void WebMediaPlayerAndroid::load(LoadType load_type,
                                  const blink::WebURL& url,
                                  CORSMode cors_mode) {
+  ReportMediaSchemeUma(GURL(url));
+
   switch (load_type) {
     case LoadTypeURL:
       player_type_ = MEDIA_PLAYER_TYPE_URL;
@@ -237,7 +239,8 @@ void WebMediaPlayerAndroid::load(LoadType load_type,
   url_ = url;
   GURL first_party_url = frame_->document().firstPartyForCookies();
   player_manager_->Initialize(
-      player_type_, player_id_, url, first_party_url, demuxer_client_id);
+      player_type_, player_id_, url, first_party_url, demuxer_client_id,
+      frame_->document().url());
 
   if (player_manager_->ShouldEnterFullscreen(frame_))
     player_manager_->EnterFullscreen(player_id_, frame_);
@@ -727,8 +730,7 @@ void WebMediaPlayerAndroid::OnVideoSizeChanged(int width, int height) {
 
   // Lazily allocate compositing layer.
   if (!video_weblayer_) {
-    video_weblayer_.reset(
-        new webkit::WebLayerImpl(cc::VideoLayer::Create(this)));
+    video_weblayer_.reset(new WebLayerImpl(cc::VideoLayer::Create(this)));
     client_->setWebLayer(video_weblayer_.get());
   }
 
@@ -877,27 +879,9 @@ void WebMediaPlayerAndroid::ReleaseMediaResources() {
 }
 
 void WebMediaPlayerAndroid::OnDestruct() {
-  if (player_manager_)
-    player_manager_->UnregisterMediaPlayer(player_id_);
-  Detach();
-}
-
-void WebMediaPlayerAndroid::Detach() {
-  if (stream_id_) {
-    GLES2Interface* gl = stream_texture_factory_->ContextGL();
-    gl->DeleteTextures(1, &texture_id_);
-    texture_id_ = 0;
-    texture_mailbox_ = gpu::Mailbox();
-    stream_id_ = 0;
-  }
-
-  media_source_delegate_.reset();
-  {
-    base::AutoLock auto_lock(current_frame_lock_);
-    current_frame_ = NULL;
-  }
-  is_remote_ = false;
-  player_manager_ = NULL;
+  NOTREACHED() << "WebMediaPlayer should be destroyed before any "
+                  "RenderFrameObserver::OnDestruct() gets called when "
+                  "the RenderFrame goes away.";
 }
 
 void WebMediaPlayerAndroid::Pause(bool is_media_related_action) {

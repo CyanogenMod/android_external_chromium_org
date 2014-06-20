@@ -109,7 +109,6 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool layer_squashing_enabled;
   bool asynchronous_spell_checking_enabled;
   bool unified_textchecker_enabled;
-  bool force_compositing_mode;
   bool accelerated_compositing_for_video_enabled;
   bool accelerated_2d_canvas_enabled;
   int minimum_accelerated_2d_canvas_size;
@@ -126,7 +125,6 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool should_clear_document_background;
   bool enable_scroll_animator;
   bool css_variables_enabled;
-  bool lazy_layout_enabled;
   bool region_based_columns_enabled;
   bool touch_enabled;
   bool device_supports_touch;

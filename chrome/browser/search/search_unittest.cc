@@ -9,15 +9,15 @@
 #include "base/metrics/statistics_recorder.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/managed_mode/managed_mode_url_filter.h"
-#include "chrome/browser/managed_mode/managed_user_service.h"
-#include "chrome/browser/managed_mode/managed_user_service_factory.h"
 #include "chrome/browser/search/instant_service.h"
 #include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/search_terms_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
+#include "chrome/browser/supervised_user/supervised_user_service.h"
+#include "chrome/browser/supervised_user/supervised_user_service_factory.h"
+#include "chrome/browser/supervised_user/supervised_user_url_filter.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -183,7 +183,7 @@ class SearchTest : public BrowserWithTestWindowTest {
     data.alternate_urls.push_back("http://foo.com/alt#quux={searchTerms}");
     data.search_terms_replacement_key = "strk";
 
-    TemplateURL* template_url = new TemplateURL(profile(), data);
+    TemplateURL* template_url = new TemplateURL(data);
     // Takes ownership of |template_url|.
     template_url_service->Add(template_url);
     template_url_service->SetUserSelectedDefaultSearchProvider(template_url);
@@ -207,7 +207,7 @@ class SearchTest : public BrowserWithTestWindowTest {
         kInstantURLWithStrk : kInstantURLNoStrk);
     data.search_terms_replacement_key = "strk";
 
-    TemplateURL* template_url = new TemplateURL(profile(), data);
+    TemplateURL* template_url = new TemplateURL(data);
     // Takes ownership of |template_url|.
     template_url_service->Add(template_url);
     template_url_service->SetUserSelectedDefaultSearchProvider(template_url);
@@ -553,10 +553,10 @@ TEST_F(SearchTest, UseLocalNTPIfNTPURLIsNotSet) {
 
 TEST_F(SearchTest, UseLocalNTPIfNTPURLIsBlockedForSupervisedUser) {
   // Block access to foo.com in the URL filter.
-  ManagedUserService* managed_user_service =
-      ManagedUserServiceFactory::GetForProfile(profile());
-  ManagedModeURLFilter* url_filter =
-      managed_user_service->GetURLFilterForUIThread();
+  SupervisedUserService* supervised_user_service =
+      SupervisedUserServiceFactory::GetForProfile(profile());
+  SupervisedUserURLFilter* url_filter =
+      supervised_user_service->GetURLFilterForUIThread();
   std::map<std::string, bool> hosts;
   hosts["foo.com"] = false;
   url_filter->SetManualHosts(&hosts);
@@ -625,7 +625,7 @@ TEST_F(SearchTest, CommandLineOverrides) {
   data.SetURL("{google:baseURL}search?q={searchTerms}");
   data.instant_url = "{google:baseURL}webhp?strk";
   data.search_terms_replacement_key = "strk";
-  TemplateURL* template_url = new TemplateURL(profile(), data);
+  TemplateURL* template_url = new TemplateURL(data);
   // Takes ownership of |template_url|.
   template_url_service->Add(template_url);
   template_url_service->SetUserSelectedDefaultSearchProvider(template_url);
@@ -689,6 +689,36 @@ TEST_F(SearchTest, ShouldPrefetchSearchResults_EnabledViaFieldTrial) {
   EXPECT_EQ(80ul, EmbeddedSearchPageVersion());
 }
 
+TEST_F(SearchTest,
+       ShouldPrerenderInstantUrlOnOmniboxFocus_PrefetchResultsFlagDisabled) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch",
+      "Group1 espv:80 prefetch_results:0 "
+      "prerender_instant_url_on_omnibox_focus:1"));
+  EXPECT_FALSE(ShouldPrerenderInstantUrlOnOmniboxFocus());
+  EXPECT_EQ(80ul, EmbeddedSearchPageVersion());
+}
+
+TEST_F(SearchTest,
+       ShouldPrerenderInstantUrlOnOmniboxFocus_DisabledViaFieldTrial) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch",
+      "Group1 espv:89 prefetch_results:1 "
+      "prerender_instant_url_on_omnibox_focus:0"));
+  EXPECT_FALSE(ShouldPrerenderInstantUrlOnOmniboxFocus());
+  EXPECT_EQ(89ul, EmbeddedSearchPageVersion());
+}
+
+TEST_F(SearchTest,
+       ShouldPrerenderInstantUrlOnOmniboxFocus_EnabledViaFieldTrial) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch",
+      "Group1 espv:80 prefetch_results:1 "
+      "prerender_instant_url_on_omnibox_focus:1"));
+  EXPECT_TRUE(ShouldPrerenderInstantUrlOnOmniboxFocus());
+  EXPECT_EQ(80ul, EmbeddedSearchPageVersion());
+}
+
 TEST_F(SearchTest, ShouldPrefetchSearchResults_EnabledViaCommandLine) {
   CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kPrefetchSearchResults);
@@ -748,7 +778,7 @@ TEST_F(SearchTest, ShouldReuseInstantSearchBasePage_EnabledViaCommandLine) {
   // Command-line enable should override Finch.
   ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
       "EmbeddedSearch",
-      "Group1 espv:89 prefetch_results:0 reuse_instant_search_base_page:0"));
+      "Group1 espv:89 prefetch_results:0 reuse_instant_search_base_page:1"));
   EXPECT_TRUE(ShouldPrefetchSearchResults());
   EXPECT_TRUE(ShouldReuseInstantSearchBasePage());
   EXPECT_EQ(89ul, EmbeddedSearchPageVersion());
@@ -869,7 +899,7 @@ class SearchURLTest : public SearchTest {
     data.SetURL("{google:baseURL}search?"
                 "{google:instantExtendedEnabledParameter}q={searchTerms}");
     data.search_terms_replacement_key = "espv";
-    template_url_ = new TemplateURL(profile(), data);
+    template_url_ = new TemplateURL(data);
     // |template_url_service| takes ownership of |template_url_|.
     template_url_service->Add(template_url_);
     template_url_service->SetUserSelectedDefaultSearchProvider(template_url_);
@@ -883,7 +913,8 @@ TEST_F(SearchURLTest, QueryExtractionEnabled) {
   EnableQueryExtractionForTesting();
   EXPECT_TRUE(IsQueryExtractionEnabled());
   TemplateURLRef::SearchTermsArgs search_terms_args(base::ASCIIToUTF16("foo"));
-  GURL result(template_url_->url_ref().ReplaceSearchTerms(search_terms_args));
+  GURL result(template_url_->url_ref().ReplaceSearchTerms(
+      search_terms_args, UIThreadSearchTermsData(profile())));
   ASSERT_TRUE(result.is_valid());
   // Query extraction is enabled. Make sure
   // {google:instantExtendedEnabledParameter} is set in the search URL.
@@ -894,7 +925,8 @@ TEST_F(SearchURLTest, QueryExtractionDisabled) {
   UIThreadSearchTermsData::SetGoogleBaseURL("http://www.google.com/");
   EXPECT_FALSE(IsQueryExtractionEnabled());
   TemplateURLRef::SearchTermsArgs search_terms_args(base::ASCIIToUTF16("foo"));
-  GURL result(template_url_->url_ref().ReplaceSearchTerms(search_terms_args));
+  GURL result(template_url_->url_ref().ReplaceSearchTerms(
+      search_terms_args, UIThreadSearchTermsData(profile())));
   ASSERT_TRUE(result.is_valid());
   // Query extraction is disabled. Make sure
   // {google:instantExtendedEnabledParameter} is not set in the search URL.

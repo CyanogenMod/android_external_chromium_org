@@ -81,7 +81,7 @@ inline gfx::Rect CalculateVisibleRectWithCachedLayerRect(
   minimal_surface_rect.Intersect(layer_rect_in_target_space);
 
   if (minimal_surface_rect.IsEmpty())
-      return gfx::Rect();
+    return gfx::Rect();
 
   // Project the corners of the target surface rect into the layer space.
   // This bounding rectangle may be larger than it needs to be (being
@@ -487,6 +487,11 @@ static inline bool SubtreeShouldBeSkipped(LayerImpl* layer,
   if (layer->draw_properties().layer_or_descendant_has_copy_request)
     return false;
 
+  // We cannot skip the the subtree if a descendant has a wheel or touch handler
+  // or the hit testing code will break (it requires fresh transforms, etc).
+  if (layer->draw_properties().layer_or_descendant_has_input_handler)
+    return false;
+
   // If the layer is not drawn, then skip it and its subtree.
   if (!layer_is_drawn)
     return true;
@@ -511,6 +516,11 @@ static inline bool SubtreeShouldBeSkipped(Layer* layer, bool layer_is_drawn) {
   // When we need to do a readback/copy of a layer's output, we can not skip
   // it or any of its ancestors.
   if (layer->draw_properties().layer_or_descendant_has_copy_request)
+    return false;
+
+  // We cannot skip the the subtree if a descendant has a wheel or touch handler
+  // or the hit testing code will break (it requires fresh transforms, etc).
+  if (layer->draw_properties().layer_or_descendant_has_input_handler)
     return false;
 
   // If the layer is not drawn, then skip it and its subtree.
@@ -909,8 +919,32 @@ gfx::Transform ComputeScrollCompensationMatrixForChildren(
 }
 
 template <typename LayerType>
-static inline void CalculateContentsScale(
+static inline void UpdateLayerScaleDrawProperties(
     LayerType* layer,
+    float ideal_contents_scale,
+    float maximum_animation_contents_scale,
+    float page_scale_factor,
+    float device_scale_factor) {
+  layer->draw_properties().ideal_contents_scale = ideal_contents_scale;
+  layer->draw_properties().maximum_animation_contents_scale =
+      maximum_animation_contents_scale;
+  layer->draw_properties().page_scale_factor = page_scale_factor;
+  layer->draw_properties().device_scale_factor = device_scale_factor;
+}
+
+static inline void CalculateContentsScale(
+    LayerImpl* layer,
+    float contents_scale,
+    float device_scale_factor,
+    float page_scale_factor,
+    float maximum_animation_contents_scale,
+    bool animating_transform_to_screen) {
+  // LayerImpl has all of its content scales and bounds pushed from the Main
+  // thread during commit and just uses those values as-is.
+}
+
+static inline void CalculateContentsScale(
+    Layer* layer,
     float contents_scale,
     float device_scale_factor,
     float page_scale_factor,
@@ -925,7 +959,7 @@ static inline void CalculateContentsScale(
                                 &layer->draw_properties().contents_scale_y,
                                 &layer->draw_properties().content_bounds);
 
-  LayerType* mask_layer = layer->mask_layer();
+  Layer* mask_layer = layer->mask_layer();
   if (mask_layer) {
     mask_layer->CalculateContentsScale(
         contents_scale,
@@ -938,7 +972,7 @@ static inline void CalculateContentsScale(
         &mask_layer->draw_properties().content_bounds);
   }
 
-  LayerType* replica_mask_layer =
+  Layer* replica_mask_layer =
       layer->replica_layer() ? layer->replica_layer()->mask_layer() : NULL;
   if (replica_mask_layer) {
     replica_mask_layer->CalculateContentsScale(
@@ -1184,15 +1218,19 @@ static inline void RemoveSurfaceForEarlyExit(
 
 struct PreCalculateMetaInformationRecursiveData {
   bool layer_or_descendant_has_copy_request;
+  bool layer_or_descendant_has_input_handler;
   int num_unclipped_descendants;
 
   PreCalculateMetaInformationRecursiveData()
       : layer_or_descendant_has_copy_request(false),
+        layer_or_descendant_has_input_handler(false),
         num_unclipped_descendants(0) {}
 
   void Merge(const PreCalculateMetaInformationRecursiveData& data) {
     layer_or_descendant_has_copy_request |=
         data.layer_or_descendant_has_copy_request;
+    layer_or_descendant_has_input_handler |=
+        data.layer_or_descendant_has_input_handler;
     num_unclipped_descendants +=
         data.num_unclipped_descendants;
   }
@@ -1252,12 +1290,18 @@ static void PreCalculateMetaInformation(
   if (layer->HasCopyRequest())
     recursive_data->layer_or_descendant_has_copy_request = true;
 
+  if (!layer->touch_event_handler_region().IsEmpty() ||
+      layer->have_wheel_event_handlers())
+    recursive_data->layer_or_descendant_has_input_handler = true;
+
   layer->draw_properties().num_descendants_that_draw_content =
       num_descendants_that_draw_content;
   layer->draw_properties().num_unclipped_descendants =
       recursive_data->num_unclipped_descendants;
   layer->draw_properties().layer_or_descendant_has_copy_request =
       recursive_data->layer_or_descendant_has_copy_request;
+  layer->draw_properties().layer_or_descendant_has_input_handler =
+      recursive_data->layer_or_descendant_has_input_handler;
 }
 
 static void RoundTranslationComponents(gfx::Transform* transform) {
@@ -1740,6 +1784,40 @@ static void CalculateDrawPropertiesInternal(
       combined_maximum_animation_contents_scale,
       animating_transform_to_screen);
 
+  UpdateLayerScaleDrawProperties(
+      layer,
+      ideal_contents_scale,
+      combined_maximum_animation_contents_scale,
+      data_from_ancestor.in_subtree_of_page_scale_application_layer
+          ? globals.page_scale_factor
+          : 1.f,
+      globals.device_scale_factor);
+
+  LayerType* mask_layer = layer->mask_layer();
+  if (mask_layer) {
+    UpdateLayerScaleDrawProperties(
+        mask_layer,
+        ideal_contents_scale,
+        combined_maximum_animation_contents_scale,
+        data_from_ancestor.in_subtree_of_page_scale_application_layer
+            ? globals.page_scale_factor
+            : 1.f,
+        globals.device_scale_factor);
+  }
+
+  LayerType* replica_mask_layer =
+      layer->replica_layer() ? layer->replica_layer()->mask_layer() : NULL;
+  if (replica_mask_layer) {
+    UpdateLayerScaleDrawProperties(
+        replica_mask_layer,
+        ideal_contents_scale,
+        combined_maximum_animation_contents_scale,
+        data_from_ancestor.in_subtree_of_page_scale_application_layer
+            ? globals.page_scale_factor
+            : 1.f,
+        globals.device_scale_factor);
+  }
+
   // The draw_transform that gets computed below is effectively the layer's
   // draw_transform, unless the layer itself creates a render_surface. In that
   // case, the render_surface re-parents the transforms.
@@ -1770,7 +1848,7 @@ static void CalculateDrawPropertiesInternal(
       layer_draw_properties.target_space_transform.
           IsIdentityOrIntegerTranslation();
 
-  gfx::RectF content_rect(layer->content_bounds());
+  gfx::Rect content_rect(layer->content_bounds());
 
   // full_hierarchy_matrix is the matrix that transforms objects between screen
   // space (except projection matrix) and the most recent RenderSurfaceImpl's
@@ -2003,8 +2081,8 @@ static void CalculateDrawPropertiesInternal(
   if (adjust_text_aa)
     layer_draw_properties.can_use_lcd_text = layer_can_use_lcd_text;
 
-  gfx::Rect rect_in_target_space = ToEnclosingRect(
-      MathUtil::MapClippedRect(layer->draw_transform(), content_rect));
+  gfx::Rect rect_in_target_space =
+      MathUtil::MapEnclosingClippedRect(layer->draw_transform(), content_rect);
 
   if (LayerClipsSubtree(layer)) {
     layer_or_ancestor_clips_descendants = true;

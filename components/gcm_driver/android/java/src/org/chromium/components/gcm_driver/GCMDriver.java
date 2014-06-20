@@ -5,20 +5,35 @@
 package org.chromium.components.gcm_driver;
 
 import android.content.Context;
+import android.os.AsyncTask;
 import android.os.Bundle;
+import android.util.Log;
+
+import com.google.android.gcm.GCMRegistrar;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
+import org.chromium.base.ThreadUtils;
+import org.chromium.base.library_loader.ProcessInitException;
+import org.chromium.content.browser.BrowserStartupController;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * An implementation of GCMDriver using Android's Java GCM APIs.
+ * This class is the Java counterpart to the C++ GCMDriverAndroid class.
+ * It uses Android's Java GCM APIs to implements GCM registration etc, and
+ * sends back GCM messages over JNI.
+ *
  * Threading model: all calls to/from C++ happen on the UI thread.
  */
 @JNINamespace("gcm")
-public final class GCMDriver {
+public class GCMDriver {
+    private static final String TAG = "GCMDriver";
+
+    // The instance of GCMDriver currently owned by a C++ GCMDriverAndroid, if any.
+    private static GCMDriver sInstance = null;
+
     private long mNativeGCMDriverAndroid;
     private final Context mContext;
 
@@ -37,7 +52,11 @@ public final class GCMDriver {
     @CalledByNative
     private static GCMDriver create(long nativeGCMDriverAndroid,
                                     Context context) {
-        return new GCMDriver(nativeGCMDriverAndroid, context);
+        if (sInstance != null) {
+            throw new IllegalStateException("Already instantiated");
+        }
+        sInstance = new GCMDriver(nativeGCMDriverAndroid, context);
+        return sInstance;
     }
 
     /**
@@ -46,50 +65,148 @@ public final class GCMDriver {
      */
     @CalledByNative
     private void destroy() {
+        assert sInstance == this;
+        sInstance = null;
         mNativeGCMDriverAndroid = 0;
     }
 
     @CalledByNative
-    private void register(String appId, String[] senderIds) {
-        // TODO(johnme): Actually try to register.
-        nativeOnRegisterFinished(mNativeGCMDriverAndroid, appId, "", false);
+    private void register(final String appId, final String[] senderIds) {
+        new AsyncTask<Void, Void, String>() {
+            @Override
+            protected String doInBackground(Void... voids) {
+                try {
+                    GCMRegistrar.checkDevice(mContext);
+                } catch (UnsupportedOperationException ex) {
+                    return ""; // Indicates failure.
+                }
+                // TODO(johnme): Move checkManifest call to a test instead.
+                GCMRegistrar.checkManifest(mContext);
+                String existingRegistrationId = GCMRegistrar.getRegistrationId(mContext);
+                if (existingRegistrationId.equals("")) {
+                    // TODO(johnme): Migrate from GCMRegistrar to GoogleCloudMessaging API, both
+                    // here and elsewhere in Chromium.
+                    // TODO(johnme): Pass appId to GCM.
+                    GCMRegistrar.register(mContext, senderIds);
+                    return null; // Indicates pending result.
+                } else {
+                    Log.i(TAG, "Re-using existing registration ID");
+                    return existingRegistrationId;
+                }
+            }
+            @Override
+            protected void onPostExecute(String registrationId) {
+                if (registrationId == null) {
+                    return; // Wait for {@link #onRegisterFinished} to be called.
+                }
+                nativeOnRegisterFinished(mNativeGCMDriverAndroid, appId, registrationId,
+                                         !registrationId.isEmpty());
+            }
+        }.execute();
     }
+
+    private enum UnregisterResult { SUCCESS, FAILED, PENDING }
+
     @CalledByNative
-    private void unregister(String appId) {
-        // TODO(johnme): Actually try to unregister.
-        nativeOnUnregisterFinished(mNativeGCMDriverAndroid, appId, false);
+    private void unregister(final String appId) {
+        new AsyncTask<Void, Void, UnregisterResult>() {
+            @Override
+            protected UnregisterResult doInBackground(Void... voids) {
+                try {
+                    GCMRegistrar.checkDevice(mContext);
+                } catch (UnsupportedOperationException ex) {
+                    return UnregisterResult.FAILED;
+                }
+                if (!GCMRegistrar.isRegistered(mContext)) {
+                    return UnregisterResult.SUCCESS;
+                }
+                // TODO(johnme): Pass appId to GCM.
+                GCMRegistrar.unregister(mContext);
+                return UnregisterResult.PENDING;
+            }
+
+            @Override
+            protected void onPostExecute(UnregisterResult result) {
+                if (result == UnregisterResult.PENDING) {
+                    return; // Wait for {@link #onUnregisterFinished} to be called.
+                }
+                nativeOnUnregisterFinished(mNativeGCMDriverAndroid, appId,
+                        result == UnregisterResult.SUCCESS);
+            }
+        }.execute();
     }
 
-    public void onRegistered(String appId, String registrationId) {
-        nativeOnRegisterFinished(mNativeGCMDriverAndroid, appId, registrationId, true);
+    static void onRegisterFinished(String appId, String registrationId) {
+        ThreadUtils.assertOnUiThread();
+        // TODO(johnme): If this gets called, did it definitely succeed?
+        // TODO(johnme): Update registrations cache?
+        if (sInstance != null) {
+            sInstance.nativeOnRegisterFinished(sInstance.mNativeGCMDriverAndroid, appId,
+                                               registrationId, true);
+        }
     }
 
-    public void onUnregistered(String appId) {
-        nativeOnUnregisterFinished(mNativeGCMDriverAndroid, appId, true);
+    static void onUnregisterFinished(String appId) {
+        ThreadUtils.assertOnUiThread();
+        // TODO(johnme): If this gets called, did it definitely succeed?
+        // TODO(johnme): Update registrations cache?
+        if (sInstance != null) {
+            sInstance.nativeOnUnregisterFinished(sInstance.mNativeGCMDriverAndroid, appId, true);
+        }
     }
 
-    public void onMessageReceived(String appId, Bundle extras) {
-        final String BUNDLE_SENDER_ID = "from";
-        final String BUNDLE_COLLAPSE_KEY = "collapse_key";
-
-        String senderId = extras.getString(BUNDLE_SENDER_ID);
-        String collapseKey = extras.getString(BUNDLE_COLLAPSE_KEY);
-
-        List<String> dataKeysAndValues = new ArrayList<String>();
-        for (String key : extras.keySet()) {
-            // TODO(johnme): Check there aren't other default keys that we need to exclude.
-            if (key == BUNDLE_SENDER_ID || key == BUNDLE_COLLAPSE_KEY)
-                continue;
-            dataKeysAndValues.add(key);
-            dataKeysAndValues.add(extras.getString(key));
+    static void onMessageReceived(Context context, final String appId, final Bundle extras) {
+        final String PUSH_API_DATA_KEY = "data";
+        if (!extras.containsKey(PUSH_API_DATA_KEY)) {
+            // For now on Android only the Push API uses GCMDriver. To avoid double-handling of
+            // messages already handled in Java by other implementations of MultiplexingGcmListener,
+            // and unnecessarily waking up the browser processes for all existing GCM messages that
+            // are received by Chrome on Android, we currently discard messages unless they are
+            // destined for the Push API.
+            // TODO(johnme): Find a better way of distinguishing messages that should be delivered
+            // to native from messages that have already been delivered to Java, for example by
+            // refactoring other implementations of MultiplexingGcmListener to instead register with
+            // this class, and distinguish them based on appId (which also requires GCM to start
+            // sending us the app IDs).
+            return;
         }
 
-        nativeOnMessageReceived(mNativeGCMDriverAndroid, appId, senderId, collapseKey,
-                                dataKeysAndValues.toArray(new String[dataKeysAndValues.size()]));
+        // TODO(johnme): Store message and redeliver later if Chrome is killed before delivery.
+        ThreadUtils.assertOnUiThread();
+        launchNativeThen(context, new Runnable() {
+            @Override public void run() {
+                final String BUNDLE_SENDER_ID = "from";
+                final String BUNDLE_COLLAPSE_KEY = "collapse_key";
+                final String BUNDLE_GCMMPLEX = "com.google.ipc.invalidation.gcmmplex.";
+
+                String senderId = extras.getString(BUNDLE_SENDER_ID);
+                String collapseKey = extras.getString(BUNDLE_COLLAPSE_KEY);
+
+                List<String> dataKeysAndValues = new ArrayList<String>();
+                for (String key : extras.keySet()) {
+                    // TODO(johnme): Check there aren't other keys that we need to exclude.
+                    if (key == BUNDLE_SENDER_ID || key == BUNDLE_COLLAPSE_KEY ||
+                            key.startsWith(BUNDLE_GCMMPLEX))
+                        continue;
+                    dataKeysAndValues.add(key);
+                    dataKeysAndValues.add(extras.getString(key));
+                }
+
+                sInstance.nativeOnMessageReceived(sInstance.mNativeGCMDriverAndroid,
+                        appId, senderId, collapseKey,
+                        dataKeysAndValues.toArray(new String[dataKeysAndValues.size()]));
+            }
+        });
     }
 
-    public void onMessagesDeleted(String appId) {
-        nativeOnMessagesDeleted(mNativeGCMDriverAndroid, appId);
+    static void onMessagesDeleted(Context context, final String appId) {
+        // TODO(johnme): Store event and redeliver later if Chrome is killed before delivery.
+        ThreadUtils.assertOnUiThread();
+        launchNativeThen(context, new Runnable() {
+            @Override public void run() {
+                sInstance.nativeOnMessagesDeleted(sInstance.mNativeGCMDriverAndroid, appId);
+            }
+        });
     }
 
     private native void nativeOnRegisterFinished(long nativeGCMDriverAndroid, String appId,
@@ -99,4 +216,29 @@ public final class GCMDriver {
     private native void nativeOnMessageReceived(long nativeGCMDriverAndroid, String appId,
             String senderId, String collapseKey, String[] dataKeysAndValues);
     private native void nativeOnMessagesDeleted(long nativeGCMDriverAndroid, String appId);
+
+    private static void launchNativeThen(Context context, Runnable task) {
+        if (sInstance != null) {
+            task.run();
+            return;
+        }
+
+        // TODO(johnme): Call ChromeMobileApplication.initCommandLine(context) or
+        // ChromeShellApplication.initCommandLine() as appropriate.
+
+        try {
+            final int MAX_RENDERERS = 1;
+            BrowserStartupController.get(context).startBrowserProcessesSync(MAX_RENDERERS);
+            if (sInstance != null) {
+                task.run();
+            } else {
+                Log.e(TAG, "Started browser process, but failed to instantiate GCMDriver.");
+            }
+        } catch (ProcessInitException e) {
+            Log.e(TAG, "Failed to start browser process.", e);
+            System.exit(-1);
+        }
+
+        // TODO(johnme): Now we should probably exit?
+    }
 }

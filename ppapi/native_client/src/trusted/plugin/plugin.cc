@@ -27,7 +27,6 @@
 #include "ppapi/cpp/dev/url_util_dev.h"
 #include "ppapi/cpp/module.h"
 
-#include "ppapi/native_client/src/trusted/plugin/nacl_entry_points.h"
 #include "ppapi/native_client/src/trusted/plugin/nacl_subprocess.h"
 #include "ppapi/native_client/src/trusted/plugin/plugin_error.h"
 #include "ppapi/native_client/src/trusted/plugin/service_runtime.h"
@@ -67,16 +66,17 @@ void Plugin::HistogramTimeSmall(const std::string& name,
                                       kTimeSmallBuckets);
 }
 
-bool Plugin::LoadNaClModuleFromBackgroundThread(
-    PP_FileHandle file_handle,
-    NaClSubprocess* subprocess,
-    const SelLdrStartParams& params) {
+bool Plugin::LoadHelperNaClModule(PP_FileHandle file_handle,
+                                  NaClSubprocess* subprocess,
+                                  const SelLdrStartParams& params) {
   CHECK(!pp::Module::Get()->core()->IsMainThread());
   ServiceRuntime* service_runtime =
-      new ServiceRuntime(this, false, uses_nonsfi_mode_,
+      new ServiceRuntime(this,
+                         false,  // No main_service_runtime.
+                         false,  // No non-SFI mode (i.e. in SFI-mode).
                          pp::BlockUntilComplete(), pp::BlockUntilComplete());
   subprocess->set_service_runtime(service_runtime);
-  PLUGIN_PRINTF(("Plugin::LoadNaClModuleFromBackgroundThread "
+  PLUGIN_PRINTF(("Plugin::LoadHelperNaClModule "
                  "(service_runtime=%p)\n",
                  static_cast<void*>(service_runtime)));
 
@@ -92,12 +92,11 @@ bool Plugin::LoadNaClModuleFromBackgroundThread(
                                     sel_ldr_callback);
   pp::Module::Get()->core()->CallOnMainThread(0, callback, 0);
   if (!service_runtime->WaitForSelLdrStart()) {
-    PLUGIN_PRINTF(("Plugin::LoadNaClModuleFromBackgroundThread "
+    PLUGIN_PRINTF(("Plugin::LoadHelperNaClModule "
                    "WaitForSelLdrStart timed out!\n"));
     return false;
   }
-  PLUGIN_PRINTF(("Plugin::LoadNaClModuleFromBackgroundThread "
-                 "(service_runtime_started=%d)\n",
+  PLUGIN_PRINTF(("Plugin::LoadHelperNaClModule (service_runtime_started=%d)\n",
                  service_runtime_started));
   if (!service_runtime_started)
     return false;
@@ -113,10 +112,15 @@ bool Plugin::LoadNaClModuleFromBackgroundThread(
   // have to roll our own blocking logic, similar to WaitForSelLdrStart()
   // above, except without timeout logic.
   bool nexe_started = false;
-  pp::CompletionCallback started_cb = callback_factory_.NewCallback(
+  pp::CompletionCallback nexe_started_callback = callback_factory_.NewCallback(
       &Plugin::SignalNexeStarted, &nexe_started, service_runtime);
-  service_runtime->LoadNexeAndStart(info, started_cb, pp::CompletionCallback());
+  pp::Module::Get()->core()->CallOnMainThread(
+      0,
+      callback_factory_.NewCallback(
+          &Plugin::LoadNexeAndStart,
+          service_runtime, info, nexe_started_callback));
   service_runtime->WaitForNexeStart();
+
   return nexe_started;
 }
 
@@ -166,14 +170,12 @@ void Plugin::LoadNaClModule(PP_NaClFileInfo file_info,
   SelLdrStartParams params(manifest_base_url_str,
                            true /* uses_irt */,
                            true /* uses_ppapi */,
-                           uses_nonsfi_mode,
                            enable_dyncode_syscalls,
                            enable_exception_handling,
                            enable_crash_throttling);
   ErrorInfo error_info;
-  ServiceRuntime* service_runtime =
-      new ServiceRuntime(this, true, uses_nonsfi_mode,
-                         init_done_cb, crash_cb);
+  ServiceRuntime* service_runtime = new ServiceRuntime(
+      this, true, uses_nonsfi_mode, init_done_cb, crash_cb);
   main_subprocess_.set_service_runtime(service_runtime);
   PLUGIN_PRINTF(("Plugin::LoadNaClModule (service_runtime=%p)\n",
                  static_cast<void*>(service_runtime)));
@@ -185,23 +187,23 @@ void Plugin::LoadNaClModule(PP_NaClFileInfo file_info,
     return;
   }
 
+  // We don't take any action once nexe loading has completed, so pass an empty
+  // callback here for |callback|.
   pp::CompletionCallback callback = callback_factory_.NewCallback(
-      &Plugin::LoadNexeAndStart, file_info, service_runtime, crash_cb);
+      &Plugin::LoadNexeAndStart,
+      service_runtime, file_info, pp::CompletionCallback());
   StartSelLdrOnMainThread(
       static_cast<int32_t>(PP_OK), service_runtime, params, callback);
 }
 
 void Plugin::LoadNexeAndStart(int32_t pp_error,
-                              PP_NaClFileInfo file_info,
                               ServiceRuntime* service_runtime,
-                              const pp::CompletionCallback& crash_cb) {
+                              PP_NaClFileInfo file_info,
+                              const pp::CompletionCallback& callback) {
+  CHECK(pp::Module::Get()->core()->IsMainThread());
   if (pp_error != PP_OK)
     return;
-
-  // We don't take any action once nexe loading has completed, so pass an empty
-  // callback here for |loaded_cb|.
-  service_runtime->LoadNexeAndStart(file_info, pp::CompletionCallback(),
-                                    crash_cb);
+  service_runtime->LoadNexeAndStart(file_info, callback);
 }
 
 bool Plugin::LoadNaClModuleContinuationIntern() {
@@ -247,15 +249,13 @@ NaClSubprocess* Plugin::LoadHelperNaClModule(const nacl::string& helper_url,
   SelLdrStartParams params(helper_url,
                            false /* uses_irt */,
                            false /* uses_ppapi */,
-                           false /* uses_nonsfi_mode */,
                            false /* enable_dyncode_syscalls */,
                            false /* enable_exception_handling */,
                            true /* enable_crash_throttling */);
 
   // Helper NaCl modules always use the PNaCl manifest, as there is no
   // corresponding NMF.
-  if (!LoadNaClModuleFromBackgroundThread(file_handle, nacl_subprocess.get(),
-                                          params)) {
+  if (!LoadHelperNaClModule(file_handle, nacl_subprocess.get(), params)) {
     return NULL;
   }
   // We need not wait for the init_done callback.  We can block

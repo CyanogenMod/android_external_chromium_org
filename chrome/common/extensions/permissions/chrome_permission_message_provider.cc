@@ -90,6 +90,12 @@ PermissionMessages ChromePermissionMessageProvider::GetPermissionMessages(
   SuppressMessage(messages,
                   PermissionMessage::kBrowsingHistory,
                   PermissionMessage::kTabs);
+  // Warning for full access permission already covers warning for tabs
+  // permission.
+  SuppressMessage(messages,
+                  PermissionMessage::kHostsAll,
+                  PermissionMessage::kTabs);
+
   return messages;
 }
 
@@ -154,6 +160,18 @@ std::vector<base::string16> ChromePermissionMessageProvider::GetWarningMessages(
         // The combined message will be pushed above.
         continue;
       }
+    }
+    if (permissions->HasAPIPermission(APIPermission::kSessions) &&
+        id == PermissionMessage::kTabs) {
+      message_strings.push_back(l10n_util::GetStringUTF16(
+          IDS_EXTENSION_PROMPT_WARNING_HISTORY_READ_AND_SESSIONS));
+      continue;
+    }
+    if (permissions->HasAPIPermission(APIPermission::kSessions) &&
+        id == PermissionMessage::kBrowsingHistory) {
+      message_strings.push_back(l10n_util::GetStringUTF16(
+          IDS_EXTENSION_PROMPT_WARNING_HISTORY_WRITE_AND_SESSIONS));
+      continue;
     }
 
     message_strings.push_back(i->message());

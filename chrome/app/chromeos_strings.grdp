@@ -129,6 +129,12 @@ Press any key to continue exploring.
   <message name="IDS_FLAGS_FILE_MANAGER_ENABLE_NEW_AUDIO_PLAYER_DESCRIPTION" desc="Description of the about:flag option to the enable new audio player app.">
     Use the experimental new audio player instead of the stable one.
   </message>
+  <message name="IDS_FLAGS_FILE_MANAGER_ENABLE_NEW_GALLERY_NAME" desc="Name of the about:flag option to enable the new gallery app.">
+    Enable the new gallery
+  </message>
+  <message name="IDS_FLAGS_FILE_MANAGER_ENABLE_NEW_GALLERY_DESCRIPTION" desc="Description of the about:flag option to the enable new gallery app.">
+    Use the experimental new gallery instead of the stable one.
+  </message>
   <message name="IDS_FILE_BROWSER_ARCHIVE_DIRECTORY_LABEL" desc="/archive directory label.">
     Archives
   </message>
@@ -1659,6 +1665,9 @@ Press any key to continue exploring.
   <message name="IDS_MULTI_PROFILES_PRIMARY_ONLY_POLICY_MSG" desc="Text that is shown on the bubble shown for user pod which is not allowed in multi-profiles session because of primary-only policy.">
     The administrator for this account requires this account to be the first signed-in account in a multiple sign-in session.
   </message>
+  <message name="IDS_MULTI_PROFILES_OWNER_PRIMARY_ONLY_MSG" desc="Text that is shown on the bubble shown for owner user pod which is not allowed in multi-profiles session because it has to be primary user in the session.">
+    This owner account has to be the first signed-in account in a multiple sign-in session.
+  </message>
   <message name="IDS_LOCAL_STATE_ERROR_TEXT_0" desc="Text for notification that Local State file is corrupted and powerwash is required.">
     Unfortunately, <ph name="SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> is unable to recover your settings. To fix the error, <ph name="SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> must reset your device with Powerwash.
   </message>
@@ -2725,7 +2734,7 @@ Press any key to continue exploring.
     Oops, something went wrong.
   </message>
   <message name="IDS_RESET_SCREEN_REVERT_ERROR_EXPLANATION" desc="Error description shown when revert was initiated but unavailable to be performed.">
-    <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> is unable to revert to the previous version. Please try again or Powerwash your device.
+    <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> is unable to revert to the previous version. Please try Powerwash instead.
   </message>
   <message name="IDS_RESET_SCREEN_REVERT_ERROR_BUTTON" desc="Reset device dialog, error page, revert error while initiating it, button title.">
     OK
@@ -3233,6 +3242,14 @@ Press any key to continue exploring.
   <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_NO_INPUT_METHODS"
            desc="The label for languages with no Input Methods">
     This language doesn't have any input methods
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_THIRD_PARTY_WARNING_TITLE"
+           desc="The title showing in the warning dialog when enabling a 3rd party Input Method">
+    Third party input method
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_THIRD_PARTY_WARNING_MESSAGE"
+           desc="The description showing in the warning dialog when enabling a 3rd party Input Method">
+    This input method may be able to collect all the text you type, including personal data like passwords and credit card numbers. It comes from the extension &quot;<ph name="EXTENSION_NAME">$1<ex>Google Input Tools extension</ex></ph>&quot;. Use this input method?
   </message>
   <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_SIGN_OUT_BUTTON"
            desc="The label for the sign out button for changing UI language">

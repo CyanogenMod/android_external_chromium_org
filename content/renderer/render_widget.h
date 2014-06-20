@@ -235,10 +235,6 @@ class CONTENT_EXPORT RenderWidget
   void OnSwapBuffersComplete();
   void OnSwapBuffersAborted();
 
-  // Checks if the text input state and compose inline mode have been changed.
-  // If they are changed, the new value will be sent to the browser process.
-  void UpdateTextInputType();
-
   // Checks if the selection bounds have been changed. If they are changed,
   // the new value will be sent to the browser process.
   void UpdateSelectionBounds();
@@ -247,7 +243,6 @@ class CONTENT_EXPORT RenderWidget
 
   void OnShowHostContextMenu(ContextMenuParams* params);
 
-#if defined(OS_ANDROID) || defined(USE_AURA)
   enum ShowIme {
     SHOW_IME_IF_NEEDED,
     NO_SHOW_IME,
@@ -265,7 +260,6 @@ class CONTENT_EXPORT RenderWidget
   // IME events. This is when the text change did not originate from the IME in
   // the browser side, such as changes by JavaScript or autofill.
   void UpdateTextInputState(ShowIme show_ime, ChangeSource change_source);
-#endif
 
 #if defined(OS_MACOSX) || defined(USE_AURA)
   // Checks if the composition range or composition character bounds have been
@@ -273,11 +267,6 @@ class CONTENT_EXPORT RenderWidget
   // process.
   void UpdateCompositionInfo(bool should_update_range);
 #endif
-
-#if defined(OS_MACOSX)
-  void DidChangeScrollbarsForMainFrame(bool has_horizontal_scrollbar,
-                                       bool has_vertical_scrollbar);
-#endif  // defined(OS_MACOSX)
 
 #if defined(OS_ANDROID)
   void DidChangeBodyBackgroundColor(SkColor bg_color);
@@ -398,6 +387,7 @@ class CONTENT_EXPORT RenderWidget
   void AutoResizeCompositor();
 
   virtual void SetDeviceScaleFactor(float device_scale_factor);
+  virtual bool SetDeviceColorProfile(const std::vector<char>& color_profile);
 
   virtual void OnOrientationChange();
 
@@ -411,8 +401,6 @@ class CONTENT_EXPORT RenderWidget
   virtual void DidFlushPaint() {}
 
   virtual GURL GetURLForGraphicsContext3D();
-
-  virtual bool ForceCompositingModeEnabled();
 
   // Gets the scroll offset of this widget, if this widget has a notion of
   // scroll offset.
@@ -662,6 +650,9 @@ class CONTENT_EXPORT RenderWidget
   // |screen_info_| on some platforms, and defaults to 1 on other platforms.
   float device_scale_factor_;
 
+  // The device color profile on supported platforms.
+  std::vector<char> device_color_profile_;
+
   // State associated with synthetic gestures. Synthetic gestures are processed
   // in-order, so a queue is sufficient to identify the correct state for a
   // completed gesture.
@@ -690,12 +681,6 @@ class CONTENT_EXPORT RenderWidget
   // have the actual content.
   SkColor body_background_color_;
 #endif
-
-#if defined(OS_MACOSX)
-  // These store the "has scrollbars" state last sent to the browser.
-  bool cached_has_main_frame_horizontal_scrollbar_;
-  bool cached_has_main_frame_vertical_scrollbar_;
-#endif  // defined(OS_MACOSX)
 
   scoped_ptr<ScreenMetricsEmulator> screen_metrics_emulator_;
 

@@ -102,6 +102,7 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_BROWSER_CDMS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
@@ -132,6 +133,7 @@ MY_DEFS_Debug := \
 LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/usrsctp/usrsctplib \
 	$(LOCAL_PATH)/third_party/usrsctp/usrsctplib/netinet \
+	$(gyp_shared_intermediate_dir) \
 	$(LOCAL_PATH)/third_party/openssl/config/x64 \
 	$(LOCAL_PATH)/third_party/openssl/openssl/include \
 	$(PWD)/frameworks/wilhelm/include \
@@ -203,6 +205,7 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_BROWSER_CDMS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
@@ -233,6 +236,7 @@ MY_DEFS_Release := \
 LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/usrsctp/usrsctplib \
 	$(LOCAL_PATH)/third_party/usrsctp/usrsctplib/netinet \
+	$(gyp_shared_intermediate_dir) \
 	$(LOCAL_PATH)/third_party/openssl/config/x64 \
 	$(LOCAL_PATH)/third_party/openssl/openssl/include \
 	$(PWD)/frameworks/wilhelm/include \

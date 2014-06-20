@@ -11,6 +11,7 @@
 #include "base/sys_byteorder.h"
 #include "base/time/time.h"
 #include "google_apis/gcm/base/encryptor.h"
+#include "net/base/ip_endpoint.h"
 
 namespace gcm {
 
@@ -32,7 +33,6 @@ FakeGCMClient::~FakeGCMClient() {
 void FakeGCMClient::Initialize(
     const ChromeBuildInfo& chrome_build_info,
     const base::FilePath& store_path,
-    const std::vector<std::string>& account_ids,
     const scoped_refptr<base::SequencedTaskRunner>& blocking_task_runner,
     const scoped_refptr<net::URLRequestContextGetter>&
         url_request_context_getter,
@@ -61,6 +61,7 @@ void FakeGCMClient::DoLoading() {
 void FakeGCMClient::Stop() {
   DCHECK(io_thread_->RunsTasksOnCurrentThread());
   status_ = STOPPED;
+  delegate_->OnDisconnected();
 }
 
 void FakeGCMClient::CheckOut() {
@@ -168,6 +169,7 @@ std::string FakeGCMClient::GetRegistrationIdFromSenderIds(
 
 void FakeGCMClient::CheckinFinished() {
   delegate_->OnGCMReady();
+  delegate_->OnConnected(net::IPEndPoint());
 }
 
 void FakeGCMClient::RegisterFinished(const std::string& app_id,

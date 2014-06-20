@@ -36,14 +36,13 @@ const char kDisableDemoMode[] = "disable-demo-mode";
 // Disable Genius App and use the original Help App instead.
 const char kDisableGeniusApp[] = "disable-genius-app";
 
-// Disable lock UI (user pods) scrolling into view with CSS change when virtual
-// keyboard is shown.
-const char kDisableLockScrollIntoView[]    = "disable-lock-scroll-into-view";
+// Disable HID-detection OOBE screen.
+const char kDisableHIDDetectionOnOOBE[]      = "disable-hid-detection-on-oobe";
 
 // Avoid doing expensive animations upon login.
 const char kDisableLoginAnimations[] = "disable-login-animations";
 
-// Disable login UI (user pods) scrolling into view on JS side when virtual
+// Disable login/lock UI (user pods) scrolling into view on JS side when virtual
 // keyboard is shown.
 const char kDisableLoginScrollIntoView[]    = "disable-login-scroll-into-view";
 
@@ -57,6 +56,9 @@ const char kDisableNewKioskUI[] = "disable-new-kiosk-ui";
 // it will be possible to install another version as normal app for testing.
 const char kDisableQuickofficeComponentApp[] =
     "disable-quickoffice-component-app";
+
+// Disables rollback option on reset screen.
+const char kDisableRollbackOption[] = "disable-rollback-option";
 
 // Disables volume adjust sound.
 const char kDisableVolumeAdjustSound[] = "disable-volume-adjust-sound";
@@ -86,9 +88,6 @@ const char kEnableExtensionAssetsSharing[]  = "enable-extension-assets-sharing";
 // Enables MTP support in Files.app.
 const char kEnableFileManagerMTP[] = "enable-filemanager-mtp";
 
-// Enable explicit HID detection on OOBE.
-const char kEnableHIDDetectionOnOOBE[] = "enable-hid-detection-on-oobe";
-
 // Enables notifications about captive portals in session.
 const char kEnableNetworkPortalNotification[] =
     "enable-network-portal-notification";
@@ -100,9 +99,6 @@ const char kEnableTouchpadThreeFingerClick[]
 // Enable Kiosk mode for ChromeOS. Note this switch refers to retail mode rather
 // than the kiosk app mode.
 const char kEnableKioskMode[] = "enable-kiosk-mode";
-
-// Enables rollback option for resetting ChromeOS.
-const char kEnableRollbackOption[] = "enable-rollback-option";
 
 // Enables request of tablet site (via user agent override).
 const char kEnableRequestTabletSite[] = "enable-request-tablet-site";
@@ -125,6 +121,10 @@ const char kEnterpriseEnrollmentModulusLimit[] =
 // enrollment against YAPS or the Python test server.
 const char kEnterpriseEnrollmentSkipRobotAuth[] =
     "enterprise-enrollment-skip-robot-auth";
+
+// Enables the new gallery in the Files.app.
+const char kFileManagerEnableNewGallery[] =
+    "file-manager-enable-new-gallery";
 
 // Enables the new audio player in the Files.app.
 const char kFileManagerEnableNewAudioPlayer[] =

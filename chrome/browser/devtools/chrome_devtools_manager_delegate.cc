@@ -61,9 +61,15 @@ base::DictionaryValue* ChromeDevToolsManagerDelegate::HandleCommand(
        DevToolsProtocol::ParseCommand(command_dict));
   if (!command)
     return NULL;
+
   const std::string method = command->method();
+  scoped_ptr<DevToolsProtocol::Response> response;
+
   if (method == chrome::devtools::Network::emulateNetworkConditions::kName)
-    return EmulateNetworkConditions(agent_host, command.get())->Serialize();
+    response = EmulateNetworkConditions(agent_host, command.get());
+
+  if (response)
+    return response->Serialize();
   return NULL;
 }
 
@@ -81,16 +87,35 @@ ChromeDevToolsManagerDelegate::EmulateNetworkConditions(
     content::DevToolsAgentHost* agent_host,
     DevToolsProtocol::Command* command) {
   base::DictionaryValue* params = command->params();
+  namespace names = ::chrome::devtools::Network::emulateNetworkConditions;
+
   bool offline = false;
-  const char* offline_param =
-      chrome::devtools::Network::emulateNetworkConditions::kParamOffline;
-  if (!params || !params->GetBoolean(offline_param, &offline))
-    return command->InvalidParamResponse(offline_param);
+  if (!params || !params->GetBoolean(names::kParamOffline, &offline))
+    return command->InvalidParamResponse(names::kParamOffline);
+
+  double latency = 0.0;
+  if (!params->GetDouble(names::kParamLatency, &latency))
+    return command->InvalidParamResponse(names::kParamLatency);
+  if (latency < 0.0)
+    latency = 0.0;
+
+  double download_throughput = 0.0;
+  if (!params->GetDouble(names::kParamDownloadThroughput, &download_throughput))
+    return command->InvalidParamResponse(names::kParamDownloadThroughput);
+  if (download_throughput < 0.0)
+    download_throughput = 0.0;
+
+  double upload_throughput = 0.0;
+  if (!params->GetDouble(names::kParamUploadThroughput, &upload_throughput))
+    return command->InvalidParamResponse(names::kParamUploadThroughput);
+  if (upload_throughput < 0.0)
+    upload_throughput = 0.0;
 
   EnsureDevtoolsCallbackRegistered();
-  scoped_refptr<DevToolsNetworkConditions> conditions;
-  if (offline)
-    conditions = new DevToolsNetworkConditions(std::vector<std::string>());
+  scoped_refptr<DevToolsNetworkConditions> conditions(
+      new DevToolsNetworkConditions(
+          offline, latency, download_throughput, upload_throughput));
+
   UpdateNetworkState(agent_host, conditions);
   return command->SuccessResponse(NULL);
 }
@@ -108,5 +133,8 @@ void ChromeDevToolsManagerDelegate::UpdateNetworkState(
 void ChromeDevToolsManagerDelegate::OnDevToolsStateChanged(
     content::DevToolsAgentHost* agent_host,
     bool attached) {
-  UpdateNetworkState(agent_host, scoped_refptr<DevToolsNetworkConditions>());
+  scoped_refptr<DevToolsNetworkConditions> conditions;
+  if (attached)
+    conditions = new DevToolsNetworkConditions();
+  UpdateNetworkState(agent_host, conditions);
 }

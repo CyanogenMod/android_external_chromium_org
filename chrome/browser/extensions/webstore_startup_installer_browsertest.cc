@@ -9,8 +9,6 @@
 #include "chrome/browser/extensions/startup_helper.h"
 #include "chrome/browser/extensions/webstore_installer_test.h"
 #include "chrome/browser/infobars/infobar_service.h"
-#include "chrome/browser/managed_mode/managed_user_service.h"
-#include "chrome/browser/managed_mode/managed_user_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -177,7 +175,7 @@ class WebstoreStartupInstallerManagedUsersTest
   // InProcessBrowserTest overrides:
   virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE {
     WebstoreStartupInstallerTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitchASCII(switches::kManagedUserId, "asdf");
+    command_line->AppendSwitchASCII(switches::kSupervisedUserId, "asdf");
   }
 };
 

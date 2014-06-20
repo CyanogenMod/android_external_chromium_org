@@ -289,7 +289,11 @@ interface PPB_NaCl_Private {
    * the plugin.)
    */
   void ReportTranslationFinished([in] PP_Instance instance,
-                                 [in] PP_Bool success);
+                                 [in] PP_Bool success,
+                                 [in] int32_t opt_level,
+                                 [in] int64_t pexe_size,
+                                 [in] int64_t compile_time_us,
+                                 [in] int64_t total_time_us);
 
   /* Dispatch a progress event on the DOM element where the given instance is
    * embedded.
@@ -431,4 +435,10 @@ interface PPB_NaCl_Private {
   void ReportSelLdrStatus([in] PP_Instance instance,
                           [in] int32_t load_status,
                           [in] int32_t max_status);
+
+  /* Logs time taken by an operation to UMA histograms.
+   * This function is safe to call on any thread.
+   */
+  void LogTranslateTime([in] str_t histogram_name,
+                        [in] int64_t time_us);
 };

@@ -83,6 +83,9 @@ FileManager.prototype = {
   get fileTransferController() {
     return this.fileTransferController_;
   },
+  get fileOperationManager() {
+    return this.fileOperationManager_;
+  },
   get backgroundPage() {
     return this.backgroundPage_;
   },
@@ -167,14 +170,17 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   var DOUBLE_CLICK_TIMEOUT = 200;
 
   /**
-   * Update the element to display the information about remaining space for
+   * Updates the element to display the information about remaining space for
    * the storage.
+   *
+   * @param {!Object<string, number>} sizeStatsResult Map containing remaining
+   *     space information.
    * @param {!Element} spaceInnerBar Block element for a percentage bar
-   *                                 representing the remaining space.
+   *     representing the remaining space.
    * @param {!Element} spaceInfoLabel Inline element to contain the message.
    * @param {!Element} spaceOuterBar Block element around the percentage bar.
    */
-   var updateSpaceInfo = function(
+  var updateSpaceInfo = function(
       sizeStatsResult, spaceInnerBar, spaceInfoLabel, spaceOuterBar) {
     spaceInnerBar.removeAttribute('pending');
     if (sizeStatsResult) {
@@ -671,6 +677,9 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       this.backgroundPage_ = backgroundPage;
       this.backgroundPage_.background.ready(function() {
         loadTimeData.data = this.backgroundPage_.background.stringData;
+        if (util.platform.runningInBrowser()) {
+          this.backgroundPage_.registerDialog(window);
+        }
         callback();
       }.bind(this));
     }.bind(this));
@@ -1272,7 +1281,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
             ThumbnailLoader.LoaderType.CANVAS,
             metadata,
             undefined,  // Media type.
-            // TODO(mtomasz): Use Entry instead of paths.
             locationInfo.isDriveBased ?
                 ThumbnailLoader.UseEmbedded.USE_EMBEDDED :
                 ThumbnailLoader.UseEmbedded.NO_EMBEDDED,
@@ -1346,12 +1354,25 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.fileFilter_.removeFilter('fileType');
     var selectedIndex = this.getSelectedFilterIndex_();
     if (selectedIndex > 0) { // Specific filter selected.
-      var regexp = new RegExp('.*(' +
+      var regexp = new RegExp('\\.(' +
           this.fileTypes_[selectedIndex - 1].extensions.join('|') + ')$', 'i');
       var filter = function(entry) {
         return entry.isDirectory || regexp.test(entry.name);
       };
       this.fileFilter_.addFilter('fileType', filter);
+
+      // In save dialog, update the destination name extension.
+      if (this.dialogType === DialogType.SELECT_SAVEAS_FILE) {
+        var current = this.filenameInput_.value;
+        var newExt = this.fileTypes_[selectedIndex - 1].extensions[0];
+        if (newExt && !regexp.test(current)) {
+          var i = current.lastIndexOf('.');
+          if (i >= 0) {
+            this.filenameInput_.value = current.substr(0, i) + '.' + newExt;
+            this.selectTargetNameInFilenameInput_();
+          }
+        }
+      }
     }
   };
 
@@ -1598,9 +1619,29 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         return;
 
       var task = null;
-
-      // TODO(mtomasz): Implement remounting archives after crash.
-      //                See: crbug.com/333139
+      // Handle restoring after crash, or the gallery action.
+      // TODO(mtomasz): Use the gallery action instead of just the gallery
+      //     field.
+      if (this.params_.gallery ||
+          this.params_.action === 'gallery' ||
+          this.params_.action === 'gallery-video') {
+        if (!opt_selectionEntry) {
+          // Non-existent file or a directory.
+          // Reloading while the Gallery is open with empty or multiple
+          // selection. Open the Gallery when the directory is scanned.
+          task = function() {
+            new FileTasks(this, this.params_).openGallery([]);
+          }.bind(this);
+        } else {
+          // The file or the directory exists.
+          task = function() {
+            new FileTasks(this, this.params_).openGallery([opt_selectionEntry]);
+          }.bind(this);
+        }
+      } else {
+        // TODO(mtomasz): Implement remounting archives after crash.
+        //                See: crbug.com/333139
+      }
 
       // If there is a task to be run, run it after the scan is completed.
       if (task) {
@@ -1877,6 +1918,64 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   };
 
   /**
+   * Shows a modal-like file viewer/editor on top of the File Manager UI.
+   *
+   * @param {HTMLElement} popup Popup element.
+   * @param {function()} closeCallback Function to call after the popup is
+   *     closed.
+   */
+  FileManager.prototype.openFilePopup = function(popup, closeCallback) {
+    this.closeFilePopup();
+    this.filePopup_ = popup;
+    this.filePopupCloseCallback_ = closeCallback;
+    this.dialogDom_.insertBefore(
+        this.filePopup_, this.dialogDom_.querySelector('#iframe-drag-area'));
+    this.filePopup_.focus();
+    this.document_.body.setAttribute('overlay-visible', '');
+    this.document_.querySelector('#iframe-drag-area').hidden = false;
+  };
+
+  /**
+   * Closes the modal-like file viewer/editor popup.
+   */
+  FileManager.prototype.closeFilePopup = function() {
+    if (this.filePopup_) {
+      this.document_.body.removeAttribute('overlay-visible');
+      this.document_.querySelector('#iframe-drag-area').hidden = true;
+      // The window resize would not be processed properly while the relevant
+      // divs had 'display:none', force resize after the layout fired.
+      setTimeout(this.onResize_.bind(this), 0);
+      if (this.filePopup_.contentWindow &&
+          this.filePopup_.contentWindow.unload) {
+        this.filePopup_.contentWindow.unload();
+      }
+
+      if (this.filePopupCloseCallback_) {
+        this.filePopupCloseCallback_();
+        this.filePopupCloseCallback_ = null;
+      }
+
+      // These operations have to be in the end, otherwise v8 crashes on an
+      // assert. See: crbug.com/224174.
+      this.dialogDom_.removeChild(this.filePopup_);
+      this.filePopup_ = null;
+    }
+  };
+
+  /**
+   * Updates visibility of the draggable app region in the modal-like file
+   * viewer/editor.
+   *
+   * @param {boolean} visible True for visible, false otherwise.
+   */
+  FileManager.prototype.onFilePopupAppRegionChanged = function(visible) {
+    if (!this.filePopup_)
+      return;
+
+    this.document_.querySelector('#iframe-drag-area').hidden = !visible;
+  };
+
+  /**
    * @return {Array.<Entry>} List of all entries in the current directory.
    */
   FileManager.prototype.getAllEntriesInCurrentDirectory = function() {
@@ -1905,20 +2004,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    */
   FileManager.prototype.getCurrentDirectoryEntry = function() {
     return this.directoryModel_ && this.directoryModel_.getCurrentDirEntry();
-  };
-
-  /**
-   * Deletes the selected file and directories recursively.
-   */
-  FileManager.prototype.deleteSelection = function() {
-    // TODO(mtomasz): Remove this temporary dialog. crbug.com/167364
-    var entries = this.getSelection().entries;
-    var message = entries.length == 1 ?
-        strf('GALLERY_CONFIRM_DELETE_ONE', entries[0].name) :
-        strf('GALLERY_CONFIRM_DELETE_SOME', entries.length);
-    this.confirm.show(message, function() {
-      this.fileOperationManager_.deleteEntries(entries);
-    }.bind(this));
   };
 
   /**
@@ -2233,6 +2318,10 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     if (!this.currentVolumeInfo_)
       return;
 
+    var volumeSpaceInfo =
+        this.dialogDom_.querySelector('#volume-space-info');
+    var volumeSpaceInfoSeparator =
+        this.dialogDom_.querySelector('#volume-space-info-separator');
     var volumeSpaceInfoLabel =
         this.dialogDom_.querySelector('#volume-space-info-label');
     var volumeSpaceInnerBar =
@@ -2240,6 +2329,19 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     var volumeSpaceOuterBar =
         this.dialogDom_.querySelector('#volume-space-info-bar').parentNode;
 
+    var currentVolumeInfo = this.currentVolumeInfo_;
+
+    // TODO(mtomasz): Add support for remaining space indication for provided
+    // file systems.
+    if (currentVolumeInfo.volumeType ==
+        VolumeManagerCommon.VolumeType.PROVIDED) {
+      volumeSpaceInfo.hidden = true;
+      volumeSpaceInfoSeparator.hidden = true;
+      return;
+    }
+
+    volumeSpaceInfo.hidden = false;
+    volumeSpaceInfoSeparator.hidden = false;
     volumeSpaceInnerBar.setAttribute('pending', '');
 
     if (showLoadingCaption) {
@@ -2247,7 +2349,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       volumeSpaceInnerBar.style.width = '100%';
     }
 
-    var currentVolumeInfo = this.currentVolumeInfo_;
     chrome.fileBrowserPrivate.getSizeStats(
         currentVolumeInfo.volumeId, function(result) {
           var volumeInfo = this.volumeManager_.getVolumeInfo(
@@ -2268,20 +2369,20 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * @private
    */
   FileManager.prototype.onDirectoryChanged_ = function(event) {
-    var newCurrentVolumeInfo = this.volumeManager_.getVolumeInfo(
+    var oldCurrentVolumeInfo = this.currentVolumeInfo_;
+
+    // Remember the current volume info.
+    this.currentVolumeInfo_ = this.volumeManager_.getVolumeInfo(
         event.newDirEntry);
 
     // If volume has changed, then update the gear menu.
-    if (this.currentVolumeInfo_ !== newCurrentVolumeInfo) {
+    if (oldCurrentVolumeInfo !== this.currentVolumeInfo_) {
       this.updateGearMenu_();
       // If the volume has changed, and it was previously set, then do not
       // close on unmount anymore.
-      if (this.currentVolumeInfo_)
+      if (oldCurrentVolumeInfo)
         this.closeOnUnmount_ = false;
     }
-
-    // Remember the current volume info.
-    this.currentVolumeInfo_ = newCurrentVolumeInfo;
 
     this.selectionHandler_.onFileSelectionChanged();
     this.ui_.searchBox.clear();
@@ -2476,6 +2577,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
             renamedItemElement.removeAttribute('renaming');
             this.table_.endBatchUpdates();
             this.grid_.endBatchUpdates();
+            // Focus may go out of the list. Back it to the list.
+            this.currentList_.focus();
           }.bind(this),
           function(error) {
             // Write back to the old name.
@@ -2860,14 +2963,14 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       return;
     }
 
-    switch (util.getKeyModifiers(event) + event.keyCode) {
-      case 'Ctrl-190':  // Ctrl-. => Toggle filter files.
+    switch (util.getKeyModifiers(event) + event.keyIdentifier) {
+      case 'Ctrl-U+00BE':  // Ctrl-. => Toggle filter files.
         this.fileFilter_.setFilterHidden(
             !this.fileFilter_.isFilterHiddenOn());
         event.preventDefault();
         return;
 
-      case '27':  // Escape => Cancel dialog.
+      case 'U+001B':  // Escape => Cancel dialog.
         if (this.dialogType != DialogType.FULL_PAGE) {
           // If there is nothing else for ESC to do, then cancel the dialog.
           event.preventDefault();

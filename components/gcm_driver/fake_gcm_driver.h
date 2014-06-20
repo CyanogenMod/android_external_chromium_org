@@ -23,16 +23,18 @@ class FakeGCMDriver : public GCMDriver {
   virtual void RemoveAppHandler(const std::string& app_id) OVERRIDE;
 
   // GCMDriver implementation:
+  virtual void OnSignedIn() OVERRIDE;
+  virtual void Purge() OVERRIDE;
   virtual void Enable() OVERRIDE;
   virtual void Disable() OVERRIDE;
   virtual GCMClient* GetGCMClientForTesting() const OVERRIDE;
   virtual bool IsStarted() const OVERRIDE;
   virtual bool IsGCMClientReady() const OVERRIDE;
+  virtual bool IsConnected() const OVERRIDE;
   virtual void GetGCMStatistics(const GetGCMStatisticsCallback& callback,
                                 bool clear_logs) OVERRIDE;
   virtual void SetGCMRecording(const GetGCMStatisticsCallback& callback,
                                bool recording) OVERRIDE;
-  virtual std::string SignedInUserName() const OVERRIDE;
 
  protected:
   // GCMDriver implementation:

@@ -172,6 +172,10 @@ function populateWorkerTargets(data) {
     addToWorkersList(data[i]);
 }
 
+function showIncognitoWarning() {
+  $('devices-incognito').hidden = false;
+}
+
 function populateRemoteTargets(devices) {
   if (!devices)
     return;
@@ -330,16 +334,25 @@ function populateRemoteTargets(devices) {
           browserHeader.appendChild(newPage);
         }
 
-        if (queryParamsObject['browser-inspector']) {
+        var browserInspector;
+        var browserInspectorTitle;
+        if ('trace' in queryParamsObject || 'tracing' in queryParamsObject) {
+          browserInspector = 'chrome://tracing';
+          browserInspectorTitle = 'trace';
+        } else {
+          browserInspector = queryParamsObject['browser-inspector'];
+          browserInspectorTitle = 'inspect';
+        }
+        if (browserInspector) {
           var link = document.createElement('span');
           link.classList.add('action');
           link.setAttribute('tabindex', 1);
-          link.textContent = 'inspect';
+          link.textContent = browserInspectorTitle;
           browserHeader.appendChild(link);
           link.addEventListener(
               'click',
               sendCommand.bind(null, 'inspect-browser', browser.source,
-                  browser.id, queryParamsObject['browser-inspector']), false);
+                  browser.id, browserInspector), false);
         }
 
         pageList = document.createElement('div');

@@ -20,6 +20,7 @@
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/process/kill.h"
@@ -87,7 +88,6 @@
 #include "content/renderer/internal_document_state_data.h"
 #include "content/renderer/media/audio_device_factory.h"
 #include "content/renderer/media/media_stream_dispatcher.h"
-#include "content/renderer/media/midi_dispatcher.h"
 #include "content/renderer/media/video_capture_impl_manager.h"
 #include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
 #include "content/renderer/memory_benchmarking_extension.h"
@@ -430,20 +430,6 @@ static bool ShouldUseCompositedScrollingForFrames(
   return DeviceScaleEnsuresTextQuality(device_scale_factor);
 }
 
-static bool ShouldUseUniversalAcceleratedCompositingForOverflowScroll() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-
-  if (command_line.HasSwitch(
-          switches::kDisableUniversalAcceleratedOverflowScroll))
-    return false;
-
-  if (command_line.HasSwitch(
-          switches::kEnableUniversalAcceleratedOverflowScroll))
-    return true;
-
-  return false;
-}
-
 static bool ShouldUseTransitionCompositing(float device_scale_factor) {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
@@ -469,6 +455,11 @@ static bool ShouldUseAcceleratedFixedRootBackground(float device_scale_factor) {
     return true;
 
   return DeviceScaleEnsuresTextQuality(device_scale_factor);
+}
+
+static bool ShouldUseExpandedHeuristicsForGpuRasterization() {
+  return base::FieldTrialList::FindFullName(
+             "GpuRasterizationExpandedContentWhitelist") == "Enabled";
 }
 
 static FaviconURL::IconType ToFaviconType(blink::WebIconURL::Type type) {
@@ -641,17 +632,15 @@ RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
       history_list_length_(0),
       frames_in_progress_(0),
       target_url_status_(TARGET_NONE),
+      uses_temporary_zoom_level_(false),
 #if defined(OS_ANDROID)
       top_controls_constraints_(cc::BOTH),
 #endif
-      cached_is_main_frame_pinned_to_left_(false),
-      cached_is_main_frame_pinned_to_right_(false),
       has_scrolled_focused_editable_node_into_rect_(false),
       push_messaging_dispatcher_(NULL),
       speech_recognition_dispatcher_(NULL),
       media_stream_dispatcher_(NULL),
       browser_plugin_manager_(NULL),
-      midi_dispatcher_(NULL),
       devtools_agent_(NULL),
       accessibility_mode_(AccessibilityModeOff),
       renderer_accessibility_(NULL),
@@ -741,14 +730,14 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
       ShouldUseFixedPositionCompositing(device_scale_factor_));
   webview()->settings()->setAcceleratedCompositingForOverflowScrollEnabled(
       ShouldUseAcceleratedCompositingForOverflowScroll(device_scale_factor_));
-  webview()->settings()->setCompositorDrivenAcceleratedScrollingEnabled(
-      ShouldUseUniversalAcceleratedCompositingForOverflowScroll());
   webview()->settings()->setAcceleratedCompositingForTransitionEnabled(
       ShouldUseTransitionCompositing(device_scale_factor_));
   webview()->settings()->setAcceleratedCompositingForFixedRootBackgroundEnabled(
       ShouldUseAcceleratedFixedRootBackground(device_scale_factor_));
   webview()->settings()->setCompositedScrollingForFramesEnabled(
       ShouldUseCompositedScrollingForFrames(device_scale_factor_));
+  webview()->settings()->setUseExpandedHeuristicsForGpuRasterization(
+      ShouldUseExpandedHeuristicsForGpuRasterization());
 
   ApplyWebPreferences(webkit_preferences_, webview());
 
@@ -884,6 +873,11 @@ RenderView* RenderView::FromRoutingID(int routing_id) {
   return RenderViewImpl::FromRoutingID(routing_id);
 }
 
+/* static */
+size_t RenderViewImpl::GetRenderViewCount() {
+  return g_view_map.Get().size();
+}
+
 /*static*/
 void RenderView::ForEach(RenderViewVisitor* visitor) {
   ViewMap* views = g_view_map.Pointer();
@@ -983,7 +977,7 @@ void RenderViewImpl::PepperFocusChanged(PepperPluginInstanceImpl* instance,
   else if (focused_pepper_plugin_ == instance)
     focused_pepper_plugin_ = NULL;
 
-  UpdateTextInputType();
+  UpdateTextInputState(NO_SHOW_IME, FROM_NON_IME);
   UpdateSelectionBounds();
 }
 
@@ -1062,7 +1056,6 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
                         OnScrollFocusedEditableNodeIntoRect)
     IPC_MESSAGE_HANDLER(InputMsg_SetEditCommandsForNextKeyEvent,
                         OnSetEditCommandsForNextKeyEvent)
-    IPC_MESSAGE_HANDLER(FrameMsg_Navigate, OnNavigate)
     IPC_MESSAGE_HANDLER(ViewMsg_Stop, OnStop)
     IPC_MESSAGE_HANDLER(ViewMsg_CopyImageAt, OnCopyImageAt)
     IPC_MESSAGE_HANDLER(ViewMsg_SaveImageAt, OnSaveImageAt)
@@ -1071,6 +1064,8 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_Zoom, OnZoom)
     IPC_MESSAGE_HANDLER(ViewMsg_SetZoomLevelForLoadingURL,
                         OnSetZoomLevelForLoadingURL)
+    IPC_MESSAGE_HANDLER(ViewMsg_SetZoomLevelForView,
+                        OnSetZoomLevelForView)
     IPC_MESSAGE_HANDLER(ViewMsg_SetPageEncoding, OnSetPageEncoding)
     IPC_MESSAGE_HANDLER(ViewMsg_ResetPageEncodingToDefault,
                         OnResetPageEncodingToDefault)
@@ -1156,10 +1151,6 @@ void RenderViewImpl::OnSelectWordAroundCaret() {
   handling_input_event_ = true;
   webview()->focusedFrame()->selectWordAroundCaret();
   handling_input_event_ = false;
-}
-
-void RenderViewImpl::OnNavigate(const FrameMsg_Navigate_Params& params) {
-  FOR_EACH_OBSERVER(RenderViewObserver, observers_, Navigate(params.url));
 }
 
 bool RenderViewImpl::IsBackForwardToStaleEntry(
@@ -2129,23 +2120,6 @@ void RenderViewImpl::ProcessViewLayoutFlags(const CommandLine& command_line) {
   webview()->setPageScaleFactorLimits(1, maxPageScaleFactor);
 }
 
-void RenderViewImpl::FrameDidCommitProvisionalLoad(WebLocalFrame* frame,
-                                                   bool is_new_navigation) {
-  FOR_EACH_OBSERVER(RenderViewObserver, observers_,
-                    DidCommitProvisionalLoad(frame, is_new_navigation));
-
-  // TODO(nasko): Transition this code to RenderFrameImpl, since g_view_map is
-  // not accessible from there.
-  if (!frame->parent()) {  // Only for top frames.
-    RenderThreadImpl* render_thread_impl = RenderThreadImpl::current();
-    if (render_thread_impl) {  // Can be NULL in tests.
-      render_thread_impl->histogram_customizer()->
-          RenderViewNavigatedToHost(GURL(GetLoadingUrl(frame)).host(),
-                                    g_view_map.Get().size());
-    }
-  }
-}
-
 void RenderViewImpl::didClearWindowObject(WebLocalFrame* frame) {
   FOR_EACH_OBSERVER(
       RenderViewObserver, observers_, DidClearWindowObject(frame));
@@ -2218,22 +2192,6 @@ BrowserPluginManager* RenderViewImpl::GetBrowserPluginManager() {
 }
 
 void RenderViewImpl::UpdateScrollState(WebFrame* frame) {
-  WebSize offset = frame->scrollOffset();
-  WebSize minimum_offset = frame->minimumScrollOffset();
-  WebSize maximum_offset = frame->maximumScrollOffset();
-
-  bool is_pinned_to_left = offset.width <= minimum_offset.width;
-  bool is_pinned_to_right = offset.width >= maximum_offset.width;
-
-  if (is_pinned_to_left != cached_is_main_frame_pinned_to_left_ ||
-      is_pinned_to_right != cached_is_main_frame_pinned_to_right_) {
-    Send(new ViewHostMsg_DidChangeScrollOffsetPinningForMainFrame(
-          routing_id_, is_pinned_to_left, is_pinned_to_right));
-
-    cached_is_main_frame_pinned_to_left_ = is_pinned_to_left;
-    cached_is_main_frame_pinned_to_right_ = is_pinned_to_right;
-  }
-
   Send(new ViewHostMsg_DidChangeScrollOffset(routing_id_));
 }
 
@@ -2363,10 +2321,6 @@ bool RenderViewImpl::GetContentStateImmediately() const {
   return send_content_state_immediately_;
 }
 
-float RenderViewImpl::GetFilteredTimePerFrame() const {
-  return 0.0f;
-}
-
 blink::WebPageVisibilityState RenderViewImpl::GetVisibilityState() const {
   return visibilityState();
 }
@@ -2383,15 +2337,6 @@ void RenderViewImpl::SyncNavigationState() {
   if (!webview())
     return;
   SendUpdateState(history_controller_->GetCurrentEntry());
-}
-
-GURL RenderViewImpl::GetLoadingUrl(blink::WebFrame* frame) const {
-  WebDataSource* ds = frame->dataSource();
-  if (ds->hasUnreachableURL())
-    return ds->unreachableURL();
-
-  const WebURLRequest& request = ds->request();
-  return request.url();
 }
 
 blink::WebPlugin* RenderViewImpl::GetWebPluginForFind() {
@@ -2652,6 +2597,14 @@ void RenderViewImpl::OnSetZoomLevelForLoadingURL(const GURL& url,
   // the zoom level from this map will be effectively resetting text zoom level.
   host_zoom_levels_[url] = zoom_level;
 #endif
+}
+
+void RenderViewImpl::OnSetZoomLevelForView(bool uses_temporary_zoom_level,
+                                           double level) {
+  uses_temporary_zoom_level_ = uses_temporary_zoom_level;
+
+  webview()->hidePopups();
+  webview()->setZoomLevel(level);
 }
 
 void RenderViewImpl::OnSetPageEncoding(const std::string& encoding_name) {
@@ -3348,10 +3301,6 @@ GURL RenderViewImpl::GetURLForGraphicsContext3D() {
     return GURL("chrome://gpu/RenderViewImpl::CreateGraphicsContext3D");
 }
 
-bool RenderViewImpl::ForceCompositingModeEnabled() {
-  return webkit_preferences_.force_compositing_mode;
-}
-
 void RenderViewImpl::OnSetFocus(bool enable) {
   RenderWidget::OnSetFocus(enable);
 
@@ -3485,6 +3434,16 @@ void RenderViewImpl::SetDeviceScaleFactor(float device_scale_factor) {
 
   if (browser_plugin_manager_.get())
     browser_plugin_manager_->UpdateDeviceScaleFactor(device_scale_factor_);
+}
+
+bool RenderViewImpl::SetDeviceColorProfile(
+    const std::vector<char>& profile) {
+  bool changed = RenderWidget::SetDeviceColorProfile(profile);
+  if (changed && webview()) {
+    // TODO(noel): notify the webview() of the color profile change so it
+    // can update and repaint all color profiled page elements.
+  }
+  return changed;
 }
 
 ui::TextInputType RenderViewImpl::GetTextInputType() {
@@ -3705,12 +3664,6 @@ blink::WebPageVisibilityState RenderViewImpl::visibilityState() const {
                                             &override_state))
     return override_state;
   return current_state;
-}
-
-blink::WebMIDIClient* RenderViewImpl::webMIDIClient() {
-  if (!midi_dispatcher_)
-    midi_dispatcher_ = new MidiDispatcher(this);
-  return midi_dispatcher_;
 }
 
 blink::WebPushClient* RenderViewImpl::webPushClient() {
@@ -3990,7 +3943,7 @@ void RenderViewImpl::SetScreenOrientationForTesting(
 
 void RenderViewImpl::SetDeviceColorProfileForTesting(
     const std::vector<char>& color_profile) {
-  // TODO(noel): Add RenderViewImpl::SetDeviceColorProfile(color_profile).
+  SetDeviceColorProfile(color_profile);
 }
 
 void RenderViewImpl::ForceResizeForTesting(const gfx::Size& new_size) {

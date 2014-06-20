@@ -24,6 +24,7 @@
 #include "net/spdy/spdy_session.h"
 #include "net/spdy/spdy_session_pool.h"
 #include "net/spdy/spdy_stream.h"
+#include "net/url_request/url_request_job_factory_impl.h"
 
 namespace net {
 
@@ -475,6 +476,7 @@ SpdyURLRequestContext::SpdyURLRequestContext(NextProto protocol,
       host_resolver()));
   storage_.set_http_server_properties(
       scoped_ptr<HttpServerProperties>(new HttpServerPropertiesImpl()));
+  storage_.set_job_factory(new URLRequestJobFactoryImpl());
   net::HttpNetworkSession::Params params;
   params.client_socket_factory = &socket_factory_;
   params.host_resolver = host_resolver();
@@ -907,6 +909,13 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyGoAway() const {
 SpdyFrame* SpdyTestUtil::ConstructSpdyGoAway(
     SpdyStreamId last_good_stream_id) const {
   SpdyGoAwayIR go_ir(last_good_stream_id, GOAWAY_OK, "go away");
+  return CreateFramer(false)->SerializeFrame(go_ir);
+}
+
+SpdyFrame* SpdyTestUtil::ConstructSpdyGoAway(SpdyStreamId last_good_stream_id,
+                                             SpdyGoAwayStatus status,
+                                             const std::string& desc) const {
+  SpdyGoAwayIR go_ir(last_good_stream_id, status, desc);
   return CreateFramer(false)->SerializeFrame(go_ir);
 }
 

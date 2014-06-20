@@ -81,10 +81,6 @@ const char kLearnMoreIncognitoUrl[] =
 const char kLearnMoreGuestSessionUrl[] =
     "https://www.google.com/support/chromeos/bin/answer.py?answer=1057090";
 
-base::string16 GetUrlWithLang(const GURL& url) {
-  return base::ASCIIToUTF16(google_util::AppendGoogleLocaleParam(url).spec());
-}
-
 std::string SkColorToRGBAString(SkColor color) {
   // We convert the alpha using DoubleToString because StringPrintf will use
   // locale specific formatters (e.g., use , instead of . in German).
@@ -314,8 +310,7 @@ void NTPResourceCache::CreateNewTabIncognitoHTML() {
 
   localized_strings.SetString("learnMore",
       l10n_util::GetStringUTF16(new_tab_link_ids));
-  localized_strings.SetString("learnMoreLink",
-      GetUrlWithLang(GURL(new_tab_link)));
+  localized_strings.SetString("learnMoreLink", new_tab_link);
 
   bool bookmark_bar_attached = profile_->GetPrefs()->GetBoolean(
       prefs::kShowBookmarkBar);
@@ -361,7 +356,7 @@ void NTPResourceCache::CreateNewTabGuestHTML() {
     localized_strings.SetString("enterpriseLearnMore",
         l10n_util::GetStringUTF16(IDS_LEARN_MORE));
     localized_strings.SetString("enterpriseInfoHintLink",
-        GetUrlWithLang(GURL(chrome::kLearnMoreEnterpriseURL)));
+                                chrome::kLearnMoreEnterpriseURL);
   } else {
     localized_strings.SetString("enterpriseInfoVisible", "false");
   }
@@ -373,8 +368,7 @@ void NTPResourceCache::CreateNewTabGuestHTML() {
       l10n_util::GetStringUTF16(guest_tab_heading_ids));
   localized_strings.SetString("learnMore",
       l10n_util::GetStringUTF16(guest_tab_link_ids));
-  localized_strings.SetString("learnMoreLink",
-      GetUrlWithLang(GURL(guest_tab_link)));
+  localized_strings.SetString("learnMoreLink", guest_tab_link);
 
   webui::SetFontAndTextDirection(&localized_strings);
 
@@ -463,7 +457,9 @@ void NTPResourceCache::CreateNewTabHTML() {
   load_time_data.SetString("learnMore",
       l10n_util::GetStringUTF16(IDS_LEARN_MORE));
   load_time_data.SetString("webStoreLink",
-      GetUrlWithLang(GURL(extension_urls::GetWebstoreLaunchURL())));
+      google_util::AppendGoogleLocaleParam(
+          GURL(extension_urls::GetWebstoreLaunchURL()),
+          g_browser_process->GetApplicationLocale()).spec());
   load_time_data.SetString("appInstallHintText",
       l10n_util::GetStringUTF16(IDS_NEW_TAB_APP_INSTALL_HINT_LABEL));
   load_time_data.SetBoolean("isDiscoveryInNTPEnabled",
@@ -489,9 +485,9 @@ void NTPResourceCache::CreateNewTabHTML() {
   // feature is enabled.
   load_time_data.SetBoolean("isSwipeTrackingFromScrollEventsEnabled",
                             is_swipe_tracking_from_scroll_events_enabled_);
-  // Managed users can not have apps installed currently so there's no need to
-  // show the app cards.
-  if (profile_->IsManaged())
+  // Supervised users can not have apps installed currently so there's no need
+  // to show the app cards.
+  if (profile_->IsSupervised())
     should_show_apps_page_ = false;
 
   load_time_data.SetBoolean("showApps", should_show_apps_page_);

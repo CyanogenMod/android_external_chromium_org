@@ -141,7 +141,7 @@ bool GetOrCreateV8Value(v8::Handle<v8::Context> context,
       HostArrayBufferVar* host_buffer =
           static_cast<HostArrayBufferVar*>(buffer);
       *result = blink::WebArrayBufferConverter::toV8Value(
-          &host_buffer->webkit_buffer());
+          &host_buffer->webkit_buffer(), context->Global(), isolate);
       break;
     }
     case PP_VARTYPE_ARRAY:
@@ -214,7 +214,8 @@ bool GetOrCreateVar(v8::Handle<v8::Value> val,
     *result = (new ArrayVar())->GetPPVar();
   } else if (val->IsObject()) {
     scoped_ptr<blink::WebArrayBuffer> web_array_buffer(
-        blink::WebArrayBufferConverter::createFromV8Value(val));
+        blink::WebArrayBufferConverter::createFromV8Value(
+            val, context->GetIsolate()));
     if (web_array_buffer.get()) {
       scoped_refptr<HostArrayBufferVar> buffer_var(
           new HostArrayBufferVar(*web_array_buffer));
@@ -395,18 +396,31 @@ bool V8VarConverter::ToV8Value(const PP_Var& var,
   return true;
 }
 
-void V8VarConverter::FromV8Value(
+V8VarConverter::VarResult V8VarConverter::FromV8Value(
     v8::Handle<v8::Value> val,
     v8::Handle<v8::Context> context,
     const base::Callback<void(const ScopedPPVar&, bool)>& callback) {
-  ScopedPPVar result_var;
-  if (FromV8ValueInternal(val, context, &result_var)) {
-    resource_converter_->Flush(base::Bind(callback, result_var));
-  } else {
-    message_loop_proxy_->PostTask(
-        FROM_HERE,
-        base::Bind(callback, result_var, false));
+  VarResult result;
+  result.success = FromV8ValueInternal(val, context, &result.var);
+  if (!result.success)
+    resource_converter_->Reset();
+  result.completed_synchronously = !resource_converter_->NeedsFlush();
+  if (!result.completed_synchronously)
+    resource_converter_->Flush(base::Bind(callback, result.var));
+
+  return result;
+}
+
+bool V8VarConverter::FromV8ValueSync(
+    v8::Handle<v8::Value> val,
+    v8::Handle<v8::Context> context,
+    ppapi::ScopedPPVar* result_var) {
+  bool success = FromV8ValueInternal(val, context, result_var);
+  if (!success || resource_converter_->NeedsFlush()) {
+    resource_converter_->Reset();
+    return false;
   }
+  return true;
 }
 
 bool V8VarConverter::FromV8ValueInternal(

@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/at_exit.h"
 #include "base/message_loop/message_loop.h"
 #include "mojo/public/cpp/application/application.h"
-#include "mojo/public/cpp/environment/environment.h"
 #include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
 #include "mojo/service_manager/service_loader.h"
 #include "mojo/service_manager/service_manager.h"
@@ -33,6 +33,10 @@ class TestServiceImpl : public InterfaceImpl<TestService> {
 
   virtual ~TestServiceImpl() {
     --context_->num_impls;
+  }
+
+  virtual void OnConnectionError() OVERRIDE {
+    base::MessageLoop::current()->Quit();
   }
 
   // TestService implementation:
@@ -75,8 +79,7 @@ class TestServiceLoader : public ServiceLoader {
  public:
   TestServiceLoader()
       : context_(NULL),
-        num_loads_(0),
-        quit_after_error_(false) {
+        num_loads_(0) {
   }
 
   virtual ~TestServiceLoader() {
@@ -86,10 +89,6 @@ class TestServiceLoader : public ServiceLoader {
   }
 
   void set_context(TestContext* context) { context_ = context; }
-  void set_quit_after_error(bool quit_after_error) {
-    quit_after_error_ = quit_after_error;
-  }
-
   int num_loads() const { return num_loads_; }
 
  private:
@@ -104,16 +103,11 @@ class TestServiceLoader : public ServiceLoader {
 
   virtual void OnServiceError(ServiceManager* manager,
                               const GURL& url) OVERRIDE {
-    if (quit_after_error_) {
-      base::MessageLoop::current()->PostTask(FROM_HERE,
-                                             base::MessageLoop::QuitClosure());
-    }
   }
 
   scoped_ptr<Application> test_app_;
   TestContext* context_;
   int num_loads_;
-  bool quit_after_error_;
   DISALLOW_COPY_AND_ASSIGN(TestServiceLoader);
 };
 
@@ -156,19 +150,15 @@ class TestApp : public Application, public ServiceLoader {
     BindServiceProvider(service_provider_handle.Pass());
   }
 
-  virtual void ConnectToService(const mojo::String& service_url,
-                                const mojo::String& service_name,
-                                ScopedMessagePipeHandle client_handle,
-                                const mojo::String& requestor_url)
+  virtual bool AllowIncomingConnection(const mojo::String& service_name,
+                                       const mojo::String& requestor_url)
       MOJO_OVERRIDE {
     if (requestor_url_.empty() || requestor_url_ == requestor_url) {
       ++num_connects_;
-      Application::ConnectToService(service_url,
-                                    service_name,
-                                    client_handle.Pass(),
-                                    requestor_url);
+      return true;
     } else {
       base::MessageLoop::current()->Quit();
+      return false;
     }
   }
 
@@ -223,7 +213,6 @@ class ServiceManagerTest : public testing::Test {
 
     TestServiceLoader* default_loader = new TestServiceLoader;
     default_loader->set_context(&context_);
-    default_loader->set_quit_after_error(true);
     service_manager_->set_default_loader(
         scoped_ptr<ServiceLoader>(default_loader));
 
@@ -242,7 +231,7 @@ class ServiceManagerTest : public testing::Test {
   }
 
  protected:
-  mojo::Environment env_;
+  base::ShadowingAtExitManager at_exit_;
   base::MessageLoop loop_;
   TestContext context_;
   scoped_ptr<TestClientImpl> test_client_;
@@ -264,7 +253,7 @@ TEST_F(ServiceManagerTest, ClientError) {
   test_client_.reset(NULL);
   loop_.Run();
   EXPECT_EQ(0, context_.num_impls);
-  EXPECT_FALSE(HasFactoryForTestURL());
+  EXPECT_TRUE(HasFactoryForTestURL());
 }
 
 TEST_F(ServiceManagerTest, Deletes) {

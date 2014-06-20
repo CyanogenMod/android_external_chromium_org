@@ -10,7 +10,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/invalidation/fake_invalidation_service.h"
-#include "chrome/browser/invalidation/invalidation_service_factory.h"
+#include "chrome/browser/invalidation/profile_invalidation_provider_factory.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service_builder.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
@@ -24,6 +24,8 @@
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
+#include "components/invalidation/invalidation_service.h"
+#include "components/invalidation/profile_invalidation_provider.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/sync_driver/data_type_manager_impl.h"
 #include "components/sync_driver/pref_names.h"
@@ -32,6 +34,10 @@
 #include "google_apis/gaia/gaia_constants.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+namespace content {
+class BrowserContext;
+}
 
 namespace browser_sync {
 
@@ -84,7 +90,8 @@ class SyncBackendHostNoReturn : public SyncBackendHostMock {
 
 class SyncBackendHostMockCollectDeleteDirParam : public SyncBackendHostMock {
  public:
-  SyncBackendHostMockCollectDeleteDirParam(std::vector<bool>* delete_dir_param)
+  explicit SyncBackendHostMockCollectDeleteDirParam(
+      std::vector<bool>* delete_dir_param)
      : delete_dir_param_(delete_dir_param) {}
 
   virtual void Initialize(
@@ -126,6 +133,13 @@ ACTION_P(ReturnNewMockHostCollectDeleteDirParam, delete_dir_param) {
       delete_dir_param);
 }
 
+KeyedService* BuildFakeProfileInvalidationProvider(
+    content::BrowserContext* context) {
+  return new invalidation::ProfileInvalidationProvider(
+      scoped_ptr<invalidation::InvalidationService>(
+          new invalidation::FakeInvalidationService));
+}
+
 // A test harness that uses a real ProfileSyncService and in most cases a
 // MockSyncBackendHost.
 //
@@ -142,11 +156,6 @@ class ProfileSyncServiceTest : public ::testing::Test {
     CommandLine::ForCurrentProcess()->AppendSwitchASCII(
         switches::kSyncDeferredStartupTimeoutSeconds, "0");
 
-#if defined(OS_WIN) || defined(OS_MACOSX) || (defined(OS_LINUX) && !defined(OS_CHROMEOS))
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-          switches::kSyncEnableBackupRollback);
-#endif
-
     CHECK(profile_manager_.SetUp());
 
     TestingProfile::TestingFactories testing_facotries;
@@ -155,8 +164,8 @@ class ProfileSyncServiceTest : public ::testing::Test {
                            BuildAutoIssuingFakeProfileOAuth2TokenService));
     testing_facotries.push_back(
             std::make_pair(
-                invalidation::InvalidationServiceFactory::GetInstance(),
-                invalidation::FakeInvalidationService::Build));
+                invalidation::ProfileInvalidationProviderFactory::GetInstance(),
+                BuildFakeProfileInvalidationProvider));
 
     profile_ = profile_manager_.CreateTestingProfile(
         "sync-service-test", scoped_ptr<PrefServiceSyncable>(),
@@ -187,7 +196,7 @@ class ProfileSyncServiceTest : public ::testing::Test {
     service_.reset(new ProfileSyncService(
         components_factory_,
         profile_,
-        new ManagedUserSigninManagerWrapper(profile_, signin),
+        make_scoped_ptr(new ManagedUserSigninManagerWrapper(profile_, signin)),
         oauth2_token_service,
         behavior));
     service_->SetClearingBrowseringDataForTesting(
@@ -533,6 +542,9 @@ TEST_F(ProfileSyncServiceTest, BackupAfterSyncDisabled) {
 }
 
 TEST_F(ProfileSyncServiceTest, RollbackThenBackup) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kSyncEnableRollback);
+
   CreateService(browser_sync::MANUAL_START);
   service()->SetSyncSetupCompleted();
   ExpectDataTypeManagerCreation(3);
@@ -572,6 +584,22 @@ TEST_F(ProfileSyncServiceTest, RollbackThenBackup) {
   EXPECT_TRUE(delete_dir_param[2]);
 }
 #endif
+
+TEST_F(ProfileSyncServiceTest, GetSyncServiceURL) {
+  CommandLine command_line(*CommandLine::ForCurrentProcess());
+
+  // See that it defaults to a "dev" URL.
+  //
+  // Yes, we're hardcoding the URL here so this test will have to be updated
+  // when/if the URL ever changes.
+  EXPECT_EQ("https://clients4.google.com/chrome-sync/dev",
+            ProfileSyncService::GetSyncServiceURL(command_line).spec());
+
+  // See that we can override the URL with a flag.
+  command_line.AppendSwitchASCII("--sync-url", "https://foo/bar");
+  EXPECT_EQ("https://foo/bar",
+            ProfileSyncService::GetSyncServiceURL(command_line).spec());
+}
 
 }  // namespace
 }  // namespace browser_sync

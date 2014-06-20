@@ -228,6 +228,12 @@ NSView* BuildTitleCard(NSRect frame_rect,
   return container.autorelease();
 }
 
+bool HasAuthError(Profile* profile) {
+  const SigninErrorController* error_controller =
+      profiles::GetSigninErrorController(profile);
+  return error_controller && error_controller->HasError();
+}
+
 }  // namespace
 
 // Class that listens to changes to the OAuth2Tokens for the active profile,
@@ -279,7 +285,8 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
     profiles::BubbleViewMode viewMode = [controller_ viewMode];
     if (viewMode == profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT ||
         viewMode == profiles::BUBBLE_VIEW_MODE_GAIA_SIGNIN ||
-        viewMode == profiles::BUBBLE_VIEW_MODE_GAIA_ADD_ACCOUNT) {
+        viewMode == profiles::BUBBLE_VIEW_MODE_GAIA_ADD_ACCOUNT ||
+        viewMode == profiles::BUBBLE_VIEW_MODE_GAIA_REAUTH) {
       [controller_ initMenuContentsWithView:
           profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT];
     }
@@ -746,11 +753,13 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
                      frameOrigin:(NSPoint)frameOrigin
                           action:(SEL)action;
 
-// Creates an email account button with |title| and a remove icon. |tag|
+// Creates an email account button with |title| and a remove icon. If
+// |reauthRequired| is true, the button also displays a warning icon. |tag|
 // indicates which account the button refers to.
 - (NSButton*)accountButtonWithRect:(NSRect)rect
                              title:(const std::string&)title
-                               tag:(int)tag;
+                               tag:(int)tag
+                    reauthRequired:(BOOL)reauthRequired;
 @end
 
 @implementation ProfileChooserController
@@ -827,6 +836,11 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   [self initMenuContentsWithView:profiles::BUBBLE_VIEW_MODE_ACCOUNT_REMOVAL];
 }
 
+- (IBAction)showAccountReauthenticationView:(id)sender {
+  DCHECK(!isGuestSession_);
+  [self initMenuContentsWithView:profiles::BUBBLE_VIEW_MODE_GAIA_REAUTH];
+}
+
 - (IBAction)removeAccount:(id)sender {
   DCHECK(!accountIdToRemove_.empty());
   ProfileOAuth2TokenServiceFactory::GetPlatformSpecificForProfile(
@@ -851,7 +865,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 - (IBAction)enableNewProfileManagementPreview:(id)sender {
   ProfileMetrics::LogProfileUpgradeEnrollment(
       ProfileMetrics::PROFILE_ENROLLMENT_ACCEPT_NEW_PROFILE_MGMT);
-  profiles::EnableNewProfileManagementPreview();
+  profiles::EnableNewProfileManagementPreview(browser_->profile());
 }
 
 - (IBAction)dismissTutorial:(id)sender {
@@ -882,7 +896,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 }
 
 - (IBAction)endPreviewAndRelaunch:(id)sender {
-  profiles::DisableNewProfileManagementPreview();
+  profiles::DisableNewProfileManagementPreview(browser_->profile());
 }
 
 - (void)cleanUpEmbeddedViewContents {
@@ -916,6 +930,13 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 
     // Guest profiles do not have a token service.
     isGuestSession_ = browser_->profile()->IsGuestSession();
+
+    // If view mode is PROFILE_CHOOSER but there is an auth error, force
+    // ACCOUNT_MANAGEMENT mode.
+    if (viewMode_ == profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER &&
+        HasAuthError(browser_->profile())) {
+      viewMode_ = profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT;
+    }
 
     [[self bubble] setAlignment:info_bubble::kAlignRightEdgeToAnchorEdge];
     [[self bubble] setArrowLocation:info_bubble::kNoArrow];
@@ -1015,20 +1036,10 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
       [container addSubview:separator];
       yOffset = NSMaxY([separator frame]);
     }
-  } else if (viewMode_ == profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT) {
-    NSView* currentProfileAccountsView = [self createCurrentProfileAccountsView:
-        NSMakeRect(0, yOffset, kFixedMenuWidth, 0)];
-    [container addSubview:currentProfileAccountsView];
-    yOffset = NSMaxY([currentProfileAccountsView frame]);
-
-    NSBox* accountsSeparator = [self separatorWithFrame:
-        NSMakeRect(0, yOffset, kFixedMenuWidth, 0)];
-    [container addSubview:accountsSeparator];
-    yOffset = NSMaxY([accountsSeparator frame]);
   }
 
   // For supervised users, add the disclaimer text.
-  if (browser_->profile()->IsManaged()) {
+  if (browser_->profile()->IsSupervised()) {
     yOffset += kSmallVerticalSpacing;
     NSView* disclaimerContainer = [self createSupervisedUserDisclaimerView];
     [disclaimerContainer setFrameOrigin:NSMakePoint(0, yOffset)];
@@ -1040,6 +1051,18 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
         [self separatorWithFrame:NSMakeRect(0, yOffset, kFixedMenuWidth, 0)];
     [container addSubview:separator];
     yOffset = NSMaxY([separator frame]);
+  }
+
+  if (viewMode_ == profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT) {
+    NSView* currentProfileAccountsView = [self createCurrentProfileAccountsView:
+        NSMakeRect(0, yOffset, kFixedMenuWidth, 0)];
+    [container addSubview:currentProfileAccountsView];
+    yOffset = NSMaxY([currentProfileAccountsView frame]);
+
+    NSBox* accountsSeparator = [self separatorWithFrame:
+        NSMakeRect(0, yOffset, kFixedMenuWidth, 0)];
+    [container addSubview:accountsSeparator];
+    yOffset = NSMaxY([accountsSeparator frame]);
   }
 
   // Active profile card.
@@ -1239,7 +1262,8 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   }
 
   // Profile name, centered.
-  bool editingAllowed = !isGuestSession_ && !browser_->profile()->IsManaged();
+  bool editingAllowed = !isGuestSession_ &&
+                        !browser_->profile()->IsSupervised();
   base::scoped_nsobject<EditableProfileNameButton> profileName(
       [[EditableProfileNameButton alloc]
           initWithFrame:NSMakeRect(xOffset, yOffset,
@@ -1268,7 +1292,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   [container addSubview:iconView];
   yOffset = NSMaxY([iconView frame]);
 
-  if (browser_->profile()->IsManaged()) {
+  if (browser_->profile()->IsSupervised()) {
     base::scoped_nsobject<NSImageView> supervisedIcon(
         [[NSImageView alloc] initWithFrame:NSZeroRect]);
     ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
@@ -1370,7 +1394,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   int availableTextWidth = kFixedMenuWidth - 2 * kHorizontalSpacing;
 
   NSTextField* disclaimer = BuildLabel(
-      base::SysUTF16ToNSString(avatarMenu_->GetManagedUserInformation()),
+      base::SysUTF16ToNSString(avatarMenu_->GetSupervisedUserInformation()),
       NSMakePoint(kHorizontalSpacing, yOffset),
       nil /* background_color */,
       nil /* text_color */);
@@ -1505,21 +1529,32 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   std::vector<std::string>accounts =
       profiles::GetSecondaryAccountsForProfile(profile, primaryAccount);
 
+  // If there is an account with an authentication error, it needs to be
+  // badged with a warning icon.
+  const SigninErrorController* errorController =
+      profiles::GetSigninErrorController(profile);
+  std::string errorAccountId =
+      errorController ? errorController->error_account_id() : std::string();
+
   rect.origin.y = 0;
   for (size_t i = 0; i < accounts.size(); ++i) {
     // Save the original email address, as the button text could be elided.
     currentProfileAccounts_[i] = accounts[i];
-    NSButton* accountButton = [self accountButtonWithRect:rect
-                                                    title:accounts[i]
-                                                      tag:i];
+    NSButton* accountButton =
+        [self accountButtonWithRect:rect
+                              title:accounts[i]
+                                tag:i
+                     reauthRequired:errorAccountId == accounts[i]];
     [container addSubview:accountButton];
     rect.origin.y = NSMaxY([accountButton frame]);
   }
 
   // The primary account should always be listed first.
-  NSButton* accountButton = [self accountButtonWithRect:rect
-                                                  title:primaryAccount
-                                                    tag:kPrimaryProfileTag];
+  NSButton* accountButton =
+      [self accountButtonWithRect:rect
+                            title:primaryAccount
+                              tag:kPrimaryProfileTag
+                   reauthRequired:errorAccountId == primaryAccount];
   [container addSubview:accountButton];
   [container setFrameSize:NSMakeSize(NSWidth([container frame]),
                                      NSMaxY([accountButton frame]))];
@@ -1531,20 +1566,41 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
       [[NSView alloc] initWithFrame:NSZeroRect]);
   CGFloat yOffset = 0;
 
-  bool addSecondaryAccount =
-      viewMode_ == profiles::BUBBLE_VIEW_MODE_GAIA_ADD_ACCOUNT;
-  signin::Source source = addSecondaryAccount ?
-      signin::SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT :
-      signin::SOURCE_AVATAR_BUBBLE_SIGN_IN;
+  GURL url;
+  int messageId = -1;
+  SigninErrorController* errorController = NULL;
+  switch (viewMode_) {
+    case profiles::BUBBLE_VIEW_MODE_GAIA_SIGNIN:
+      url = signin::GetPromoURL(signin::SOURCE_AVATAR_BUBBLE_SIGN_IN,
+                                false /* auto_close */,
+                                true /* is_constrained */);
+      messageId = IDS_PROFILES_GAIA_SIGNIN_TITLE;
+      break;
+    case profiles::BUBBLE_VIEW_MODE_GAIA_ADD_ACCOUNT:
+      url = signin::GetPromoURL(signin::SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT,
+                                false /* auto_close */,
+                                true /* is_constrained */);
+      messageId = IDS_PROFILES_GAIA_ADD_ACCOUNT_TITLE;
+      break;
+    case profiles::BUBBLE_VIEW_MODE_GAIA_REAUTH:
+      DCHECK(HasAuthError(browser_->profile()));
+      errorController = profiles::GetSigninErrorController(browser_->profile());
+      url = signin::GetReauthURL(
+          browser_->profile(),
+          errorController ? errorController->error_username() : std::string());
+      messageId = IDS_PROFILES_GAIA_REAUTH_TITLE;
+      break;
+    default:
+      NOTREACHED() << "Called with invalid mode=" << viewMode_;
+      break;
+  }
 
   webContents_.reset(content::WebContents::Create(
       content::WebContents::CreateParams(browser_->profile())));
-  webContents_->GetController().LoadURL(
-      signin::GetPromoURL(
-          source, false /* auto_close */, true /* is_constrained */),
-      content::Referrer(),
-      content::PAGE_TRANSITION_AUTO_TOPLEVEL,
-      std::string());
+  webContents_->GetController().LoadURL(url,
+                                        content::Referrer(),
+                                        content::PAGE_TRANSITION_AUTO_TOPLEVEL,
+                                        std::string());
   NSView* webview = webContents_->GetNativeView();
   [webview setFrameSize:NSMakeSize(kFixedGaiaViewWidth, kFixedGaiaViewHeight)];
   [container addSubview:webview];
@@ -1557,9 +1613,8 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   yOffset = NSMaxY([separator frame]) + kSmallVerticalSpacing;
 
   NSView* titleView = BuildTitleCard(
-      NSMakeRect(0, yOffset, kFixedGaiaViewWidth,0),
-      addSecondaryAccount ? IDS_PROFILES_GAIA_ADD_ACCOUNT_TITLE :
-                            IDS_PROFILES_GAIA_SIGNIN_TITLE,
+      NSMakeRect(0, yOffset, kFixedGaiaViewWidth, 0),
+      messageId,
       self /* backButtonTarget*/,
       @selector(navigateBackFromSigninPage:) /* backButtonAction */);
   [container addSubview:titleView];
@@ -1748,29 +1803,47 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 
 - (NSButton*)accountButtonWithRect:(NSRect)rect
                              title:(const std::string&)title
-                               tag:(int)tag {
+                               tag:(int)tag
+                    reauthRequired:(BOOL)reauthRequired {
+  ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
+  NSImage* deleteImage = rb->GetNativeImageNamed(IDR_CLOSE_1).ToNSImage();
+  CGFloat deleteImageWidth = [deleteImage size].width;
+  NSImage* warningImage = reauthRequired ? rb->GetNativeImageNamed(
+      IDR_ICON_PROFILES_ACCOUNT_BUTTON_ERROR).ToNSImage() : nil;
+  CGFloat warningImageWidth = [warningImage size].width;
+
+  CGFloat availableTextWidth = rect.size.width - kHorizontalSpacing -
+      warningImageWidth - deleteImageWidth;
+  if (warningImage)
+    availableTextWidth -= kHorizontalSpacing;
+
   NSColor* backgroundColor = gfx::SkColorToCalibratedNSColor(
       profiles::kAvatarBubbleAccountsBackgroundColor);
   base::scoped_nsobject<BackgroundColorHoverButton> button(
       [[BackgroundColorHoverButton alloc] initWithFrame:rect
                                       imageTitleSpacing:0
                                         backgroundColor:backgroundColor]);
-  ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
-  NSImage* defaultImage = rb->GetNativeImageNamed(IDR_CLOSE_1).AsNSImage();
-  CGFloat kDeleteButtonWidth = [defaultImage size].width;
-  CGFloat availableWidth = rect.size.width -
-      kDeleteButtonWidth - kHorizontalSpacing;
-  [button setTitle:ElideEmail(title, availableWidth)];
+  [button setTitle:ElideEmail(title, availableTextWidth)];
   [button setAlignment:NSLeftTextAlignment];
   [button setBordered:NO];
+  if (reauthRequired) {
+    [button setDefaultImage:warningImage];
+    [button setImagePosition:NSImageLeft];
+    [button setTarget:self];
+    [button setAction:@selector(showAccountReauthenticationView:)];
+    [button setTag:tag];
+  }
 
   // Delete button.
-  rect.origin = NSMakePoint(availableWidth, 0);
-  rect.size.width = kDeleteButtonWidth;
+  NSRect buttonRect;
+  NSDivideRect(rect, &buttonRect, &rect,
+      deleteImageWidth + kHorizontalSpacing, NSMaxXEdge);
+  buttonRect.origin.y = 0;
+
   base::scoped_nsobject<HoverImageButton> deleteButton(
-      [[HoverImageButton alloc] initWithFrame:rect]);
+      [[HoverImageButton alloc] initWithFrame:buttonRect]);
   [deleteButton setBordered:NO];
-  [deleteButton setDefaultImage:defaultImage];
+  [deleteButton setDefaultImage:deleteImage];
   [deleteButton setHoverImage:rb->GetNativeImageNamed(
       IDR_CLOSE_1_H).ToNSImage()];
   [deleteButton setPressedImage:rb->GetNativeImageNamed(
@@ -1780,6 +1853,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   [deleteButton setTag:tag];
 
   [button addSubview:deleteButton];
+
   return button.autorelease();
 }
 

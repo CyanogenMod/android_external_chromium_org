@@ -36,6 +36,7 @@ PRUNE_PATHS = set([
 
     # Used for development and test, not in the shipping product.
     os.path.join('third_party','bison'),
+    os.path.join('third_party','blanketjs'),
     os.path.join('third_party','cygwin'),
     os.path.join('third_party','gnu_binutils'),
     os.path.join('third_party','gold'),
@@ -50,6 +51,8 @@ PRUNE_PATHS = set([
     os.path.join('third_party','psyco_win32'),
     os.path.join('third_party','pylib'),
     os.path.join('third_party','pywebsocket'),
+    os.path.join('third_party','qunit'),
+    os.path.join('third_party','sinonjs'),
     os.path.join('third_party','syzygy'),
     os.path.join('tools','gn'),
 

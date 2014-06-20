@@ -21,6 +21,8 @@
 #include "sandbox/win/src/policy_broker.h"
 #include "sandbox/win/src/policy_engine_processor.h"
 #include "sandbox/win/src/policy_low_level.h"
+#include "sandbox/win/src/process_mitigations_win32k_dispatcher.h"
+#include "sandbox/win/src/process_mitigations_win32k_policy.h"
 #include "sandbox/win/src/process_thread_dispatcher.h"
 #include "sandbox/win/src/process_thread_policy.h"
 #include "sandbox/win/src/registry_dispatcher.h"
@@ -80,6 +82,7 @@ PolicyBase::PolicyBase()
       initial_level_(USER_LOCKDOWN),
       job_level_(JOB_LOCKDOWN),
       ui_exceptions_(0),
+      memory_limit_(0),
       use_alternate_desktop_(false),
       use_alternate_winstation_(false),
       file_system_init_(false),
@@ -124,6 +127,11 @@ PolicyBase::PolicyBase()
 
   dispatcher = new HandleDispatcher(this);
   ipc_targets_[IPC_DUPLICATEHANDLEPROXY_TAG] = dispatcher;
+
+  dispatcher = new ProcessMitigationsWin32KDispatcher(this);
+  ipc_targets_[IPC_GDI_GDIDLLINITIALIZE_TAG] = dispatcher;
+  ipc_targets_[IPC_GDI_GETSTOCKOBJECT_TAG] = dispatcher;
+  ipc_targets_[IPC_USER_REGISTERCLASSW_TAG] = dispatcher;
 }
 
 PolicyBase::~PolicyBase() {
@@ -170,8 +178,19 @@ TokenLevel PolicyBase::GetLockdownTokenLevel() const{
 }
 
 ResultCode PolicyBase::SetJobLevel(JobLevel job_level, uint32 ui_exceptions) {
+  if (memory_limit_ && job_level == JOB_NONE) {
+    return SBOX_ERROR_BAD_PARAMS;
+  }
   job_level_ = job_level;
   ui_exceptions_ = ui_exceptions;
+  return SBOX_ALL_OK;
+}
+
+ResultCode PolicyBase::SetJobMemoryLimit(size_t memory_limit) {
+  if (memory_limit && job_level_ == JOB_NONE) {
+    return SBOX_ERROR_BAD_PARAMS;
+  }
+  memory_limit_ = memory_limit;
   return SBOX_ALL_OK;
 }
 
@@ -413,6 +432,16 @@ ResultCode PolicyBase::AddRule(SubSystem subsystem, Semantics semantics,
       }
       break;
     }
+
+    case SUBSYS_WIN32K_LOCKDOWN: {
+      if (!ProcessMitigationsWin32KLockdownPolicy::GenerateRules(
+              pattern, semantics,policy_maker_)) {
+        NOTREACHED();
+        return SBOX_ERROR_BAD_PARAMS;
+      }
+      break;
+    }
+
     default: {
       return SBOX_ERROR_UNSUPPORTED;
     }
@@ -471,7 +500,8 @@ ResultCode PolicyBase::MakeJobObject(HANDLE* job) {
   if (job_level_ != JOB_NONE) {
     // Create the windows job object.
     Job job_obj;
-    DWORD result = job_obj.Init(job_level_, NULL, ui_exceptions_);
+    DWORD result = job_obj.Init(job_level_, NULL, ui_exceptions_,
+                                memory_limit_);
     if (ERROR_SUCCESS != result) {
       return SBOX_ERROR_GENERIC;
     }
@@ -666,9 +696,6 @@ bool PolicyBase::SetupAllInterceptions(TargetProcess* target) {
       manager.AddToUnloadModules(it->c_str());
     }
   }
-
-  if (!handle_closer_.SetupHandleInterceptions(&manager))
-    return false;
 
   if (!SetupBasicInterceptions(&manager))
     return false;

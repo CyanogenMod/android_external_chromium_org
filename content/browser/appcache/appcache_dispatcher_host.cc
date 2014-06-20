@@ -162,7 +162,7 @@ void AppCacheDispatcherHost::OnGetStatus(int host_id, IPC::Message* reply_msg) {
     return;
   }
 
-  GetStatusCallback(appcache::UNCACHED, reply_msg);
+  GetStatusCallback(appcache::APPCACHE_STATUS_UNCACHED, reply_msg);
 }
 
 void AppCacheDispatcherHost::OnStartUpdate(int host_id,
@@ -205,7 +205,7 @@ void AppCacheDispatcherHost::OnSwapCache(int host_id, IPC::Message* reply_msg) {
 }
 
 void AppCacheDispatcherHost::GetStatusCallback(
-    appcache::Status status, void* param) {
+    appcache::AppCacheStatus status, void* param) {
   IPC::Message* reply_msg = reinterpret_cast<IPC::Message*>(param);
   DCHECK_EQ(pending_reply_msg_.get(), reply_msg);
   AppCacheHostMsg_GetStatus::WriteReplyParams(reply_msg, status);

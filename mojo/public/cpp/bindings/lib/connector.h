@@ -26,7 +26,7 @@ class Connector : public MessageReceiver {
  public:
   // The Connector takes ownership of |message_pipe|.
   explicit Connector(ScopedMessagePipeHandle message_pipe,
-                     MojoAsyncWaiter* waiter = GetDefaultAsyncWaiter());
+                     const MojoAsyncWaiter* waiter = GetDefaultAsyncWaiter());
   virtual ~Connector();
 
   // Sets the receiver to handle messages read from the message pipe.  The
@@ -69,10 +69,12 @@ class Connector : public MessageReceiver {
   void OnHandleReady(MojoResult result);
 
   void WaitToReadMore();
-  void ReadMore();
+
+  // Returns false if |this| was destroyed during message dispatch.
+  MOJO_WARN_UNUSED_RESULT bool ReadMore();
 
   ErrorHandler* error_handler_;
-  MojoAsyncWaiter* waiter_;
+  const MojoAsyncWaiter* waiter_;
 
   ScopedMessagePipeHandle message_pipe_;
   MessageReceiver* incoming_receiver_;
@@ -81,6 +83,11 @@ class Connector : public MessageReceiver {
   bool error_;
   bool drop_writes_;
   bool enforce_errors_from_incoming_receiver_;
+
+  // If non-null, this will be set to true when the Connector is destroyed.  We
+  // use this flag to allow for the Connector to be destroyed as a side-effect
+  // of dispatching an incoming message.
+  bool* destroyed_flag_;
 
   MOJO_DISALLOW_COPY_AND_ASSIGN(Connector);
 };

@@ -22,6 +22,7 @@
 #include <queue>
 
 #include "base/compiler_specific.h"
+#include "base/memory/linked_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/values.h"
 #include "content/common/edit_command.h"
@@ -45,6 +46,7 @@ struct FrameHostMsg_ReclaimCompositorResources_Params;
 #if defined(OS_MACOSX)
 struct ViewHostMsg_ShowPopup_Params;
 #endif
+struct ViewHostMsg_TextInputState_Params;
 struct ViewHostMsg_UpdateRect_Params;
 
 namespace blink {
@@ -118,9 +120,6 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
 
   bool OnMessageReceivedFromEmbedder(const IPC::Message& message);
 
-  void Initialize(const BrowserPluginHostMsg_Attach_Params& params,
-                  WebContentsImpl* embedder_web_contents);
-
   WebContentsImpl* embedder_web_contents() const {
     return embedder_web_contents_;
   }
@@ -177,7 +176,7 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   // parameters passed into BrowserPlugin from JavaScript to be forwarded to
   // the content embedder.
   void Attach(WebContentsImpl* embedder_web_contents,
-              BrowserPluginHostMsg_Attach_Params params,
+              const BrowserPluginHostMsg_Attach_Params& params,
               const base::DictionaryValue& extra_params);
 
   // Returns whether BrowserPluginGuest is interested in receiving the given
@@ -212,6 +211,10 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
                      WebContentsImpl* web_contents);
 
   void WillDestroy();
+
+  void Initialize(const BrowserPluginHostMsg_Attach_Params& params,
+                  WebContentsImpl* embedder_web_contents,
+                  const base::DictionaryValue& extra_params);
 
   bool InAutoSizeBounds(const gfx::Size& size) const;
 
@@ -249,7 +252,6 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
                    bool last_unlocked_by_target,
                    bool privileged);
   void OnLockMouseAck(int instance_id, bool succeeded);
-  void OnNavigateGuest(int instance_id, const std::string& src);
   void OnPluginDestroyed(int instance_id);
   // Resizes the guest's web contents.
   void OnResizeGuest(
@@ -259,7 +261,7 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   // access it.
   void OnSetName(int instance_id, const std::string& name);
   // Updates the size state of the guest.
-  void OnSetSize(
+  void OnSetAutoSize(
       int instance_id,
       const BrowserPluginHostMsg_AutoSize_Params& auto_size_params,
       const BrowserPluginHostMsg_ResizeGuest_Params& resize_guest_params);
@@ -287,9 +289,9 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   void OnUnlockMouseAck(int instance_id);
   void OnUpdateGeometry(int instance_id, const gfx::Rect& view_rect);
 
-  void OnTextInputTypeChanged(ui::TextInputType type,
-                              ui::TextInputMode input_mode,
-                              bool can_compose_inline);
+  void OnTextInputStateChanged(
+      const ViewHostMsg_TextInputState_Params& params);
+
   void OnImeSetComposition(
       int instance_id,
       const std::string& text,
@@ -378,7 +380,7 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
 
   // This is a queue of messages that are destined to be sent to the embedder
   // once the guest is attached to a particular embedder.
-  std::queue<IPC::Message*> pending_messages_;
+  std::deque<linked_ptr<IPC::Message> > pending_messages_;
 
   BrowserPluginGuestDelegate* delegate_;
 

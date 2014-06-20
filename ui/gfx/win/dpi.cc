@@ -20,9 +20,6 @@ namespace {
 int kDefaultDPIX = 96;
 int kDefaultDPIY = 96;
 
-const wchar_t kRegistryProfilePath[] = L"SOFTWARE\\Google\\Chrome\\Profile";
-const wchar_t kHighDPISupportW[] = L"high-dpi-support";
-
 bool force_highdpi_for_testing = false;
 
 BOOL IsProcessDPIAwareWrapper() {
@@ -153,8 +150,8 @@ bool IsHighDPIEnabled() {
   // under the DWORD value high-dpi-support.
   // Default is disabled.
   static DWORD value = ReadRegistryValue(
-      HKEY_CURRENT_USER, kRegistryProfilePath,
-      kHighDPISupportW, TRUE);
+      HKEY_CURRENT_USER, gfx::win::kRegistryProfilePath,
+      gfx::win::kHighDPISupportW, TRUE);
   return value != 0;
 }
 
@@ -170,6 +167,10 @@ void EnableHighDPISupport() {
 }
 
 namespace win {
+
+GFX_EXPORT const wchar_t kRegistryProfilePath[] =
+    L"Software\\Google\\Chrome\\Profile";
+GFX_EXPORT const wchar_t kHighDPISupportW[] = L"high-dpi-support";
 
 float GetDeviceScaleFactor() {
   DCHECK_NE(0.0f, g_device_scale_factor);
@@ -217,33 +218,6 @@ Size DIPToScreenSize(const Size& dip_size) {
 int GetSystemMetricsInDIP(int metric) {
   return static_cast<int>(GetSystemMetrics(metric) /
       GetDeviceScaleFactor() + 0.5);
-}
-
-double GetUndocumentedDPIScale() {
-  // TODO(girard): Remove this code when chrome is DPIAware.
-  static double scale = -1.0;
-  if (scale == -1.0) {
-    scale = 1.0;
-    if (!IsProcessDPIAwareWrapper()) {
-      base::win::RegKey key(HKEY_CURRENT_USER,
-                            L"Control Panel\\Desktop\\WindowMetrics",
-                            KEY_QUERY_VALUE);
-      if (key.Valid()) {
-        DWORD value = 0;
-        if (key.ReadValueDW(L"AppliedDPI", &value) == ERROR_SUCCESS) {
-          scale = static_cast<double>(value) / kDefaultDPIX;
-        }
-      }
-    }
-  }
-  return scale;
-}
-
-double GetUndocumentedDPITouchScale() {
-  static double scale =
-      (base::win::GetVersion() < base::win::VERSION_WIN8_1) ?
-      GetUndocumentedDPIScale() : 1.0;
-  return scale;
 }
 
 bool IsDeviceScaleFactorSet() {

@@ -7,14 +7,14 @@ import unittest
 
 from telemetry import test
 from telemetry.core import wpr_modes
-from telemetry.core.timeline import model as model_module
-from telemetry.core.timeline import async_slice
-from telemetry.page import page_measurement_results
+from telemetry.timeline import model as model_module
+from telemetry.timeline import async_slice
 from telemetry.page import page_measurement_unittest_base
 from telemetry.page import page_set
 from telemetry.page import page as page_module
 # pylint: disable=W0401,W0614
 from telemetry.page.actions.all_page_actions import *
+from telemetry.results import page_measurement_results
 from telemetry.unittest import options_for_unittests
 from telemetry.web_perf import timeline_based_measurement as tbm_module
 from telemetry.web_perf.metrics import timeline_based_metric
@@ -108,10 +108,9 @@ class TestTimelinebasedMeasurementPage(page_module.Page):
         'file://interaction_enabled_page.html', ps, base_dir)
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(WaitAction({'seconds': 2}))
-    action_runner.RunAction(TapAction(
-        {'selector': '#drawer', 'automatically_record_interaction': False}))
-    action_runner.RunAction(WaitAction({'seconds': 1}))
+    action_runner.Wait(2)
+    action_runner.TapElement('#drawer')
+    action_runner.Wait(1)
 
 
 class TimelineBasedMeasurementTest(

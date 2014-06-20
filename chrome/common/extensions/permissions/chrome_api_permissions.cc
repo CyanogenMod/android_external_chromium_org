@@ -9,7 +9,6 @@
 #include "extensions/common/permissions/media_galleries_permission.h"
 #include "extensions/common/permissions/permission_message.h"
 #include "extensions/common/permissions/permissions_info.h"
-#include "extensions/common/permissions/usb_device_permission.h"
 #include "grit/extensions_strings.h"
 #include "grit/generated_resources.h"
 
@@ -56,6 +55,10 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
        PermissionMessage::kDownloadsOpen},
       {APIPermission::kDownloadsShelf, "downloads.shelf"},
       {APIPermission::kIdentity, "identity"},
+      {APIPermission::kIdentityEmail, "identity.email",
+       APIPermissionInfo::kFlagNone,
+       IDS_EXTENSION_PROMPT_WARNING_IDENTITY_EMAIL,
+       PermissionMessage::kIdentityEmail},
       {APIPermission::kExperimental, "experimental",
        APIPermissionInfo::kFlagCannotBeOptional},
       // NOTE(kalman): this is provided by a manifest property but needs to
@@ -73,6 +76,7 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
       {APIPermission::kNotification, "notifications"},
       {APIPermission::kUnlimitedStorage, "unlimitedStorage",
        APIPermissionInfo::kFlagCannotBeOptional},
+      {APIPermission::kGcdPrivate, "gcdPrivate"},
       {APIPermission::kGcm, "gcm"},
 
       // Register extension permissions.
@@ -87,7 +91,6 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
       {APIPermission::kAccessibilityPrivate, "accessibilityPrivate",
        APIPermissionInfo::kFlagCannotBeOptional},
       {APIPermission::kActiveTab, "activeTab"},
-      {APIPermission::kAdView, "adview"},
       {APIPermission::kAlarms, "alarms"},
       {APIPermission::kBookmark, "bookmarks", APIPermissionInfo::kFlagNone,
        IDS_EXTENSION_PROMPT_WARNING_BOOKMARKS, PermissionMessage::kBookmarks},
@@ -106,7 +109,7 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
       {APIPermission::kFontSettings, "fontSettings",
        APIPermissionInfo::kFlagCannotBeOptional},
       {APIPermission::kHistory, "history", APIPermissionInfo::kFlagNone,
-       IDS_EXTENSION_PROMPT_WARNING_BROWSING_HISTORY,
+       IDS_EXTENSION_PROMPT_WARNING_HISTORY_WRITE,
        PermissionMessage::kBrowsingHistory},
       {APIPermission::kIdltest, "idltest"},
       {APIPermission::kIdle, "idle"},
@@ -128,7 +131,7 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
       {APIPermission::kPrivacy, "privacy", APIPermissionInfo::kFlagNone,
        IDS_EXTENSION_PROMPT_WARNING_PRIVACY, PermissionMessage::kPrivacy},
       {APIPermission::kProcesses, "processes", APIPermissionInfo::kFlagNone,
-       IDS_EXTENSION_PROMPT_WARNING_TABS, PermissionMessage::kTabs},
+       IDS_EXTENSION_PROMPT_WARNING_HISTORY_READ, PermissionMessage::kTabs},
       {APIPermission::kSessions, "sessions"},
       {APIPermission::kSignedInDevices, "signedInDevices",
        APIPermissionInfo::kFlagNone,
@@ -139,10 +142,9 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
        IDS_EXTENSION_PROMPT_WARNING_SYNCFILESYSTEM,
        PermissionMessage::kSyncFileSystem},
       {APIPermission::kTab, "tabs", APIPermissionInfo::kFlagNone,
-       IDS_EXTENSION_PROMPT_WARNING_TABS, PermissionMessage::kTabs},
+       IDS_EXTENSION_PROMPT_WARNING_HISTORY_READ, PermissionMessage::kTabs},
       {APIPermission::kTopSites, "topSites", APIPermissionInfo::kFlagNone,
-       IDS_EXTENSION_PROMPT_WARNING_BROWSING_HISTORY,
-       PermissionMessage::kBrowsingHistory},
+       IDS_EXTENSION_PROMPT_WARNING_HISTORY_READ, PermissionMessage::kTabs},
       {APIPermission::kTts, "tts", 0, APIPermissionInfo::kFlagCannotBeOptional},
       {APIPermission::kTtsEngine, "ttsEngine",
        APIPermissionInfo::kFlagCannotBeOptional,
@@ -151,7 +153,7 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
        APIPermissionInfo::kFlagCannotBeOptional,
        IDS_EXTENSION_PROMPT_WARNING_WALLPAPER, PermissionMessage::kWallpaper},
       {APIPermission::kWebNavigation, "webNavigation",
-       APIPermissionInfo::kFlagNone, IDS_EXTENSION_PROMPT_WARNING_TABS,
+       APIPermissionInfo::kFlagNone, IDS_EXTENSION_PROMPT_WARNING_HISTORY_READ,
        PermissionMessage::kTabs},
       {APIPermission::kWebRequest, "webRequest"},
       {APIPermission::kWebRequestBlocking, "webRequestBlocking"},
@@ -318,8 +320,6 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
        &CreateAPIPermission<MediaGalleriesPermission>},
       {APIPermission::kPushMessaging, "pushMessaging",
        APIPermissionInfo::kFlagCannotBeOptional},
-      {APIPermission::kUsbDevice, "usbDevices", APIPermissionInfo::kFlagNone, 0,
-       PermissionMessage::kNone, &CreateAPIPermission<UsbDevicePermission>},
       {APIPermission::kSystemCpu, "system.cpu"},
       {APIPermission::kSystemMemory, "system.memory"},
       {APIPermission::kSystemNetwork, "system.network"},

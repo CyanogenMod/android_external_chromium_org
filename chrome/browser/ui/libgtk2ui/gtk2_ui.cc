@@ -45,6 +45,7 @@
 #include "ui/gfx/skbitmap_operations.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/views/controls/button/label_button.h"
+#include "ui/views/controls/button/label_button_border.h"
 #include "ui/views/linux_ui/window_button_order_observer.h"
 
 #if defined(USE_GCONF)
@@ -557,9 +558,9 @@ gfx::Image Gtk2UI::GetIconForContentType(
 
 scoped_ptr<views::Border> Gtk2UI::CreateNativeBorder(
     views::LabelButton* owning_button,
-    scoped_ptr<views::Border> border) {
+    scoped_ptr<views::LabelButtonBorder> border) {
   if (owning_button->GetNativeTheme() != NativeThemeGtk2::instance())
-    return border.Pass();
+    return border.PassAs<views::Border>();
 
   return scoped_ptr<views::Border>(
       new Gtk2Border(this, owning_button, border.Pass()));
@@ -751,7 +752,7 @@ void Gtk2UI::GetScrollbarColors(GdkColor* thumb_active_color,
   // Draw scrollbar thumb part and track into offscreen image
   const int kWidth  = 100;
   const int kHeight = 20;
-  GtkStyle*  style  = gtk_rc_get_style(scrollbar);
+  GtkStyle* style   = gtk_rc_get_style(scrollbar);
   GdkWindow* gdk_window = gtk_widget_get_window(window);
   GdkPixmap* pm     = gdk_pixmap_new(gdk_window, kWidth, kHeight, -1);
   GdkRectangle rect = { 0, 0, kWidth, kHeight };

@@ -10,6 +10,7 @@
 #include "net/quic/crypto/quic_encrypter.h"
 #include "net/quic/quic_utils.h"
 #include "net/quic/test_tools/mock_random.h"
+#include "net/quic/test_tools/quic_framer_peer.h"
 #include "net/quic/test_tools/quic_packet_creator_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
 #include "net/test/gtest_util.h"
@@ -68,12 +69,13 @@ class QuicPacketCreatorTest : public ::testing::TestWithParam<TestParams> {
         sequence_number_(0),
         connection_id_(2),
         data_("foo"),
-        creator_(connection_id_, &client_framer_, &mock_random_, false) {
+        creator_(connection_id_, &client_framer_, &mock_random_) {
     client_framer_.set_visitor(&framer_visitor_);
     client_framer_.set_received_entropy_calculator(&entropy_calculator_);
     server_framer_.set_visitor(&framer_visitor_);
   }
-  ~QuicPacketCreatorTest() {
+
+  virtual ~QuicPacketCreatorTest() OVERRIDE {
   }
 
   void ProcessPacket(QuicPacket* packet) {
@@ -120,6 +122,14 @@ class QuicPacketCreatorTest : public ::testing::TestWithParam<TestParams> {
                                              kClientDataStreamId1, kOffset,
                                              true, is_in_fec_group);
   }
+
+  // Enables and turns on FEC protection. Returns true if FEC protection is on.
+  bool SwitchFecProtectionOn(size_t max_packets_per_fec_group) {
+    creator_.set_max_packets_per_fec_group(max_packets_per_fec_group);
+    creator_.StartFecProtectingPackets();
+    return creator_.IsFecProtected();
+  }
+
   static const QuicStreamOffset kOffset = 1u;
 
   QuicFrames frames_;
@@ -167,7 +177,7 @@ TEST_P(QuicPacketCreatorTest, SerializeFrames) {
 
 TEST_P(QuicPacketCreatorTest, SerializeWithFEC) {
   // Enable FEC protection, and send FEC packet every 6 packets.
-  EXPECT_TRUE(QuicPacketCreatorPeer::SwitchFecProtectionOn(&creator_, 6));
+  EXPECT_TRUE(SwitchFecProtectionOn(6));
   // Should return false since we do not have enough packets in the FEC group to
   // trigger an FEC packet.
   ASSERT_FALSE(creator_.ShouldSendFec(/*force_close=*/false));
@@ -339,7 +349,7 @@ TEST_P(QuicPacketCreatorTest, SerializeWithFECChangingSequenceNumberLength) {
   // of the open FEC group.
 
   // Enable FEC protection, and send FEC packet every 6 packets.
-  EXPECT_TRUE(QuicPacketCreatorPeer::SwitchFecProtectionOn(&creator_, 6));
+  EXPECT_TRUE(SwitchFecProtectionOn(6));
   // Should return false since we do not have enough packets in the FEC group to
   // trigger an FEC packet.
   ASSERT_FALSE(creator_.ShouldSendFec(/*force_close=*/false));
@@ -488,7 +498,7 @@ TEST_P(QuicPacketCreatorTest, SwitchFecOnOffWithNoGroup) {
 
 TEST_P(QuicPacketCreatorTest, SwitchFecOnOffWithGroupInProgress) {
   // Enable FEC protection, and send FEC packet every 6 packets.
-  EXPECT_TRUE(QuicPacketCreatorPeer::SwitchFecProtectionOn(&creator_, 6));
+  EXPECT_TRUE(SwitchFecProtectionOn(6));
   frames_.push_back(QuicFrame(new QuicStreamFrame(0u, false, 0u, IOVector())));
   SerializedPacket serialized = creator_.SerializeAllFrames(frames_);
   delete frames_[0].stream_frame;
@@ -626,7 +636,7 @@ TEST_P(QuicPacketCreatorTest, StreamFrameConsumption) {
 
 TEST_P(QuicPacketCreatorTest, StreamFrameConsumptionWithFec) {
   // Enable FEC protection, and send FEC packet every 6 packets.
-  EXPECT_TRUE(QuicPacketCreatorPeer::SwitchFecProtectionOn(&creator_, 6));
+  EXPECT_TRUE(SwitchFecProtectionOn(6));
   // Compute the total overhead for a single frame in packet.
   const size_t overhead = GetPacketHeaderOverhead(IN_FEC_GROUP)
       + GetEncryptionOverhead() + GetStreamFrameOverhead(IN_FEC_GROUP);
@@ -718,7 +728,7 @@ TEST_P(QuicPacketCreatorTest, NonCryptoStreamFramePacketNonPadding) {
 }
 
 TEST_P(QuicPacketCreatorTest, SerializeVersionNegotiationPacket) {
-  QuicPacketCreatorPeer::SetIsServer(&creator_, true);
+  QuicFramerPeer::SetIsServer(&client_framer_, true);
   QuicVersionVector versions;
   versions.push_back(test::QuicVersionMax());
   scoped_ptr<QuicEncryptedPacket> encrypted(
@@ -730,6 +740,7 @@ TEST_P(QuicPacketCreatorTest, SerializeVersionNegotiationPacket) {
     EXPECT_CALL(framer_visitor_, OnUnauthenticatedPublicHeader(_));
     EXPECT_CALL(framer_visitor_, OnVersionNegotiationPacket(_));
   }
+  QuicFramerPeer::SetIsServer(&client_framer_, false);
   client_framer_.ProcessPacket(*encrypted);
 }
 

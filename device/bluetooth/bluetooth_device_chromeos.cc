@@ -433,14 +433,6 @@ void BluetoothDeviceChromeOS::Forget(const ErrorCallback& error_callback) {
                      error_callback));
 }
 
-void BluetoothDeviceChromeOS::ConnectToProfile(
-    device::BluetoothProfile* profile,
-    const base::Closure& callback,
-    const ConnectToProfileErrorCallback& error_callback) {
-  // TODO(keybuK): Remove.
-  error_callback.Run("Removed. Use chrome.bluetoothSocket.connect() instead.");
-}
-
 void BluetoothDeviceChromeOS::ConnectToService(
     const BluetoothUUID& uuid,
     const ConnectToServiceCallback& callback,
@@ -456,6 +448,13 @@ void BluetoothDeviceChromeOS::ConnectToService(
   socket->Connect(this, uuid,
                   base::Bind(callback, socket),
                   error_callback);
+}
+
+void BluetoothDeviceChromeOS::CreateGattConnection(
+      const GattConnectionCallback& callback,
+      const ConnectErrorCallback& error_callback) {
+  // TODO(armansito): Implement.
+  error_callback.Run(ERROR_UNSUPPORTED_DEVICE);
 }
 
 void BluetoothDeviceChromeOS::StartConnectionMonitor(

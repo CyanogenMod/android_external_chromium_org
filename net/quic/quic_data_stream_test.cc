@@ -303,7 +303,7 @@ TEST_P(QuicDataStreamTest, StreamFlowControlBlocked) {
   GenerateBody(&body, kWindow + kOverflow);
 
   EXPECT_CALL(*connection_, SendBlocked(kClientDataStreamId1));
-  EXPECT_CALL(*session_, WritevData(kClientDataStreamId1, _, _, _, _))
+  EXPECT_CALL(*session_, WritevData(kClientDataStreamId1, _, _, _, _, _))
       .WillOnce(Return(QuicConsumedData(kWindow, true)));
   stream_->WriteOrBufferData(body, false, NULL);
 
@@ -422,7 +422,8 @@ TEST_P(QuicDataStreamTest, ConnectionFlowControlWindowUpdate) {
     return;
   }
   ValueRestore<bool> old_flag2(&FLAGS_enable_quic_stream_flow_control_2, true);
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_connection_flow_control, true);
+  ValueRestore<bool> old_flag(&FLAGS_enable_quic_connection_flow_control_2,
+                              true);
 
   Initialize(kShouldProcessData);
 
@@ -510,7 +511,8 @@ TEST_P(QuicDataStreamTest, ConnectionFlowControlViolation) {
     return;
   }
   ValueRestore<bool> old_flag2(&FLAGS_enable_quic_stream_flow_control_2, true);
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_connection_flow_control, true);
+  ValueRestore<bool> old_flag(&FLAGS_enable_quic_connection_flow_control_2,
+                              true);
 
   // Stream should not process data, so that data gets buffered in the
   // sequencer, triggering flow control limits.
@@ -560,7 +562,7 @@ TEST_P(QuicDataStreamTest, StreamFlowControlFinNotBlocked) {
   bool fin = true;
 
   EXPECT_CALL(*connection_, SendBlocked(kClientDataStreamId1)).Times(0);
-  EXPECT_CALL(*session_, WritevData(kClientDataStreamId1, _, _, _, _))
+  EXPECT_CALL(*session_, WritevData(kClientDataStreamId1, _, _, _, _, _))
       .WillOnce(Return(QuicConsumedData(0, fin)));
 
   stream_->WriteOrBufferData(body, fin, NULL);

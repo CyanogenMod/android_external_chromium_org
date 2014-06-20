@@ -26,6 +26,10 @@ class ImageSkia;
 class ImageSkiaRep;
 }
 
+namespace ui {
+class EventHandler;
+}
+
 namespace views {
 class DesktopDragDropClientAuraX11;
 class DesktopDispatcherClient;
@@ -73,6 +77,9 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
 
   void AddObserver(views::DesktopWindowTreeHostObserverX11* observer);
   void RemoveObserver(views::DesktopWindowTreeHostObserverX11* observer);
+
+  // Swaps the current handler for events in the non client view with |handler|.
+  void SwapNonClientEventHandler(scoped_ptr<ui::EventHandler> handler);
 
   // Deallocates the internal list of open windows.
   static void CleanUpWindowList();
@@ -218,6 +225,9 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
 
   void SetWindowTransparency();
 
+  // Relayout the widget's client and non-client views.
+  void Relayout();
+
   // ui::PlatformEventDispatcher:
   virtual bool CanDispatchEvent(const ui::PlatformEvent& event) OVERRIDE;
   virtual uint32_t DispatchEvent(const ui::PlatformEvent& event) OVERRIDE;
@@ -254,8 +264,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   // The window manager state bits.
   std::set< ::Atom> window_properties_;
 
-  // Local flag for fullscreen state to avoid a state mismatch between
-  // server and local window_properties_ during app-initiated fullscreen.
+  // Whether |xwindow_| was requested to be fullscreen via SetFullscreen().
   bool is_fullscreen_;
 
   // True if the window should stay on top of most other windows.
@@ -274,7 +283,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   // Current Aura cursor.
   gfx::NativeCursor current_cursor_;
 
-  scoped_ptr<X11WindowEventFilter> x11_window_event_filter_;
+  scoped_ptr<ui::EventHandler> x11_non_client_event_filter_;
   scoped_ptr<X11DesktopWindowMoveClient> x11_window_move_client_;
 
   // TODO(beng): Consider providing an interface to DesktopNativeWidgetAura

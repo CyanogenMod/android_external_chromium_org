@@ -19,8 +19,8 @@ from telemetry.core.backends.chrome import inspector_timeline
 from telemetry.core.backends.chrome import inspector_websocket
 from telemetry.core.backends.chrome import websocket
 from telemetry.core.heap import model
-from telemetry.core.timeline import model as timeline_model
-from telemetry.core.timeline import recording_options
+from telemetry.timeline import model as timeline_model
+from telemetry.timeline import recording_options
 
 
 class InspectorException(Exception):
@@ -77,6 +77,10 @@ class InspectorBackend(inspector_websocket.InspectorWebsocket):
       if c['id'] == self._context['id']:
         return c['url']
     return None
+
+  @property
+  def id(self):
+    return self.debugger_url
 
   @property
   def debugger_url(self):
@@ -171,6 +175,9 @@ class InspectorBackend(inspector_websocket.InspectorWebsocket):
   def EvaluateJavaScript(self, expr, context_id=None, timeout=60):
     return self._runtime.Evaluate(expr, context_id, timeout)
 
+  def EnableAllContexts(self):
+    return self._runtime.EnableAllContexts()
+
   # Timeline public methods.
 
   @property
@@ -212,7 +219,7 @@ class InspectorBackend(inspector_websocket.InspectorWebsocket):
 
   def _IsInspectable(self):
     contexts = self._browser_backend.ListInspectableContexts()
-    return self.id in [c['id'] for c in contexts]
+    return self._context['id'] in [c['id'] for c in contexts]
 
   def _HandleNotification(self, res):
     if (res['method'] == 'Inspector.detached' and

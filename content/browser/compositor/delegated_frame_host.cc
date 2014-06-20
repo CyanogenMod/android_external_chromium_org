@@ -124,18 +124,14 @@ void DelegatedFrameHost::CopyFromCompositingSurface(
   // Only ARGB888 and RGB565 supported as of now.
   bool format_support = ((config == SkBitmap::kRGB_565_Config) ||
                          (config == SkBitmap::kARGB_8888_Config));
-  if (!format_support) {
-    DCHECK(format_support);
-    callback.Run(false, SkBitmap());
-    return;
-  }
+  DCHECK(format_support);
   if (!CanCopyToBitmap()) {
     callback.Run(false, SkBitmap());
     return;
   }
 
-  const gfx::Size& dst_size_in_pixel = client_->ConvertViewSizeToPixel(
-      dst_size);
+  const gfx::Size& dst_size_in_pixel =
+      client_->ConvertViewSizeToPixel(dst_size);
   scoped_ptr<cc::CopyOutputRequest> request =
       cc::CopyOutputRequest::CreateRequest(base::Bind(
           &DelegatedFrameHost::CopyFromCompositingSurfaceHasResult,
@@ -167,8 +163,6 @@ void DelegatedFrameHost::CopyFromCompositingSurfaceToVideoFrame(
                    ImageTransportFactory::GetInstance()->GetGLHelper()) {
       subscriber_texture = new OwnedMailbox(helper);
     }
-    if (subscriber_texture.get())
-      active_frame_subscriber_textures_.insert(subscriber_texture.get());
   }
 
   scoped_ptr<cc::CopyOutputRequest> request =
@@ -275,7 +269,7 @@ void DelegatedFrameHost::SwapDelegatedFrame(
     float frame_device_scale_factor,
     const std::vector<ui::LatencyInfo>& latency_info) {
   RenderWidgetHostImpl* host = client_->GetHost();
-  DCHECK_NE(0u, frame_data->render_pass_list.size());
+  DCHECK(!frame_data->render_pass_list.empty());
 
   cc::RenderPass* root_pass = frame_data->render_pass_list.back();
 
@@ -336,7 +330,7 @@ void DelegatedFrameHost::SwapDelegatedFrame(
     last_output_surface_id_ = output_surface_id;
   }
   if (frame_size.IsEmpty()) {
-    DCHECK_EQ(0u, frame_data->resource_list.size());
+    DCHECK(frame_data->resource_list.empty());
     EvictDelegatedFrame();
   } else {
     if (!resource_collection_) {
@@ -504,8 +498,6 @@ void DelegatedFrameHost::PrepareTextureCopyOutputResult(
   scoped_ptr<cc::SingleReleaseCallback> release_callback;
   result->TakeTexture(&texture_mailbox, &release_callback);
   DCHECK(texture_mailbox.IsTexture());
-  if (!texture_mailbox.IsTexture())
-    return;
 
   ignore_result(scoped_callback_runner.Release());
 
@@ -537,16 +529,8 @@ void DelegatedFrameHost::PrepareBitmapCopyOutputResult(
     return;
   }
   DCHECK(result->HasBitmap());
-  base::ScopedClosureRunner scoped_callback_runner(
-      base::Bind(callback, false, SkBitmap()));
-
   scoped_ptr<SkBitmap> source = result->TakeBitmap();
   DCHECK(source);
-  if (!source)
-    return;
-
-  ignore_result(scoped_callback_runner.Release());
-
   SkBitmap bitmap = skia::ImageOperations::Resize(
       *source,
       skia::ImageOperations::RESIZE_BEST,
@@ -564,13 +548,9 @@ void DelegatedFrameHost::ReturnSubscriberTexture(
     return;
   if (!dfh)
     return;
-  DCHECK_NE(
-      dfh->active_frame_subscriber_textures_.count(subscriber_texture.get()),
-      0u);
 
   subscriber_texture->UpdateSyncPoint(sync_point);
 
-  dfh->active_frame_subscriber_textures_.erase(subscriber_texture.get());
   if (dfh->frame_subscriber_ && subscriber_texture->texture_id())
     dfh->idle_frame_subscriber_textures_.push_back(subscriber_texture);
 }
@@ -673,8 +653,6 @@ void DelegatedFrameHost::CopyFromCompositingSurfaceHasResultForVideo(
   scoped_ptr<cc::SingleReleaseCallback> release_callback;
   result->TakeTexture(&texture_mailbox, &release_callback);
   DCHECK(texture_mailbox.IsTexture());
-  if (!texture_mailbox.IsTexture())
-    return;
 
   gfx::Rect result_rect(result->size());
 
@@ -751,7 +729,6 @@ void DelegatedFrameHost::OnCompositingDidCommit(
 void DelegatedFrameHost::OnCompositingStarted(
     ui::Compositor* compositor, base::TimeTicks start_time) {
   last_draw_ended_ = start_time;
-  client_->DelegatedCompositorDidSwapBuffers();
 }
 
 void DelegatedFrameHost::OnCompositingEnded(
@@ -759,7 +736,6 @@ void DelegatedFrameHost::OnCompositingEnded(
 }
 
 void DelegatedFrameHost::OnCompositingAborted(ui::Compositor* compositor) {
-  client_->DelegatedCompositorAbortedSwapBuffers();
 }
 
 void DelegatedFrameHost::OnCompositingLockStateChanged(
@@ -801,15 +777,6 @@ DelegatedFrameHost::~DelegatedFrameHost() {
   if (resource_collection_.get())
     resource_collection_->SetClient(NULL);
 
-  // An OwnedMailbox should not refer to the GLHelper anymore once the DFH is
-  // destroyed, as it may then outlive the GLHelper.
-  for (std::set<OwnedMailbox*>::iterator it =
-           active_frame_subscriber_textures_.begin();
-       it != active_frame_subscriber_textures_.end();
-       ++it) {
-    (*it)->Destroy();
-  }
-  active_frame_subscriber_textures_.clear();
   DCHECK(!vsync_manager_);
 }
 

@@ -18,6 +18,7 @@
 #include "base/time/time.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/renderer/chrome_content_renderer_client.h"
+#include "components/data_reduction_proxy/common/data_reduction_proxy_headers.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/renderer/document_state.h"
 #include "content/public/renderer/render_thread.h"
@@ -183,7 +184,7 @@ bool DataReductionProxyWasUsed(WebFrame* frame) {
   std::replace(headers.begin(), headers.end(), '\n', '\0');
   scoped_refptr<net::HttpResponseHeaders> response_headers(
       new net::HttpResponseHeaders(headers));
-  return response_headers->IsDataReductionProxyResponse();
+  return data_reduction_proxy::HasDataReductionProxyViaHeader(response_headers);
 }
 
 // Returns true if the provided URL is a referrer string that came from
@@ -467,9 +468,7 @@ enum AbandonType {
 }  // namespace
 
 PageLoadHistograms::PageLoadHistograms(content::RenderView* render_view)
-    : content::RenderViewObserver(render_view),
-      cross_origin_access_count_(0),
-      same_origin_access_count_(0) {
+    : content::RenderViewObserver(render_view) {
 }
 
 void PageLoadHistograms::Dump(WebFrame* frame) {
@@ -724,163 +723,31 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
                   begin_to_finish_all_loads);
   }
 
-  // TODO(mpcomplete): remove the extension-related histograms after we collect
-  // enough data. http://crbug.com/100411
-  const bool use_adblock_histogram =
-      ChromeContentRendererClient::IsAdblockInstalled();
-  if (use_adblock_histogram) {
+  const bool use_webrequest_histogram =
+      ChromeContentRendererClient::WasWebRequestUsedBySomeExtensions();
+  if (use_webrequest_histogram) {
     UMA_HISTOGRAM_ENUMERATION(
-        "PLT.Abandoned_ExtensionAdblock",
+        "PLT.Abandoned_ExtensionWebRequest",
         abandoned_page ? 1 : 0, 2);
     switch (load_type) {
       case DocumentState::NORMAL_LOAD:
         PLT_HISTOGRAM(
-            "PLT.BeginToFinish_NormalLoad_ExtensionAdblock",
+            "PLT.BeginToFinish_NormalLoad_ExtensionWebRequest",
             begin_to_finish_all_loads);
         break;
       case DocumentState::LINK_LOAD_NORMAL:
         PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadNormal_ExtensionAdblock",
+            "PLT.BeginToFinish_LinkLoadNormal_ExtensionWebRequest",
             begin_to_finish_all_loads);
         break;
       case DocumentState::LINK_LOAD_RELOAD:
         PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadReload_ExtensionAdblock",
+            "PLT.BeginToFinish_LinkLoadReload_ExtensionWebRequest",
             begin_to_finish_all_loads);
         break;
       case DocumentState::LINK_LOAD_CACHE_STALE_OK:
         PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadStaleOk_ExtensionAdblock",
-            begin_to_finish_all_loads);
-        break;
-      default:
-        break;
-    }
-  }
-
-  const bool use_adblockplus_histogram =
-      ChromeContentRendererClient::IsAdblockPlusInstalled();
-  if (use_adblockplus_histogram) {
-    UMA_HISTOGRAM_ENUMERATION(
-        "PLT.Abandoned_ExtensionAdblockPlus",
-        abandoned_page ? 1 : 0, 2);
-    switch (load_type) {
-      case DocumentState::NORMAL_LOAD:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_NormalLoad_ExtensionAdblockPlus",
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_NORMAL:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadNormal_ExtensionAdblockPlus",
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_RELOAD:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadReload_ExtensionAdblockPlus",
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_CACHE_STALE_OK:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadStaleOk_ExtensionAdblockPlus",
-            begin_to_finish_all_loads);
-        break;
-      default:
-        break;
-    }
-  }
-
-  const bool use_webrequest_adblock_histogram =
-      ChromeContentRendererClient::IsAdblockWithWebRequestInstalled();
-  if (use_webrequest_adblock_histogram) {
-    UMA_HISTOGRAM_ENUMERATION(
-        "PLT.Abandoned_ExtensionWebRequestAdblock",
-        abandoned_page ? 1 : 0, 2);
-    switch (load_type) {
-      case DocumentState::NORMAL_LOAD:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_NormalLoad_ExtensionWebRequestAdblock",
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_NORMAL:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadNormal_ExtensionWebRequestAdblock",
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_RELOAD:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadReload_ExtensionWebRequestAdblock",
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_CACHE_STALE_OK:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadStaleOk_ExtensionWebRequestAdblock",
-            begin_to_finish_all_loads);
-        break;
-      default:
-        break;
-    }
-  }
-
-  const bool use_webrequest_adblockplus_histogram =
-      ChromeContentRendererClient::
-          IsAdblockPlusWithWebRequestInstalled();
-  if (use_webrequest_adblockplus_histogram) {
-    UMA_HISTOGRAM_ENUMERATION(
-        "PLT.Abandoned_ExtensionWebRequestAdblockPlus",
-        abandoned_page ? 1 : 0, 2);
-    switch (load_type) {
-      case DocumentState::NORMAL_LOAD:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_NormalLoad_ExtensionWebRequestAdblockPlus",
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_NORMAL:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadNormal_ExtensionWebRequestAdblockPlus",
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_RELOAD:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadReload_ExtensionWebRequestAdblockPlus",
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_CACHE_STALE_OK:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadStaleOk_ExtensionWebRequestAdblockPlus",
-            begin_to_finish_all_loads);
-        break;
-      default:
-        break;
-    }
-  }
-
-  const bool use_webrequest_other_histogram =
-      ChromeContentRendererClient::
-          IsOtherExtensionWithWebRequestInstalled();
-  if (use_webrequest_other_histogram) {
-    UMA_HISTOGRAM_ENUMERATION(
-        "PLT.Abandoned_ExtensionWebRequestOther",
-        abandoned_page ? 1 : 0, 2);
-    switch (load_type) {
-      case DocumentState::NORMAL_LOAD:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_NormalLoad_ExtensionWebRequestOther",
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_NORMAL:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadNormal_ExtensionWebRequestOther",
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_RELOAD:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadReload_ExtensionWebRequestOther",
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_CACHE_STALE_OK:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadStaleOk_ExtensionWebRequestOther",
+            "PLT.BeginToFinish_LinkLoadStaleOk_ExtensionWebRequest",
             begin_to_finish_all_loads);
         break;
       default:
@@ -939,12 +806,6 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
     }
   }
 
-  // Site isolation metrics.
-  UMA_HISTOGRAM_COUNTS("SiteIsolation.PageLoadsWithCrossSiteFrameAccess",
-                       cross_origin_access_count_);
-  UMA_HISTOGRAM_COUNTS("SiteIsolation.PageLoadsWithSameSiteFrameAccess",
-                       same_origin_access_count_);
-
   // Log the PLT to the info log.
   LogPageLoadTime(document_state, frame->dataSource());
 
@@ -960,11 +821,6 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
       content::kHistogramSynchronizerReservedSequenceNumber);
 }
 
-void PageLoadHistograms::ResetCrossFramePropertyAccess() {
-  cross_origin_access_count_ = 0;
-  same_origin_access_count_ = 0;
-}
-
 void PageLoadHistograms::FrameWillClose(WebFrame* frame) {
   Dump(frame);
 }
@@ -974,7 +830,6 @@ void PageLoadHistograms::ClosePage() {
   // called when a page is destroyed. page_load_histograms_.Dump() is safe
   // to call multiple times for the same frame, but it will simplify things.
   Dump(render_view()->GetWebView()->mainFrame());
-  ResetCrossFramePropertyAccess();
 }
 
 void PageLoadHistograms::LogPageLoadTime(const DocumentState* document_state,

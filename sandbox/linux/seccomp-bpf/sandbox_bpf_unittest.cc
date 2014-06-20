@@ -5,7 +5,9 @@
 #include <errno.h>
 #include <pthread.h>
 #include <sched.h>
+#include <signal.h>
 #include <sys/prctl.h>
+#include <sys/ptrace.h>
 #include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -24,6 +26,7 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/posix/eintr_wrapper.h"
 #include "build/build_config.h"
 #include "sandbox/linux/seccomp-bpf/bpf_tests.h"
 #include "sandbox/linux/seccomp-bpf/syscall.h"
@@ -1201,7 +1204,7 @@ class EqualityStressTest {
     // based on the system call number and the parameters that we decided
     // to pass in. Verify that this condition holds true.
     BPF_ASSERT(
-        SandboxSyscall(
+        Syscall::Call(
             sysno, args[0], args[1], args[2], args[3], args[4], args[5]) ==
         -err);
   }
@@ -1276,18 +1279,18 @@ ErrorCode EqualityArgumentWidthPolicy::EvaluateSyscall(SandboxBPF* sandbox,
 }
 
 BPF_TEST_C(SandboxBPF, EqualityArgumentWidth, EqualityArgumentWidthPolicy) {
-  BPF_ASSERT(SandboxSyscall(__NR_uname, 0, 0x55555555) == -1);
-  BPF_ASSERT(SandboxSyscall(__NR_uname, 0, 0xAAAAAAAA) == -2);
+  BPF_ASSERT(Syscall::Call(__NR_uname, 0, 0x55555555) == -1);
+  BPF_ASSERT(Syscall::Call(__NR_uname, 0, 0xAAAAAAAA) == -2);
 #if __SIZEOF_POINTER__ > 4
   // On 32bit machines, there is no way to pass a 64bit argument through the
   // syscall interface. So, we have to skip the part of the test that requires
   // 64bit arguments.
-  BPF_ASSERT(SandboxSyscall(__NR_uname, 1, 0x55555555AAAAAAAAULL) == -1);
-  BPF_ASSERT(SandboxSyscall(__NR_uname, 1, 0x5555555500000000ULL) == -2);
-  BPF_ASSERT(SandboxSyscall(__NR_uname, 1, 0x5555555511111111ULL) == -2);
-  BPF_ASSERT(SandboxSyscall(__NR_uname, 1, 0x11111111AAAAAAAAULL) == -2);
+  BPF_ASSERT(Syscall::Call(__NR_uname, 1, 0x55555555AAAAAAAAULL) == -1);
+  BPF_ASSERT(Syscall::Call(__NR_uname, 1, 0x5555555500000000ULL) == -2);
+  BPF_ASSERT(Syscall::Call(__NR_uname, 1, 0x5555555511111111ULL) == -2);
+  BPF_ASSERT(Syscall::Call(__NR_uname, 1, 0x11111111AAAAAAAAULL) == -2);
 #else
-  BPF_ASSERT(SandboxSyscall(__NR_uname, 1, 0x55555555) == -2);
+  BPF_ASSERT(Syscall::Call(__NR_uname, 1, 0x55555555) == -2);
 #endif
 }
 
@@ -1299,7 +1302,7 @@ BPF_DEATH_TEST_C(SandboxBPF,
                  EqualityArgumentUnallowed64bit,
                  DEATH_MESSAGE("Unexpected 64bit argument detected"),
                  EqualityArgumentWidthPolicy) {
-  SandboxSyscall(__NR_uname, 0, 0x5555555555555555ULL);
+  Syscall::Call(__NR_uname, 0, 0x5555555555555555ULL);
 }
 #endif
 
@@ -1327,9 +1330,9 @@ class EqualityWithNegativeArgumentsPolicy : public SandboxBPFPolicy {
 BPF_TEST_C(SandboxBPF,
            EqualityWithNegativeArguments,
            EqualityWithNegativeArgumentsPolicy) {
-  BPF_ASSERT(SandboxSyscall(__NR_uname, 0xFFFFFFFF) == -1);
-  BPF_ASSERT(SandboxSyscall(__NR_uname, -1) == -1);
-  BPF_ASSERT(SandboxSyscall(__NR_uname, -1LL) == -1);
+  BPF_ASSERT(Syscall::Call(__NR_uname, 0xFFFFFFFF) == -1);
+  BPF_ASSERT(Syscall::Call(__NR_uname, -1) == -1);
+  BPF_ASSERT(Syscall::Call(__NR_uname, -1LL) == -1);
 }
 
 #if __SIZEOF_POINTER__ > 4
@@ -1340,7 +1343,7 @@ BPF_DEATH_TEST_C(SandboxBPF,
   // When expecting a 32bit system call argument, we look at the MSB of the
   // 64bit value and allow both "0" and "-1". But the latter is allowed only
   // iff the LSB was negative. So, this death test should error out.
-  BPF_ASSERT(SandboxSyscall(__NR_uname, 0xFFFFFFFF00000000LL) == -1);
+  BPF_ASSERT(Syscall::Call(__NR_uname, 0xFFFFFFFF00000000LL) == -1);
 }
 #endif
 class AllBitTestPolicy : public SandboxBPFPolicy {
@@ -1430,10 +1433,10 @@ ErrorCode AllBitTestPolicy::EvaluateSyscall(SandboxBPF* sandbox,
 //       to make changes to these values, you will have to edit the
 //       test policy instead.
 #define BITMASK_TEST(testcase, arg, op, mask, expected_value) \
-  BPF_ASSERT(SandboxSyscall(__NR_uname, (testcase), (arg)) == (expected_value))
+  BPF_ASSERT(Syscall::Call(__NR_uname, (testcase), (arg)) == (expected_value))
 
 // Our uname() system call returns ErrorCode(1) for success and
-// ErrorCode(0) for failure. SandboxSyscall() turns this into an
+// ErrorCode(0) for failure. Syscall::Call() turns this into an
 // exit code of -1 or 0.
 #define EXPECT_FAILURE 0
 #define EXPECT_SUCCESS -1
@@ -1863,7 +1866,7 @@ ErrorCode PthreadPolicyBitMask::EvaluateSyscall(SandboxBPF* sandbox,
 
 static void* ThreadFnc(void* arg) {
   ++*reinterpret_cast<int*>(arg);
-  SandboxSyscall(__NR_futex, arg, FUTEX_WAKE, 1, 0, 0, 0);
+  Syscall::Call(__NR_futex, arg, FUTEX_WAKE, 1, 0, 0, 0);
   return NULL;
 }
 
@@ -1882,7 +1885,7 @@ static void PthreadTest() {
   BPF_ASSERT(!pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED));
   BPF_ASSERT(!pthread_create(&thread, &attr, ThreadFnc, &thread_ran));
   BPF_ASSERT(!pthread_attr_destroy(&attr));
-  while (SandboxSyscall(__NR_futex, &thread_ran, FUTEX_WAIT, 0, 0, 0, 0) ==
+  while (Syscall::Call(__NR_futex, &thread_ran, FUTEX_WAIT, 0, 0, 0, 0) ==
          -EINTR) {
   }
   BPF_ASSERT(thread_ran);
@@ -1893,11 +1896,11 @@ static void PthreadTest() {
   // run-time libraries other than glibc might call __NR_fork instead of
   // __NR_clone, and that would introduce a bogus test failure.
   int pid;
-  BPF_ASSERT(SandboxSyscall(__NR_clone,
-                            CLONE_CHILD_CLEARTID | CLONE_CHILD_SETTID | SIGCHLD,
-                            0,
-                            0,
-                            &pid) == -EPERM);
+  BPF_ASSERT(Syscall::Call(__NR_clone,
+                           CLONE_CHILD_CLEARTID | CLONE_CHILD_SETTID | SIGCHLD,
+                           0,
+                           0,
+                           &pid) == -EPERM);
 }
 
 BPF_TEST_C(SandboxBPF, PthreadEquality, PthreadPolicyEquality) {
@@ -1906,6 +1909,154 @@ BPF_TEST_C(SandboxBPF, PthreadEquality, PthreadPolicyEquality) {
 
 BPF_TEST_C(SandboxBPF, PthreadBitMask, PthreadPolicyBitMask) {
   PthreadTest();
+}
+
+// libc might not define these even though the kernel supports it.
+#ifndef PTRACE_O_TRACESECCOMP
+#define PTRACE_O_TRACESECCOMP 0x00000080
+#endif
+
+#ifdef PTRACE_EVENT_SECCOMP
+#define IS_SECCOMP_EVENT(status) ((status >> 16) == PTRACE_EVENT_SECCOMP)
+#else
+// When Debian/Ubuntu backported seccomp-bpf support into earlier kernels, they
+// changed the value of PTRACE_EVENT_SECCOMP from 7 to 8, since 7 was taken by
+// PTRACE_EVENT_STOP (upstream chose to renumber PTRACE_EVENT_STOP to 128).  If
+// PTRACE_EVENT_SECCOMP isn't defined, we have no choice but to consider both
+// values here.
+#define IS_SECCOMP_EVENT(status) ((status >> 16) == 7 || (status >> 16) == 8)
+#endif
+
+#if defined(__arm__)
+#ifndef PTRACE_SET_SYSCALL
+#define PTRACE_SET_SYSCALL 23
+#endif
+#endif
+
+// Changes the syscall to run for a child being sandboxed using seccomp-bpf with
+// PTRACE_O_TRACESECCOMP.  Should only be called when the child is stopped on
+// PTRACE_EVENT_SECCOMP.
+//
+// regs should contain the current set of registers of the child, obtained using
+// PTRACE_GETREGS.
+//
+// Depending on the architecture, this may modify regs, so the caller is
+// responsible for committing these changes using PTRACE_SETREGS.
+long SetSyscall(pid_t pid, regs_struct* regs, int syscall_number) {
+#if defined(__arm__)
+  // On ARM, the syscall is changed using PTRACE_SET_SYSCALL.  We cannot use the
+  // libc ptrace call as the request parameter is an enum, and
+  // PTRACE_SET_SYSCALL may not be in the enum.
+  return syscall(__NR_ptrace, PTRACE_SET_SYSCALL, pid, NULL, syscall_number);
+#endif
+
+  SECCOMP_PT_SYSCALL(*regs) = syscall_number;
+  return 0;
+}
+
+const uint16_t kTraceData = 0xcc;
+
+class TraceAllPolicy : public SandboxBPFPolicy {
+ public:
+  TraceAllPolicy() {}
+  virtual ~TraceAllPolicy() {}
+
+  virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox_compiler,
+                                    int system_call_number) const OVERRIDE {
+    return ErrorCode(ErrorCode::ERR_TRACE + kTraceData);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(TraceAllPolicy);
+};
+
+SANDBOX_TEST(SandboxBPF, DISABLE_ON_TSAN(SeccompRetTrace)) {
+  if (SandboxBPF::SupportsSeccompSandbox(-1) !=
+      sandbox::SandboxBPF::STATUS_AVAILABLE) {
+    return;
+  }
+
+#if defined(__arm__)
+  printf("This test is currently disabled on ARM due to a kernel bug.");
+  return;
+#endif
+
+  pid_t pid = fork();
+  BPF_ASSERT_NE(-1, pid);
+  if (pid == 0) {
+    pid_t my_pid = getpid();
+    BPF_ASSERT_NE(-1, ptrace(PTRACE_TRACEME, -1, NULL, NULL));
+    BPF_ASSERT_EQ(0, raise(SIGSTOP));
+    SandboxBPF sandbox;
+    sandbox.SetSandboxPolicy(new TraceAllPolicy);
+    BPF_ASSERT(sandbox.StartSandbox(SandboxBPF::PROCESS_SINGLE_THREADED));
+
+    // getpid is allowed.
+    BPF_ASSERT_EQ(my_pid, syscall(__NR_getpid));
+
+    // write to stdout is skipped and returns a fake value.
+    BPF_ASSERT_EQ(kExpectedReturnValue,
+                  syscall(__NR_write, STDOUT_FILENO, "A", 1));
+
+    // kill is rewritten to exit(kExpectedReturnValue).
+    syscall(__NR_kill, my_pid, SIGKILL);
+
+    // Should not be reached.
+    BPF_ASSERT(false);
+  }
+
+  int status;
+  BPF_ASSERT(HANDLE_EINTR(waitpid(pid, &status, WUNTRACED)) != -1);
+  BPF_ASSERT(WIFSTOPPED(status));
+
+  BPF_ASSERT_NE(-1, ptrace(PTRACE_SETOPTIONS, pid, NULL,
+                           reinterpret_cast<void*>(PTRACE_O_TRACESECCOMP)));
+  BPF_ASSERT_NE(-1, ptrace(PTRACE_CONT, pid, NULL, NULL));
+  while (true) {
+    BPF_ASSERT(HANDLE_EINTR(waitpid(pid, &status, 0)) != -1);
+    if (WIFEXITED(status) || WIFSIGNALED(status)) {
+      BPF_ASSERT(WIFEXITED(status));
+      BPF_ASSERT_EQ(kExpectedReturnValue, WEXITSTATUS(status));
+      break;
+    }
+
+    if (!WIFSTOPPED(status) || WSTOPSIG(status) != SIGTRAP ||
+        !IS_SECCOMP_EVENT(status)) {
+      BPF_ASSERT_NE(-1, ptrace(PTRACE_CONT, pid, NULL, NULL));
+      continue;
+    }
+
+    unsigned long data;
+    BPF_ASSERT_NE(-1, ptrace(PTRACE_GETEVENTMSG, pid, NULL, &data));
+    BPF_ASSERT_EQ(kTraceData, data);
+
+    regs_struct regs;
+    BPF_ASSERT_NE(-1, ptrace(PTRACE_GETREGS, pid, NULL, &regs));
+    switch (SECCOMP_PT_SYSCALL(regs)) {
+      case __NR_write:
+        // Skip writes to stdout, make it return kExpectedReturnValue.  Allow
+        // writes to stderr so that BPF_ASSERT messages show up.
+        if (SECCOMP_PT_PARM1(regs) == STDOUT_FILENO) {
+          BPF_ASSERT_NE(-1, SetSyscall(pid, &regs, -1));
+          SECCOMP_PT_RESULT(regs) = kExpectedReturnValue;
+          BPF_ASSERT_NE(-1, ptrace(PTRACE_SETREGS, pid, NULL, &regs));
+        }
+        break;
+
+      case __NR_kill:
+        // Rewrite to exit(kExpectedReturnValue).
+        BPF_ASSERT_NE(-1, SetSyscall(pid, &regs, __NR_exit));
+        SECCOMP_PT_PARM1(regs) = kExpectedReturnValue;
+        BPF_ASSERT_NE(-1, ptrace(PTRACE_SETREGS, pid, NULL, &regs));
+        break;
+
+      default:
+        // Allow all other syscalls.
+        break;
+    }
+
+    BPF_ASSERT_NE(-1, ptrace(PTRACE_CONT, pid, NULL, NULL));
+  }
 }
 
 }  // namespace

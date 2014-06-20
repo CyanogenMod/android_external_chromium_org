@@ -138,8 +138,8 @@ class WebGLContextLostFromGPUProcessExitPage(page.Page):
 
   def RunNavigateSteps(self, action_runner):
     action_runner.NavigateToPage(self)
-    action_runner.RunAction(WaitAction(
-      {'javascript': 'window.domAutomationController._loaded'}))
+    action_runner.WaitForJavaScriptCondition(
+        'window.domAutomationController._loaded')
 
 
 class WebGLContextLostFromLoseContextExtensionPage(page.Page):
@@ -155,8 +155,8 @@ class WebGLContextLostFromLoseContextExtensionPage(page.Page):
 
   def RunNavigateSteps(self, action_runner):
     action_runner.NavigateToPage(self)
-    action_runner.RunAction(WaitAction(
-      {'javascript': 'window.domAutomationController._finished'}))
+    action_runner.WaitForJavaScriptCondition(
+        'window.domAutomationController._finished')
 
 class WebGLContextLostFromQuantityPage(page.Page):
   def __init__(self, page_set, base_dir):
@@ -171,8 +171,8 @@ class WebGLContextLostFromQuantityPage(page.Page):
 
   def RunNavigateSteps(self, action_runner):
     action_runner.NavigateToPage(self)
-    action_runner.RunAction(WaitAction(
-      {'javascript': 'window.domAutomationController._loaded'}))
+    action_runner.WaitForJavaScriptCondition(
+        'window.domAutomationController._loaded')
 
 class ContextLost(test_module.Test):
   enabled = True
@@ -183,12 +183,9 @@ class ContextLost(test_module.Test):
   def CreatePageSet(self, options):
     ps = page_set.PageSet(
       file_path=data_path,
-      description='Test cases for real and synthetic context lost events',
       user_agent_type='desktop',
       serving_dirs=set(['']))
     ps.AddPage(WebGLContextLostFromGPUProcessExitPage(ps, ps.base_dir))
     ps.AddPage(WebGLContextLostFromLoseContextExtensionPage(ps, ps.base_dir))
     ps.AddPage(WebGLContextLostFromQuantityPage(ps, ps.base_dir))
     return ps
-
-

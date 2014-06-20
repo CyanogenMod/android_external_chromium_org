@@ -61,7 +61,6 @@
         '../url/url.gyp:url_lib',
         '../v8/tools/gyp/v8.gyp:v8',
         '../webkit/common/webkit_common.gyp:webkit_common',
-        '../webkit/renderer/compositor_bindings/compositor_bindings.gyp:webkit_compositor_bindings',
         '../webkit/storage_browser.gyp:webkit_storage_browser',
         '../webkit/webkit_resources.gyp:webkit_resources',
       ],
@@ -191,8 +190,6 @@
         'shell/renderer/test_runner/TestInterfaces.h',
         'shell/renderer/test_runner/TestPlugin.cpp',
         'shell/renderer/test_runner/TestPlugin.h',
-        'shell/renderer/test_runner/WebPermissions.cpp',
-        'shell/renderer/test_runner/WebPermissions.h',
         'shell/renderer/test_runner/WebTask.cpp',
         'shell/renderer/test_runner/WebTask.h',
         'shell/renderer/test_runner/WebTestDelegate.h',
@@ -214,6 +211,8 @@
         'shell/renderer/test_runner/mock_grammar_check.h',
         'shell/renderer/test_runner/mock_web_audio_device.cc',
         'shell/renderer/test_runner/mock_web_audio_device.h',
+        'shell/renderer/test_runner/mock_web_push_client.cc',
+        'shell/renderer/test_runner/mock_web_push_client.h',
         'shell/renderer/test_runner/mock_web_user_media_client.cc',
         'shell/renderer/test_runner/mock_web_user_media_client.h',
         'shell/renderer/test_runner/mock_webrtc_data_channel_handler.cc',
@@ -231,6 +230,8 @@
         'shell/renderer/test_runner/web_ax_object_proxy.cc',
         'shell/renderer/test_runner/web_ax_object_proxy.h',
         'shell/renderer/test_runner/web_frame_test_proxy.h',
+        'shell/renderer/test_runner/web_permissions.cc',
+        'shell/renderer/test_runner/web_permissions.h',
         'shell/renderer/test_runner/web_test_proxy.cc',
         'shell/renderer/test_runner/web_test_proxy.h',
         'shell/renderer/test_runner/web_test_runner.h',
@@ -1026,6 +1027,11 @@
                 'additional_input_paths': [
                   '<(PRODUCT_DIR)/icudtl.dat',
                 ],
+              }],
+              ['component != "shared_library" and target_arch != "arm64" and target_arch != "x64"', {
+                # Only enable the chromium linker on regular builds, since the
+                # component build crashes on Android 4.4. See b/11379966
+                'use_chromium_linker': '1',
               }],
             ],
           },

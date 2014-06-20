@@ -96,14 +96,6 @@ class CC_EXPORT PictureLayerImpl
   virtual void DidBecomeActive() OVERRIDE;
   virtual void DidBeginTracing() OVERRIDE;
   virtual void ReleaseResources() OVERRIDE;
-  virtual void CalculateContentsScale(float ideal_contents_scale,
-                                      float device_scale_factor,
-                                      float page_scale_factor,
-                                      float maximum_animation_contents_scale,
-                                      bool animating_transform_to_screen,
-                                      float* contents_scale_x,
-                                      float* contents_scale_y,
-                                      gfx::Size* content_bounds) OVERRIDE;
   virtual skia::RefPtr<SkPicture> GetPicture() OVERRIDE;
 
   // PictureLayerTilingClient overrides.
@@ -132,10 +124,10 @@ class CC_EXPORT PictureLayerImpl
   virtual void RunMicroBenchmark(MicroBenchmarkImpl* benchmark) OVERRIDE;
 
   // Functions used by tile manager.
-  void DidUnregisterLayer();
   PictureLayerImpl* GetTwinLayer() { return twin_layer_; }
   WhichTree GetTree() const;
   bool IsOnActiveOrPendingTree() const;
+  bool HasValidTilePriorities() const;
   bool AllTilesRequiredForActivationAreReadyToDraw() const;
 
  protected:
@@ -156,7 +148,6 @@ class CC_EXPORT PictureLayerImpl
       std::vector<PictureLayerTiling*> used_tilings);
   float MinimumContentsScale() const;
   float SnappedContentsScale(float new_contents_scale);
-  void UpdateLCDTextStatus(bool new_status);
   void ResetRasterScale();
   void MarkVisibleResourcesAsRequired() const;
   bool MarkVisibleTilesAsRequired(
@@ -180,6 +171,9 @@ class CC_EXPORT PictureLayerImpl
       SkColor* color, float* width) const OVERRIDE;
   virtual void AsValueInto(base::DictionaryValue* dict) const OVERRIDE;
 
+  virtual void UpdateIdealScales();
+  float MaximumTilingContentsScale() const;
+
   PictureLayerImpl* twin_layer_;
 
   scoped_ptr<PictureLayerTilingSet> tilings_;
@@ -201,13 +195,10 @@ class CC_EXPORT PictureLayerImpl
 
   bool raster_source_scale_is_fixed_;
   bool was_animating_transform_to_screen_;
-  bool is_using_lcd_text_;
   bool needs_post_commit_initialization_;
   // A sanity state check to make sure UpdateTilePriorities only gets called
   // after a CalculateContentsScale/ManageTilings.
   bool should_update_tile_priorities_;
-
-  bool layer_needs_to_register_itself_;
 
   // Save a copy of the visible rect and viewport size of the last frame that
   // has a valid viewport for prioritizing tiles.

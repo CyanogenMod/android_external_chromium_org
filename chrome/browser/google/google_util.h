@@ -27,16 +27,15 @@ const char kInstantExtendedAPIParam[] = "espv";
 GURL LinkDoctorBaseURL();
 void SetMockLinkDoctorBaseURLForTesting();
 
-// Returns the Google locale.  This is the same string as
-// AppendGoogleLocaleParam adds to the URL, only without the leading "hl".
-std::string GetGoogleLocale();
+// Returns the Google locale corresponding to |application_locale|.  This is
+// the same string as AppendGoogleLocaleParam adds to the URL, only without the
+// leading "hl".
+std::string GetGoogleLocale(const std::string& application_locale);
 
 // Adds the Google locale string to the URL (e.g., hl=en-US).  This does not
 // check to see if the param already exists.
-GURL AppendGoogleLocaleParam(const GURL& url);
-
-// String version of AppendGoogleLocaleParam.
-std::string StringAppendGoogleLocaleParam(const std::string& url);
+GURL AppendGoogleLocaleParam(const GURL& url,
+                             const std::string& application_locale);
 
 // Returns the Google country code string for the given Google homepage URL.
 std::string GetGoogleCountryCode(GURL google_homepage_url);
@@ -102,6 +101,13 @@ bool IsGoogleHomePageUrl(const GURL& url);
 
 // True if |url| represents a valid Google search URL.
 bool IsGoogleSearchUrl(const GURL& url);
+
+// True if |url| is a valid youtube.<TLD> URL.  If |port_permission| is
+// DISALLOW_NON_STANDARD_PORTS, this also requires |url| to use the standard
+// port for its scheme (80 for HTTP, 443 for HTTPS).
+bool IsYoutubeDomainUrl(const GURL& url,
+                        SubdomainPermission subdomain_permission,
+                        PortPermission port_permission);
 
 }  // namespace google_util
 

@@ -215,15 +215,13 @@ MojoResult Dispatcher::MapBuffer(
 }
 
 MojoResult Dispatcher::AddWaiter(Waiter* waiter,
-                                 MojoWaitFlags flags,
-                                 MojoResult wake_result) {
-  DCHECK_GE(wake_result, 0);
-
+                                 MojoHandleSignals signals,
+                                 uint32_t context) {
   base::AutoLock locker(lock_);
   if (is_closed_)
     return MOJO_RESULT_INVALID_ARGUMENT;
 
-  return AddWaiterImplNoLock(waiter, flags, wake_result);
+  return AddWaiterImplNoLock(waiter, signals, context);
 }
 
 void Dispatcher::RemoveWaiter(Waiter* waiter) {
@@ -349,8 +347,8 @@ MojoResult Dispatcher::MapBufferImplNoLock(
 }
 
 MojoResult Dispatcher::AddWaiterImplNoLock(Waiter* /*waiter*/,
-                                           MojoWaitFlags /*flags*/,
-                                           MojoResult /*wake_result*/) {
+                                           MojoHandleSignals /*signals*/,
+                                           uint32_t /*context*/) {
   lock_.AssertAcquired();
   DCHECK(!is_closed_);
   // By default, waiting isn't supported. Only dispatchers that can be waited on

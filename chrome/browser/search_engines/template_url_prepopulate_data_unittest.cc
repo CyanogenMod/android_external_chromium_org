@@ -6,8 +6,6 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_vector.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/search_engines/prepopulated_engines.h"
-#include "chrome/browser/search_engines/search_terms_data.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_prepopulate_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
@@ -16,6 +14,8 @@
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/google/core/browser/google_switches.h"
+#include "components/search_engines/prepopulated_engines.h"
+#include "components/search_engines/search_terms_data.h"
 #include "grit/generated_resources.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -27,11 +27,12 @@ namespace {
 SearchEngineType GetEngineType(const std::string& url) {
   TemplateURLData data;
   data.SetURL(url);
-  return TemplateURLPrepopulateData::GetEngineType(TemplateURL(NULL, data));
+  return TemplateURLPrepopulateData::GetEngineType(TemplateURL(data),
+                                                   SearchTermsData());
 }
 
 std::string GetHostFromTemplateURLData(const TemplateURLData& data) {
-  return TemplateURL(NULL, data).url_ref().GetHost();
+  return TemplateURL(data).url_ref().GetHost(SearchTermsData());
 }
 
 }  // namespace
@@ -239,10 +240,12 @@ TEST(TemplateURLPrepopulateDataTest, ClearProvidersFromPrefs) {
   EXPECT_FALSE(t_urls[default_index]->instant_url.empty());
   EXPECT_FALSE(t_urls[default_index]->image_url.empty());
   EXPECT_FALSE(t_urls[default_index]->new_tab_url.empty());
+  EXPECT_FALSE(t_urls[default_index]->contextual_search_url.empty());
   EXPECT_FALSE(t_urls[default_index]->image_url_post_params.empty());
   EXPECT_EQ(SEARCH_ENGINE_GOOGLE,
             TemplateURLPrepopulateData::GetEngineType(
-                TemplateURL(NULL, *t_urls[default_index])));
+                TemplateURL(*t_urls[default_index]),
+                SearchTermsData()));
 }
 
 // Verifies that built-in search providers are processed correctly.
@@ -272,6 +275,7 @@ TEST(TemplateURLPrepopulateDataTest, ProvidersFromPrepopulated) {
   EXPECT_FALSE(t_urls[default_index]->instant_url.empty());
   EXPECT_FALSE(t_urls[default_index]->image_url.empty());
   EXPECT_FALSE(t_urls[default_index]->new_tab_url.empty());
+  EXPECT_FALSE(t_urls[default_index]->contextual_search_url.empty());
   EXPECT_FALSE(t_urls[default_index]->image_url_post_params.empty());
   // Expect at least 2 alternate_urls.
   // This caught a bug with static initialization of arrays, so leave this in.
@@ -280,7 +284,8 @@ TEST(TemplateURLPrepopulateDataTest, ProvidersFromPrepopulated) {
     EXPECT_FALSE(t_urls[default_index]->alternate_urls[i].empty());
   EXPECT_EQ(SEARCH_ENGINE_GOOGLE,
             TemplateURLPrepopulateData::GetEngineType(
-                TemplateURL(NULL, *t_urls[default_index])));
+                TemplateURL(*t_urls[default_index]),
+                SearchTermsData()));
   EXPECT_FALSE(t_urls[default_index]->search_terms_replacement_key.empty());
 }
 
@@ -340,38 +345,4 @@ TEST(TemplateURLPrepopulateDataTest, GetEngineTypeAdvanced) {
   CommandLine::ForCurrentProcess()->AppendSwitchASCII(switches::kGoogleBaseURL,
                                                       "http://www.foo.com/");
   EXPECT_EQ(SEARCH_ENGINE_GOOGLE, GetEngineType(foo_url));
-}
-
-TEST(TemplateURLPrepopulateDataTest, GetLogoURLGoogle) {
-  TemplateURLData data;
-  data.SetURL("http://www.google.com/");
-  TemplateURL turl(NULL, data);
-  GURL logo_100_url = TemplateURLPrepopulateData::GetLogoURL(
-      turl, TemplateURLPrepopulateData::LOGO_100_PERCENT);
-  GURL logo_200_url = TemplateURLPrepopulateData::GetLogoURL(
-      turl, TemplateURLPrepopulateData::LOGO_200_PERCENT);
-
-  EXPECT_EQ("www.google.com", logo_100_url.host());
-  EXPECT_EQ("www.google.com", logo_200_url.host());
-  EXPECT_NE(logo_100_url, logo_200_url);
-}
-
-TEST(TemplateURLPrepopulateDataTest, GetLogoURLUnknown) {
-  TemplateURLData data;
-  data.SetURL("http://webalta.ru/");
-  TemplateURL turl(NULL, data);
-  GURL logo_url = TemplateURLPrepopulateData::GetLogoURL(
-      turl, TemplateURLPrepopulateData::LOGO_100_PERCENT);
-
-  EXPECT_TRUE(logo_url.is_empty());
-}
-
-TEST(TemplateURLPrepopulateDataTest, GetLogoURLInvalid) {
-  TemplateURLData data;
-  data.SetURL("http://invalid:search:url/");
-  TemplateURL turl(NULL, data);
-  GURL logo_url = TemplateURLPrepopulateData::GetLogoURL(
-      turl, TemplateURLPrepopulateData::LOGO_100_PERCENT);
-
-  EXPECT_TRUE(logo_url.is_empty());
 }

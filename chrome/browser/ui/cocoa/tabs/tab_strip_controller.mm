@@ -51,8 +51,8 @@
 #include "chrome/browser/ui/tabs/tab_strip_model_delegate.h"
 #include "chrome/browser/ui/tabs/tab_utils.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
+#include "components/url_fixer/url_fixer.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/user_metrics.h"
@@ -149,7 +149,7 @@ NSImage* CreateImageWithSize(NSSize size,
   base::scoped_nsobject<NSImage> result([[NSImage alloc] initWithSize:size]);
   [NSGraphicsContext saveGraphicsState];
   for (ui::ScaleFactor scale_factor : ui::GetSupportedScaleFactors()) {
-    float scale = GetImageScale(scale_factor);
+    float scale = GetScaleForScaleFactor(scale_factor);
     NSBitmapImageRep *bmpImageRep = [[[NSBitmapImageRep alloc]
         initWithBitmapDataPlanes:NULL
                       pixelsWide:size.width * scale
@@ -2078,7 +2078,7 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
     NOTIMPLEMENTED();
 
   // Get the first URL and fix it up.
-  GURL url(GURL(URLFixerUpper::FixupURL(
+  GURL url(GURL(url_fixer::FixupURL(
       base::SysNSStringToUTF8([urls objectAtIndex:0]), std::string())));
 
   [self openURL:&url inView:view at:point];

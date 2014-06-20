@@ -61,7 +61,6 @@
 #include "chrome/browser/jankometer.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/metrics/field_trial_synchronizer.h"
-#include "chrome/browser/metrics/metrics_service.h"
 #include "chrome/browser/metrics/thread_watcher.h"
 #include "chrome/browser/metrics/tracking_synchronizer.h"
 #include "chrome/browser/metrics/variations/variations_http_header_provider.h"
@@ -107,6 +106,7 @@
 #include "chrome/common/profiling.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "components/language_usage_metrics/language_usage_metrics.h"
+#include "components/metrics/metrics_service.h"
 #include "components/nacl/browser/nacl_browser.h"
 #include "components/nacl/browser/nacl_process_host.h"
 #include "components/rappor/rappor_service.h"
@@ -168,7 +168,6 @@
 #include "chrome/browser/first_run/try_chrome_dialog_view.h"
 #include "chrome/browser/first_run/upgrade_util_win.h"
 #include "chrome/browser/ui/network_profile_bubble.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/installer/util/helper.h"
 #include "chrome/installer/util/install_util.h"
 #include "chrome/installer/util/shell_util.h"
@@ -388,22 +387,20 @@ void RegisterComponentsForUpdate(const CommandLine& command_line) {
   RegisterRecoveryComponent(cus, g_browser_process->local_state());
   RegisterPepperFlashComponent(cus);
   RegisterSwiftShaderComponent(cus);
-#endif
-
-#if !defined(OS_ANDROID)
   g_browser_process->pnacl_component_installer()->RegisterPnaclComponent(
       cus, command_line);
-#endif
-
-#if !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
   RegisterWidevineCdmComponent(cus);
 #endif
 
-#if !defined(OS_CHROMEOS)
+#if !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
   // CRLSetFetcher attempts to load a CRL set from either the local disk or
   // network.
   if (!command_line.HasSwitch(switches::kDisableCRLSets))
     g_browser_process->crl_set_fetcher()->StartInitialLoad(cus);
+#elif defined(OS_ANDROID)
+  // The CRLSet component was enabled for some releases. This code attempts to
+  // delete it from the local disk of those how may have downloaded it.
+  g_browser_process->crl_set_fetcher()->DeleteFromDisk();
 #endif
 
 #if defined(CLD2_DYNAMIC_MODE) && defined(CLD2_IS_COMPONENT)
@@ -1535,8 +1532,6 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
   performance_monitor::PerformanceMonitor::GetInstance()->Initialize();
 
   PostBrowserStart();
-
-  chrome_prefs::SchedulePrefHashStoresUpdateCheck(profile_->GetPath());
 
   if (parameters().ui_task) {
     // We end the startup timer here if we have parameters to run, because we

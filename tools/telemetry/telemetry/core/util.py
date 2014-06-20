@@ -39,7 +39,7 @@ def GetChromiumSrcDir():
 def AddDirToPythonPath(*path_parts):
   path = os.path.abspath(os.path.join(*path_parts))
   if os.path.isdir(path) and path not in sys.path:
-    sys.path.append(path)
+    sys.path.insert(0, path)
 
 _counter = [0]
 def _GetUniqueModuleName():
@@ -89,29 +89,6 @@ def WaitFor(condition, timeout):
     poll_interval = min(max(elapsed_time / 10., min_poll_interval),
                         max_poll_interval)
     time.sleep(poll_interval)
-
-
-def FindElementAndPerformAction(tab, text, callback_code):
-  """JavaScript snippet for finding an element with a given text on a page."""
-  code = """
-      (function() {
-        var callback_function = """ + callback_code + """;
-        function _findElement(element, text) {
-          if (element.innerHTML == text) {
-            callback_function
-            return element;
-          }
-          for (var i in element.childNodes) {
-            var found = _findElement(element.childNodes[i], text);
-            if (found)
-              return found;
-          }
-          return null;
-        }
-        var _element = _findElement(document, \"""" + text + """\");
-        return callback_function(_element);
-      })();"""
-  return tab.EvaluateJavaScript(code)
 
 
 def GetUnreservedAvailableLocalPort():

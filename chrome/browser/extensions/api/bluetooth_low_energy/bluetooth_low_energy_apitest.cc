@@ -505,7 +505,7 @@ IN_PROC_BROWSER_TEST_F(BluetoothLowEnergyApiTest, CharacteristicProperties) {
            Return(BluetoothGattCharacteristic::kPropertyExtendedProperties))
       .WillOnce(Return(BluetoothGattCharacteristic::kPropertyReliableWrite))
       .WillOnce(
-           Return(BluetoothGattCharacteristic::kPropertyWriteableAuxiliaries))
+           Return(BluetoothGattCharacteristic::kPropertyWritableAuxiliaries))
       .WillOnce(Return(
           BluetoothGattCharacteristic::kPropertyBroadcast |
           BluetoothGattCharacteristic::kPropertyRead |
@@ -516,7 +516,7 @@ IN_PROC_BROWSER_TEST_F(BluetoothLowEnergyApiTest, CharacteristicProperties) {
           BluetoothGattCharacteristic::kPropertyAuthenticatedSignedWrites |
           BluetoothGattCharacteristic::kPropertyExtendedProperties |
           BluetoothGattCharacteristic::kPropertyReliableWrite |
-          BluetoothGattCharacteristic::kPropertyWriteableAuxiliaries));
+          BluetoothGattCharacteristic::kPropertyWritableAuxiliaries));
 
   ExtensionTestMessageListener listener("ready", true);
   ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII(
@@ -944,6 +944,77 @@ IN_PROC_BROWSER_TEST_F(BluetoothLowEnergyApiTest, WriteDescriptorValue) {
 
   listener.Reply("go");
 
+  EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
+
+  event_router()->GattDescriptorRemoved(chrc0_.get(), desc0_.get());
+  event_router()->GattCharacteristicRemoved(service0_.get(), chrc0_.get());
+  event_router()->GattServiceRemoved(device_.get(), service0_.get());
+  event_router()->DeviceRemoved(mock_adapter_, device_.get());
+}
+
+IN_PROC_BROWSER_TEST_F(BluetoothLowEnergyApiTest, PermissionDenied) {
+  ResultCatcher catcher;
+  catcher.RestrictToProfile(browser()->profile());
+
+  ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII(
+      "bluetooth_low_energy/permission_denied")));
+  EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
+}
+
+IN_PROC_BROWSER_TEST_F(BluetoothLowEnergyApiTest, UuidPermissionMethods) {
+  ResultCatcher catcher;
+  catcher.RestrictToProfile(browser()->profile());
+
+  event_router()->DeviceAdded(mock_adapter_, device_.get());
+  event_router()->GattServiceAdded(device_.get(), service0_.get());
+  event_router()->GattCharacteristicAdded(service0_.get(), chrc0_.get());
+  event_router()->GattDescriptorAdded(chrc0_.get(), desc0_.get());
+
+  std::vector<BluetoothGattService*> services;
+  services.push_back(service0_.get());
+
+  EXPECT_CALL(*mock_adapter_, GetDevice(_))
+      .WillRepeatedly(Return(device_.get()));
+  EXPECT_CALL(*device_, GetGattServices()).WillOnce(Return(services));
+  EXPECT_CALL(*device_, GetGattService(kTestServiceId0))
+      .WillRepeatedly(Return(service0_.get()));
+  EXPECT_CALL(*service0_, GetCharacteristic(kTestCharacteristicId0))
+      .WillRepeatedly(Return(chrc0_.get()));
+  EXPECT_CALL(*chrc0_, GetDescriptor(kTestDescriptorId0))
+      .WillRepeatedly(Return(desc0_.get()));
+
+  ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII(
+      "bluetooth_low_energy/uuid_permission_methods")));
+  EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
+
+  event_router()->GattDescriptorRemoved(chrc0_.get(), desc0_.get());
+  event_router()->GattCharacteristicRemoved(service0_.get(), chrc0_.get());
+  event_router()->GattServiceRemoved(device_.get(), service0_.get());
+  event_router()->DeviceRemoved(mock_adapter_, device_.get());
+}
+
+IN_PROC_BROWSER_TEST_F(BluetoothLowEnergyApiTest, UuidPermissionEvents) {
+  ResultCatcher catcher;
+  catcher.RestrictToProfile(browser()->profile());
+
+  ExtensionTestMessageListener listener("ready", true);
+  ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII(
+      "bluetooth_low_energy/uuid_permission_events")));
+
+  // Cause events to be sent to the extension.
+  event_router()->DeviceAdded(mock_adapter_, device_.get());
+  event_router()->GattServiceAdded(device_.get(), service0_.get());
+  event_router()->GattCharacteristicAdded(service0_.get(), chrc0_.get());
+  event_router()->GattDescriptorAdded(chrc0_.get(), desc0_.get());
+
+  std::vector<uint8> value;
+  event_router()->GattCharacteristicValueChanged(
+      service0_.get(), chrc0_.get(), value);
+  event_router()->GattDescriptorValueChanged(chrc0_.get(), desc0_.get(), value);
+  event_router()->GattServiceChanged(service0_.get());
+
+  EXPECT_TRUE(listener.WaitUntilSatisfied());
+  listener.Reply("go");
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 
   event_router()->GattDescriptorRemoved(chrc0_.get(), desc0_.get());

@@ -52,6 +52,8 @@
 #  never_lint - Set to 1 to not run lint on this target.
 {
   'variables': {
+    'tested_apk_obfuscated_jar_path%': '/',
+    'tested_apk_dex_path%': '/',
     'additional_input_paths': [],
     'input_jars_paths': [],
     'library_dexed_jars_paths': [],
@@ -67,7 +69,7 @@
     'resource_dir%':'<(DEPTH)/build/android/ant/empty/res',
     'R_package%':'',
     'additional_R_text_files': [],
-    'additional_res_dirs': [],
+    'dependencies_res_zip_paths': [],
     'additional_res_packages': [],
     'is_test_apk%': 0,
     'resource_input_paths': [],
@@ -98,13 +100,14 @@
     'jar_excluded_classes': [],
     'jar_path': '<(PRODUCT_DIR)/lib.java/<(jar_name)',
     'obfuscated_jar_path': '<(intermediate_dir)/obfuscated.jar',
+    'test_jar_path': '<(PRODUCT_DIR)/test.lib.java/<(apk_name).jar',
     'dex_path': '<(intermediate_dir)/classes.dex',
     'emma_device_jar': '<(android_sdk_root)/tools/lib/emma_device.jar',
     'android_manifest_path%': '<(java_in_dir)/AndroidManifest.xml',
     'push_stamp': '<(intermediate_dir)/push.stamp',
     'link_stamp': '<(intermediate_dir)/link.stamp',
     'package_resources_stamp': '<(intermediate_dir)/package_resources.stamp',
-    'crunch_output_dir': '<(intermediate_dir)/res',
+    'resource_zip_path': '<(intermediate_dir)/<(_target_name).resources.zip',
     'resource_packaged_apk_name': '<(apk_name)-resources.ap_',
     'resource_packaged_apk_path': '<(intermediate_dir)/<(resource_packaged_apk_name)',
     'unsigned_apk_path': '<(intermediate_dir)/<(apk_name)-unsigned.apk',
@@ -115,6 +118,7 @@
     'symlink_script_host_path': '<(intermediate_dir)/create_symlinks.sh',
     'symlink_script_device_path': '<(device_intermediate_dir)/create_symlinks.sh',
     'create_standalone_apk%': 1,
+    'res_v14_verify_only%': 0,
     'variables': {
       'variables': {
         'native_lib_target%': '',
@@ -149,13 +153,23 @@
     'apk_package_native_libs_dir': '<(apk_package_native_libs_dir)',
     'unsigned_standalone_apk_path': '<(unsigned_standalone_apk_path)',
     'extra_native_libs': [],
+    'apk_dex_input_paths': [ '>@(library_dexed_jars_paths)' ],
   },
   # Pass the jar path to the apk's "fake" jar target.  This would be better as
   # direct_dependent_settings, but a variable set by a direct_dependent_settings
   # cannot be lifted in a dependent to all_dependent_settings.
   'all_dependent_settings': {
+    'conditions': [
+      ['proguard_enabled == "true"', {
+        'variables': {
+          'proguard_enabled': 'true',
+        }
+      }],
+    ],
     'variables': {
       'apk_output_jar_path': '<(jar_path)',
+      'tested_apk_obfuscated_jar_path': '<(obfuscated_jar_path)',
+      'tested_apk_dex_path': '<(dex_path)',
     },
   },
   'conditions': [
@@ -168,7 +182,6 @@
       'variables': {
         # We generate R.java in package R_package (in addition to the package
         # listed in the AndroidManifest.xml, which is unavoidable).
-        'additional_res_dirs': ['<(DEPTH)/build/android/ant/empty/res'],
         'additional_res_packages': ['<(R_package)'],
         'additional_R_text_files': ['<(PRODUCT_DIR)/<(package_name)/R.txt'],
       },
@@ -444,24 +457,28 @@
         # Write the inputs list to a file, so that its mtime is updated when
         # the list of inputs changes.
         'inputs_list_file': '>|(apk_codegen.<(_target_name).gypcmd >@(additional_input_paths) >@(resource_input_paths))',
-      },
-      'conditions': [
-        ['is_test_apk == 1', {
-          'variables': {
-            'additional_res_dirs=': [],
+        'process_resources_options': [],
+        'conditions': [
+          ['is_test_apk == 1', {
+            'dependencies_res_zip_paths=': [],
             'additional_res_packages=': [],
-          }
-        }],
-      ],
+          }],
+          ['res_v14_verify_only == 1', {
+            'process_resources_options': ['--v14-verify-only']
+          }],
+        ],
+      },
       'inputs': [
         '<(DEPTH)/build/android/gyp/util/build_utils.py',
         '<(DEPTH)/build/android/gyp/process_resources.py',
         '<(android_manifest_path)',
         '>@(additional_input_paths)',
         '>@(resource_input_paths)',
+        '>@(dependencies_res_zip_paths)',
         '>(inputs_list_file)',
       ],
       'outputs': [
+        '<(resource_zip_path)',
         '<(generated_proguard_file)',
         '<(codegen_stamp)',
       ],
@@ -471,7 +488,7 @@
         '--android-sdk-tools', '<(android_sdk_tools)',
 
         '--android-manifest', '<(android_manifest_path)',
-        '--dependencies-res-dirs', '>(additional_res_dirs)',
+        '--dependencies-res-zips', '>(dependencies_res_zip_paths)',
 
         '--extra-res-packages', '>(additional_res_packages)',
         '--extra-r-text-files', '>(additional_R_text_files)',
@@ -479,11 +496,13 @@
         '--proguard-file', '<(generated_proguard_file)',
 
         '--resource-dir', '<(resource_dir)',
-        '--crunch-output-dir', '<(crunch_output_dir)',
+        '--resource-zip-out', '<(resource_zip_path)',
 
         '--R-dir', '<(intermediate_dir)/gen',
 
         '--stamp', '<(codegen_stamp)',
+
+        '<@(process_resources_options)',
       ],
     },
     {
@@ -579,6 +598,7 @@
       ],
       'outputs': [
         '<(jar_stamp)',
+        '<(jar_path)',
       ],
       'action': [
         'python', '<(DEPTH)/build/android/gyp/jar.py',
@@ -589,62 +609,122 @@
       ]
     },
     {
-      'action_name': 'ant_obfuscate_<(_target_name)',
+      'action_name': 'obfuscate_<(_target_name)',
       'message': 'Obfuscating <(_target_name)',
+      'variables': {
+        'additional_obfuscate_options': [],
+        'additional_obfuscate_input_paths': [],
+        'proguard_out_dir': '<(intermediate_dir)/proguard',
+        'proguard_input_jar_paths': [
+          '>@(input_jars_paths)',
+          '<(jar_path)',
+        ],
+        'target_conditions': [
+          ['is_test_apk == 1', {
+            'additional_obfuscate_options': [
+              '--testapp',
+            ],
+          }],
+          ['is_test_apk == 1 and tested_apk_obfuscated_jar_path != "/"', {
+            'additional_obfuscate_options': [
+              '--tested-apk-obfuscated-jar-path', '>(tested_apk_obfuscated_jar_path)',
+            ],
+            'additional_obfuscate_input_paths': [
+              '>(tested_apk_obfuscated_jar_path).info',
+            ],
+          }],
+          ['proguard_enabled == "true"', {
+            'additional_obfuscate_options': [
+              '--proguard-enabled',
+            ],
+          }],
+        ],
+        'obfuscate_input_jars_paths': [
+          '>@(input_jars_paths)',
+          '<(jar_path)',
+        ],
+      },
+      'conditions': [
+        ['is_test_apk == 1', {
+          'outputs': [
+            '<(test_jar_path)',
+          ],
+        }],
+      ],
       'inputs': [
-        '<(DEPTH)/build/android/ant/apk-obfuscate.xml',
+        '<(DEPTH)/build/android/gyp/apk_obfuscate.py',
         '<(DEPTH)/build/android/gyp/util/build_utils.py',
-        '<(DEPTH)/build/android/gyp/ant.py',
-        '<(android_manifest_path)',
         '>@(proguard_flags_paths)',
+        '>@(obfuscate_input_jars_paths)',
+        '>@(additional_obfuscate_input_paths)',
         '<(instr_stamp)',
       ],
       'outputs': [
-        # This lists obfuscate_stamp instead of obfuscated_jar_path because
-        # ant only writes the latter if the md5 of the inputs changes.
         '<(obfuscate_stamp)',
+
+        # In non-Release builds, these paths will all be empty files.
+        '<(obfuscated_jar_path)',
+        '<(obfuscated_jar_path).info',
+        '<(obfuscated_jar_path).dump',
+        '<(obfuscated_jar_path).seeds',
+        '<(obfuscated_jar_path).mapping',
+        '<(obfuscated_jar_path).usage',
       ],
       'action': [
-        'python', '<(DEPTH)/build/android/gyp/ant.py',
-        '-quiet',
-        '-DANDROID_MANIFEST=<(android_manifest_path)',
-        '-DANDROID_SDK_JAR=<(android_sdk_jar)',
-        '-DANDROID_SDK_ROOT=<(android_sdk_root)',
-        '-DANDROID_SDK_VERSION=<(android_sdk_version)',
-        '-DANDROID_SDK_TOOLS=<(android_sdk_tools)',
-        '-DAPK_NAME=<(apk_name)',
-        '-DCONFIGURATION_NAME=<(CONFIGURATION_NAME)',
-        '-DINPUT_JARS_PATHS=>(input_jars_paths)',
-        '-DIS_TEST_APK=<(is_test_apk)',
-        '-DOBFUSCATED_JAR_PATH=<(obfuscated_jar_path)',
-        '-DOUT_DIR=<(intermediate_dir)',
-        '-DPROGUARD_ENABLED=<(proguard_enabled)',
-        '-DPROGUARD_FLAGS=<(proguard_flags_paths)',
-        '-DTEST_JAR_PATH=<(PRODUCT_DIR)/test.lib.java/<(apk_name).jar',
+        'python', '<(DEPTH)/build/android/gyp/apk_obfuscate.py',
 
-        '-DSTAMP=<(obfuscate_stamp)',
-        '-Dbasedir=.',
-        '-buildfile',
-        '<(DEPTH)/build/android/ant/apk-obfuscate.xml',
+        '--configuration-name', '<(CONFIGURATION_NAME)',
+
+        '--android-sdk', '<(android_sdk)',
+        '--android-sdk-tools', '<(android_sdk_tools)',
+        '--android-sdk-jar', '<(android_sdk_jar)',
+
+        '--input-jars-paths=>(proguard_input_jar_paths)',
+        '--proguard-configs=>(proguard_flags_paths)',
+
+
+        '--test-jar-path', '<(test_jar_path)',
+        '--obfuscated-jar-path', '<(obfuscated_jar_path)',
+
+        '--proguard-jar-path', '<(android_sdk_root)/tools/proguard/lib/proguard.jar',
+
+        '--stamp', '<(obfuscate_stamp)',
+
+        '>@(additional_obfuscate_options)',
       ],
     },
     {
       'action_name': 'dex_<(_target_name)',
       'variables': {
-        'conditions': [
-          ['emma_instrument != 0', {
-            'dex_no_locals': 1,
-            'dex_input_paths': [ '<(emma_device_jar)' ],
-          }],
-        ],
-        'dex_input_paths': [ '>@(library_dexed_jars_paths)' ],
-        'dex_generated_input_dirs': [ '<(classes_final_dir)' ],
         'output_path': '<(dex_path)',
+        'dex_input_paths': [
+          '>@(apk_dex_input_paths)',
+          '<(jar_path)',
+        ],
         'proguard_enabled_input_path': '<(obfuscated_jar_path)',
       },
-      'conditions': [
-        ['proguard_enabled == "true"', { 'inputs': [ '<(obfuscate_stamp)' ] },
-                                       { 'inputs': [ '<(instr_stamp)' ] }],
+      'target_conditions': [
+        ['emma_instrument != 0', {
+          'dex_no_locals': 1,
+          'dex_input_paths': [
+            '<(emma_device_jar)'
+          ],
+        }],
+        ['is_test_apk == 1 and tested_apk_dex_path != "/"', {
+          'variables': {
+            'dex_additional_options': [
+              '--excluded-paths-file', '>(tested_apk_dex_path).inputs'
+            ],
+          },
+          'inputs': [
+            '>(tested_apk_dex_path).inputs',
+          ],
+        }],
+        ['proguard_enabled == "true"', {
+          'inputs': [ '<(obfuscate_stamp)' ]
+        }, {
+          'inputs': [ '<(instr_stamp)' ]
+        }],
       ],
       'includes': [ 'android/dex_action.gypi' ],
     },
@@ -652,26 +732,15 @@
       'action_name': 'package_resources',
       'message': 'packaging resources for <(_target_name)',
       'variables': {
-        'extra_package_input_paths': [
-            '>@(package_input_paths)',
-            '>@(additional_input_paths)',
-            '>@(resource_input_paths)'
+        'package_resource_zip_input_paths': [
+          '<(resource_zip_path)',
+          '>@(dependencies_res_zip_paths)',
         ],
-        'package_resource_dirs': [
-            # <(crunch_output_dir) must come before <(resource_dir) so that
-            # the crunched files take precedence.
-            '<(crunch_output_dir)',
-            '<(resource_dir)',
-            '>@(additional_res_dirs)',
-        ],
-        # Write the inputs list to a file, so that its mtime is updated when
-        # the list of inputs changes.
-        'inputs_list_file': '>|(apk_package.<(_target_name).gypcmd >@(extra_package_input_paths))',
       },
       'conditions': [
         ['is_test_apk == 1', {
           'variables': {
-            'additional_res_dirs=': [],
+            'dependencies_res_zip_paths=': [],
             'additional_res_packages=': [],
           }
         }],
@@ -682,10 +751,9 @@
         '<(DEPTH)/build/android/gyp/package_resources.py',
         '<(android_manifest_path)',
 
-        '<(codegen_stamp)',
+        '>@(package_resource_zip_input_paths)',
 
-        '>@(extra_package_input_paths)',
-        '>(inputs_list_file)',
+        '<(codegen_stamp)',
       ],
       'outputs': [
         '<(resource_packaged_apk_path)',
@@ -702,7 +770,7 @@
         '--version-name', '<(app_manifest_version_name)',
 
         '--asset-dir', '<(asset_location)',
-        '--resource-dirs', '>(package_resource_dirs)',
+        '--resource-zips', '>(package_resource_zip_input_paths)',
 
         '--apk-path', '<(resource_packaged_apk_path)',
       ],

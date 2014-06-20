@@ -25,12 +25,12 @@ const int kMaximumDaysOfDisuse = 4 * 7;  // Should be integral number of weeks.
 struct ProfileCounts {
   size_t total;
   size_t signedin;
-  size_t managed;
+  size_t supervised;
   size_t unused;
   size_t gaia_icon;
 
   ProfileCounts()
-      : total(0), signedin(0), managed(0), unused(0), gaia_icon(0) {}
+      : total(0), signedin(0), supervised(0), unused(0), gaia_icon(0) {}
 };
 
 ProfileMetrics::ProfileType GetProfileType(
@@ -72,8 +72,8 @@ bool CountProfileInformation(ProfileManager* manager, ProfileCounts* counts) {
     if (info_cache.GetProfileActiveTimeAtIndex(i) < oldest) {
       counts->unused++;
     } else {
-      if (info_cache.ProfileIsManagedAtIndex(i))
-        counts->managed++;
+      if (info_cache.ProfileIsSupervisedAtIndex(i))
+        counts->supervised++;
       if (!info_cache.GetUserNameOfProfileAtIndex(i).empty()) {
         counts->signedin++;
         if (info_cache.IsUsingGAIAPictureOfProfileAtIndex(i))
@@ -82,6 +82,30 @@ bool CountProfileInformation(ProfileManager* manager, ProfileCounts* counts) {
     }
   }
   return true;
+}
+
+void LogLockedProfileInformation(ProfileManager* manager) {
+  const ProfileInfoCache& info_cache = manager->GetProfileInfoCache();
+  size_t number_of_profiles = info_cache.GetNumberOfProfiles();
+
+  base::Time now = base::Time::Now();
+  const int kMinutesInProfileValidDuration =
+      base::TimeDelta::FromDays(28).InMinutes();
+  for (size_t i = 0; i < number_of_profiles; ++i) {
+    // Find when locked profiles were locked
+    if (info_cache.ProfileIsSigninRequiredAtIndex(i)) {
+      base::TimeDelta time_since_lock = now -
+          info_cache.GetProfileActiveTimeAtIndex(i);
+      // Specifying 100 buckets for the histogram to get a higher level of
+      // granularity in the reported data, given the large number of possible
+      // values (kMinutesInProfileValidDuration > 40,000).
+      UMA_HISTOGRAM_CUSTOM_COUNTS("Profile.LockedProfilesDuration",
+                                  time_since_lock.InMinutes(),
+                                  1,
+                                  kMinutesInProfileValidDuration,
+                                  100);
+    }
+  }
 }
 
 }  // namespace
@@ -142,9 +166,9 @@ void ProfileMetrics::LogNumberOfProfiles(ProfileManager* manager) {
   // Ignore other metrics if we have no profiles, e.g. in Chrome Frame tests.
   if (success) {
     UMA_HISTOGRAM_COUNTS_100("Profile.NumberOfManagedProfiles",
-                             counts.managed);
+                             counts.supervised);
     UMA_HISTOGRAM_COUNTS_100("Profile.PercentageOfManagedProfiles",
-                             100 * counts.managed / counts.total);
+                             100 * counts.supervised / counts.total);
     UMA_HISTOGRAM_COUNTS_100("Profile.NumberOfSignedInProfiles",
                              counts.signedin);
     UMA_HISTOGRAM_COUNTS_100("Profile.NumberOfUnusedProfiles",
@@ -152,6 +176,7 @@ void ProfileMetrics::LogNumberOfProfiles(ProfileManager* manager) {
     UMA_HISTOGRAM_COUNTS_100("Profile.NumberOfSignedInProfilesWithGAIAIcons",
                              counts.gaia_icon);
 
+    LogLockedProfileInformation(manager);
     UpdateReportedOSProfileStatistics(counts.total, counts.signedin);
   }
 }
@@ -391,7 +416,7 @@ void ProfileMetrics::LogProfileLaunch(Profile* profile) {
                             GetProfileType(profile_path),
                             NUM_PROFILE_TYPE_METRICS);
 
-  if (profile->IsManaged()) {
+  if (profile->IsSupervised()) {
     content::RecordAction(
         base::UserMetricsAction("ManagedMode_NewManagedUserWindow"));
   }

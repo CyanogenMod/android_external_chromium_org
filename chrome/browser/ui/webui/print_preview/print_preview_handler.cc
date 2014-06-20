@@ -22,6 +22,7 @@
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
@@ -190,10 +191,6 @@ const char kLocalPdfPrinterId[] = "Save as PDF";
 // Additional printer capability setting keys.
 const char kPrinterId[] = "printerId";
 const char kPrinterCapabilities[] = "capabilities";
-#if defined(USE_CUPS)
-const char kCUPSsColorModel[] = "cupsColorModel";
-const char kCUPSsBWModel[] = "cupsBWModel";
-#endif
 
 // Get the print job settings dictionary from |args|. The caller takes
 // ownership of the returned DictionaryValue. Returns NULL on failure.
@@ -317,7 +314,11 @@ scoped_ptr<base::DictionaryValue> GetPdfCapabilitiesOnFileThread(
   orientation.SaveTo(&description);
 
   ColorCapability color;
-  color.AddDefaultOption(Color(STANDARD_COLOR), true);
+  {
+    Color standard_color(STANDARD_COLOR);
+    standard_color.vendor_id = base::IntToString(printing::COLOR);
+    color.AddDefaultOption(standard_color, true);
+  }
   color.SaveTo(&description);
 
   static const cloud_devices::printer::MediaType kPdfMedia[] = {
@@ -329,7 +330,7 @@ scoped_ptr<base::DictionaryValue> GetPdfCapabilitiesOnFileThread(
   };
   const gfx::Size default_media_size = GetDefaultPdfMediaSizeMicrons();
   Media default_media(
-      "", default_media_size.width(), default_media_size.height());
+      "", "", default_media_size.width(), default_media_size.height());
   if (!default_media.MatchBySize() ||
       std::find(kPdfMedia,
                 kPdfMedia + arraysize(kPdfMedia),
@@ -376,11 +377,6 @@ scoped_ptr<base::DictionaryValue> GetLocalPrinterCapabilitiesOnFileThread(
     return scoped_ptr<base::DictionaryValue>();
   }
 
-#if defined(USE_CUPS)
-  // TODO(alekseys): Use CUSTOM_COLOR/MONOCHROME instead.
-  description->SetInteger(kCUPSsColorModel, info.color_model);
-  description->SetInteger(kCUPSsBWModel, info.bw_model);
-#endif
   return description.Pass();
 }
 
@@ -472,14 +468,6 @@ printing::StickySettings* GetStickySettings() {
 }
 
 }  // namespace
-
-#if defined(USE_CUPS)
-struct PrintPreviewHandler::CUPSPrinterColorModels {
-  std::string printer_name;
-  printing::ColorModel color_model;
-  printing::ColorModel bw_model;
-};
-#endif
 
 class PrintPreviewHandler::AccessTokenService
     : public OAuth2TokenService::Consumer {
@@ -880,11 +868,6 @@ void PrintPreviewHandler::HandlePrint(const base::ListValue* args) {
     // Reset selection only flag for the same reason.
     settings->SetBoolean(printing::kSettingShouldPrintSelectionOnly, false);
 
-#if defined(USE_CUPS)
-    if (!open_pdf_in_preview)  // We can get here even for cloud printers.
-      ConvertColorSettingToCUPSColorModel(settings.get());
-#endif
-
     // Set ID to know whether printing is for preview.
     settings->SetInteger(printing::kPreviewUIID,
                          print_preview_ui->GetIDForPrintPreviewUI());
@@ -1229,11 +1212,6 @@ void PrintPreviewHandler::SendAccessToken(const std::string& type,
 void PrintPreviewHandler::SendPrinterCapabilities(
     const base::DictionaryValue* settings_info) {
   VLOG(1) << "Get printer capabilities finished";
-
-#if defined(USE_CUPS)
-  SaveCUPSColorSetting(settings_info);
-#endif
-
   web_ui()->CallJavascriptFunction("updateWithPrinterCapabilities",
                                    *settings_info);
 }
@@ -1410,59 +1388,6 @@ bool PrintPreviewHandler::GetPreviewDataAndTitle(
   return true;
 }
 
-#if defined(USE_CUPS)
-void PrintPreviewHandler::SaveCUPSColorSetting(
-    const base::DictionaryValue* settings) {
-  cups_printer_color_models_.reset(new CUPSPrinterColorModels);
-  settings->GetString(kPrinterId, &cups_printer_color_models_->printer_name);
-  const base::DictionaryValue* capabilities = NULL;
-  if (!settings->GetDictionary(kPrinterCapabilities, &capabilities) ||
-      !capabilities) {
-    NOTREACHED();
-    return;
-  }
-  capabilities->GetInteger(
-      kCUPSsColorModel,
-      reinterpret_cast<int*>(&cups_printer_color_models_->color_model));
-  capabilities->GetInteger(
-      kCUPSsBWModel,
-      reinterpret_cast<int*>(&cups_printer_color_models_->bw_model));
-}
-
-void PrintPreviewHandler::ConvertColorSettingToCUPSColorModel(
-    base::DictionaryValue* settings) const {
-  if (!cups_printer_color_models_)
-    return;
-
-  // Sanity check the printer name.
-  std::string printer_name;
-  if (!settings->GetString(printing::kSettingDeviceName, &printer_name) ||
-      printer_name != cups_printer_color_models_->printer_name) {
-    NOTREACHED();
-    return;
-  }
-
-  int color;
-  if (!settings->GetInteger(printing::kSettingColor, &color)) {
-    NOTREACHED();
-    return;
-  }
-
-  if (color == printing::GRAY) {
-    if (cups_printer_color_models_->bw_model != printing::UNKNOWN_COLOR_MODEL) {
-      settings->SetInteger(printing::kSettingColor,
-                           cups_printer_color_models_->bw_model);
-    }
-    return;
-  }
-
-  printing::ColorModel color_model = cups_printer_color_models_->color_model;
-  if (color_model != printing::UNKNOWN_COLOR_MODEL)
-    settings->SetInteger(printing::kSettingColor, color_model);
-}
-
-#endif  // defined(USE_CUPS)
-
 #if defined(ENABLE_SERVICE_DISCOVERY)
 void PrintPreviewHandler::LocalPrinterChanged(
     bool added,
@@ -1506,7 +1431,8 @@ bool PrintPreviewHandler::PrivetUpdateClient(
 
   privet_local_print_operation_.reset();
   privet_capabilities_operation_.reset();
-  privet_http_client_ = http_client.Pass();
+  privet_http_client_ =
+      local_discovery::PrivetV1HTTPClient::CreateDefault(http_client.Pass());
 
   privet_http_resolution_.reset();
 
@@ -1611,7 +1537,7 @@ void PrintPreviewHandler::PrintToPrivetPrinter(const std::string& device_name,
 bool PrintPreviewHandler::CreatePrivetHTTP(
     const std::string& name,
     const local_discovery::PrivetHTTPAsynchronousFactory::ResultCallback&
-    callback) {
+        callback) {
   const local_discovery::DeviceDescription* device_description =
       printer_lister_->GetDeviceDescription(name);
 
@@ -1622,12 +1548,10 @@ bool PrintPreviewHandler::CreatePrivetHTTP(
 
   privet_http_factory_ =
       local_discovery::PrivetHTTPAsynchronousFactory::CreateInstance(
-      service_discovery_client_,
-      Profile::FromWebUI(web_ui())->GetRequestContext());
+          service_discovery_client_,
+          Profile::FromWebUI(web_ui())->GetRequestContext());
   privet_http_resolution_ = privet_http_factory_->CreatePrivetHTTP(
-      name,
-      device_description->address,
-      callback);
+      name, device_description->address, callback);
   privet_http_resolution_->Start();
 
   return true;

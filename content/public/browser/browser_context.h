@@ -35,8 +35,8 @@ class BlobHandle;
 class BrowserPluginGuestManager;
 class DownloadManager;
 class DownloadManagerDelegate;
-class GeolocationPermissionContext;
 class IndexedDBContext;
+class PushMessagingService;
 class ResourceContext;
 class SiteInstance;
 class StoragePartition;
@@ -131,41 +131,6 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
           const base::FilePath& partition_path,
           bool in_memory) = 0;
 
-  typedef base::Callback<void(bool)> MidiSysExPermissionCallback;
-
-  // Requests a permission to use system exclusive messages in MIDI events.
-  // |callback| will be invoked when the request is resolved.
-  virtual void RequestMidiSysExPermission(
-      int render_process_id,
-      int render_view_id,
-      int bridge_id,
-      const GURL& requesting_frame,
-      bool user_gesture,
-      const MidiSysExPermissionCallback& callback) = 0;
-
-  // Cancels a pending MIDI permission request.
-  virtual void CancelMidiSysExPermissionRequest(
-      int render_process_id,
-      int render_view_id,
-      int bridge_id,
-      const GURL& requesting_frame) = 0;
-
-  typedef base::Callback<void(bool)> ProtectedMediaIdentifierPermissionCallback;
-
-  // Request permission to access protected media identifier. The callback will
-  // tell whether it's permitted.
-  virtual void RequestProtectedMediaIdentifierPermission(
-      int render_process_id,
-      int render_view_id,
-      const GURL& origin,
-      const ProtectedMediaIdentifierPermissionCallback& callback) = 0;
-
-  // Cancels pending protected media identifier permission requests.
-  virtual void CancelProtectedMediaIdentifierPermissionRequests(
-      int render_process_id,
-      int render_view_id,
-      const GURL& origin) = 0;
-
   // Returns the resource context.
   virtual ResourceContext* GetResourceContext() = 0;
 
@@ -174,15 +139,16 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // ensuring that it outlives DownloadManager. It's valid to return NULL.
   virtual DownloadManagerDelegate* GetDownloadManagerDelegate() = 0;
 
-  // Returns the geolocation permission context for this context. It's valid to
-  // return NULL, in which case geolocation requests will always be allowed.
-  virtual GeolocationPermissionContext* GetGeolocationPermissionContext() = 0;
-
   // Returns the guest manager for this context.
   virtual BrowserPluginGuestManager* GetGuestManager() = 0;
 
   // Returns a special storage policy implementation, or NULL.
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() = 0;
+
+  // Returns a push messaging service. The embedder owns the service, and is
+  // responsible for ensuring that it outlives RenderProcessHost. It's valid to
+  // return NULL.
+  virtual PushMessagingService* GetPushMessagingService() = 0;
 };
 
 }  // namespace content

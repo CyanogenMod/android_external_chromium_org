@@ -42,13 +42,14 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   MojoTimeTicks GetTimeTicksNow();
   MojoResult Close(MojoHandle handle);
   MojoResult Wait(MojoHandle handle,
-                  MojoWaitFlags flags,
+                  MojoHandleSignals signals,
                   MojoDeadline deadline);
   MojoResult WaitMany(const MojoHandle* handles,
-                      const MojoWaitFlags* flags,
+                      const MojoHandleSignals* signals,
                       uint32_t num_handles,
                       MojoDeadline deadline);
-  MojoResult CreateMessagePipe(MojoHandle* message_pipe_handle0,
+  MojoResult CreateMessagePipe(const MojoCreateMessagePipeOptions* options,
+                               MojoHandle* message_pipe_handle0,
                                MojoHandle* message_pipe_handle1);
   MojoResult WriteMessage(MojoHandle message_pipe_handle,
                           const void* bytes,
@@ -105,7 +106,7 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   // Internal implementation of |Wait()| and |WaitMany()|; doesn't do basic
   // validation of arguments.
   MojoResult WaitManyInternal(const MojoHandle* handles,
-                              const MojoWaitFlags* flags,
+                              const MojoHandleSignals* signals,
                               uint32_t num_handles,
                               MojoDeadline deadline);
 

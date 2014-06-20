@@ -26,8 +26,10 @@
 #include "ui/gfx/favicon_size.h"
 
 using base::Time;
+using bookmarks::BookmarkExpandedStateTracker;
 using bookmarks::BookmarkIndex;
 using bookmarks::BookmarkLoadDetails;
+using bookmarks::BookmarkMatch;
 using bookmarks::BookmarkStorage;
 
 namespace {
@@ -197,12 +199,12 @@ void BookmarkModel::Remove(const BookmarkNode* parent, int index) {
   RemoveAndDeleteNode(AsMutable(parent->GetChild(index)));
 }
 
-void BookmarkModel::RemoveAll() {
+void BookmarkModel::RemoveAllUserBookmarks() {
   std::set<GURL> removed_urls;
   ScopedVector<BookmarkNode> removed_nodes;
 
   FOR_EACH_OBSERVER(BookmarkModelObserver, observers_,
-                    OnWillRemoveAllBookmarks(this));
+                    OnWillRemoveAllUserBookmarks(this));
 
   BeginExtensiveChanges();
   // Skip deleting permanent nodes. Permanent bookmark nodes are the root and
@@ -228,7 +230,7 @@ void BookmarkModel::RemoveAll() {
     store_->ScheduleSave();
 
   FOR_EACH_OBSERVER(BookmarkModelObserver, observers_,
-                    BookmarkAllNodesRemoved(this, removed_urls));
+                    BookmarkAllUserNodesRemoved(this, removed_urls));
 }
 
 void BookmarkModel::Move(const BookmarkNode* node,
@@ -875,6 +877,9 @@ void BookmarkModel::RemoveNodeAndGetRemovedUrls(BookmarkNode* node,
 BookmarkNode* BookmarkModel::AddNode(BookmarkNode* parent,
                                      int index,
                                      BookmarkNode* node) {
+  FOR_EACH_OBSERVER(BookmarkModelObserver, observers_,
+                    OnWillAddBookmarkNode(this, node));
+
   parent->Add(node, index);
 
   if (store_.get())

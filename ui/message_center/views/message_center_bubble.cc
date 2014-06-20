@@ -4,6 +4,8 @@
 
 #include "ui/message_center/views/message_center_bubble.h"
 
+#include "grit/ui_strings.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/message_center/message_center_style.h"
 #include "ui/message_center/views/message_center_view.h"
 #include "ui/views/layout/fill_layout.h"
@@ -62,7 +64,8 @@ MessageCenterBubble::MessageCenterBubble(MessageCenter* message_center,
     : MessageBubbleBase(message_center, tray),
       message_center_view_(NULL),
       initially_settings_visible_(false),
-      first_item_has_no_margin_(first_item_has_no_margin) {
+      first_item_has_no_margin_(first_item_has_no_margin),
+      title_(l10n_util::GetStringUTF16(IDS_MESSAGE_CENTER_FOOTER_TITLE)) {
 }
 
 MessageCenterBubble::~MessageCenterBubble() {
@@ -96,8 +99,9 @@ void MessageCenterBubble::InitializeContents(
       tray(),
       max_height(),
       initially_settings_visible_,
-      false /* MessageCenterBubble should be used only on ChromeOS.
-               Message center is never shown top down in ChromeOS. */);
+      false, /* MessageCenterBubble should be used only on ChromeOS.
+              Message center is never shown top down in ChromeOS. */
+      title_);
   bubble_view()->AddChildView(new ContentsView(this, message_center_view_));
   // Resize the content of the bubble view to the given bubble size. This is
   // necessary in case of the bubble border forcing a bigger size then the

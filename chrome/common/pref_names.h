@@ -25,11 +25,11 @@ extern const char kDefaultAppsInstalled[];
 extern const char kDisableScreenshots[];
 extern const char kHomePageIsNewTabPage[];
 extern const char kHomePage[];
-extern const char kManagedModeManualHosts[];
-extern const char kManagedModeManualURLs[];
-extern const char kManagedUserCustodianEmail[];
-extern const char kManagedUserCustodianName[];
-extern const char kManagedUserSharedSettings[];
+extern const char kSupervisedUserManualHosts[];
+extern const char kSupervisedUserManualURLs[];
+extern const char kSupervisedUserCustodianEmail[];
+extern const char kSupervisedUserCustodianName[];
+extern const char kSupervisedUserSharedSettings[];
 extern const char kProfileIconVersion[];
 extern const char kRestoreOnStartup[];
 extern const char kRestoreOnStartupMigrated[];
@@ -132,6 +132,7 @@ extern const char kWebKitForceEnableZoom[];
 extern const char kWebKitPasswordEchoEnabled[];
 #endif
 extern const char kSafeBrowsingEnabled[];
+extern const char kSafeBrowsingExtendedReportingEnabled[];
 extern const char kSafeBrowsingDownloadFeedbackEnabled[];
 extern const char kSafeBrowsingReportingEnabled[];
 extern const char kSafeBrowsingProceedAnywayDisabled[];
@@ -218,16 +219,16 @@ extern const char kLanguageSendFunctionKeys[];
 extern const char kLanguageXkbAutoRepeatEnabled[];
 extern const char kLanguageXkbAutoRepeatDelay[];
 extern const char kLanguageXkbAutoRepeatInterval[];
-extern const char kLargeCursorEnabled[];
-extern const char kStickyKeysEnabled[];
-extern const char kSpokenFeedbackEnabled[];
-extern const char kHighContrastEnabled[];
-extern const char kScreenMagnifierEnabled[];
-extern const char kScreenMagnifierType[];
-extern const char kScreenMagnifierScale[];
-extern const char kVirtualKeyboardEnabled[];
-extern const char kAutoclickEnabled[];
-extern const char kAutoclickDelayMs[];
+extern const char kAccessibilityLargeCursorEnabled[];
+extern const char kAccessibilityStickyKeysEnabled[];
+extern const char kAccessibilitySpokenFeedbackEnabled[];
+extern const char kAccessibilityHighContrastEnabled[];
+extern const char kAccessibilityScreenMagnifierEnabled[];
+extern const char kAccessibilityScreenMagnifierType[];
+extern const char kAccessibilityScreenMagnifierScale[];
+extern const char kAccessibilityVirtualKeyboardEnabled[];
+extern const char kAccessibilityAutoclickEnabled[];
+extern const char kAccessibilityAutoclickDelayMs[];
 extern const char kShouldAlwaysShowAccessibilityMenu[];
 extern const char kLabsAdvancedFilesystemEnabled[];
 extern const char kLabsMediaplayerEnabled[];
@@ -327,9 +328,6 @@ extern const char kPluginsMetadata[];
 extern const char kPluginsResourceCacheUpdate[];
 #endif
 extern const char kCheckDefaultBrowser[];
-#if defined(OS_WIN)
-extern const char kSuppressSwitchToMetroModeOnSetDefault[];
-#endif
 extern const char kDefaultBrowserSettingEnabled[];
 #if defined(OS_MACOSX)
 extern const char kShowUpdatePromotionInfoBar[];
@@ -368,8 +366,8 @@ extern const char kImportSavedPasswords[];
 
 extern const char kProfileAvatarIndex[];
 extern const char kProfileName[];
-extern const char kProfileIsManaged[];
-extern const char kManagedUserId[];
+extern const char kProfileIsSupervised[];
+extern const char kSupervisedUserId[];
 
 extern const char kProfileGAIAInfoUpdateTime[];
 extern const char kProfileGAIAInfoPictureURL[];
@@ -382,10 +380,10 @@ extern const char kInvertNotificationShown[];
 extern const char kPrintingEnabled[];
 extern const char kPrintPreviewDisabled[];
 
-extern const char kDefaultManagedModeFilteringBehavior[];
+extern const char kDefaultSupervisedUserFilteringBehavior[];
 
-extern const char kManagedUserCreationAllowed[];
-extern const char kManagedUsers[];
+extern const char kSupervisedUserCreationAllowed[];
+extern const char kSupervisedUsers[];
 
 extern const char kMessageCenterDisabledExtensionIds[];
 extern const char kMessageCenterDisabledSystemComponentIds[];
@@ -406,12 +404,15 @@ extern const char kPreferenceResetTime[];
 extern const char kProfileResetPromptMemento[];
 
 extern const char kGCMChannelEnabled[];
+extern const char kPushMessagingRegistrationCount[];
 
 extern const char kEasyUnlockEnabled[];
 extern const char kEasyUnlockShowTutorial[];
 extern const char kEasyUnlockPairing[];
 
 extern const char kZeroSuggestCachedResults[];
+
+extern const char kSuggestionsData[];
 
 // Local state prefs. Please add Profile prefs above instead.
 extern const char kCertRevocationCheckingEnabled[];
@@ -451,16 +452,9 @@ extern const char kProfilesNumCreated[];
 extern const char kProfileInfoCache[];
 extern const char kProfileCreatedByVersion[];
 
-extern const char kStabilityExecutionPhase[];
-extern const char kStabilityExitedCleanly[];
-extern const char kStabilityStatsVersion[];
-extern const char kStabilityStatsBuildTime[];
-extern const char kStabilitySessionEndCompleted[];
 extern const char kStabilityPageLoadCount[];
 extern const char kStabilityRendererCrashCount[];
 extern const char kStabilityExtensionRendererCrashCount[];
-extern const char kStabilityLaunchTimeSec[];
-extern const char kStabilityLastTimestampSec[];
 extern const char kStabilityRendererHangCount[];
 extern const char kStabilityChildProcessCrashCount[];
 extern const char kStabilityOtherUserCrashCount[];
@@ -482,8 +476,6 @@ extern const char kStabilityPluginLoadingErrors[];
 
 extern const char kInstallDate[];
 extern const char kUninstallMetricsPageLoadCount[];
-extern const char kUninstallLaunchCount[];
-extern const char kUninstallMetricsUptimeSec[];
 extern const char kUninstallLastLaunchTimeSec[];
 extern const char kUninstallLastObservedRunTimeSec[];
 
@@ -834,8 +826,6 @@ extern const char kEnableDRM[];
 extern const char kWatchdogExtensionActive[];
 // TODO(felt): Remove old string in M34.
 extern const char kWatchdogExtensionActiveOld[];
-
-extern const char kProfilePreferenceHashes[];
 
 #if defined(OS_ANDROID)
 extern const char kPartnerBookmarkMappings[];

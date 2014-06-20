@@ -68,19 +68,19 @@ class AccessibilityFeaturesApiTest : public ExtensionApiTest,
   // Returns preference path for accessibility features as defined by the API.
   const char* const GetPrefForFeature(const std::string& feature) {
     if (feature == "spokenFeedback")
-      return prefs::kSpokenFeedbackEnabled;
+      return prefs::kAccessibilitySpokenFeedbackEnabled;
     if (feature == "largeCursor")
-      return prefs::kLargeCursorEnabled;
+      return prefs::kAccessibilityLargeCursorEnabled;
     if (feature == "stickyKeys")
-      return prefs::kStickyKeysEnabled;
+      return prefs::kAccessibilityStickyKeysEnabled;
     if (feature == "highContrast")
-      return prefs::kHighContrastEnabled;
+      return prefs::kAccessibilityHighContrastEnabled;
     if (feature == "screenMagnifier")
-      return prefs::kScreenMagnifierEnabled;
+      return prefs::kAccessibilityScreenMagnifierEnabled;
     if (feature == "autoclick")
-      return prefs::kAutoclickEnabled;
+      return prefs::kAccessibilityAutoclickEnabled;
     if (feature == "virtualKeyboard")
-      return prefs::kVirtualKeyboardEnabled;
+      return prefs::kAccessibilityVirtualKeyboardEnabled;
     return NULL;
   }
 
@@ -161,9 +161,11 @@ class AccessibilityFeaturesApiTest : public ExtensionApiTest,
   }
 };
 
-INSTANTIATE_TEST_CASE_P(AccessibilityFeatureaApiTestInstantiatePermission,
-                        AccessibilityFeaturesApiTest,
-                        testing::Bool());
+// Disabled now as this test is being flaky, see http://crbug.com/384266.
+INSTANTIATE_TEST_CASE_P(
+    DISABLED_AccessibilityFeatureaApiTestInstantiatePermission,
+    AccessibilityFeaturesApiTest,
+    testing::Bool());
 
 // Tests that an extension with read permission can read accessibility features
 // state, while an extension that doesn't have the permission cannot.

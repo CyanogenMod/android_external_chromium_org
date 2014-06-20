@@ -457,7 +457,19 @@ void DoImportKey(scoped_ptr<ImportKeyState> passed_state) {
 }
 
 void DoExportKeyReply(scoped_ptr<ExportKeyState> state) {
-  CompleteWithBufferOrError(state->status, state->buffer, &state->result);
+  if (state->format != blink::WebCryptoKeyFormatJwk) {
+    CompleteWithBufferOrError(state->status, state->buffer, &state->result);
+    return;
+  }
+
+  if (state->status.IsError()) {
+    CompleteWithError(state->status, &state->result);
+  } else {
+    state->result.completeWithJson(
+        reinterpret_cast<const char*>(
+            webcrypto::Uint8VectorStart(&state->buffer)),
+        state->buffer.size());
+  }
 }
 
 void DoExportKey(scoped_ptr<ExportKeyState> passed_state) {

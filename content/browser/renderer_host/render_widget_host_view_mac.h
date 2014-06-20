@@ -6,6 +6,7 @@
 #define CONTENT_BROWSER_RENDERER_HOST_RENDER_WIDGET_HOST_VIEW_MAC_H_
 
 #import <Cocoa/Cocoa.h>
+#include <IOSurface/IOSurfaceAPI.h>
 #include <list>
 #include <map>
 #include <string>
@@ -29,6 +30,8 @@
 #include "ipc/ipc_sender.h"
 #include "third_party/WebKit/public/web/WebCompositionUnderline.h"
 #include "ui/base/cocoa/base_view.h"
+
+struct ViewHostMsg_TextInputState_Params;
 
 namespace content {
 class CompositingIOSurfaceMac;
@@ -214,7 +217,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
       public DelegatedFrameHostClient,
       public IPC::Sender,
       public SoftwareFrameManagerClient,
-      public BrowserCompositorViewMacClient,
       public CompositingIOSurfaceLayerClient {
  public:
   // The view will associate itself with the given widget. The native view must
@@ -272,9 +274,8 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   virtual void Blur() OVERRIDE;
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
-  virtual void TextInputTypeChanged(ui::TextInputType type,
-                                    ui::TextInputMode input_mode,
-                                    bool can_compose_inline) OVERRIDE;
+  virtual void TextInputStateChanged(
+      const ViewHostMsg_TextInputState_Params& params) OVERRIDE;
   virtual void ImeCancelComposition() OVERRIDE;
   virtual void ImeCompositionRangeChanged(
       const gfx::Range& range,
@@ -328,8 +329,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
 
-  virtual void SetScrollOffsetPinning(
-      bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE;
   virtual bool LockMouse() OVERRIDE;
   virtual void UnlockMouse() OVERRIDE;
   virtual void WheelEventAck(const blink::WebMouseWheelEvent& event,
@@ -344,9 +343,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   virtual void ReleaseReferencesToSoftwareFrame() OVERRIDE;
 
   virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
-
-  // BrowserCompositorViewMacHelper implementation.
-  virtual void BrowserCompositorDidDrawFrame() OVERRIDE;
 
   // CompositingIOSurfaceLayerClient implementation.
   virtual void AcceleratedLayerDidDrawFrame(bool succeeded) OVERRIDE;
@@ -365,13 +361,10 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
 
   // Update the IOSurface to be drawn and call setNeedsDisplay on
   // |cocoa_view_|.
-  void CompositorSwapBuffers(uint64 surface_handle,
+  void CompositorSwapBuffers(IOSurfaceID surface_handle,
                              const gfx::Size& size,
                              float scale_factor,
                              const std::vector<ui::LatencyInfo>& latency_info);
-
-  // Draw the IOSurface by making its context current to this view.
-  void DrawIOSurfaceWithoutCoreAnimation();
 
   // Called when a GPU error is detected. Posts a task to destroy all
   // compositing state.
@@ -419,17 +412,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // someone (other than superview) has retained |cocoa_view_|.
   RenderWidgetHostImpl* render_widget_host_;
 
-  // Whether last rendered frame was accelerated.
-  bool last_frame_was_accelerated_;
-
-  // The time at which this view started displaying white pixels as a result of
-  // not having anything to paint (empty backing store from renderer). This
-  // value returns true for is_null() if we are not recording whiteout times.
-  base::TimeTicks whiteout_start_time_;
-
-  // The time it took after this view was selected for it to be fully painted.
-  base::TimeTicks web_contents_switch_paint_time_;
-
   // Current text input type.
   ui::TextInputType text_input_type_;
   bool can_compose_inline_;
@@ -453,20 +435,8 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   scoped_ptr<DelegatedFrameHost> delegated_frame_host_;
   scoped_ptr<ui::Layer> root_layer_;
 
-  // This lock is taken when the browser compositor produces a frame, and is
-  // released when that frame is displayed. It is by this mechanism that the
-  // browser compositor can exert GPU backpressure on the renderer compositor.
-  scoped_refptr<ui::CompositorLock> browser_compositor_lock_;
-  bool browser_compositor_damaged_during_lock_;
-
   // This holds the current software compositing framebuffer, if any.
   scoped_ptr<SoftwareFrameManager> software_frame_manager_;
-
-  // Whether to allow overlapping views.
-  bool allow_overlapping_views_;
-
-  // Whether to use the CoreAnimation path to draw content.
-  bool use_core_animation_;
 
   // Latency info to send back when the next frame appears on the
   // screen.
@@ -529,8 +499,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   virtual RenderWidgetHostImpl* GetHost() OVERRIDE;
   virtual void SchedulePaintInRect(
       const gfx::Rect& damage_rect_in_dip) OVERRIDE;
-  virtual void DelegatedCompositorDidSwapBuffers() OVERRIDE;
-  virtual void DelegatedCompositorAbortedSwapBuffers() OVERRIDE;
   virtual bool IsVisible() OVERRIDE;
   virtual scoped_ptr<ResizeLock> CreateResizeLock(
       bool defer_compositor_lock) OVERRIDE;
@@ -572,17 +540,9 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   };
   void DestroyCompositedIOSurfaceLayer(
       DestroyCompositedIOSurfaceLayerBehavior destroy_layer_behavior);
-  enum DestroyContextBehavior {
-    kLeaveContextBoundToView,
-    kDestroyContext,
-  };
-  void DestroyCompositedIOSurfaceAndLayer(
-      DestroyContextBehavior destroy_context_behavior);
+  void DestroyCompositedIOSurfaceAndLayer();
 
   void DestroyCompositingStateOnError();
-
-  // Unbind the GL context (if any) that is bound to |cocoa_view_|.
-  void ClearBoundContextDrawable();
 
   // Called when a GPU SwapBuffers is received.
   void GotAcceleratedFrame();
@@ -593,8 +553,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // IPC message handlers.
   void OnPluginFocusChanged(bool focused, int plugin_id);
   void OnStartPluginIme();
-  void OnDidChangeScrollbarsForMainFrame(bool has_horizontal_scrollbar,
-                                         bool has_vertical_scrollbar);
 
   // Convert |rect| from the views coordinate (upper-left origin) into
   // the OpenGL coordinate (lower-left origin) and scale for HiDPI displays.
@@ -602,12 +560,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
 
   // Send updated vsync parameters to the renderer.
   void SendVSyncParametersToRenderer();
-
-  // Release the browser compositor lock, and request another frame from the
-  // browser compositor. Because this can be requested from inside compositor
-  // calbacks, post it as task instead of calling it directly.
-  void PostReleaseBrowserCompositorLock();
-  void ReleaseBrowserCompositorLock();
 
   // The associated view. This is weak and is inserted into the view hierarchy
   // to own this RenderWidgetHostViewMac object. Set to nil at the start of the
@@ -640,17 +592,10 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // Overlay view has |underlay_view_| set to this view.
   base::WeakPtr<RenderWidgetHostViewMac> overlay_view_;
 
-  // Offset at which overlay view should be rendered.
-  gfx::Point overlay_view_offset_;
-
   // The underlay view which this view is rendered above in the same
   // accelerated IOSurface.
   // Underlay view has |overlay_view_| set to this view.
   base::WeakPtr<RenderWidgetHostViewMac> underlay_view_;
-
-  // Set to true when |underlay_view_| has drawn this view. After that point,
-  // this view should not draw again until |underlay_view_| is changed.
-  bool underlay_view_has_drawn_;
 
   // Factory used to safely reference overlay view set in SetOverlayView.
   base::WeakPtrFactory<RenderWidgetHostViewMac>

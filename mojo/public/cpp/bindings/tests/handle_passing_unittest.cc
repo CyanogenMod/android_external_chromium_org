@@ -67,7 +67,7 @@ class SampleFactoryImpl : public InterfaceImpl<sample::Factory> {
 
     ScopedMessagePipeHandle pipe0;
     if (!text2.empty()) {
-      CreateMessagePipe(&pipe0, &pipe1_);
+      CreateMessagePipe(NULL, &pipe0, &pipe1_);
       EXPECT_TRUE(WriteTextMessage(pipe1_.get(), text2));
     }
 
@@ -100,6 +100,18 @@ class SampleFactoryImpl : public InterfaceImpl<sample::Factory> {
     EXPECT_TRUE(object_request.is_pending());
     BindToRequest(new SampleObjectImpl(), &object_request);
   }
+
+  // These aren't called or implemented, but exist here to test that the
+  // methods are generated with the correct argument types for imported
+  // interfaces.
+  virtual void RequestImportedInterface(
+      InterfaceRequest<imported::ImportedInterface> imported,
+      const mojo::Callback<void(InterfaceRequest<imported::ImportedInterface>)>&
+          callback) MOJO_OVERRIDE {}
+  virtual void TakeImportedInterface(
+      imported::ImportedInterfacePtr imported,
+      const mojo::Callback<void(imported::ImportedInterfacePtr)>& callback)
+      MOJO_OVERRIDE {}
 
  private:
   ScopedMessagePipeHandle pipe1_;
@@ -176,20 +188,16 @@ TEST_F(HandlePassingTest, Basic) {
 
   factory.set_client(&factory_client);
 
-  ScopedMessagePipeHandle pipe0, pipe1;
-  CreateMessagePipe(&pipe0, &pipe1);
+  MessagePipe pipe0;
+  EXPECT_TRUE(WriteTextMessage(pipe0.handle1.get(), kText1));
 
-  EXPECT_TRUE(WriteTextMessage(pipe1.get(), kText1));
-
-  ScopedMessagePipeHandle pipe2, pipe3;
-  CreateMessagePipe(&pipe2, &pipe3);
-
-  EXPECT_TRUE(WriteTextMessage(pipe3.get(), kText2));
+  MessagePipe pipe1;
+  EXPECT_TRUE(WriteTextMessage(pipe1.handle1.get(), kText2));
 
   sample::RequestPtr request(sample::Request::New());
   request->x = 1;
-  request->pipe = pipe2.Pass();
-  factory->DoStuff(request.Pass(), pipe0.Pass());
+  request->pipe = pipe1.handle0.Pass();
+  factory->DoStuff(request.Pass(), pipe0.handle0.Pass());
 
   EXPECT_FALSE(factory_client.got_response());
 

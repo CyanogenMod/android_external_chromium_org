@@ -3,24 +3,25 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/search/instant_unittest_base.h"
+
 #include <string>
 
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/instant_service.h"
 #include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/search_terms_data.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/google/core/browser/google_pref_names.h"
+#include "components/google/core/browser/google_url_tracker.h"
 #include "components/variations/entropy_provider.h"
 
 InstantUnitTestBase::InstantUnitTestBase() {
@@ -59,7 +60,7 @@ void InstantUnitTestBase::SetUserSelectedDefaultSearchProvider(
   data.alternate_urls.push_back(base_url + "alt#quux={searchTerms}");
   data.search_terms_replacement_key = "strk";
 
-  TemplateURL* template_url = new TemplateURL(profile(), data);
+  TemplateURL* template_url = new TemplateURL(data);
   // Takes ownership of |template_url|.
   template_url_service_->Add(template_url);
   template_url_service_->SetUserSelectedDefaultSearchProvider(template_url);

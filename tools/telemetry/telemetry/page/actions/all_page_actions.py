@@ -10,9 +10,6 @@ from telemetry.page.actions import page_action
 # pylint: disable=W0611
 # TODO(nednguyen): Remove all of these imports when we done porting all actions
 # to action_runner
-from telemetry.page.actions.interact import InteractAction
-from telemetry.page.actions.javascript_click import ClickElementAction
-from telemetry.page.actions.js_collect_garbage import JsCollectGarbageAction
 from telemetry.page.actions.loop import LoopAction
 from telemetry.page.actions.media_action import MediaAction
 from telemetry.page.actions.pinch import PinchAction
@@ -24,9 +21,7 @@ from telemetry.page.actions.repaint_continuously import (
 from telemetry.page.actions.scroll import ScrollAction
 from telemetry.page.actions.scroll_bounce import ScrollBounceAction
 from telemetry.page.actions.seek import SeekAction
-from telemetry.page.actions.tap import TapAction
 from telemetry.page.actions.swipe import SwipeAction
-from telemetry.page.actions.wait import WaitAction
 
 
 _page_action_classes = discover.DiscoverClasses(

@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "base/values.h"
 #include "chrome/browser/local_discovery/cloud_device_list_delegate.h"
 #include "chrome/browser/local_discovery/gcd_api_flow.h"
 

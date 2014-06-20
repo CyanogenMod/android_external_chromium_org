@@ -479,10 +479,6 @@ skia::RefPtr<SkPicture> LayerImpl::GetPicture() {
   return skia::RefPtr<SkPicture>();
 }
 
-bool LayerImpl::AreVisibleResourcesReady() const {
-  return true;
-}
-
 scoped_ptr<LayerImpl> LayerImpl::CreateLayerImpl(LayerTreeImpl* tree_impl) {
   return LayerImpl::Create(tree_impl, layer_id_);
 }
@@ -1045,21 +1041,6 @@ void LayerImpl::SetContentsScale(float contents_scale_x,
   NoteLayerPropertyChanged();
 }
 
-void LayerImpl::CalculateContentsScale(float ideal_contents_scale,
-                                       float device_scale_factor,
-                                       float page_scale_factor,
-                                       float maximum_animation_contents_scale,
-                                       bool animating_transform_to_screen,
-                                       float* contents_scale_x,
-                                       float* contents_scale_y,
-                                       gfx::Size* content_bounds) {
-  // Base LayerImpl has all of its content scales and content bounds pushed
-  // from its Layer during commit and just reuses those values as-is.
-  *contents_scale_x = this->contents_scale_x();
-  *contents_scale_y = this->contents_scale_y();
-  *content_bounds = this->content_bounds();
-}
-
 void LayerImpl::SetScrollOffsetDelegate(
     ScrollOffsetDelegate* scroll_offset_delegate) {
   // Having both a scroll parent and a scroll offset delegate is unsupported.
@@ -1165,7 +1146,6 @@ gfx::Vector2d LayerImpl::MaxScrollOffset() const {
 
   LayerImpl const* page_scale_layer = layer_tree_impl()->page_scale_layer();
   DCHECK(this != page_scale_layer);
-  DCHECK(scroll_clip_layer_);
   DCHECK(this != layer_tree_impl()->InnerViewportScrollLayer() ||
          IsContainerForFixedPositionLayers());
 

@@ -168,8 +168,11 @@ void CoreOobeHandler::ShowDeviceResetScreen() {
       wizard_controller->AdvanceToScreen(WizardController::kResetScreenName);
     } else {
       scoped_ptr<base::DictionaryValue> params(new base::DictionaryValue());
-      LoginDisplayHostImpl::default_host()->StartWizard(
-          WizardController::kResetScreenName, params.Pass());
+      DCHECK(LoginDisplayHostImpl::default_host());
+      if (LoginDisplayHostImpl::default_host()) {
+        LoginDisplayHostImpl::default_host()->StartWizard(
+            WizardController::kResetScreenName, params.Pass());
+      }
     }
   }
 }
@@ -358,28 +361,18 @@ void CoreOobeHandler::UpdateDeviceRequisition() {
 }
 
 void CoreOobeHandler::UpdateKeyboardState() {
-  const std::string& ui_type = oobe_ui_->display_type();
-  if ((ui_type != OobeUI::kLockDisplay &&
-          login::LoginScrollIntoViewEnabled()) ||
-      (ui_type == OobeUI::kLockDisplay &&
-          login::LockScrollIntoViewEnabled())) {
-    keyboard::KeyboardController* keyboard_controller =
-        keyboard::KeyboardController::GetInstance();
-    if (keyboard_controller) {
-      gfx::Rect bounds = keyboard_controller->current_keyboard_bounds();
-      SetKeyboardState(!bounds.IsEmpty(), bounds);
-    }
+  if (!login::LoginScrollIntoViewEnabled())
+    return;
+
+  keyboard::KeyboardController* keyboard_controller =
+      keyboard::KeyboardController::GetInstance();
+  if (keyboard_controller) {
+    gfx::Rect bounds = keyboard_controller->current_keyboard_bounds();
+    SetKeyboardState(!bounds.IsEmpty(), bounds);
   }
 }
 
 void CoreOobeHandler::UpdateClientAreaSize() {
-  // Special case for screen lock. http://crbug.com/377904
-  // No need to update client area size so that virtual keyboard works.
-  if (oobe_ui_->display_type() == OobeUI::kLockDisplay &&
-      login::LockScrollIntoViewEnabled()) {
-    return;
-  }
-
   const gfx::Size& size = ash::Shell::GetScreen()->GetPrimaryDisplay().size();
   SetClientAreaSize(size.width(), size.height());
 }
@@ -403,6 +396,14 @@ void CoreOobeHandler::HandleHeaderBarVisible() {
   LoginDisplayHost* login_display_host = LoginDisplayHostImpl::default_host();
   if (login_display_host)
     login_display_host->SetStatusAreaVisible(true);
+}
+
+void CoreOobeHandler::InitDemoModeDetection() {
+  demo_mode_detector_.InitDetection();
+}
+
+void CoreOobeHandler::StopDemoModeDetection() {
+  demo_mode_detector_.StopDetection();
 }
 
 }  // namespace chromeos

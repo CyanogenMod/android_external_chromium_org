@@ -9,6 +9,7 @@
 #include "ash/frame/caption_buttons/frame_caption_button_container_view.h"
 #include "ash/frame/header_painter.h"
 #include "ash/shell.h"
+#include "ash/wm/maximize_mode/maximize_mode_controller.h"
 #include "base/command_line.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -24,7 +25,34 @@
 
 using views::Widget;
 
-typedef InProcessBrowserTest BrowserNonClientFrameViewAshTest;
+namespace {
+
+class BrowserNonClientFrameViewAshTest : public InProcessBrowserTest {
+ public:
+  BrowserNonClientFrameViewAshTest() {}
+  virtual ~BrowserNonClientFrameViewAshTest() {}
+
+  // InProcessBrowserTest:
+  virtual void SetUp() OVERRIDE;
+  virtual void TearDown() OVERRIDE;
+
+ private:
+  scoped_ptr<ui::ScopedAnimationDurationScaleMode> zero_duration_mode_;
+  DISALLOW_COPY_AND_ASSIGN(BrowserNonClientFrameViewAshTest);
+};
+
+void BrowserNonClientFrameViewAshTest::SetUp() {
+  zero_duration_mode_.reset(new ui::ScopedAnimationDurationScaleMode(
+      ui::ScopedAnimationDurationScaleMode::ZERO_DURATION));
+  InProcessBrowserTest::SetUp();
+}
+
+void BrowserNonClientFrameViewAshTest::TearDown() {
+  zero_duration_mode_.reset();
+  InProcessBrowserTest::TearDown();
+}
+
+}  // namespace
 
 IN_PROC_BROWSER_TEST_F(BrowserNonClientFrameViewAshTest, NonClientHitTest) {
   BrowserView* browser_view = BrowserView::GetBrowserViewForBrowser(browser());
@@ -210,11 +238,13 @@ IN_PROC_BROWSER_TEST_F(BrowserNonClientFrameViewAshTest,
           widget->non_client_view()->frame_view());
 
   const gfx::Rect initial = frame_view->caption_button_container_->bounds();
-  ash::Shell::GetInstance()->EnableMaximizeModeWindowManager(true);
+  ash::Shell::GetInstance()->maximize_mode_controller()->
+      EnableMaximizeModeWindowManager(true);
   const gfx::Rect during_maximize = frame_view->caption_button_container_->
       bounds();
   EXPECT_GT(initial.width(), during_maximize.width());
-  ash::Shell::GetInstance()->EnableMaximizeModeWindowManager(false);
+  ash::Shell::GetInstance()->maximize_mode_controller()->
+      EnableMaximizeModeWindowManager(false);
   const gfx::Rect after_restore = frame_view->caption_button_container_->
       bounds();
   EXPECT_EQ(initial, after_restore);

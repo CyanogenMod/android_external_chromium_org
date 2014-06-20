@@ -391,11 +391,13 @@ class CONTENT_EXPORT RenderViewHostImpl
   void DidCancelPopupMenu();
 #endif
 
-#if defined(OS_ANDROID)
+#if defined(ENABLE_BROWSER_CDMS)
   MediaWebContentsObserver* media_web_contents_observer() {
     return media_web_contents_observer_.get();
   }
+#endif
 
+#if defined(OS_ANDROID)
   void DidSelectPopupMenuItems(const std::vector<int>& selected_indices);
   void DidCancelPopupMenu();
 #endif
@@ -437,6 +439,10 @@ class CONTENT_EXPORT RenderViewHostImpl
 
   // Whether the RVH is waiting for the unload ack from the renderer.
   bool IsWaitingForUnloadACK() const;
+
+  void OnTextSurroundingSelectionResponse(const base::string16& content,
+                                          size_t start_offset,
+                                          size_t end_offset);
 
   // Update the FrameTree to use this RenderViewHost's main frame
   // RenderFrameHost. Called when the RenderViewHost is committed.
@@ -492,8 +498,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnToggleFullscreen(bool enter_fullscreen);
   void OnDidContentsPreferredSizeChange(const gfx::Size& new_size);
   void OnDidChangeScrollOffset();
-  void OnDidChangeScrollOffsetPinningForMainFrame(bool is_pinned_to_left,
-                                                  bool is_pinned_to_right);
   void OnPasteFromSelectionClipboard();
   void OnRouteCloseEvent();
   void OnRouteMessageEvent(const ViewMsg_PostMessage_Params& params);
@@ -620,9 +624,8 @@ class CONTENT_EXPORT RenderViewHostImpl
   // Set to true if we requested the on screen keyboard to be displayed.
   bool virtual_keyboard_requested_;
 
-#if defined(OS_ANDROID)
-  // Manages all the android mediaplayer managers and forwards IPCs to the
-  // managers.
+#if defined(ENABLE_BROWSER_CDMS)
+  // Manages all the media player and CDM managers and forwards IPCs to them.
   scoped_ptr<MediaWebContentsObserver> media_web_contents_observer_;
 #endif
 

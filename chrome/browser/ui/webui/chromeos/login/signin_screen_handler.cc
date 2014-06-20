@@ -71,6 +71,8 @@
 #include "net/url_request/url_request_context_getter.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/base/webui/web_ui_util.h"
+#include "ui/gfx/image/image.h"
+#include "ui/gfx/image/image_skia.h"
 
 #if defined(USE_AURA)
 #include "ash/shell.h"
@@ -271,25 +273,17 @@ SigninScreenHandler::SigninScreenHandler(
                  chrome::NOTIFICATION_AUTH_CANCELLED,
                  content::NotificationService::AllSources());
 
-  // Since keyboard handling differs between ChromeOS and Linux we need to
-  // use different observers depending on the two platforms.
-  if (base::SysInfo::IsRunningOnChromeOS()) {
-    chromeos::input_method::ImeKeyboard* keyboard =
-        chromeos::input_method::InputMethodManager::Get()->GetImeKeyboard();
+  chromeos::input_method::ImeKeyboard* keyboard =
+      chromeos::input_method::InputMethodManager::Get()->GetImeKeyboard();
+  if (keyboard)
     keyboard->AddObserver(this);
-  } else {
-    ash::Shell::GetInstance()->PrependPreTargetHandler(this);
-  }
 }
 
 SigninScreenHandler::~SigninScreenHandler() {
-  if (base::SysInfo::IsRunningOnChromeOS()) {
-    chromeos::input_method::ImeKeyboard* keyboard =
-        chromeos::input_method::InputMethodManager::Get()->GetImeKeyboard();
+  chromeos::input_method::ImeKeyboard* keyboard =
+      chromeos::input_method::InputMethodManager::Get()->GetImeKeyboard();
+  if (keyboard)
     keyboard->RemoveObserver(this);
-  } else {
-    ash::Shell::GetInstance()->RemovePreTargetHandler(this);
-  }
   weak_factory_.InvalidateWeakPtrs();
   if (delegate_)
     delegate_->SetWebUIHandler(NULL);
@@ -340,6 +334,8 @@ void SigninScreenHandler::DeclareLocalizedValues(
                IDS_MULTI_PROFILES_NOT_ALLOWED_POLICY_MSG);
   builder->Add("multiProfilesPrimaryOnlyPolicyMsg",
                IDS_MULTI_PROFILES_PRIMARY_ONLY_POLICY_MSG);
+  builder->Add("multiProfilesOwnerPrimaryOnlyMsg",
+               IDS_MULTI_PROFILES_OWNER_PRIMARY_ONLY_MSG);
 
   // Strings used by password changed dialog.
   builder->Add("passwordChangedTitle", IDS_LOGIN_PASSWORD_CHANGED_TITLE);
@@ -837,11 +833,6 @@ void SigninScreenHandler::ShowSigninScreenForCreds(
   gaia_screen_handler_->ShowSigninScreenForCreds(username, password);
 }
 
-void SigninScreenHandler::OnKeyEvent(ui::KeyEvent* key) {
-  if (key->type() == ui::ET_KEY_PRESSED && key->key_code() == ui::VKEY_CAPITAL)
-    OnCapsLockChanged(!caps_lock_enabled_);
-}
-
 void SigninScreenHandler::Observe(int type,
                                   const content::NotificationSource& source,
                                   const content::NotificationDetails& details) {
@@ -875,9 +866,16 @@ void SigninScreenHandler::ShowBannerMessage(const std::string& message) {
 void SigninScreenHandler::ShowUserPodCustomIcon(
     const std::string& username,
     const gfx::Image& icon) {
-  GURL icon_url(webui::GetBitmapDataUrl(icon.AsBitmap()));
+  gfx::ImageSkia icon_skia = icon.AsImageSkia();
+  base::DictionaryValue icon_representations;
+  icon_representations.SetString(
+      "scale1x",
+      webui::GetBitmapDataUrl(icon_skia.GetRepresentation(1.0f).sk_bitmap()));
+  icon_representations.SetString(
+      "scale2x",
+      webui::GetBitmapDataUrl(icon_skia.GetRepresentation(2.0f).sk_bitmap()));
   CallJS("login.AccountPickerScreen.showUserPodCustomIcon",
-      username, icon_url.spec());
+      username, icon_representations);
 
   // TODO(tengs): Move this code once we move unlocking to native code.
   if (ScreenLocker::default_screen_locker()) {
@@ -1130,9 +1128,10 @@ void SigninScreenHandler::HandleAccountPickerReady() {
 
   PrefService* prefs = g_browser_process->local_state();
   if (prefs->GetBoolean(prefs::kFactoryResetRequested)) {
-    if (core_oobe_actor_)
+    if (core_oobe_actor_) {
       core_oobe_actor_->ShowDeviceResetScreen();
-    return;
+      return;
+    }
   }
 
   is_account_picker_showing_first_time_ = true;

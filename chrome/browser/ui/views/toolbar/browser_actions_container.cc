@@ -40,6 +40,7 @@
 #include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/views/controls/button/label_button_border.h"
 #include "ui/views/controls/resize_area.h"
 #include "ui/views/metrics.h"
 #include "ui/views/painter.h"
@@ -55,6 +56,35 @@ const int kItemSpacing = ToolbarView::kStandardSpacing;
 
 // Horizontal spacing before the chevron (if visible).
 const int kChevronSpacing = kItemSpacing - 2;
+
+// A version of MenuButton with almost empty insets to fit properly on the
+// toolbar.
+class ChevronMenuButton : public views::MenuButton {
+ public:
+  ChevronMenuButton(views::ButtonListener* listener,
+                    const base::string16& text,
+                    views::MenuButtonListener* menu_button_listener,
+                    bool show_menu_marker)
+      : views::MenuButton(listener,
+                          text,
+                          menu_button_listener,
+                          show_menu_marker) {
+  }
+
+  virtual ~ChevronMenuButton() {}
+
+  virtual scoped_ptr<views::LabelButtonBorder> CreateDefaultBorder() const
+      OVERRIDE {
+    // The chevron resource was designed to not have any insets.
+    scoped_ptr<views::LabelButtonBorder> border =
+        views::MenuButton::CreateDefaultBorder();
+    border->set_insets(gfx::Insets());
+    return border.Pass();
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ChevronMenuButton);
+};
 
 }  // namespace
 
@@ -97,8 +127,7 @@ BrowserActionsContainer::BrowserActionsContainer(Browser* browser,
   resize_area_ = new views::ResizeArea(this);
   AddChildView(resize_area_);
 
-  chevron_ = new views::MenuButton(NULL, base::string16(), this, false);
-  chevron_->SetBorder(views::Border::NullBorder());
+  chevron_ = new ChevronMenuButton(NULL, base::string16(), this, false);
   chevron_->EnableCanvasFlippingForRTLUI(true);
   chevron_->SetAccessibleName(
       l10n_util::GetStringUTF16(IDS_ACCNAME_EXTENSIONS_CHEVRON));
@@ -184,8 +213,6 @@ size_t BrowserActionsContainer::VisibleBrowserActions() const {
     if (browser_action_views_[i]->visible())
       ++visible_actions;
   }
-  VLOG(4) << "BAC::VisibleBrowserActions() returns " << visible_actions
-          << " with size=" << browser_action_views_.size();
   return visible_actions;
 }
 
@@ -193,11 +220,7 @@ size_t BrowserActionsContainer::VisibleBrowserActionsAfterAnimation() const {
   if (!animating())
     return VisibleBrowserActions();
 
-  size_t visible_actions = WidthToIconCount(animation_target_size_);
-  VLOG(4) << "BAC::VisibleBrowserActionsAfterAnimation() returns "
-          << visible_actions
-          << " with size=" << browser_action_views_.size();
-  return visible_actions;
+  return WidthToIconCount(animation_target_size_);
 }
 
 void BrowserActionsContainer::ExecuteExtensionCommand(
@@ -433,7 +456,7 @@ void BrowserActionsContainer::WriteDragDataForView(View* sender,
     if (button == sender) {
       // Set the dragging image for the icon.
       gfx::ImageSkia badge(browser_action_views_[i]->GetIconWithBadge());
-      drag_utils::SetDragImageOnDataObject(badge, button->size(),
+      drag_utils::SetDragImageOnDataObject(badge,
                                            press_pt.OffsetFromOrigin(),
                                            data);
 
@@ -685,13 +708,10 @@ void BrowserActionsContainer::BrowserActionAdded(const Extension* extension,
 #endif
   CloseOverflowMenu();
 
-  if (!ShouldDisplayBrowserAction(extension)) {
-    VLOG(4) << "Should not display: " << extension->name().c_str();
+  if (!ShouldDisplayBrowserAction(extension))
     return;
-  }
 
   size_t visible_actions = VisibleBrowserActionsAfterAnimation();
-  VLOG(4) << "Got back " << visible_actions << " visible.";
 
   // Add the new browser action to the vector and the view hierarchy.
   if (profile_->IsOffTheRecord())
@@ -701,21 +721,17 @@ void BrowserActionsContainer::BrowserActionAdded(const Extension* extension,
   AddChildViewAt(view, index);
 
   // If we are still initializing the container, don't bother animating.
-  if (!model_->extensions_initialized()) {
-    VLOG(4) << "Still initializing";
+  if (!model_->extensions_initialized())
     return;
-  }
 
   // Enlarge the container if it was already at maximum size and we're not in
   // the middle of upgrading.
   if ((model_->GetVisibleIconCount() < 0) &&
       !extensions::ExtensionSystem::Get(profile_)->runtime_data()->
           IsBeingUpgraded(extension)) {
-    VLOG(4) << "At max, Save and animate";
     suppress_chevron_ = true;
     SaveDesiredSizeAndAnimate(gfx::Tween::LINEAR, visible_actions + 1);
   } else {
-    VLOG(4) << "Not at max";
     // Just redraw the (possibly modified) visible icon set.
     OnBrowserActionVisibilityChanged();
   }
@@ -795,11 +811,8 @@ void BrowserActionsContainer::HighlightModeChanged(bool is_highlighting) {
 
 void BrowserActionsContainer::LoadImages() {
   ui::ThemeProvider* tp = GetThemeProvider();
-  chevron_->SetIcon(*tp->GetImageSkiaNamed(IDR_BROWSER_ACTIONS_OVERFLOW));
-  chevron_->SetHoverIcon(*tp->GetImageSkiaNamed(
-      IDR_BROWSER_ACTIONS_OVERFLOW_H));
-  chevron_->SetPushedIcon(*tp->GetImageSkiaNamed(
-      IDR_BROWSER_ACTIONS_OVERFLOW_P));
+  chevron_->SetImage(views::Button::STATE_NORMAL,
+                     *tp->GetImageSkiaNamed(IDR_BROWSER_ACTIONS_OVERFLOW));
 
   const int kImages[] = IMAGE_GRID(IDR_DEVELOPER_MODE_HIGHLIGHT);
   highlight_painter_.reset(views::Painter::CreateImageGridPainter(kImages));
@@ -891,12 +904,8 @@ void BrowserActionsContainer::SaveDesiredSizeAndAnimate(
   // NOTE: Don't save the icon count in incognito because there may be fewer
   // icons in that mode. The result is that the container in a normal window is
   // always at least as wide as in an incognito window.
-  if (!profile_->IsOffTheRecord()) {
+  if (!profile_->IsOffTheRecord())
     model_->SetVisibleIconCount(num_visible_icons);
-    VLOG(4) << "Setting visible count: " << num_visible_icons;
-  } else {
-    VLOG(4) << "|Skipping| setting visible count: " << num_visible_icons;
-  }
   int target_size = IconCountToWidth(num_visible_icons,
       num_visible_icons < browser_action_views_.size());
   if (!disable_animations_during_testing_) {

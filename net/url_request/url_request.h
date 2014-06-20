@@ -150,12 +150,7 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
    private:
     // TODO(willchan): Kill off these friend declarations.
     friend class TestInterceptor;
-    friend class URLRequestFilter;
     friend class content::AppCacheInterceptor;
-
-    // Use URLRequestJobFactory::ProtocolHandler instead.
-    static ProtocolFactory* RegisterProtocolFactory(const std::string& scheme,
-                                                    ProtocolFactory* factory);
 
     // TODO(pauljensen): Remove this when AppCacheInterceptor is a
     // ProtocolHandler, see crbug.com/161547.
@@ -670,6 +665,12 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
     return received_response_content_length_;
   }
 
+  // Available at NetworkDelegate::NotifyHeadersReceived() time, which is before
+  // the more general response_info() is available, even though it is a subset.
+  const HostPortPair& proxy_server() const {
+    return proxy_server_;
+  }
+
  protected:
   // Allow the URLRequestJob class to control the is_pending() flag.
   void set_is_pending(bool value) { is_pending_ = value; }
@@ -696,23 +697,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
 
  private:
   friend class URLRequestJob;
-
-  // Registers a new protocol handler for the given scheme. If the scheme is
-  // already handled, this will overwrite the given factory. To delete the
-  // protocol factory, use NULL for the factory BUT this WILL NOT put back
-  // any previously registered protocol factory. It will have returned
-  // the previously registered factory (or NULL if none is registered) when
-  // the scheme was first registered so that the caller can manually put it
-  // back if desired.
-  //
-  // The scheme must be all-lowercase ASCII. See the ProtocolFactory
-  // declaration for its requirements.
-  //
-  // The registered protocol factory may return NULL, which will cause the
-  // regular "built-in" protocol factory to be used.
-  //
-  static ProtocolFactory* RegisterProtocolFactory(const std::string& scheme,
-                                                  ProtocolFactory* factory);
 
   // Registers or unregisters a network interception class.
   static void RegisterRequestInterceptor(Interceptor* interceptor);
@@ -894,6 +878,9 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
 
   // The cookie store to be used for this request.
   scoped_refptr<CookieStore> cookie_store_;
+
+  // The proxy server used for this request, if any.
+  HostPortPair proxy_server_;
 
   DISALLOW_COPY_AND_ASSIGN(URLRequest);
 };

@@ -115,7 +115,8 @@ class UpdateSieve {
 
 scoped_ptr<UpdateSieve> UpdateSieve::Create(
     const sync_pb::GetUpdatesMessage& get_updates_message) {
-  DCHECK_GT(get_updates_message.from_progress_marker_size(), 0);
+  CHECK_GT(get_updates_message.from_progress_marker_size(), 0)
+      << "A GetUpdates request must have at least one progress marker.";
 
   UpdateSieve::ModelTypeToVersionMap request_from_version;
   int64 min_version = std::numeric_limits<int64>::max();
@@ -128,7 +129,7 @@ scoped_ptr<UpdateSieve> UpdateSieve::Create(
     // first request for this type).
     if (marker.has_token() && !marker.token().empty()) {
       bool parsed = base::StringToInt64(marker.token(), &version);
-      DCHECK(parsed);
+      CHECK(parsed) << "Unable to parse progress marker token.";
     }
 
     ModelType model_type = syncer::GetModelTypeFromSpecificsFieldNumber(
@@ -147,7 +148,8 @@ scoped_ptr<UpdateSieve> UpdateSieve::Create(
 
 FakeServer::FakeServer() : version_(0),
                            store_birthday_(kDefaultStoreBirthday),
-                           authenticated_(true) {
+                           authenticated_(true),
+                           error_type_(sync_pb::SyncEnums::SUCCESS) {
   keystore_keys_.push_back(kDefaultKeystoreKey);
   CHECK(CreateDefaultPermanentItems());
 }
@@ -223,7 +225,7 @@ void FakeServer::HandleCommand(const string& request,
 
   sync_pb::ClientToServerMessage message;
   bool parsed = message.ParseFromString(request);
-  DCHECK(parsed);
+  CHECK(parsed) << "Unable to parse the ClientToServerMessage.";
 
   sync_pb::SyncEnums_ErrorType error_code;
   sync_pb::ClientToServerResponse response_proto;
@@ -231,6 +233,8 @@ void FakeServer::HandleCommand(const string& request,
   if (message.has_store_birthday() &&
       message.store_birthday() != store_birthday_) {
     error_code = sync_pb::SyncEnums::NOT_MY_BIRTHDAY;
+  } else if (error_type_ != sync_pb::SyncEnums::SUCCESS) {
+    error_code = error_type_;
   } else {
     bool success = false;
     switch (message.message_contents()) {
@@ -503,6 +507,15 @@ void FakeServer::SetAuthenticated() {
 
 void FakeServer::SetUnauthenticated() {
   authenticated_ = false;
+}
+
+// TODO(pvalenzuela): comments from Richard: we should look at
+// mock_connection_manager.cc and take it as a warning. This style of injecting
+// errors works when there's one or two conditions we care about, but it can
+// eventually lead to a hairball once we have many different conditions and
+// triggering logic.
+void FakeServer::TriggerError(const sync_pb::SyncEnums::ErrorType& error_type) {
+  error_type_ = error_type;
 }
 
 void FakeServer::AddObserver(Observer* observer) {

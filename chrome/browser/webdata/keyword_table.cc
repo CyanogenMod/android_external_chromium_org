@@ -16,9 +16,9 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/history/history_database.h"
-#include "chrome/browser/search_engines/search_terms_data.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
+#include "components/search_engines/search_terms_data.h"
 #include "components/webdata/common/web_database.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
@@ -604,7 +604,7 @@ bool KeywordTable::MigrateKeywordsTableForVersion45(const std::string& name) {
     TemplateURLData data;
     data.SetKeyword(keyword);
     data.SetURL(s.ColumnString(2));
-    TemplateURL turl(NULL, data);
+    TemplateURL turl(data);
     // Don't persist extension keywords to disk.  These will get added to the
     // TemplateURLService as the extensions are loaded.
     bool delete_entry = turl.GetType() == TemplateURL::OMNIBOX_API_EXTENSION;
@@ -612,8 +612,7 @@ bool KeywordTable::MigrateKeywordsTableForVersion45(const std::string& name) {
       // Explicitly generate keywords for all rows with the autogenerate bit set
       // or where the keyword is empty.
       SearchTermsData terms_data;
-      GURL url(TemplateURLService::GenerateSearchURLUsingTermsData(&turl,
-                                                                   terms_data));
+      GURL url(TemplateURLService::GenerateSearchURL(&turl, terms_data));
       if (!url.is_valid()) {
         delete_entry = true;
       } else {

@@ -7,18 +7,16 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
-#include "chrome/browser/browser_process.h"
-#include "chrome/browser/browser_process_platform_part_chromeos.h"
 #include "chrome/browser/chromeos/net/network_portal_detector.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
-#include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/common/extensions/api/networking_private.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/shill_manager_client.h"
-#include "chromeos/network/favorite_state.h"
+#include "chromeos/login/login_state.h"
 #include "chromeos/network/managed_network_configuration_handler.h"
 #include "chromeos/network/network_connection_handler.h"
 #include "chromeos/network/network_device_handler.h"
+#include "chromeos/network/network_event_log.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/network_util.h"
@@ -26,12 +24,12 @@
 #include "chromeos/network/onc/onc_translator.h"
 #include "chromeos/network/onc/onc_utils.h"
 #include "components/onc/onc_constants.h"
+#include "content/public/browser/browser_context.h"
 #include "extensions/browser/extension_function_registry.h"
 
 namespace api = extensions::api::networking_private;
 
 using chromeos::DBusThreadManager;
-using chromeos::FavoriteState;
 using chromeos::ManagedNetworkConfigurationHandler;
 using chromeos::NetworkHandler;
 using chromeos::NetworkPortalDetector;
@@ -64,16 +62,27 @@ ShillManagerClient::VerificationProperties ConvertVerificationProperties(
   return output;
 }
 
-std::string GetUserIdHash(Profile* profile) {
-  return g_browser_process->platform_part()->
-      profile_helper()->GetUserIdHashFromProfile(profile);
+bool GetUserIdHash(content::BrowserContext* browser_context,
+                   std::string* user_hash) {
+  // Currently Chrome OS only configures networks for the primary user.
+  // Configuration attempts from other browser contexts should fail.
+  // TODO(stevenjb): use an ExtensionsBrowserClient method to access
+  // ProfileHelper when moving this to src/extensions.
+  std::string current_user_hash =
+      chromeos::ProfileHelper::GetUserIdHashFromProfile(
+          static_cast<Profile*>(browser_context));
+
+  if (current_user_hash != chromeos::LoginState::Get()->primary_user_hash())
+    return false;
+  *user_hash = current_user_hash;
+  return true;
 }
 
 bool GetServicePathFromGuid(const std::string& guid,
                             std::string* service_path,
                             std::string* error) {
-  const FavoriteState* network =
-      NetworkHandler::Get()->network_state_handler()->GetFavoriteStateFromGuid(
+  const NetworkState* network =
+      NetworkHandler::Get()->network_state_handler()->GetNetworkStateFromGuid(
           guid);
   if (!network) {
     *error = "Error.InvalidNetworkGuid";
@@ -139,7 +148,15 @@ bool NetworkingPrivateGetManagedPropertiesFunction::RunAsync() {
     return false;
 
   std::string user_id_hash;
-  GetUserIdHash(GetProfile());
+  if (!GetUserIdHash(browser_context(), &user_id_hash)) {
+    // Disallow getManagedProperties from a non-primary user context to avoid
+    // complexites with the policy code.
+    NET_LOG_ERROR("getManagedProperties called from non primary user.",
+                  browser_context()->GetPath().value());
+    error_ = "Error.NonPrimaryUser";
+    return false;
+  }
+
   NetworkHandler::Get()->managed_network_configuration_handler()->
       GetManagedProperties(
           user_id_hash,
@@ -180,18 +197,18 @@ bool NetworkingPrivateGetStateFunction::RunAsync() {
   if (!GetServicePathFromGuid(params->network_guid, &service_path, &error_))
     return false;
 
-  const FavoriteState* favorite_state =
+  const NetworkState* network_state =
       NetworkHandler::Get()
           ->network_state_handler()
-          ->GetFavoriteStateFromServicePath(service_path,
-                                            false /* configured_only */);
-  if (!favorite_state) {
+          ->GetNetworkStateFromServicePath(service_path,
+                                           false /* configured_only */);
+  if (!network_state) {
     error_ = "Error.NetworkUnavailable";
     return false;
   }
 
   scoped_ptr<base::DictionaryValue> network_properties =
-      chromeos::network_util::TranslateFavoriteStateToONC(favorite_state);
+      chromeos::network_util::TranslateNetworkStateToONC(network_state);
 
   SetResult(network_properties.release());
   SendResponse(true);
@@ -251,8 +268,15 @@ bool NetworkingPrivateCreateNetworkFunction::RunAsync() {
   EXTENSION_FUNCTION_VALIDATE(params);
 
   std::string user_id_hash;
-  if (!params->shared)
-    user_id_hash = GetUserIdHash(GetProfile());
+  if (!params->shared &&
+      !GetUserIdHash(browser_context(), &user_id_hash)) {
+    // Do not allow configuring a non-shared network from a non-primary user
+    // context.
+    NET_LOG_ERROR("createNetwork called from non primary user.",
+                  browser_context()->GetPath().value());
+    error_ = "Error.NonPrimaryUser";
+    return false;
+  }
 
   scoped_ptr<base::DictionaryValue> properties_dict(
       params->properties.ToValue());

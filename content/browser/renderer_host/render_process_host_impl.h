@@ -56,7 +56,6 @@ class RenderWidgetHelper;
 class RenderWidgetHost;
 class RenderWidgetHostImpl;
 class RenderWidgetHostViewFrameSubscriber;
-class ScreenOrientationDispatcherHost;
 class StoragePartition;
 class StoragePartitionImpl;
 
@@ -180,9 +179,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // Fires the webrtc log message callback with |message|, if callback is set.
   void WebRtcLogMessage(const std::string& message);
 #endif
-
-  scoped_refptr<ScreenOrientationDispatcherHost>
-      screen_orientation_dispatcher_host() const;
 
   // Used to extend the lifetime of the sessions until the render view
   // in the renderer is fully closed. This is static because its also called
@@ -328,8 +324,14 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual void OnGpuSwitching() OVERRIDE;
 
 #if defined(ENABLE_WEBRTC)
+  void OnRegisterAecDumpConsumer(int id);
+  void OnUnregisterAecDumpConsumer(int id);
+  void RegisterAecDumpConsumerOnUIThread(int id);
+  void UnregisterAecDumpConsumerOnUIThread(int id);
+  void EnableAecDumpForId(const base::FilePath& file, int id);
   // Sends |file_for_transit| to the render process.
-  void SendAecDumpFileToRenderer(IPC::PlatformFileForTransit file_for_transit);
+  void SendAecDumpFileToRenderer(int id,
+                                 IPC::PlatformFileForTransit file_for_transit);
   void SendDisableAecDumpToRenderer();
 #endif
 
@@ -448,11 +450,11 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   scoped_refptr<P2PSocketDispatcherHost> p2p_socket_dispatcher_host_;
 
+  // Must be accessed on UI thread.
+  std::vector<int> aec_dump_consumers_;
+
   WebRtcStopRtpDumpCallback stop_rtp_dump_callback_;
 #endif
-
-  // Message filter and dispatcher for screen orientation.
-  ScreenOrientationDispatcherHost* screen_orientation_dispatcher_host_;
 
   int worker_ref_count_;
 

@@ -9,11 +9,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/child/blink_platform_impl.h"
 #include "content/common/content_export.h"
+#include "content/renderer/compositor_bindings/web_compositor_support_impl.h"
 #include "content/renderer/webpublicsuffixlist_impl.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/WebKit/public/platform/WebIDBFactory.h"
 #include "third_party/WebKit/public/platform/WebScreenOrientationType.h"
-#include "webkit/renderer/compositor_bindings/web_compositor_support_impl.h"
 
 namespace base {
 class MessageLoopProxy;
@@ -32,7 +32,6 @@ class WebBatteryStatus;
 class WebDeviceMotionData;
 class WebDeviceOrientationData;
 class WebGraphicsContext3DProvider;
-class WebScreenOrientationListener;
 }
 
 namespace content {
@@ -41,7 +40,7 @@ class DeviceMotionEventPump;
 class DeviceOrientationEventPump;
 class QuotaMessageFilter;
 class RendererClipboardClient;
-class ScreenOrientationDispatcher;
+class RenderView;
 class ThreadSafeSender;
 class WebClipboardImpl;
 class WebDatabaseObserverImpl;
@@ -146,11 +145,6 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
       blink::WebStorageQuotaCallbacks);
   virtual void vibrate(unsigned int milliseconds);
   virtual void cancelVibration();
-  virtual void setScreenOrientationListener(
-      blink::WebScreenOrientationListener*);
-  virtual void lockOrientation(blink::WebScreenOrientationLockType,
-                               blink::WebLockOrientationCallback*);
-  virtual void unlockOrientation();
   virtual void setBatteryStatusListener(
       blink::WebBatteryStatusListener* listener);
 
@@ -183,6 +177,7 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
       const blink::WebDeviceOrientationData& data);
   // Forces the screen orientation for testing purposes.
   static void SetMockScreenOrientationForTesting(
+      RenderView* render_view,
       blink::WebScreenOrientationType);
   // Resets the mock screen orientation data used for testing.
   static void ResetMockScreenOrientationForTesting();
@@ -197,7 +192,6 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
 
  private:
   bool CheckPreparsedJsCachingEnabled() const;
-  void EnsureScreenOrientationDispatcher();
 
   scoped_ptr<RendererClipboardClient> clipboard_client_;
   scoped_ptr<WebClipboardImpl> clipboard_;
@@ -236,9 +230,7 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
 
   scoped_ptr<WebDatabaseObserverImpl> web_database_observer_impl_;
 
-  webkit::WebCompositorSupportImpl compositor_support_;
-
-  scoped_ptr<ScreenOrientationDispatcher> screen_orientation_dispatcher_;
+  WebCompositorSupportImpl compositor_support_;
 
   scoped_ptr<blink::WebScrollbarBehavior> web_scrollbar_behavior_;
 

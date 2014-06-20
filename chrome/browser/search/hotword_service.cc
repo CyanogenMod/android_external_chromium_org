@@ -45,9 +45,7 @@ namespace {
 // Allowed languages for hotwording.
 static const char* kSupportedLocales[] = {
   "en",
-  "de",
-  "fr",
-  "ru"
+  "en_us",
 };
 
 // Enum describing the state of the hotword preference.
@@ -123,6 +121,9 @@ void RecordErrorMetrics(int error_message) {
     case IDS_HOTWORD_NACL_DISABLED_ERROR_MESSAGE:
       error = NACL_HOTWORD_ERROR;
       break;
+    case IDS_HOTWORD_MICROPHONE_ERROR_MESSAGE:
+      error = MICROPHONE_HOTWORD_ERROR;
+      break;
     default:
       error = NO_HOTWORD_ERROR;
   }
@@ -165,7 +166,7 @@ bool HotwordService::DoesHotwordSupportLanguage(Profile* profile) {
   StringToLowerASCII(&normalized_locale);
 
   for (size_t i = 0; i < arraysize(kSupportedLocales); i++) {
-    if (normalized_locale.compare(0, 2, kSupportedLocales[i]) == 0)
+    if (kSupportedLocales[i] == normalized_locale)
       return true;
   }
   return false;
@@ -202,6 +203,9 @@ HotwordService::HotwordService(Profile* profile)
   registrar_.Add(this,
                  chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
                  content::Source<Profile>(profile_));
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_BROWSER_WINDOW_READY,
+                 content::NotificationService::AllSources());
 
   // Clear the old user pref because it became unusable.
   // TODO(rlp): Remove this code per crbug.com/358789.
@@ -235,6 +239,19 @@ void HotwordService::Observe(int type,
                         chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
                         content::Source<Profile>(profile_));
     }
+  } else if (type == chrome::NOTIFICATION_BROWSER_WINDOW_READY) {
+    // The microphone monitor must be initialized as the page is loading
+    // so that the state of the microphone is available when the page
+    // loads. The Ok Google Hotword setting will display an error if there
+    // is no microphone but this information will not be up-to-date unless
+    // the monitor had already been started. Furthermore, the pop up to
+    // opt in to hotwording won't be available if it thinks there is no
+    // microphone. There is no hard guarantee that the monitor will actually
+    // be up by the time it's needed, but this is the best we can do without
+    // starting it at start up which slows down start up too much.
+    // The content/media for microphone uses the same observer design and
+    // makes use of the same audio device monitor.
+    HotwordServiceFactory::GetInstance()->UpdateMicrophoneState();
   }
 }
 
@@ -273,6 +290,12 @@ bool HotwordService::IsServiceAvailable() {
 #endif
 
   RecordErrorMetrics(error_message_);
+
+  // Determine if the proper audio capabilities exist.
+  bool audio_capture_allowed =
+      profile_->GetPrefs()->GetBoolean(prefs::kAudioCaptureAllowed);
+  if (!audio_capture_allowed || !HotwordServiceFactory::IsMicrophoneAvailable())
+    error_message_ = IDS_HOTWORD_MICROPHONE_ERROR_MESSAGE;
 
   return (error_message_ == 0) && IsHotwordAllowed();
 }

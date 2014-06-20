@@ -54,6 +54,7 @@ extern const char kOldURL[];
 extern const char kPermission[];
 extern const char kPermissionTypeDialog[];
 extern const char kPermissionTypeDownload[];
+extern const char kPermissionTypeFileSystem[];
 extern const char kPermissionTypeGeolocation[];
 extern const char kPermissionTypeLoadPlugin[];
 extern const char kPermissionTypeMedia[];
@@ -93,6 +94,8 @@ extern const char kParameterUserAgentOverride[];
 // Miscellaneous.
 extern const char kMenuItemCommandId[];
 extern const char kMenuItemLabel[];
+extern const char kPersistPrefix[];
+extern const char kStoragePartitionId[];
 extern const unsigned int kMaxOutstandingPermissionRequests;
 extern const int kInvalidPermissionRequestID;
 

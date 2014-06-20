@@ -56,6 +56,14 @@ class ProfileOAuth2TokenService;
 class ProfileSyncComponentsFactory;
 class SyncErrorController;
 
+namespace base {
+class CommandLine;
+};
+
+namespace extensions {
+struct Event;
+}
+
 namespace browser_sync {
 class BackendMigrator;
 class ChangeProcessor;
@@ -263,7 +271,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   ProfileSyncService(
       ProfileSyncComponentsFactory* factory,
       Profile* profile,
-      ManagedUserSigninManagerWrapper* signin_wrapper,
+      scoped_ptr<ManagedUserSigninManagerWrapper> signin_wrapper,
       ProfileOAuth2TokenService* oauth2_token_service,
       browser_sync::ProfileSyncServiceStartBehavior start_behavior);
   virtual ~ProfileSyncService();
@@ -769,6 +777,9 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   void SetClearingBrowseringDataForTesting(
       base::Callback<void(Profile*, base::Time, base::Time)> c);
 
+  // Return the base URL of the Sync Server.
+  static GURL GetSyncServiceURL(const base::CommandLine& command_line);
+
  protected:
   // Helper to configure the priority data types.
   void ConfigurePriorityDataTypes();
@@ -889,7 +900,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
 
   // Starts up the backend sync components. |mode| specifies the kind of
   // backend to start, one of SYNC, BACKUP or ROLLBACK.
-  void StartUpSlowBackendComponents(BackendMode mode);
+  virtual void StartUpSlowBackendComponents(BackendMode mode);
 
   // About-flags experiment names for datatypes that aren't enabled by default
   // yet.
@@ -956,7 +967,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
 
   // TODO(ncarter): Put this in a profile, once there is UI for it.
   // This specifies where to find the sync server.
-  GURL sync_service_url_;
+  const GURL sync_service_url_;
 
   // The last time we detected a successful transition from SYNCING state.
   // Our backend notifies us whenever we should take a new snapshot.
@@ -988,7 +999,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
 
   // Encapsulates user signin - used to set/get the user's authenticated
   // email address.
-  scoped_ptr<ManagedUserSigninManagerWrapper> signin_;
+  const scoped_ptr<ManagedUserSigninManagerWrapper> signin_;
 
   // Information describing an unrecoverable error.
   UnrecoverableErrorReason unrecoverable_error_reason_;
@@ -1060,7 +1071,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   scoped_ptr<base::Thread> sync_thread_;
 
   // ProfileSyncService uses this service to get access tokens.
-  ProfileOAuth2TokenService* oauth2_token_service_;
+  ProfileOAuth2TokenService* const oauth2_token_service_;
 
   // ProfileSyncService needs to remember access token in order to invalidate it
   // with OAuth2TokenService.
@@ -1093,6 +1104,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   GoogleServiceAuthError last_get_token_error_;
   base::Time next_token_request_time_;
 
+  // Locally owned SyncableService implementations.
   scoped_ptr<SessionsSyncManager> sessions_sync_manager_;
 
   scoped_ptr<syncer::NetworkResources> network_resources_;

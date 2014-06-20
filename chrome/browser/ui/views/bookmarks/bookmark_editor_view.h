@@ -147,7 +147,7 @@ class BookmarkEditorView : public BookmarkEditor,
                                    int index,
                                    const BookmarkNode* node,
                                    const std::set<GURL>& removed_urls) OVERRIDE;
-  virtual void BookmarkAllNodesRemoved(
+  virtual void BookmarkAllUserNodesRemoved(
       BookmarkModel* model,
       const std::set<GURL>& removed_urls) OVERRIDE;
   virtual void BookmarkNodeChanged(BookmarkModel* model,
@@ -217,8 +217,9 @@ class BookmarkEditorView : public BookmarkEditor,
 
   // If |editor_node| is expanded it's added to |expanded_nodes| and this is
   // recursively invoked for all the children.
-  void UpdateExpandedNodes(EditorNode* editor_node,
-                           BookmarkExpandedStateTracker::Nodes* expanded_nodes);
+  void UpdateExpandedNodes(
+      EditorNode* editor_node,
+      bookmarks::BookmarkExpandedStateTracker::Nodes* expanded_nodes);
 
   ui::SimpleMenuModel* GetMenuModel();
 

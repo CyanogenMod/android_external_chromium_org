@@ -36,6 +36,7 @@
 #include "content/browser/geolocation/geolocation_dispatcher_host.h"
 #include "content/browser/host_zoom_map_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
+#include "content/browser/media/midi_dispatcher_host.h"
 #include "content/browser/message_port_message_filter.h"
 #include "content/browser/message_port_service.h"
 #include "content/browser/power_save_blocker_impl.h"
@@ -44,6 +45,7 @@
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
+#include "content/browser/screen_orientation/screen_orientation_dispatcher_host.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/web_contents/web_contents_view_guest.h"
 #include "content/browser/webui/generic_handler.h"
@@ -216,9 +218,13 @@ void SendToAllFramesInternal(IPC::Message* message, RenderFrameHost* rfh) {
   rfh->Send(message_copy);
 }
 
-void AddRenderWidgetHostToSet(std::set<RenderWidgetHostImpl*>* set,
-                              RenderFrameHost* rfh) {
-  set->insert(static_cast<RenderFrameHostImpl*>(rfh)->GetRenderWidgetHost());
+void AddRenderWidgetHostViewToSet(std::set<RenderWidgetHostView*>* set,
+                                  RenderFrameHost* rfh) {
+  RenderWidgetHostView* rwhv = static_cast<RenderFrameHostImpl*>(rfh)
+                                   ->frame_tree_node()
+                                   ->render_manager()
+                                   ->GetRenderWidgetHostView();
+  set->insert(rwhv);
 }
 
 }  // namespace
@@ -347,6 +353,7 @@ WebContentsImpl::WebContentsImpl(
       render_view_message_source_(NULL),
       fullscreen_widget_routing_id_(MSG_ROUTING_NONE),
       is_subframe_(false),
+      touch_emulation_enabled_(false),
       last_dialog_suppressed_(false) {
   for (size_t i = 0; i < g_created_callbacks.Get().size(); i++)
     g_created_callbacks.Get().at(i).Run(this);
@@ -533,8 +540,6 @@ bool WebContentsImpl::OnMessageReceived(RenderViewHost* render_view_host,
     IPC_MESSAGE_HANDLER(ViewHostMsg_WebUISend, OnWebUISend)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RequestPpapiBrokerPermission,
                         OnRequestPpapiBrokerPermission)
-    IPC_MESSAGE_HANDLER_GENERIC(BrowserPluginHostMsg_AllocateInstanceID,
-                                OnBrowserPluginMessage(message))
     IPC_MESSAGE_HANDLER_GENERIC(BrowserPluginHostMsg_Attach,
                                 OnBrowserPluginMessage(message))
     IPC_MESSAGE_HANDLER(ImageHostMsg_DidDownloadImage, OnDidDownloadImage)
@@ -613,7 +618,7 @@ void WebContentsImpl::SetDelegate(WebContentsDelegate* delegate) {
     delegate_->Attach(this);
     // Ensure the visible RVH reflects the new delegate's preferences.
     if (view_)
-      view_->SetOverscrollControllerEnabled(delegate->CanOverscrollContent());
+      view_->SetOverscrollControllerEnabled(CanOverscrollContent());
   }
 }
 
@@ -942,15 +947,14 @@ base::TimeTicks WebContentsImpl::GetLastActiveTime() const {
 void WebContentsImpl::WasShown() {
   controller_.SetActive(true);
 
-  std::set<RenderWidgetHostImpl*> widgets = GetRenderWidgetHostsInTree();
-  for (std::set<RenderWidgetHostImpl*>::iterator iter = widgets.begin();
+  std::set<RenderWidgetHostView*> widgets = GetRenderWidgetHostViewsInTree();
+  for (std::set<RenderWidgetHostView*>::iterator iter = widgets.begin();
        iter != widgets.end();
        iter++) {
-    RenderWidgetHostView* rwhv = (*iter)->GetView();
-    if (rwhv) {
-      rwhv->Show();
+    if (*iter) {
+      (*iter)->Show();
 #if defined(OS_MACOSX)
-      rwhv->SetActive(true);
+      (*iter)->SetActive(true);
 #endif
     }
   }
@@ -980,13 +984,12 @@ void WebContentsImpl::WasHidden() {
     // removes the |GetRenderViewHost()|; then when we actually destroy the
     // window, OnWindowPosChanged() notices and calls WasHidden() (which
     // calls us).
-    std::set<RenderWidgetHostImpl*> widgets = GetRenderWidgetHostsInTree();
-    for (std::set<RenderWidgetHostImpl*>::iterator iter = widgets.begin();
+    std::set<RenderWidgetHostView*> widgets = GetRenderWidgetHostViewsInTree();
+    for (std::set<RenderWidgetHostView*>::iterator iter = widgets.begin();
          iter != widgets.end();
          iter++) {
-      RenderWidgetHostView* rwhv = (*iter)->GetView();
-      if (rwhv)
-        rwhv->Hide();
+      if (*iter)
+        (*iter)->Hide();
     }
   }
 
@@ -1093,6 +1096,10 @@ void WebContentsImpl::Init(const WebContents::CreateParams& params) {
                  NotificationService::AllBrowserContextsAndSources());
 
   geolocation_dispatcher_host_.reset(new GeolocationDispatcherHost(this));
+  midi_dispatcher_host_.reset(new MidiDispatcherHost(this));
+
+  screen_orientation_dispatcher_host_.reset(
+      new ScreenOrientationDispatcherHost(this));
 
 #if defined(OS_ANDROID)
   date_time_chooser_.reset(new DateTimeChooserAndroid());
@@ -1143,9 +1150,15 @@ void WebContentsImpl::RemoveObserver(WebContentsObserver* observer) {
   observers_.RemoveObserver(observer);
 }
 
-std::set<RenderWidgetHostImpl*> WebContentsImpl::GetRenderWidgetHostsInTree() {
-  std::set<RenderWidgetHostImpl*> set;
-  ForEachFrame(base::Bind(&AddRenderWidgetHostToSet, base::Unretained(&set)));
+std::set<RenderWidgetHostView*>
+WebContentsImpl::GetRenderWidgetHostViewsInTree() {
+  std::set<RenderWidgetHostView*> set;
+  if (ShowingInterstitialPage()) {
+    set.insert(GetRenderWidgetHostView());
+  } else {
+    ForEachFrame(
+        base::Bind(&AddRenderWidgetHostViewToSet, base::Unretained(&set)));
+  }
   return set;
 }
 
@@ -1696,6 +1709,12 @@ void WebContentsImpl::OnMoveValidationMessage(
 void WebContentsImpl::DidSendScreenRects(RenderWidgetHostImpl* rwh) {
   if (browser_plugin_embedder_)
     browser_plugin_embedder_->DidSendScreenRects();
+}
+
+void WebContentsImpl::OnTouchEmulationEnabled(bool enabled) {
+  touch_emulation_enabled_ = enabled;
+  if (view_)
+    view_->SetOverscrollControllerEnabled(CanOverscrollContent());
 }
 
 void WebContentsImpl::UpdatePreferredSize(const gfx::Size& pref_size) {
@@ -2267,7 +2286,7 @@ void WebContentsImpl::InsertCSS(const std::string& css) {
 
 bool WebContentsImpl::FocusLocationBarByDefault() {
   NavigationEntry* entry = controller_.GetVisibleEntry();
-  if (entry && entry->GetURL() == GURL(kAboutBlankURL))
+  if (entry && entry->GetURL() == GURL(url::kAboutBlankURL))
     return true;
   return delegate_ && delegate_->ShouldFocusLocationBarByDefault(this);
 }
@@ -2456,10 +2475,9 @@ void WebContentsImpl::DidNavigateMainFramePostCommit(
   FOR_EACH_OBSERVER(WebContentsObserver, observers_,
                     DidNavigateMainFrame(details, params));
 
-  if (delegate_) {
+  if (delegate_)
     delegate_->DidNavigateMainFramePostCommit(this);
-    view_->SetOverscrollControllerEnabled(delegate_->CanOverscrollContent());
-  }
+  view_->SetOverscrollControllerEnabled(CanOverscrollContent());
 }
 
 void WebContentsImpl::DidNavigateAnyFramePostCommit(
@@ -2484,6 +2502,10 @@ void WebContentsImpl::SetMainFrameMimeType(const std::string& mime_type) {
 }
 
 bool WebContentsImpl::CanOverscrollContent() const {
+  // Disable overscroll when touch emulation is on. See crbug.com/369938.
+  if (touch_emulation_enabled_)
+    return false;
+
   if (delegate_)
     return delegate_->CanOverscrollContent();
 
@@ -3295,7 +3317,7 @@ void WebContentsImpl::RenderViewCreated(RenderViewHost* render_view_host) {
     return;
 
   if (delegate_)
-    view_->SetOverscrollControllerEnabled(delegate_->CanOverscrollContent());
+    view_->SetOverscrollControllerEnabled(CanOverscrollContent());
 
   NotificationService::current()->Notify(
       NOTIFICATION_WEB_CONTENTS_RENDER_VIEW_HOST_CREATED,
@@ -3797,7 +3819,7 @@ void WebContentsImpl::NotifySwappedFromRenderManager(RenderViewHost* old_host,
 
   // Make sure the visible RVH reflects the new delegate's preferences.
   if (delegate_)
-    view_->SetOverscrollControllerEnabled(delegate_->CanOverscrollContent());
+    view_->SetOverscrollControllerEnabled(CanOverscrollContent());
 
   view_->RenderViewSwappedIn(new_host);
 }

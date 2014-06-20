@@ -54,11 +54,11 @@
 #include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/installer/util/browser_distribution.h"
 #include "components/signin/core/common/profile_management_switches.h"
+#include "components/url_fixer/url_fixer.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/navigation_controller.h"
@@ -83,6 +83,10 @@
 
 #if defined(TOOLKIT_VIEWS) && defined(OS_LINUX)
 #include "ui/events/x/touch_factory_x11.h"
+#endif
+
+#if defined(OS_MACOSX)
+#include "chrome/browser/web_applications/web_app_mac.h"
 #endif
 
 #if defined(ENABLE_FULL_PRINTING)
@@ -431,7 +435,7 @@ std::vector<GURL> StartupBrowserCreator::GetURLsFromCommandLine(
     // 'about' if the browser was started with a about:foo argument.
     if (!url.is_valid()) {
       base::ThreadRestrictions::ScopedAllowIO allow_io;
-      url = URLFixerUpper::FixupRelativeFile(cur_dir, param);
+      url = url_fixer::FixupRelativeFile(cur_dir, param);
     }
     // Exclude dangerous schemes.
     if (url.is_valid()) {
@@ -444,7 +448,7 @@ std::vector<GURL> StartupBrowserCreator::GetURLsFromCommandLine(
           // command line. See ExistingUserController::OnLoginSuccess.
           (url.spec().find(chrome::kChromeUISettingsURL) == 0) ||
 #endif
-          (url.spec().compare(content::kAboutBlankURL) == 0)) {
+          (url.spec().compare(url::kAboutBlankURL) == 0)) {
         urls.push_back(url);
       }
     }
@@ -556,6 +560,11 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
 
 #if defined(TOOLKIT_VIEWS) && defined(USE_X11)
   ui::TouchFactory::SetTouchDeviceListFromCommandLine();
+#endif
+
+#if defined(OS_MACOSX)
+  if (web_app::MaybeRebuildShortcut(command_line))
+    return true;
 #endif
 
   if (!process_startup &&

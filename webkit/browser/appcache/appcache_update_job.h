@@ -44,8 +44,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
  public:
   // Used for uma stats only for now, so new values are append only.
   enum ResultType {
-    UPDATE_OK, DB_ERROR, DISKCACHE_ERROR, QUOTA_ERROR, REDIRECT_ERROR,
-    MANIFEST_ERROR, NETWORK_ERROR, SERVER_ERROR, CANCELLED_ERROR,
+    UPDATE_OK, DB_ERROR, DISKCACHE_ERROR, APPCACHE_QUOTA_ERROR, REDIRECT_ERROR,
+    APPCACHE_MANIFEST_ERROR, NETWORK_ERROR, SERVER_ERROR, CANCELLED_ERROR,
     NUM_UPDATE_JOB_RESULT_TYPES
   };
 
@@ -187,7 +187,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
   virtual void OnServiceReinitialized(
       AppCacheStorageReference* old_storage) OVERRIDE;
 
-  void HandleCacheFailure(const ErrorDetails& details,
+  void HandleCacheFailure(const AppCacheErrorDetails& details,
                           ResultType result,
                           const GURL& failed_resource_url);
 
@@ -204,11 +204,11 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
 
   void StoreGroupAndCache();
 
-  void NotifySingleHost(AppCacheHost* host, EventID event_id);
-  void NotifyAllAssociatedHosts(EventID event_id);
+  void NotifySingleHost(AppCacheHost* host, AppCacheEventID event_id);
+  void NotifyAllAssociatedHosts(AppCacheEventID event_id);
   void NotifyAllProgress(const GURL& url);
   void NotifyAllFinalProgress();
-  void NotifyAllError(const ErrorDetails& detals);
+  void NotifyAllError(const AppCacheErrorDetails& detals);
   void LogConsoleMessageToAll(const std::string& message);
   void AddAllAssociatedHostsToNotifier(HostNotifier* notifier);
 
@@ -236,7 +236,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
   void AddMasterEntryToFetchList(AppCacheHost* host, const GURL& url,
                                  bool is_new);
   void FetchMasterEntries();
-  void CancelAllMasterEntryFetches(const ErrorDetails& details);
+  void CancelAllMasterEntryFetches(const AppCacheErrorDetails& details);
 
   // Asynchronously loads the entry from the newest complete cache if the
   // HTTP caching semantics allow.

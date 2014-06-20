@@ -24,7 +24,7 @@
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
-#include "chrome/browser/chromeos/login/login_utils.h"
+#include "chrome/browser/chromeos/login/session/session_manager.h"
 #include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
 #include "chrome/browser/download/download_prefs.h"
@@ -82,7 +82,8 @@ Preferences::~Preferences() {
 void Preferences::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterBooleanPref(prefs::kOwnerPrimaryMouseButtonRight, false);
   registry->RegisterBooleanPref(prefs::kOwnerTapToClickEnabled, true);
-  registry->RegisterBooleanPref(prefs::kVirtualKeyboardEnabled, false);
+  registry->RegisterBooleanPref(prefs::kAccessibilityVirtualKeyboardEnabled,
+                                false);
   registry->RegisterStringPref(prefs::kLogoutStartedLast, std::string());
 }
 
@@ -136,45 +137,45 @@ void Preferences::RegisterProfilePrefs(
       false,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterBooleanPref(
-      prefs::kStickyKeysEnabled,
+      prefs::kAccessibilityStickyKeysEnabled,
       false,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterBooleanPref(
-      prefs::kLargeCursorEnabled,
+      prefs::kAccessibilityLargeCursorEnabled,
       false,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterBooleanPref(
-      prefs::kSpokenFeedbackEnabled,
+      prefs::kAccessibilitySpokenFeedbackEnabled,
       false,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterBooleanPref(
-      prefs::kHighContrastEnabled,
+      prefs::kAccessibilityHighContrastEnabled,
       false,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterBooleanPref(
-      prefs::kScreenMagnifierEnabled,
+      prefs::kAccessibilityScreenMagnifierEnabled,
       false,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterIntegerPref(
-      prefs::kScreenMagnifierType,
+      prefs::kAccessibilityScreenMagnifierType,
       ash::kDefaultMagnifierType,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterDoublePref(
-      prefs::kScreenMagnifierScale,
+      prefs::kAccessibilityScreenMagnifierScale,
       std::numeric_limits<double>::min(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterBooleanPref(
-      prefs::kAutoclickEnabled,
+      prefs::kAccessibilityAutoclickEnabled,
       false,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterIntegerPref(
-      prefs::kAutoclickDelayMs,
+      prefs::kAccessibilityAutoclickDelayMs,
       ash::AutoclickController::kDefaultAutoclickDelayMs,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterBooleanPref(
-    prefs::kVirtualKeyboardEnabled,
-    false,
-    user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+      prefs::kAccessibilityVirtualKeyboardEnabled,
+      false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterBooleanPref(
       prefs::kShouldAlwaysShowAccessibilityMenu,
       false,
@@ -361,10 +362,10 @@ void Preferences::Init(PrefServiceSyncable* prefs, const User* user) {
   ApplyPreferences(REASON_INITIALIZATION, "");
 
   // If a guest is logged in, initialize the prefs as if this is the first
-  // login.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kGuestSession)) {
-    LoginUtils::Get()->SetFirstLoginPrefs(prefs);
-  }
+  // login. For a regular user this is done in
+  // SessionManager::InitProfilePreferences().
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kGuestSession))
+    SessionManager::SetFirstLoginPrefs(prefs);
 }
 
 void Preferences::InitUserPrefsForTesting(PrefServiceSyncable* prefs,

@@ -52,9 +52,9 @@ def DeviceInfo(serial, options):
   device_product_name = device_adb.old_interface.GetProductName()
 
   try:
-    battery = device_adb.old_interface.GetBatteryInfo()
+    battery_info = device_adb.old_interface.GetBatteryInfo()
   except Exception as e:
-    battery = None
+    battery_info = {}
     logging.error('Unable to obtain battery info for %s, %s', serial, e)
 
   def _GetData(re_expression, line, lambda_function=lambda x:x):
@@ -65,21 +65,16 @@ def DeviceInfo(serial, options):
       return lambda_function(found[0])
     return 'Unknown'
 
-  def _GetBatteryInfo(battery):
-    if not battery:
-      return 'No battery info.'
-    battery_info = battery.split('\n')
-    return battery_info[0] + '\n  '.join(battery_info[1:])
-
-  ac_power = _GetData('AC powered: (\w+)', battery)
-  battery_level = _GetData('level: (\d+)', battery)
+  battery_level = int(battery_info.get('level', 100))
   imei_slice = _GetData('Device ID = (\d+)',
                         device_adb.old_interface.GetSubscriberInfo(),
                         lambda x: x[-6:])
   report = ['Device %s (%s)' % (serial, device_type),
             '  Build: %s (%s)' %
               (device_build, device_adb.old_interface.GetBuildFingerprint()),
-            '  %s' % _GetBatteryInfo(battery),
+            '  Current Battery Service state: ',
+            '\n'.join(['    %s: %s' % (k, v)
+                       for k, v in battery_info.iteritems()]),
             '  IMEI slice: %s' % imei_slice,
             '  Wifi IP: %s' % device_adb.old_interface.GetWifiIP(),
             '']
@@ -92,7 +87,8 @@ def DeviceInfo(serial, options):
         device_adb.old_interface.GetSetupWizardStatus() == 'DISABLED')
     if not setup_wizard_disabled and device_build_type != 'user':
       errors += ['Setup wizard not disabled. Was it provisioned correctly?']
-  if device_product_name == 'mantaray' and ac_power != 'true':
+  if (device_product_name == 'mantaray' and
+      battery_info.get('AC powered', None) != 'true'):
     errors += ['Mantaray device not connected to AC power.']
 
   # Turn off devices with low battery.
@@ -125,19 +121,40 @@ def CheckForMissingDevices(options, adb_online_devs):
 
   out_dir = os.path.abspath(options.out_dir)
 
+  # last_devices denotes all known devices prior to this run
   last_devices_path = os.path.join(out_dir, device_list.LAST_DEVICES_FILENAME)
+  last_missing_devices_path = os.path.join(out_dir,
+      device_list.LAST_MISSING_DEVICES_FILENAME)
   try:
     last_devices = device_list.GetPersistentDeviceList(last_devices_path)
   except IOError:
     # Ignore error, file might not exist
     last_devices = []
+
+  try:
+    last_missing_devices = device_list.GetPersistentDeviceList(
+        last_missing_devices_path)
+  except IOError:
+    last_missing_devices = []
+
   missing_devs = list(set(last_devices) - set(adb_online_devs))
+  new_missing_devs = list(set(missing_devs) - set(last_missing_devices))
+
+  if new_missing_devs:
+    logging.info('new_missing_devs %s' % new_missing_devs)
+    devices_missing_msg = '%d devices not detected.' % len(missing_devs)
+    bb_annotations.PrintSummaryText(devices_missing_msg)
+
+    from_address = 'chrome-bot@google.com'
+    to_address = 'chrome-labs-tech-ticket@google.com'
+    subject = 'Devices offline on %s' % os.environ.get('BUILDBOT_SLAVENAME')
+    msg = ('Please reboot the following devices:\n%s' %
+           '\n'.join(map(str,new_missing_devs)))
+    SendEmail(from_address, to_address, subject, msg)
 
   all_known_devices = list(set(adb_online_devs) | set(last_devices))
   device_list.WritePersistentDeviceList(last_devices_path, all_known_devices)
-  device_list.WritePersistentDeviceList(
-      os.path.join(out_dir, device_list.LAST_MISSING_DEVICES_FILENAME),
-      missing_devs)
+  device_list.WritePersistentDeviceList(last_missing_devices_path, missing_devs)
 
   if not all_known_devices:
     # This can happen if for some reason the .last_devices file is not
@@ -176,12 +193,7 @@ def CheckForMissingDevices(options, adb_online_devs):
              'regularly scheduled program.' % list(new_devs))
 
 
-def SendDeviceStatusAlert(msg):
-  from_address = 'buildbot@chromium.org'
-  to_address = 'chromium-android-device-alerts@google.com'
-  bot_name = os.environ.get('BUILDBOT_BUILDERNAME')
-  slave_name = os.environ.get('BUILDBOT_SLAVENAME')
-  subject = 'Device status check errors on %s, %s.' % (slave_name, bot_name)
+def SendEmail(from_address, to_address, subject, msg):
   msg_body = '\r\n'.join(['From: %s' % from_address, 'To: %s' % to_address,
                           'Subject: %s' % subject, '', msg])
   try:
@@ -324,7 +336,12 @@ def main():
     bb_annotations.PrintWarning()
     msg = '\n'.join(err_msg)
     print msg
-    SendDeviceStatusAlert(msg)
+    from_address = 'buildbot@chromium.org'
+    to_address = 'chromium-android-device-alerts@google.com'
+    bot_name = os.environ.get('BUILDBOT_BUILDERNAME')
+    slave_name = os.environ.get('BUILDBOT_SLAVENAME')
+    subject = 'Device status check errors on %s, %s.' % (slave_name, bot_name)
+    SendEmail(from_address, to_address, subject, msg)
 
   if options.device_status_dashboard:
     perf_tests_results_helper.PrintPerfResult('BotDevices', 'OnlineDevices',
@@ -341,7 +358,7 @@ def main():
     # TODO(navabi): Build fails on device status check step if there exists any
     # devices with critically low battery. Remove those devices from testing,
     # allowing build to continue with good devices.
-    return 1
+    return 2
 
   if not devices:
     return 1

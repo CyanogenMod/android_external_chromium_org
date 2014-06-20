@@ -34,10 +34,12 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/webui/web_ui_util.h"
+#include "ui/gfx/image/image.h"
+#include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_util.h"
 
 #if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_user_service.h"
+#include "chrome/browser/supervised_user/supervised_user_service.h"
 #endif
 
 namespace {
@@ -223,11 +225,18 @@ void UserManagerScreenHandler::ShowBannerMessage(const std::string& message) {
 void UserManagerScreenHandler::ShowUserPodCustomIcon(
     const std::string& user_email,
     const gfx::Image& icon) {
-  GURL icon_url(webui::GetBitmapDataUrl(icon.AsBitmap()));
+  gfx::ImageSkia icon_skia = icon.AsImageSkia();
+  base::DictionaryValue icon_representations;
+  icon_representations.SetString(
+      "scale1x",
+      webui::GetBitmapDataUrl(icon_skia.GetRepresentation(1.0f).sk_bitmap()));
+  icon_representations.SetString(
+      "scale2x",
+      webui::GetBitmapDataUrl(icon_skia.GetRepresentation(2.0f).sk_bitmap()));
   web_ui()->CallJavascriptFunction(
       "login.AccountPickerScreen.showUserPodCustomIcon",
       base::StringValue(user_email),
-      base::StringValue(icon_url.spec()));
+      icon_representations);
 }
 
 void UserManagerScreenHandler::HideUserPodCustomIcon(
@@ -345,9 +354,10 @@ void UserManagerScreenHandler::HandleRemoveUser(const base::ListValue* args) {
   if (!base::GetValueAsFilePath(*profile_path_value, &profile_path))
     return;
 
-  // This handler could have been called in managed mode, for example because
-  // the user fiddled with the web inspector. Silently return in this case.
-  if (Profile::FromWebUI(web_ui())->IsManaged())
+  // This handler could have been called for a supervised user, for example
+  // because the user fiddled with the web inspector. Silently return in this
+  // case.
+  if (Profile::FromWebUI(web_ui())->IsSupervised())
     return;
 
   if (!profiles::IsMultipleProfilesEnabled())
@@ -576,9 +586,9 @@ void UserManagerScreenHandler::SendUserList() {
 
   user_auth_type_map_.clear();
 
-  // If the active user is a managed user, then they may not perform
+  // If the active user is a supervised user, then they may not perform
   // certain actions (i.e. delete another user).
-  bool active_user_is_managed = Profile::FromWebUI(web_ui())->IsManaged();
+  bool active_user_is_supervised = Profile::FromWebUI(web_ui())->IsSupervised();
   for (size_t i = 0; i < info_cache.GetNumberOfProfiles(); ++i) {
     base::DictionaryValue* profile_value = new base::DictionaryValue();
 
@@ -594,12 +604,12 @@ void UserManagerScreenHandler::SendUserList() {
     profile_value->SetString(kKeyProfilePath, profile_path.MaybeAsASCII());
     profile_value->SetBoolean(kKeyPublicAccount, false);
     profile_value->SetBoolean(
-        kKeyLocallyManagedUser, info_cache.ProfileIsManagedAtIndex(i));
+        kKeyLocallyManagedUser, info_cache.ProfileIsSupervisedAtIndex(i));
     profile_value->SetBoolean(kKeySignedIn, is_active_user);
     profile_value->SetBoolean(
         kKeyNeedsSignin, info_cache.ProfileIsSigninRequiredAtIndex(i));
     profile_value->SetBoolean(kKeyIsOwner, false);
-    profile_value->SetBoolean(kKeyCanRemove, !active_user_is_managed);
+    profile_value->SetBoolean(kKeyCanRemove, !active_user_is_supervised);
     profile_value->SetBoolean(kKeyIsDesktop, true);
     profile_value->SetString(
         kKeyAvatarUrl, GetAvatarImageAtIndex(i, info_cache));

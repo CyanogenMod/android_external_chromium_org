@@ -4,6 +4,7 @@
 
 #include "chrome/common/cloud_print/cloud_print_cdd_conversion.h"
 
+#include "base/strings/string_number_conversions.h"
 #include "components/cloud_devices/common/printer_description.h"
 #include "printing/backend/print_backend.h"
 
@@ -42,17 +43,20 @@ scoped_ptr<base::DictionaryValue> PrinterSemanticCapsAndDefaultsToCdd(
 
   ColorCapability color;
   if (semantic_info.color_default || semantic_info.color_changeable) {
-    color.AddDefaultOption(Color(STANDARD_COLOR), semantic_info.color_default);
+    Color standard_color(STANDARD_COLOR);
+    standard_color.vendor_id = base::IntToString(semantic_info.color_model);
+    color.AddDefaultOption(standard_color, semantic_info.color_default);
   }
   if (!semantic_info.color_default || semantic_info.color_changeable) {
-    color.AddDefaultOption(Color(STANDARD_MONOCHROME),
-                           !semantic_info.color_default);
+    Color standard_monochrome(STANDARD_MONOCHROME);
+    standard_monochrome.vendor_id = base::IntToString(semantic_info.bw_model);
+    color.AddDefaultOption(standard_monochrome, !semantic_info.color_default);
   }
   color.SaveTo(&description);
 
-#if defined(OS_WIN)
   if (!semantic_info.papers.empty()) {
-    Media default_media(semantic_info.default_paper.name,
+    Media default_media(semantic_info.default_paper.display_name,
+                        semantic_info.default_paper.vendor_id,
                         semantic_info.default_paper.size_um.width(),
                         semantic_info.default_paper.size_um.height());
     default_media.MatchBySize();
@@ -63,7 +67,9 @@ scoped_ptr<base::DictionaryValue> PrinterSemanticCapsAndDefaultsToCdd(
       gfx::Size paper_size = semantic_info.papers[i].size_um;
       if (paper_size.width() > paper_size.height())
         paper_size.SetSize(paper_size.height(), paper_size.width());
-      Media new_media(semantic_info.papers[i].name, paper_size.width(),
+      Media new_media(semantic_info.papers[i].display_name,
+                      semantic_info.papers[i].vendor_id,
+                      paper_size.width(),
                       paper_size.height());
       new_media.MatchBySize();
       if (new_media.IsValid() && !media.Contains(new_media)) {
@@ -106,7 +112,6 @@ scoped_ptr<base::DictionaryValue> PrinterSemanticCapsAndDefaultsToCdd(
       NOTREACHED();
     }
   }
-#endif
 
   OrientationCapability orientation;
   orientation.AddDefaultOption(PORTRAIT, true);

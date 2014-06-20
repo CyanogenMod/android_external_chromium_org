@@ -64,14 +64,13 @@ class BluetoothDeviceWin : public BluetoothDevice {
       const base::Closure& callback,
       const ErrorCallback& error_callback) OVERRIDE;
   virtual void Forget(const ErrorCallback& error_callback) OVERRIDE;
-  virtual void ConnectToProfile(
-      device::BluetoothProfile* profile,
-      const base::Closure& callback,
-      const ConnectToProfileErrorCallback& error_callback) OVERRIDE;
   virtual void ConnectToService(
       const BluetoothUUID& uuid,
       const ConnectToServiceCallback& callback,
       const ConnectToServiceErrorCallback& error_callback) OVERRIDE;
+  virtual void CreateGattConnection(
+      const GattConnectionCallback& callback,
+      const ConnectErrorCallback& error_callback) OVERRIDE;
   virtual void StartConnectionMonitor(
       const base::Closure& callback,
       const ErrorCallback& error_callback) OVERRIDE;

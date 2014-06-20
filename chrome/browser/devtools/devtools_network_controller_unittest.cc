@@ -10,6 +10,7 @@
 #include "base/run_loop.h"
 #include "chrome/browser/devtools/devtools_network_conditions.h"
 #include "chrome/browser/devtools/devtools_network_controller.h"
+#include "chrome/browser/devtools/devtools_network_interceptor.h"
 #include "chrome/browser/devtools/devtools_network_transaction.h"
 #include "net/http/http_transaction_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -19,10 +20,6 @@ namespace test {
 
 const char kClientId[] = "42";
 const char kAnotherClientId[] = "24";
-
-const char kHttpDotCom[] = "http://dot.com";
-const char kHttpDotOrg[] = "http://dot.org";
-const char kCom[] = "com";
 
 class TestCallback {
  public:
@@ -47,7 +44,9 @@ class DevToolsNetworkControllerHelper {
       mock_transaction_(kSimpleGET_Transaction),
       buffer_(new net::IOBuffer(64)) {
     mock_transaction_.test_mode = TEST_MODE_SYNC_NET_START;
-    mock_transaction_.url = kHttpDotCom;
+    mock_transaction_.url = "http://dot.com";
+    mock_transaction_.request_headers =
+        "X-DevTools-Emulate-Network-Conditions-Client-Id: 42\r\n";
     AddMockTransaction(&mock_transaction_);
 
     scoped_ptr<net::HttpTransaction> network_transaction;
@@ -63,13 +62,10 @@ class DevToolsNetworkControllerHelper {
     return request_.get();
   }
 
-  void SetNetworkState(const std::string& client_id, bool offline) {
-    std::vector<std::string> domains;
-    domains.push_back(kCom);
-    scoped_refptr<DevToolsNetworkConditions> conditions;
-    if (offline)
-      conditions = new DevToolsNetworkConditions(domains);
-    controller_.SetNetworkStateOnIO(client_id, conditions);
+  void SetNetworkState(const std::string id, bool offline) {
+    scoped_refptr<DevToolsNetworkConditions> conditions(
+        new DevToolsNetworkConditions(offline));
+    controller_.SetNetworkStateOnIO(id, conditions);
   }
 
   int Start() {
@@ -79,6 +75,10 @@ class DevToolsNetworkControllerHelper {
 
   int Read() {
     return transaction_->Read(buffer_.get(), 64, completion_callback_);
+  }
+
+  bool ShouldFail() {
+    return transaction_->interceptor_->ShouldFail(transaction_.get());
   }
 
   ~DevToolsNetworkControllerHelper() {
@@ -104,30 +104,32 @@ class DevToolsNetworkControllerHelper {
 
 TEST(DevToolsNetworkControllerTest, SingleDisableEnable) {
   DevToolsNetworkControllerHelper helper;
-  DevToolsNetworkController* controller = helper.controller();
-  net::HttpRequestInfo* request = helper.GetRequest();
-
-  EXPECT_FALSE(controller->ShouldFail(request));
-  helper.SetNetworkState(kClientId, true);
-  EXPECT_TRUE(controller->ShouldFail(request));
   helper.SetNetworkState(kClientId, false);
-  EXPECT_FALSE(controller->ShouldFail(request));
+  helper.Start();
+
+  EXPECT_FALSE(helper.ShouldFail());
+  helper.SetNetworkState(kClientId, true);
+  EXPECT_TRUE(helper.ShouldFail());
+  helper.SetNetworkState(kClientId, false);
+  EXPECT_FALSE(helper.ShouldFail());
+
+  base::RunLoop().RunUntilIdle();
 }
 
-TEST(DevToolsNetworkControllerTest, DoubleDisableEnable) {
+TEST(DevToolsNetworkControllerTest, InterceptorIsolation) {
   DevToolsNetworkControllerHelper helper;
-  DevToolsNetworkController* controller = helper.controller();
-  net::HttpRequestInfo* request = helper.GetRequest();
-
-  EXPECT_FALSE(controller->ShouldFail(request));
-  helper.SetNetworkState(kClientId, true);
-  EXPECT_TRUE(controller->ShouldFail(request));
-  helper.SetNetworkState(kAnotherClientId, true);
-  EXPECT_TRUE(controller->ShouldFail(request));
   helper.SetNetworkState(kClientId, false);
-  EXPECT_TRUE(controller->ShouldFail(request));
+  helper.Start();
+
+  EXPECT_FALSE(helper.ShouldFail());
+  helper.SetNetworkState(kAnotherClientId, true);
+  EXPECT_FALSE(helper.ShouldFail());
+  helper.SetNetworkState(kClientId, true);
+  EXPECT_TRUE(helper.ShouldFail());
+
   helper.SetNetworkState(kAnotherClientId, false);
-  EXPECT_FALSE(controller->ShouldFail(request));
+  helper.SetNetworkState(kClientId, false);
+  base::RunLoop().RunUntilIdle();
 }
 
 TEST(DevToolsNetworkControllerTest, FailOnStart) {
@@ -143,6 +145,7 @@ TEST(DevToolsNetworkControllerTest, FailOnStart) {
 
 TEST(DevToolsNetworkControllerTest, FailRunningTransaction) {
   DevToolsNetworkControllerHelper helper;
+  helper.SetNetworkState(kClientId, false);
   TestCallback* callback = helper.callback();
 
   int rv = helper.Start();
@@ -171,6 +174,7 @@ TEST(DevToolsNetworkControllerTest, FailRunningTransaction) {
 
 TEST(DevToolsNetworkControllerTest, ReadAfterFail) {
   DevToolsNetworkControllerHelper helper;
+  helper.SetNetworkState(kClientId, false);
 
   int rv = helper.Start();
   EXPECT_EQ(rv, net::OK);
@@ -190,25 +194,15 @@ TEST(DevToolsNetworkControllerTest, ReadAfterFail) {
 
 TEST(DevToolsNetworkControllerTest, AllowsDevToolsRequests) {
   DevToolsNetworkControllerHelper helper;
+  helper.SetNetworkState(kClientId, false);
   helper.mock_transaction()->request_headers =
+      "X-DevTools-Emulate-Network-Conditions-Client-Id: 42\r\n"
       "X-DevTools-Request-Initiator: frontend\r\n";
-  DevToolsNetworkController* controller = helper.controller();
-  net::HttpRequestInfo* request = helper.GetRequest();
+  helper.Start();
 
-  EXPECT_FALSE(controller->ShouldFail(request));
+  EXPECT_FALSE(helper.ShouldFail());
   helper.SetNetworkState(kClientId, true);
-  EXPECT_FALSE(controller->ShouldFail(request));
-}
-
-TEST(DevToolsNetworkControllerTest, AllowsNotMatchingRequests) {
-  DevToolsNetworkControllerHelper helper;
-  helper.mock_transaction()->url = kHttpDotOrg;
-  DevToolsNetworkController* controller = helper.controller();
-  net::HttpRequestInfo* request = helper.GetRequest();
-
-  EXPECT_FALSE(controller->ShouldFail(request));
-  helper.SetNetworkState(kClientId, true);
-  EXPECT_FALSE(controller->ShouldFail(request));
+  EXPECT_FALSE(helper.ShouldFail());
 }
 
 }  // namespace test

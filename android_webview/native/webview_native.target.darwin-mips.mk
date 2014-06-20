@@ -30,7 +30,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 LOCAL_SRC_FILES := \
 	android_webview/native/android_protocol_handler.cc \
 	android_webview/native/android_webview_jni_registrar.cc \
-	android_webview/native/aw_autofill_manager_delegate.cc \
+	android_webview/native/aw_autofill_client.cc \
 	android_webview/native/aw_browser_dependency_factory.cc \
 	android_webview/native/aw_contents.cc \
 	android_webview/native/aw_contents_client_bridge.cc \
@@ -38,7 +38,6 @@ LOCAL_SRC_FILES := \
 	android_webview/native/aw_contents_statics.cc \
 	android_webview/native/aw_dev_tools_server.cc \
 	android_webview/native/aw_form_database.cc \
-	android_webview/native/aw_geolocation_permission_context.cc \
 	android_webview/native/aw_http_auth_handler.cc \
 	android_webview/native/aw_pdf_exporter.cc \
 	android_webview/native/aw_picture.cc \
@@ -58,6 +57,7 @@ LOCAL_SRC_FILES := \
 	android_webview/native/permission/media_access_permission_request.cc \
 	android_webview/native/permission/permission_request_handler.cc \
 	android_webview/native/permission/permission_request_handler_client.cc \
+	android_webview/native/permission/protected_media_id_permission_request.cc \
 	android_webview/native/state_serializer.cc \
 	android_webview/native/external_video_surface_container_impl.cc
 
@@ -107,6 +107,7 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_BROWSER_CDMS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
@@ -129,11 +130,11 @@ MY_DEFS_Debug := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_SETCONFIG_INFO' \
+	'-DSK_SUPPORT_LEGACY_BITMAP_CONFIG' \
+	'-DSK_SUPPORT_LEGACY_DEVICE_VIRTUAL_ISOPAQUE' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
+	'-DSK_SUPPORT_LEGACY_SETCONFIG' \
 	'-DSK_IGNORE_ETC1_SUPPORT' \
-	'-DSK_SUPPORT_LEGACY_INSTALLPIXELSPARAMS' \
-	'-DSK_SUPPORT_LEGACY_DRAWPICTURE_API' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
@@ -159,6 +160,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
+	$(gyp_shared_intermediate_dir) \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/khronos \
@@ -241,6 +243,7 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_BROWSER_CDMS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
@@ -263,11 +266,11 @@ MY_DEFS_Release := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_SETCONFIG_INFO' \
+	'-DSK_SUPPORT_LEGACY_BITMAP_CONFIG' \
+	'-DSK_SUPPORT_LEGACY_DEVICE_VIRTUAL_ISOPAQUE' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
+	'-DSK_SUPPORT_LEGACY_SETCONFIG' \
 	'-DSK_IGNORE_ETC1_SUPPORT' \
-	'-DSK_SUPPORT_LEGACY_INSTALLPIXELSPARAMS' \
-	'-DSK_SUPPORT_LEGACY_DRAWPICTURE_API' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
@@ -294,6 +297,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
+	$(gyp_shared_intermediate_dir) \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/khronos \

@@ -18,6 +18,7 @@
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/sync/one_click_signin_helper.h"
 #include "chrome/browser/ui/sync/one_click_signin_histogram.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -118,7 +119,8 @@ void InlineSigninHelper::OnSigninOAuthInformationAvailable(
       base::MessageLoop::current()->PostTask(
           FROM_HERE,
           base::Bind(&InlineLoginHandlerImpl::CloseTab,
-          handler_));
+          handler_,
+          signin::ShouldShowAccountManagement(current_url_)));
     }
   } else {
     ProfileSyncService* sync_service =
@@ -186,11 +188,26 @@ InlineLoginHandlerImpl::InlineLoginHandlerImpl()
 
 InlineLoginHandlerImpl::~InlineLoginHandlerImpl() {}
 
+bool InlineLoginHandlerImpl::HandleContextMenu(
+    const content::ContextMenuParams& params) {
+#ifndef NDEBUG
+  return false;
+#else
+  return true;
+#endif
+}
+
 void InlineLoginHandlerImpl::SetExtraInitParams(base::DictionaryValue& params) {
   params.SetString("service", "chromiumsync");
 
-  signin::Source source =
-      signin::GetSourceForPromoURL(web_ui()->GetWebContents()->GetURL());
+  content::WebContents* contents = web_ui()->GetWebContents();
+  const GURL& current_url = contents->GetURL();
+  std::string is_constrained;
+  net::GetValueForKeyInQuery(current_url, "constrained", &is_constrained);
+  if (is_constrained == "1")
+    contents->SetDelegate(this);
+
+  signin::Source source = signin::GetSourceForPromoURL(current_url);
   OneClickSigninHelper::LogHistogramValue(
       source, one_click_signin::HISTOGRAM_SHOWN);
 }
@@ -345,13 +362,14 @@ void InlineLoginHandlerImpl::SyncStarterCallback(
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(&InlineLoginHandlerImpl::CloseTab,
-                   weak_factory_.GetWeakPtr()));
+                   weak_factory_.GetWeakPtr(),
+                   signin::ShouldShowAccountManagement(current_url)));
   } else {
      OneClickSigninHelper::RedirectToNtpOrAppsPageIfNecessary(contents, source);
   }
 }
 
-void InlineLoginHandlerImpl::CloseTab() {
+void InlineLoginHandlerImpl::CloseTab(bool show_account_management) {
   content::WebContents* tab = web_ui()->GetWebContents();
   Browser* browser = chrome::FindBrowserWithWebContents(tab);
   if (browser) {
@@ -362,6 +380,12 @@ void InlineLoginHandlerImpl::CloseTab() {
         tab_strip_model->ExecuteContextMenuCommand(
             index, TabStripModel::CommandCloseTab);
       }
+    }
+
+    if (show_account_management) {
+      browser->window()->ShowAvatarBubbleFromAvatarButton(
+            BrowserWindow::AVATAR_BUBBLE_MODE_ACCOUNT_MANAGEMENT,
+            signin::GAIA_SERVICE_TYPE_NONE);
     }
   }
 }

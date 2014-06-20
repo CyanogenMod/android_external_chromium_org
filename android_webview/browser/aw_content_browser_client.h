@@ -57,7 +57,7 @@ class AwContentBrowserClient : public content::ContentBrowserClient {
                                               int child_process_id) OVERRIDE;
   virtual std::string GetApplicationLocale() OVERRIDE;
   virtual std::string GetAcceptLangs(content::BrowserContext* context) OVERRIDE;
-  virtual gfx::ImageSkia* GetDefaultFavicon() OVERRIDE;
+  virtual const gfx::ImageSkia* GetDefaultFavicon() OVERRIDE;
   virtual bool AllowAppCache(const GURL& manifest_url,
                              const GURL& first_party,
                              content::ResourceContext* context) OVERRIDE;
@@ -119,6 +119,25 @@ class AwContentBrowserClient : public content::ContentBrowserClient {
       content::RenderFrameHost* render_frame_host,
       content::DesktopNotificationDelegate* delegate,
       base::Closure* cancel_callback) OVERRIDE;
+  virtual void RequestGeolocationPermission(
+      content::WebContents* web_contents,
+      int bridge_id,
+      const GURL& requesting_frame,
+      bool user_gesture,
+      base::Callback<void(bool)> result_callback,
+      base::Closure* cancel_callback) OVERRIDE;
+  virtual void RequestMidiSysExPermission(
+      content::WebContents* web_contents,
+      int bridge_id,
+      const GURL& requesting_frame,
+      bool user_gesture,
+      base::Callback<void(bool)> result_callback,
+      base::Closure* cancel_callback) OVERRIDE;
+  virtual void RequestProtectedMediaIdentifierPermission(
+    content::WebContents* web_contents,
+    const GURL& origin,
+    base::Callback<void(bool)> result_callback,
+    base::Closure* cancel_callback) OVERRIDE;
   virtual bool CanCreateWindow(const GURL& opener_url,
                                const GURL& opener_top_level_frame_url,
                                const GURL& source_origin,

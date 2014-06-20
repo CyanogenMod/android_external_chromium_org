@@ -42,6 +42,7 @@ include $(LOCAL_PATH)/components/components_resources.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/components/components_strings.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/components/data_reduction_proxy_browser.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/components/data_reduction_proxy_common.target.darwin-x86_64.mk
+include $(LOCAL_PATH)/components/keyed_service_core.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/components/navigation_interception.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/components/navigation_interception_jni_headers.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/components/os_crypt.target.darwin-x86_64.mk
@@ -225,6 +226,7 @@ include $(LOCAL_PATH)/third_party/angle/src/translator_lib.target.darwin-x86_64.
 include $(LOCAL_PATH)/third_party/ashmem/ashmem.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/third_party/brotli/brotli.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/third_party/expat/expat.target.darwin-x86_64.mk
+include $(LOCAL_PATH)/third_party/fips181/fips181.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/third_party/freetype/ft2.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/third_party/harfbuzz-ng/harfbuzz-ng.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/third_party/iccjpeg/iccjpeg.target.darwin-x86_64.mk
@@ -289,7 +291,6 @@ include $(LOCAL_PATH)/third_party/webrtc/common_video/common_video.target.darwin
 include $(LOCAL_PATH)/third_party/webrtc/modules/CNG.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/G711.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/G722.target.darwin-x86_64.mk
-include $(LOCAL_PATH)/third_party/webrtc/modules/NetEq4.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/PCM16B.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/audio_coding_module.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/audio_conference_mixer.target.darwin-x86_64.mk
@@ -302,6 +303,7 @@ include $(LOCAL_PATH)/third_party/webrtc/modules/iLBC.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/iSAC.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/iSACFix.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/media_file.target.darwin-x86_64.mk
+include $(LOCAL_PATH)/third_party/webrtc/modules/neteq.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/paced_sender.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/remote_bitrate_estimator.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/remote_bitrate_estimator/rbe_components.target.darwin-x86_64.mk
@@ -368,16 +370,14 @@ include $(LOCAL_PATH)/v8/tools/gyp/mksnapshot.host.darwin-x86_64.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_base.host.darwin-x86_64.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_base.target.darwin-x86_64.mk
-include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.x64.host.darwin-x86_64.mk
-include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.x64.target.darwin-x86_64.mk
+include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.host.darwin-x86_64.mk
+include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_nosnapshot.host.darwin-x86_64.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_snapshot.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/webkit/child/overscroller_jni_headers.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/webkit/child/webkit_child.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/webkit/common/gpu/webkit_gpu.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/webkit/common/webkit_common.target.darwin-x86_64.mk
-include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_bindings.target.darwin-x86_64.mk
-include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_support.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/webkit/webkit_resources.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_browser.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_common.target.darwin-x86_64.mk

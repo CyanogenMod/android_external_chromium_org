@@ -12,6 +12,7 @@
 #include "base/task_runner_util.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_disk_cache.h"
+#include "content/browser/service_worker/service_worker_histograms.h"
 #include "content/browser/service_worker/service_worker_info.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_utils.h"
@@ -592,13 +593,18 @@ void ServiceWorkerStorage::DidGetAllRegistrations(
         info.active_version = version->GetInfo();
       else
         info.waiting_version = version->GetInfo();
-    } else {
+      infos.push_back(info);
+      continue;
+    }
+
+    if (it->is_active) {
       info.active_version.is_null = false;
-      if (it->is_active)
-        info.active_version.status = ServiceWorkerVersion::ACTIVE;
-      else
-        info.active_version.status = ServiceWorkerVersion::INSTALLED;
+      info.active_version.status = ServiceWorkerVersion::ACTIVE;
       info.active_version.version_id = it->version_id;
+    } else {
+      info.waiting_version.is_null = false;
+      info.waiting_version.status = ServiceWorkerVersion::INSTALLED;
+      info.waiting_version.version_id = it->version_id;
     }
     infos.push_back(info);
   }
@@ -759,6 +765,7 @@ void ServiceWorkerStorage::OnDiskCacheInitialized(int rv) {
     disk_cache_->Disable();
     state_ = DISABLED;
   }
+  ServiceWorkerHistograms::CountInitDiskCacheResult(rv == net::OK);
 }
 
 void ServiceWorkerStorage::StartPurgingResources(

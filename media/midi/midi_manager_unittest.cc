@@ -171,17 +171,25 @@ TEST_F(MidiManagerTest, StartAndEndSessionWithError) {
 TEST_F(MidiManagerTest, StartMultipleSessions) {
   scoped_ptr<FakeMidiManagerClient> client1;
   scoped_ptr<FakeMidiManagerClient> client2;
+  scoped_ptr<FakeMidiManagerClient> client3;
   client1.reset(new FakeMidiManagerClient(0));
   client2.reset(new FakeMidiManagerClient(1));
+  client3.reset(new FakeMidiManagerClient(1));
 
   StartTheFirstSession(client1.get());
   StartTheNthSession(client2.get(), 2);
+  StartTheNthSession(client3.get(), 3);
   CompleteInitialization(MIDI_OK);
   EXPECT_EQ(MIDI_OK, client1->WaitForResult());
   EXPECT_EQ(MIDI_OK, client2->WaitForResult());
-  EndSession(client1.get(), 2U, 1U);
-  EndSession(client2.get(), 1U, 0U);
+  EXPECT_EQ(MIDI_OK, client3->WaitForResult());
+  EndSession(client1.get(), 3U, 2U);
+  EndSession(client2.get(), 2U, 1U);
+  EndSession(client3.get(), 1U, 0U);
 }
+
+// TODO(toyoshim): Add a test for a MidiManagerClient that has multiple
+// sessions with multiple client_id.
 
 TEST_F(MidiManagerTest, TooManyPendingSessions) {
   // Push as many client requests for starting session as possible.
@@ -217,6 +225,22 @@ TEST_F(MidiManagerTest, TooManyPendingSessions) {
     EndSession(many_existing_clients[i], sessions, sessions - 1);
 }
 
+TEST_F(MidiManagerTest, AbortSession) {
+  // A client starting a session can be destructed while an asynchronous
+  // initialization is performed.
+  scoped_ptr<FakeMidiManagerClient> client;
+  client.reset(new FakeMidiManagerClient(0));
+
+  StartTheFirstSession(client.get());
+  EndSession(client.get(), 0, 0);
+  client.reset();
+
+  // Following function should not call the destructed |client| function.
+  CompleteInitialization(MIDI_OK);
+  base::RunLoop run_loop;
+  run_loop.RunUntilIdle();
+}
+
 TEST_F(MidiManagerTest, CreateMidiManager) {
   scoped_ptr<FakeMidiManagerClient> client;
   client.reset(new FakeMidiManagerClient(0));
@@ -224,13 +248,17 @@ TEST_F(MidiManagerTest, CreateMidiManager) {
   scoped_ptr<MidiManager> manager(MidiManager::Create());
   manager->StartSession(client.get(), client->client_id());
 
+  MidiResult result = client->WaitForResult();
   // This #ifdef needs to be identical to the one in media/midi/midi_manager.cc.
   // Do not change the condition for disabling this test.
 #if !defined(OS_MACOSX) && !defined(OS_WIN) && !defined(USE_ALSA) && \
     !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
-  EXPECT_EQ(MIDI_NOT_SUPPORTED, client->WaitForResult());
+  EXPECT_EQ(MIDI_NOT_SUPPORTED, result);
+#elif defined(USE_ALSA)
+  // Temporary until http://crbug.com/371230 is resolved.
+  EXPECT_TRUE((result == MIDI_OK) || (result == MIDI_INITIALIZATION_ERROR));
 #else
-  EXPECT_EQ(MIDI_OK, client->WaitForResult());
+  EXPECT_EQ(MIDI_OK, result);
 #endif
 }
 

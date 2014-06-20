@@ -16,6 +16,7 @@
         '../third_party/re2/re2.gyp:re2',
         '../components/components.gyp:autofill_content_renderer',
         '../components/components.gyp:cdm_renderer',
+        '../components/components.gyp:data_reduction_proxy_common',
         '../components/components.gyp:startup_metric_utils',
         '../components/components.gyp:plugins_renderer',
         '../components/components.gyp:translate_core_common',
@@ -60,12 +61,16 @@
         'renderer/extensions/chrome_extension_helper.h',
         'renderer/extensions/chrome_extensions_dispatcher_delegate.cc',
         'renderer/extensions/chrome_extensions_dispatcher_delegate.h',
+        'renderer/extensions/chrome_extensions_render_frame_observer.cc',
+        'renderer/extensions/chrome_extensions_render_frame_observer.h',
         'renderer/extensions/chrome_extensions_renderer_client.cc',
         'renderer/extensions/chrome_extensions_renderer_client.h',
         'renderer/extensions/chrome_v8_context.cc',
         'renderer/extensions/chrome_v8_context.h',
         'renderer/extensions/chrome_v8_extension_handler.cc',
         'renderer/extensions/chrome_v8_extension_handler.h',
+        'renderer/extensions/enterprise_platform_keys_natives.cc',
+        'renderer/extensions/enterprise_platform_keys_natives.h',
         'renderer/extensions/extension_frame_helper.cc',
         'renderer/extensions/extension_frame_helper.h',
         'renderer/extensions/extension_localization_peer.cc',
@@ -82,10 +87,6 @@
         'renderer/extensions/page_actions_custom_bindings.h',
         'renderer/extensions/page_capture_custom_bindings.cc',
         'renderer/extensions/page_capture_custom_bindings.h',
-        'renderer/extensions/pepper_request_natives.cc',
-        'renderer/extensions/pepper_request_natives.h',
-        'renderer/extensions/pepper_request_proxy.cc',
-        'renderer/extensions/pepper_request_proxy.h',
         'renderer/extensions/renderer_permissions_policy_delegate.cc',
         'renderer/extensions/renderer_permissions_policy_delegate.h',
         'renderer/extensions/resource_request_policy.cc',
@@ -163,7 +164,6 @@
         'renderer/resources/extensions/page_action_custom_bindings.js',
         'renderer/resources/extensions/page_actions_custom_bindings.js',
         'renderer/resources/extensions/page_capture_custom_bindings.js',
-        'renderer/resources/extensions/pepper_request.js',
         'renderer/resources/extensions/system_indicator_custom_bindings.js',
         'renderer/resources/extensions/tts_custom_bindings.js',
         'renderer/resources/extensions/tts_engine_custom_bindings.js',
@@ -188,8 +188,6 @@
         'renderer/page_load_histograms.h',
         'renderer/pepper/chrome_renderer_pepper_host_factory.cc',
         'renderer/pepper/chrome_renderer_pepper_host_factory.h',
-        'renderer/pepper/pepper_extensions_common_host.cc',
-        'renderer/pepper/pepper_extensions_common_host.h',
         'renderer/pepper/pepper_flash_drm_renderer_host.cc',
         'renderer/pepper/pepper_flash_drm_renderer_host.h',
         'renderer/pepper/pepper_flash_font_file_host.cc',
@@ -214,6 +212,8 @@
         'renderer/plugins/chrome_plugin_placeholder.h',
         'renderer/plugins/plugin_uma.cc',
         'renderer/plugins/plugin_uma.h',
+        'renderer/prefetch_helper.cc',
+        'renderer/prefetch_helper.h',
         'renderer/prerender/prerender_dispatcher.cc',
         'renderer/prerender/prerender_dispatcher.h',
         'renderer/prerender/prerender_extra_data.cc',
@@ -315,6 +315,12 @@
             ['exclude', '^renderer/safe_browsing/'],
           ],
         }],
+        ['enable_extensions==0', {
+          'sources!': [
+            'renderer/extensions/chrome_extensions_render_frame_observer.cc',
+            'renderer/extensions/chrome_extensions_render_frame_observer.h',
+          ],
+        }],
         ['enable_webrtc==0', {
           'sources!': [
             'renderer/extensions/cast_streaming_native_handler.cc',
@@ -343,7 +349,7 @@
             ['exclude', '^renderer/printing/']
           ]
         }],
-        ['win_pdf_metafile_for_printing', {
+        ['win_pdf_metafile_for_printing==1', {
           'sources': [
             'renderer/printing/print_web_view_helper_pdf_win.cc',
           ],

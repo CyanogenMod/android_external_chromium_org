@@ -6,9 +6,11 @@
 
 #include <map>
 
+#include "base/debug/leak_annotations.h"
 #include "base/i18n/bidi_line_iterator.h"
 #include "base/i18n/break_iterator.h"
 #include "base/i18n/char_iterator.h"
+#include "base/lazy_instance.h"
 #include "third_party/harfbuzz-ng/src/hb.h"
 #include "third_party/icu/source/common/unicode/ubidi.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -184,31 +186,36 @@ hb_bool_t GetGlyphExtents(hb_font_t* font,
   return true;
 }
 
-// Returns a HarfBuzz font data provider that uses Skia.
-hb_font_funcs_t* GetFontFuncs() {
-  static hb_font_funcs_t* font_funcs = 0;
-
-  // We don't set callback functions which we can't support.
-  // HarfBuzz will use the fallback implementation if they aren't set.
-  if (!font_funcs) {
-    // The object created by |hb_font_funcs_create()| below lives indefinitely
-    // and is intentionally leaked.
-    font_funcs = hb_font_funcs_create();
-    hb_font_funcs_set_glyph_func(font_funcs, GetGlyph, 0, 0);
+class FontFuncs {
+ public:
+  FontFuncs() : font_funcs_(hb_font_funcs_create()) {
+    hb_font_funcs_set_glyph_func(font_funcs_, GetGlyph, 0, 0);
     hb_font_funcs_set_glyph_h_advance_func(
-        font_funcs, GetGlyphHorizontalAdvance, 0, 0);
+        font_funcs_, GetGlyphHorizontalAdvance, 0, 0);
     hb_font_funcs_set_glyph_h_kerning_func(
-        font_funcs, GetGlyphHorizontalKerning, 0, 0);
+        font_funcs_, GetGlyphHorizontalKerning, 0, 0);
     hb_font_funcs_set_glyph_h_origin_func(
-        font_funcs, GetGlyphHorizontalOrigin, 0, 0);
+        font_funcs_, GetGlyphHorizontalOrigin, 0, 0);
     hb_font_funcs_set_glyph_v_kerning_func(
-        font_funcs, GetGlyphVerticalKerning, 0, 0);
+        font_funcs_, GetGlyphVerticalKerning, 0, 0);
     hb_font_funcs_set_glyph_extents_func(
-        font_funcs, GetGlyphExtents, 0, 0);
-    hb_font_funcs_make_immutable(font_funcs);
+        font_funcs_, GetGlyphExtents, 0, 0);
+    hb_font_funcs_make_immutable(font_funcs_);
   }
-  return font_funcs;
-}
+
+  ~FontFuncs() {
+    hb_font_funcs_destroy(font_funcs_);
+  }
+
+  hb_font_funcs_t* get() { return font_funcs_; }
+
+ private:
+  hb_font_funcs_t* font_funcs_;
+
+  DISALLOW_COPY_AND_ASSIGN(FontFuncs);
+};
+
+base::LazyInstance<FontFuncs>::Leaky g_font_funcs = LAZY_INSTANCE_INITIALIZER;
 
 // Returns the raw data of the font table |tag|.
 hb_blob_t* GetFontTable(hb_face_t* face, hb_tag_t tag, void* user_data) {
@@ -253,6 +260,8 @@ hb_font_t* CreateHarfBuzzFont(SkTypeface* skia_face, int text_size) {
 
   FaceCache* face_cache = &face_caches[skia_face->uniqueID()];
   if (face_cache->first == 0) {
+    // These HarfBuzz faces live indefinitely and are intentionally leaked.
+    ANNOTATE_SCOPED_MEMORY_LEAK;
     hb_face_t* harfbuzz_face = CreateHarfBuzzFace(skia_face);
     *face_cache = FaceCache(harfbuzz_face, GlyphCache());
   }
@@ -265,7 +274,7 @@ hb_font_t* CreateHarfBuzzFont(SkTypeface* skia_face, int text_size) {
   FontData* hb_font_data = new FontData(&face_cache->second);
   hb_font_data->paint_.setTypeface(skia_face);
   hb_font_data->paint_.setTextSize(text_size);
-  hb_font_set_funcs(harfbuzz_font, GetFontFuncs(), hb_font_data,
+  hb_font_set_funcs(harfbuzz_font, g_font_funcs.Get().get(), hb_font_data,
                     DeleteByType<FontData>);
   hb_font_make_immutable(harfbuzz_font);
   return harfbuzz_font;
@@ -275,6 +284,26 @@ hb_font_t* CreateHarfBuzzFont(SkTypeface* skia_face, int text_size) {
 bool IsUnusualBlockCode(UBlockCode block_code) {
   return block_code == UBLOCK_GEOMETRIC_SHAPES ||
          block_code == UBLOCK_MISCELLANEOUS_SYMBOLS;
+}
+
+// Returns the index of the first unusual character after a usual character or
+// vice versa. Unusual characters are defined by |IsUnusualBlockCode|.
+size_t FindUnusualCharacter(const base::string16& text,
+                            size_t run_start,
+                            size_t run_break) {
+  const int32 run_length = static_cast<int32>(run_break - run_start);
+  base::i18n::UTF16CharIterator iter(text.c_str() + run_start,
+                                     run_length);
+  const UBlockCode first_block_code = ublock_getCode(iter.get());
+  const bool first_block_unusual = IsUnusualBlockCode(first_block_code);
+  while (iter.Advance() && iter.array_pos() < run_length) {
+    const UBlockCode current_block_code = ublock_getCode(iter.get());
+    if (current_block_code != first_block_code &&
+        (first_block_unusual || IsUnusualBlockCode(current_block_code))) {
+      return run_start + iter.array_pos();
+    }
+  }
+  return run_break;
 }
 
 // If the given scripts match, returns the one that isn't USCRIPT_COMMON or
@@ -393,11 +422,11 @@ size_t TextRunHarfBuzz::CharToGlyph(size_t pos) const {
   DCHECK(range.start() <= pos && pos < range.end());
 
   if (!is_rtl) {
-    for (size_t i = 0; i < glyph_count - 1; ++i) {
-      if (pos < glyph_to_char[i + 1])
-        return i;
-    }
-    return glyph_count - 1;
+    size_t cluster_start = 0;
+    for (size_t i = 1; i < glyph_count && pos >= glyph_to_char[i]; ++i)
+      if (glyph_to_char[i] != glyph_to_char[i - 1])
+        cluster_start = i;
+    return cluster_start;
   }
 
   for (size_t i = 0; i < glyph_count; ++i) {
@@ -408,16 +437,34 @@ size_t TextRunHarfBuzz::CharToGlyph(size_t pos) const {
   return 0;
 }
 
-Range TextRunHarfBuzz::CharRangeToGlyphRange(const Range& range) const {
-  DCHECK(range.Contains(range));
-  DCHECK(!range.is_reversed());
-  DCHECK(!range.is_empty());
+Range TextRunHarfBuzz::CharRangeToGlyphRange(const Range& char_range) const {
+  DCHECK(range.Contains(char_range));
+  DCHECK(!char_range.is_reversed());
+  DCHECK(!char_range.is_empty());
 
-  const size_t first = CharToGlyph(range.start());
-  const size_t last = CharToGlyph(range.end() - 1);
-  // TODO(ckocagil): What happens when the character has zero or multiple
-  // glyphs? Is the "+ 1" below correct then?
-  return Range(std::min(first, last), std::max(first, last) + 1);
+  size_t first = 0;
+  size_t last = 0;
+
+  if (is_rtl) {
+    // For RTL runs, we subtract 1 from |char_range| to get the leading edges.
+    last = CharToGlyph(char_range.end() - 1);
+    // Loop until we find a non-empty glyph range. For multi-character clusters,
+    // the loop is needed to find the cluster end. Do the same for LTR below.
+    for (size_t i = char_range.start(); i > range.start(); --i) {
+      first = CharToGlyph(i - 1);
+      if (first != last)
+        return Range(last, first);
+    }
+    return Range(last, glyph_count);
+  }
+
+  first = CharToGlyph(char_range.start());
+  for (size_t i = char_range.end(); i < range.end(); ++i) {
+    last = CharToGlyph(i);
+    if (first != last)
+      return Range(first, last);
+  }
+  return Range(first, glyph_count);
 }
 
 // Returns whether the given shaped run contains any missing glyphs.
@@ -431,20 +478,16 @@ bool TextRunHarfBuzz::HasMissingGlyphs() const {
 }
 
 int TextRunHarfBuzz::GetGlyphXBoundary(size_t text_index, bool trailing) const {
-  int x = preceding_run_widths;
-  Range glyph_range;
   if (text_index == range.end()) {
     trailing = true;
-    glyph_range = is_rtl ? Range(0, 1) : Range(glyph_count - 1, glyph_count);
-  } else {
-    glyph_range = CharRangeToGlyphRange(Range(text_index, text_index + 1));
+    --text_index;
   }
-  const int trailing_step = trailing ? 1 : 0;
-  const size_t glyph_pos =
-      glyph_range.start() + (is_rtl ? (1 - trailing_step) : trailing_step);
-  x += glyph_pos < glyph_count ?
+  Range glyph_range = CharRangeToGlyphRange(Range(text_index, text_index + 1));
+  const size_t glyph_pos = (is_rtl == trailing) ?
+      glyph_range.start() : glyph_range.end();
+  const int x = glyph_pos < glyph_count ?
       SkScalarRoundToInt(positions[glyph_pos].x()) : width;
-  return x;
+  return preceding_run_widths + x;
 }
 
 }  // namespace internal
@@ -457,7 +500,7 @@ RenderTextHarfBuzz::~RenderTextHarfBuzz() {}
 
 Size RenderTextHarfBuzz::GetStringSize() {
   EnsureLayout();
-  return Size(lines()[0].size.width(), font_list().GetHeight());
+  return lines()[0].size;
 }
 
 SelectionModel RenderTextHarfBuzz::FindCursorPosition(const Point& point) {
@@ -702,6 +745,8 @@ void RenderTextHarfBuzz::EnsureLayout() {
   if (lines().empty()) {
     std::vector<internal::Line> lines;
     lines.push_back(internal::Line());
+    lines[0].baseline = font_list().GetBaseline();
+    lines[0].size.set_height(font_list().GetHeight());
 
     int current_x = 0;
     SkPaint paint;
@@ -843,12 +888,17 @@ void RenderTextHarfBuzz::ItemizeText() {
   const bool is_text_rtl = GetTextDirection() == base::i18n::RIGHT_TO_LEFT;
   DCHECK_NE(0U, text.length());
 
-  // If ICU fails to itemize the text, we set |fake_runs| and create a run that
-  // spans the entire text. This is needed because early returning and leaving
-  // the runs set empty causes some clients to crash/misbehave since they expect
-  // non-zero text metrics from a non-empty text.
+  // If ICU fails to itemize the text, we create a run that spans the entire
+  // text. This is needed because leaving the runs set empty causes some clients
+  // to misbehave since they expect non-zero text metrics from a non-empty text.
   base::i18n::BiDiLineIterator bidi_iterator;
-  bool fake_runs = !bidi_iterator.Open(text, is_text_rtl, false);
+  if (!bidi_iterator.Open(text, is_text_rtl, false)) {
+    internal::TextRunHarfBuzz* run = new internal::TextRunHarfBuzz;
+    run->range = Range(0, text.length());
+    runs_.push_back(run);
+    visual_to_logical_ = logical_to_visual_ = std::vector<int32_t>(1, 0);
+    return;
+  }
 
   // Temporarily apply composition underlines and selection colors.
   ApplyCompositionAndSelectionStyles();
@@ -868,49 +918,28 @@ void RenderTextHarfBuzz::ItemizeText() {
     run->diagonal_strike = style.style(DIAGONAL_STRIKE);
     run->underline = style.style(UNDERLINE);
 
-    if (fake_runs) {
-      run_break = text.length();
-    } else {
-      int32 script_item_break = 0;
-      bidi_iterator.GetLogicalRun(run_break, &script_item_break, &run->level);
-      // Find the length and script of this script run.
-      script_item_break = ScriptInterval(text, run_break,
-          script_item_break - run_break, &run->script) + run_break;
+    int32 script_item_break = 0;
+    bidi_iterator.GetLogicalRun(run_break, &script_item_break, &run->level);
+    // Odd BiDi embedding levels correspond to RTL runs.
+    run->is_rtl = (run->level % 2) == 1;
+    // Find the length and script of this script run.
+    script_item_break = ScriptInterval(text, run_break,
+        script_item_break - run_break, &run->script) + run_break;
 
-      // Find the next break and advance the iterators as needed.
-      run_break = std::min(static_cast<size_t>(script_item_break),
-                           TextIndexToLayoutIndex(style.GetRange().end()));
+    // Find the next break and advance the iterators as needed.
+    run_break = std::min(static_cast<size_t>(script_item_break),
+                         TextIndexToLayoutIndex(style.GetRange().end()));
 
-      // Break runs adjacent to character substrings in certain code blocks.
-      // This avoids using their fallback fonts for more characters than needed,
-      // in cases like "\x25B6 Media Title", etc. http://crbug.com/278913
-      if (run_break > run->range.start()) {
-        const size_t run_start = run->range.start();
-        const int32 run_length = static_cast<int32>(run_break - run_start);
-        base::i18n::UTF16CharIterator iter(text.c_str() + run_start,
-                                           run_length);
-        const UBlockCode first_block_code = ublock_getCode(iter.get());
-        const bool first_block_unusual = IsUnusualBlockCode(first_block_code);
-        while (iter.Advance() && iter.array_pos() < run_length) {
-          const UBlockCode current_block_code = ublock_getCode(iter.get());
-          if (current_block_code != first_block_code &&
-              (first_block_unusual || IsUnusualBlockCode(current_block_code))) {
-            run_break = run_start + iter.array_pos();
-            break;
-          }
-        }
-      }
-    }
+    // Break runs adjacent to character substrings in certain code blocks.
+    // This avoids using their fallback fonts for more characters than needed,
+    // in cases like "\x25B6 Media Title", etc. http://crbug.com/278913
+    if (run_break > run->range.start())
+      run_break = FindUnusualCharacter(text, run->range.start(), run_break);
 
     DCHECK(IsValidCodePointIndex(text, run_break));
     style.UpdatePosition(LayoutIndexToTextIndex(run_break));
     run->range.set_end(run_break);
-    UBiDiDirection direction = ubidi_getBaseDirection(
-        text.c_str() + run->range.start(), run->range.length());
-    if (direction == UBIDI_NEUTRAL)
-      run->is_rtl = is_text_rtl;
-    else
-      run->is_rtl = direction == UBIDI_RTL;
+
     runs_.push_back(run);
   }
 

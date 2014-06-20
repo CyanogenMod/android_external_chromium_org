@@ -6,120 +6,54 @@
 
 #include <string>
 
+#include "athena/home/public/app_model_builder.h"
 #include "base/basictypes.h"
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/files/file_path.h"
 #include "base/strings/utf_string_conversions.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/app_list/app_list_item.h"
-#include "ui/app_list/app_list_item_list.h"
 #include "ui/app_list/app_list_model.h"
 #include "ui/app_list/search_box_model.h"
+#include "ui/app_list/search_provider.h"
 #include "ui/app_list/search_result.h"
 #include "ui/app_list/speech_ui_model.h"
 #include "ui/gfx/image/image_skia.h"
 
 namespace athena {
 
-namespace {
-
-const int kIconSize = 64;
-
-class DummyItem : public app_list::AppListItem {
- public:
-  enum Type {
-    DUMMY_MAIL,
-    DUMMY_CALENDAR,
-    DUMMY_VIDEO,
-    DUMMY_MUSIC,
-    DUMMY_CONTACT,
-    LAST_TYPE,
-  };
-
-  static std::string GetTitle(Type type) {
-    switch (type) {
-      case DUMMY_MAIL:
-        return "mail";
-      case DUMMY_CALENDAR:
-        return "calendar";
-      case DUMMY_VIDEO:
-        return "video";
-      case DUMMY_MUSIC:
-        return "music";
-      case DUMMY_CONTACT:
-        return "contact";
-      case LAST_TYPE:
-        break;
-    }
-    NOTREACHED();
-    return "";
-  }
-
-  static std::string GetId(Type type) {
-    return std::string("id-") + GetTitle(type);
-  }
-
-  explicit DummyItem(Type type)
-      : app_list::AppListItem(GetId(type)),
-        type_(type) {
-    SetIcon(GetIcon(), false /* has_shadow */);
-    SetName(GetTitle(type_));
-  }
-
- private:
-  gfx::ImageSkia GetIcon() const {
-    SkColor color = SK_ColorWHITE;
-    switch (type_) {
-      case DUMMY_MAIL:
-        color = SK_ColorRED;
-        break;
-      case DUMMY_CALENDAR:
-        color = SK_ColorBLUE;
-        break;
-      case DUMMY_VIDEO:
-        color = SK_ColorGREEN;
-        break;
-      case DUMMY_MUSIC:
-        color = SK_ColorYELLOW;
-        break;
-      case DUMMY_CONTACT:
-        color = SK_ColorCYAN;
-        break;
-      case LAST_TYPE:
-        NOTREACHED();
-        break;
-    }
-    SkBitmap bitmap;
-    bitmap.setConfig(SkBitmap::kARGB_8888_Config, kIconSize, kIconSize);
-    bitmap.allocPixels();
-    bitmap.eraseColor(color);
-    return gfx::ImageSkia::CreateFrom1xBitmap(bitmap);
-  }
-
-  Type type_;
-
-  DISALLOW_COPY_AND_ASSIGN(DummyItem);
-};
-
-}  // namespace
-
-AppListViewDelegate::AppListViewDelegate()
+AppListViewDelegate::AppListViewDelegate(AppModelBuilder* model_builder)
     : model_(new app_list::AppListModel),
       speech_ui_(new app_list::SpeechUIModel(
           app_list::SPEECH_RECOGNITION_OFF)) {
-  PopulateApps();
+  model_builder->PopulateApps(model_.get());
   // TODO(mukai): get the text from the resources.
   model_->search_box()->SetHintText(base::ASCIIToUTF16("Search"));
 }
 
 AppListViewDelegate::~AppListViewDelegate() {
+  for (size_t i = 0; i < search_providers_.size(); ++i)
+    search_providers_[i]->set_result_changed_callback(base::Closure());
 }
 
-void AppListViewDelegate::PopulateApps() {
-  for (int i = 0; i < static_cast<int>(DummyItem::LAST_TYPE); ++i) {
-    model_->AddItem(scoped_ptr<app_list::AppListItem>(
-        new DummyItem(static_cast<DummyItem::Type>(i))));
-  }
+void AppListViewDelegate::RegisterSearchProvider(
+    app_list::SearchProvider* search_provider) {
+  // Right now we allow only one provider.
+  // TODO(mukai): port app-list's mixer and remove this restriction.
+  DCHECK(search_providers_.empty());
+  search_provider->set_result_changed_callback(base::Bind(
+      &AppListViewDelegate::SearchResultChanged, base::Unretained(this)));
+  search_providers_.push_back(search_provider);
+}
+
+void AppListViewDelegate::SearchResultChanged() {
+  // TODO(mukai): port app-list's Mixer to reorder the results properly.
+  app_list::SearchProvider* search_provider = search_providers_[0];
+  std::vector<app_list::SearchResult*> results;
+  search_provider->ReleaseResult(&results);
+  model_->results()->DeleteAll();
+  for (size_t i = 0; i < results.size(); ++i)
+    model_->results()->Add(results[i]);
 }
 
 bool AppListViewDelegate::ForceNativeDesktop() const {
@@ -145,17 +79,19 @@ void AppListViewDelegate::GetShortcutPathForApp(
 }
 
 void AppListViewDelegate::StartSearch() {
-  // TODO(mukai): implement this.
+  for (size_t i = 0; i < search_providers_.size(); ++i)
+    search_providers_[i]->Start(model_->search_box()->text());
 }
 
 void AppListViewDelegate::StopSearch() {
-  // TODO(mukai): implement this.
+  for (size_t i = 0; i < search_providers_.size(); ++i)
+    search_providers_[i]->Stop();
 }
 
 void AppListViewDelegate::OpenSearchResult(app_list::SearchResult* result,
                                            bool auto_launch,
                                            int event_flags) {
-  // TODO(mukai): implement this.
+  result->Open(event_flags);
 }
 
 void AppListViewDelegate::InvokeSearchResultAction(

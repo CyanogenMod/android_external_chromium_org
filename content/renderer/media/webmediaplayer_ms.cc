@@ -12,6 +12,7 @@
 #include "base/metrics/histogram.h"
 #include "cc/layers/video_layer.h"
 #include "content/public/renderer/render_view.h"
+#include "content/renderer/compositor_bindings/web_layer_impl.h"
 #include "content/renderer/media/media_stream_audio_renderer.h"
 #include "content/renderer/media/media_stream_renderer_factory.h"
 #include "content/renderer/media/video_frame_provider.h"
@@ -28,7 +29,6 @@
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
 using blink::WebCanvas;
 using blink::WebMediaPlayer;
@@ -94,7 +94,6 @@ WebMediaPlayerMS::WebMediaPlayerMS(
       pending_repaint_(false),
       video_frame_provider_client_(NULL),
       received_first_frame_(false),
-      sequence_started_(false),
       total_frame_count_(0),
       dropped_frame_count_(0),
       media_log_(media_log),
@@ -415,8 +414,7 @@ void WebMediaPlayerMS::OnFrameAvailable(
     GetClient()->sizeChanged();
 
     if (video_frame_provider_) {
-      video_weblayer_.reset(
-          new webkit::WebLayerImpl(cc::VideoLayer::Create(this)));
+      video_weblayer_.reset(new WebLayerImpl(cc::VideoLayer::Create(this)));
       video_weblayer_->setOpaque(true);
       GetClient()->setWebLayer(video_weblayer_.get());
     }
@@ -426,10 +424,6 @@ void WebMediaPlayerMS::OnFrameAvailable(
   if (paused_)
     return;
 
-  if (!sequence_started_) {
-    sequence_started_ = true;
-    start_time_ = frame->timestamp();
-  }
   bool size_changed = !current_frame_.get() ||
                       current_frame_->natural_size() != frame->natural_size();
 
@@ -438,7 +432,7 @@ void WebMediaPlayerMS::OnFrameAvailable(
     if (!current_frame_used_ && current_frame_.get())
       ++dropped_frame_count_;
     current_frame_ = frame;
-    current_time_ = frame->timestamp() - start_time_;
+    current_time_ = frame->timestamp();
     current_frame_used_ = false;
   }
 

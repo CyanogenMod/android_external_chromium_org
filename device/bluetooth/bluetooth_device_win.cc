@@ -197,14 +197,6 @@ void BluetoothDeviceWin::Forget(const ErrorCallback& error_callback) {
   NOTIMPLEMENTED();
 }
 
-void BluetoothDeviceWin::ConnectToProfile(
-    device::BluetoothProfile* profile,
-    const base::Closure& callback,
-    const ConnectToProfileErrorCallback& error_callback) {
-  DCHECK(ui_task_runner_->RunsTasksOnCurrentThread());
-  error_callback.Run("Removed. Use chrome.bluetoothSocket.connect() instead.");
-}
-
 void BluetoothDeviceWin::ConnectToService(
     const BluetoothUUID& uuid,
     const ConnectToServiceCallback& callback,
@@ -213,6 +205,13 @@ void BluetoothDeviceWin::ConnectToService(
       BluetoothSocketWin::CreateBluetoothSocket(
           ui_task_runner_, socket_thread_, NULL, net::NetLog::Source()));
   socket->Connect(this, uuid, base::Bind(callback, socket), error_callback);
+}
+
+void BluetoothDeviceWin::CreateGattConnection(
+      const GattConnectionCallback& callback,
+      const ConnectErrorCallback& error_callback) {
+  // TODO(armansito): Implement.
+  error_callback.Run(ERROR_UNSUPPORTED_DEVICE);
 }
 
 void BluetoothDeviceWin::StartConnectionMonitor(

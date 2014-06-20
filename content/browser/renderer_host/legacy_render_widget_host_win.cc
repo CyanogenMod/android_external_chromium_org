@@ -16,6 +16,7 @@
 #include "ui/base/win/internal_constants.h"
 #include "ui/base/win/window_event_target.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/win/dpi.h"
 
 namespace content {
 
@@ -23,6 +24,9 @@ namespace content {
 // other client is listening on MSAA events - if so, we enable full web
 // accessibility support.
 const int kIdScreenReaderHoneyPot = 1;
+
+// A version of the OBJID_CLIENT constant that works in 64-bit mode too.
+static const LPARAM kObjIdClient = static_cast<ULONG>(OBJID_CLIENT);
 
 LegacyRenderWidgetHostHWND::~LegacyRenderWidgetHostHWND() {
   ::DestroyWindow(hwnd());
@@ -79,8 +83,9 @@ void LegacyRenderWidgetHostHWND::Hide() {
 }
 
 void LegacyRenderWidgetHostHWND::SetBounds(const gfx::Rect& bounds) {
-  ::SetWindowPos(hwnd(), NULL, bounds.x(), bounds.y(), bounds.width(),
-                  bounds.height(), 0);
+  gfx::Rect bounds_in_pixel = gfx::win::DIPToScreenRect(bounds);
+  ::SetWindowPos(hwnd(), NULL, bounds_in_pixel.x(), bounds_in_pixel.y(),
+                 bounds_in_pixel.width(), bounds_in_pixel.height(), 0);
 }
 
 void LegacyRenderWidgetHostHWND::OnFinalMessage(HWND hwnd) {
@@ -140,7 +145,7 @@ LRESULT LegacyRenderWidgetHostHWND::OnGetObject(UINT message,
     return static_cast<LRESULT>(0L);
   }
 
-  if (OBJID_CLIENT != l_param || !manager_)
+  if (kObjIdClient != l_param || !manager_)
     return static_cast<LRESULT>(0L);
 
   base::win::ScopedComPtr<IAccessible> root(

@@ -60,22 +60,22 @@ class LocalToRemoteSyncer : public SyncTask {
   void SyncCompleted(scoped_ptr<SyncTaskToken> token,
                      SyncStatusCode status);
 
-  void HandleConflict(const SyncStatusCallback& callback);
-  void HandleExistingRemoteFile(const SyncStatusCallback& callback);
+  void HandleConflict(scoped_ptr<SyncTaskToken> token);
+  void HandleExistingRemoteFile(scoped_ptr<SyncTaskToken> token);
 
   void DeleteRemoteFile(const SyncStatusCallback& callback);
   void DidDeleteRemoteFile(const SyncStatusCallback& callback,
                            google_apis::GDataErrorCode error);
 
-  void UploadExistingFile(const SyncStatusCallback& callback);
-  void DidGetMD5ForUpload(const SyncStatusCallback& callback,
+  void UploadExistingFile(scoped_ptr<SyncTaskToken> token);
+  void DidGetMD5ForUpload(scoped_ptr<SyncTaskToken> token,
                           const std::string& local_file_md5);
-  void DidUploadExistingFile(const SyncStatusCallback& callback,
+  void DidUploadExistingFile(scoped_ptr<SyncTaskToken> token,
                              google_apis::GDataErrorCode error,
                              const GURL&,
                              scoped_ptr<google_apis::FileResource>);
   void DidUpdateDatabaseForUploadExistingFile(
-      const SyncStatusCallback& callback,
+      scoped_ptr<SyncTaskToken> token,
       SyncStatusCode status);
   void UpdateRemoteMetadata(const std::string& file_id,
                             const SyncStatusCallback& callback);
@@ -84,22 +84,22 @@ class LocalToRemoteSyncer : public SyncTask {
                             google_apis::GDataErrorCode error,
                             scoped_ptr<google_apis::FileResource> entry);
 
-  void DidDeleteForUploadNewFile(const SyncStatusCallback& callback,
+  void DidDeleteForUploadNewFile(scoped_ptr<SyncTaskToken> token,
                                  SyncStatusCode status);
-  void DidDeleteForCreateFolder(const SyncStatusCallback& callback,
+  void DidDeleteForCreateFolder(scoped_ptr<SyncTaskToken> token,
                                 SyncStatusCode status);
 
-  void UploadNewFile(const SyncStatusCallback& callback);
-  void DidUploadNewFile(const SyncStatusCallback& callback,
+  void UploadNewFile(scoped_ptr<SyncTaskToken> token);
+  void DidUploadNewFile(scoped_ptr<SyncTaskToken> token,
                         google_apis::GDataErrorCode error,
                         const GURL& upload_location,
                         scoped_ptr<google_apis::FileResource> entry);
 
-  void CreateRemoteFolder(const SyncStatusCallback& callback);
-  void DidCreateRemoteFolder(const SyncStatusCallback& callback,
+  void CreateRemoteFolder(scoped_ptr<SyncTaskToken> token);
+  void DidCreateRemoteFolder(scoped_ptr<SyncTaskToken> token,
                              const std::string& file_id,
                              SyncStatusCode status);
-  void DidDetachResourceForCreationConflict(const SyncStatusCallback& callback,
+  void DidDetachResourceForCreationConflict(scoped_ptr<SyncTaskToken> token,
                                             google_apis::GDataErrorCode error);
 
   bool IsContextReady();

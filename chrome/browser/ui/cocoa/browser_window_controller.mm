@@ -16,6 +16,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"  // IDC_*
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/fullscreen.h"
@@ -78,7 +80,9 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/command.h"
 #include "chrome/common/url_constants.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 #include "components/signin/core/common/profile_management_switches.h"
+#include "components/translate/core/browser/translate_manager.h"
 #include "components/translate/core/browser/translate_ui_delegate.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/render_view_host.h"
@@ -1701,9 +1705,12 @@ using web_modal::WebContentsModalDialogManager;
   if (!bookmarkBubbleController_) {
     BookmarkModel* model =
         BookmarkModelFactory::GetForProfile(browser_->profile());
+    ChromeBookmarkClient* client =
+        ChromeBookmarkClientFactory::GetForProfile(browser_->profile());
     const BookmarkNode* node = model->GetMostRecentlyAddedUserNodeForURL(url);
     bookmarkBubbleController_ =
         [[BookmarkBubbleController alloc] initWithParentWindow:[self window]
+                                                        client:client
                                                          model:model
                                                           node:node
                                              alreadyBookmarked:alreadyMarked];
@@ -1769,8 +1776,7 @@ using web_modal::WebContentsModalDialogManager;
       contents, &sourceLanguage, &targetLanguage);
 
   scoped_ptr<TranslateUIDelegate> uiDelegate(new TranslateUIDelegate(
-      ChromeTranslateClient::FromWebContents(contents),
-      ChromeTranslateClient::GetManagerFromWebContents(contents),
+      ChromeTranslateClient::GetManagerFromWebContents(contents)->GetWeakPtr(),
       sourceLanguage,
       targetLanguage));
   scoped_ptr<TranslateBubbleModel> model(

@@ -396,10 +396,6 @@ RenderWidget::RenderWidget(blink::WebPopupType popup_type,
       outstanding_ime_acks_(0),
       body_background_color_(SK_ColorWHITE),
 #endif
-#if defined(OS_MACOSX)
-      cached_has_main_frame_horizontal_scrollbar_(false),
-      cached_has_main_frame_vertical_scrollbar_(false),
-#endif
       popup_origin_scale_for_emulation_(0.f),
       resizing_mode_selector_(new ResizingModeSelector()),
       context_menu_source_type_(ui::MENU_SOURCE_MOUSE) {
@@ -489,8 +485,6 @@ void RenderWidget::CompleteInit() {
 
   init_complete_ = true;
 
-  if (webwidget_)
-    webwidget_->enterForceCompositingMode(true);
   if (compositor_)
     StartCompositor();
 
@@ -808,10 +802,6 @@ void RenderWidget::OnRequestMoveAck() {
 
 GURL RenderWidget::GetURLForGraphicsContext3D() {
   return GURL();
-}
-
-bool RenderWidget::ForceCompositingModeEnabled() {
-  return false;
 }
 
 scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface(bool fallback) {
@@ -1201,10 +1191,7 @@ void RenderWidget::willBeginCompositorFrame() {
   // The following two can result in further layout and possibly
   // enable GPU acceleration so they need to be called before any painting
   // is done.
-  UpdateTextInputType();
-#if defined(OS_ANDROID)
   UpdateTextInputState(NO_SHOW_IME, FROM_NON_IME);
-#endif
   UpdateSelectionBounds();
 }
 
@@ -1232,12 +1219,9 @@ void RenderWidget::DidCommitCompositorFrame() {
 }
 
 void RenderWidget::didCommitAndDrawCompositorFrame() {
+  // NOTE: Tests may break if this event is renamed or moved. See
+  // tab_capture_performancetest.cc.
   TRACE_EVENT0("gpu", "RenderWidget::didCommitAndDrawCompositorFrame");
-  // Accelerated FPS tick for performance tests. See
-  // tab_capture_performancetest.cc.  NOTE: Tests may break if this event is
-  // renamed or moved.
-  UNSHIPPED_TRACE_EVENT_INSTANT0("test_fps", "TestFrameTickGPU",
-                                 TRACE_EVENT_SCOPE_THREAD);
   // Notify subclasses that we initiated the paint operation.
   DidInitiatePaint();
 }
@@ -1567,6 +1551,15 @@ void RenderWidget::SetDeviceScaleFactor(float device_scale_factor) {
   scheduleComposite();
 }
 
+bool RenderWidget::SetDeviceColorProfile(
+    const std::vector<char>& color_profile) {
+  if (device_color_profile_ == color_profile)
+    return false;
+
+  device_color_profile_ = color_profile;
+  return true;
+}
+
 void RenderWidget::OnOrientationChange() {
 }
 
@@ -1648,43 +1641,6 @@ void RenderWidget::FinishHandlingImeEvent() {
 #endif
 }
 
-void RenderWidget::UpdateTextInputType() {
-  // On Windows, not only an IME but also an on-screen keyboard relies on the
-  // latest TextInputType to optimize its layout and functionality. Thus
-  // |input_method_is_active_| is no longer an appropriate condition to suppress
-  // TextInputTypeChanged IPC on Windows.
-  // TODO(yukawa, yoichio): Consider to stop checking |input_method_is_active_|
-  // on other platforms as well as Windows if the overhead is acceptable.
-#if !defined(OS_WIN)
-  if (!input_method_is_active_)
-    return;
-#endif
-
-  ui::TextInputType new_type = GetTextInputType();
-  if (IsDateTimeInput(new_type))
-    return;  // Not considered as a text input field in WebKit/Chromium.
-
-  bool new_can_compose_inline = CanComposeInline();
-
-  blink::WebTextInputInfo new_info;
-  if (webwidget_)
-    new_info = webwidget_->textInputInfo();
-  const ui::TextInputMode new_mode = ConvertInputMode(new_info.inputMode);
-
-  if (text_input_type_ != new_type
-      || can_compose_inline_ != new_can_compose_inline
-      || text_input_mode_ != new_mode) {
-    Send(new ViewHostMsg_TextInputTypeChanged(routing_id(),
-                                              new_type,
-                                              new_mode,
-                                              new_can_compose_inline));
-    text_input_type_ = new_type;
-    can_compose_inline_ = new_can_compose_inline;
-    text_input_mode_ = new_mode;
-  }
-}
-
-#if defined(OS_ANDROID) || defined(USE_AURA)
 void RenderWidget::UpdateTextInputState(ShowIme show_ime,
                                         ChangeSource change_source) {
   if (handling_ime_event_)
@@ -1698,6 +1654,7 @@ void RenderWidget::UpdateTextInputState(ShowIme show_ime,
   blink::WebTextInputInfo new_info;
   if (webwidget_)
     new_info = webwidget_->textInputInfo();
+  const ui::TextInputMode new_mode = ConvertInputMode(new_info.inputMode);
 
   bool new_can_compose_inline = CanComposeInline();
 
@@ -1705,6 +1662,7 @@ void RenderWidget::UpdateTextInputState(ShowIme show_ime,
   // shown.
   if (show_ime == SHOW_IME_IF_NEEDED ||
       (text_input_type_ != new_type ||
+       text_input_mode_ != new_mode ||
        text_input_info_ != new_info ||
        can_compose_inline_ != new_can_compose_inline)
 #if defined(OS_ANDROID)
@@ -1713,6 +1671,7 @@ void RenderWidget::UpdateTextInputState(ShowIme show_ime,
       ) {
     ViewHostMsg_TextInputState_Params p;
     p.type = new_type;
+    p.mode = new_mode;
     p.value = new_info.value.utf8();
     p.selection_start = new_info.selectionStart;
     p.selection_end = new_info.selectionEnd;
@@ -1730,20 +1689,14 @@ void RenderWidget::UpdateTextInputState(ShowIme show_ime,
       IncrementOutstandingImeEventAcks();
     text_field_is_dirty_ = false;
 #endif
-#if defined(USE_AURA)
-    Send(new ViewHostMsg_TextInputTypeChanged(routing_id(),
-                                              new_type,
-                                              text_input_mode_,
-                                              new_can_compose_inline));
-#endif
     Send(new ViewHostMsg_TextInputStateChanged(routing_id(), p));
 
     text_input_info_ = new_info;
     text_input_type_ = new_type;
+    text_input_mode_ = new_mode;
     can_compose_inline_ = new_can_compose_inline;
   }
 }
-#endif
 
 void RenderWidget::GetSelectionBounds(gfx::Rect* focus, gfx::Rect* anchor) {
   WebRect focus_webrect;
@@ -1894,21 +1847,6 @@ void RenderWidget::DidChangeBodyBackgroundColor(SkColor bg_color) {
 bool RenderWidget::CanComposeInline() {
   return true;
 }
-
-#if defined(OS_MACOSX)
-void RenderWidget::DidChangeScrollbarsForMainFrame(
-    bool has_horizontal_scrollbar,
-    bool has_vertical_scrollbar) {
-  if (has_horizontal_scrollbar != cached_has_main_frame_horizontal_scrollbar_ ||
-      has_vertical_scrollbar != cached_has_main_frame_vertical_scrollbar_) {
-    Send(new ViewHostMsg_DidChangeScrollbarsForMainFrame(
-          routing_id_, has_horizontal_scrollbar, has_vertical_scrollbar));
-
-    cached_has_main_frame_horizontal_scrollbar_ = has_horizontal_scrollbar;
-    cached_has_main_frame_vertical_scrollbar_ = has_vertical_scrollbar;
-  }
-}
-#endif  // defined(OS_MACOSX)
 
 WebScreenInfo RenderWidget::screenInfo() {
   return screen_info_;

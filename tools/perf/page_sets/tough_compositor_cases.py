@@ -18,7 +18,7 @@ class ToughCompositorPage(page_module.Page):
   def RunNavigateSteps(self, action_runner):
     action_runner.NavigateToPage(self)
     # TODO(epenner): Remove this wait (http://crbug.com/366933)
-    action_runner.RunAction(WaitAction({'seconds': 5}))
+    action_runner.Wait(5)
 
 class ToughCompositorScrollPage(ToughCompositorPage):
 
@@ -39,7 +39,7 @@ class ToughCompositorWaitPage(ToughCompositorPage):
 
   def RunSmoothness(self, action_runner):
     # We scroll back and forth a few times to reduce noise in the tests.
-    action_runner.RunAction(WaitAction({'seconds': 8}))
+    action_runner.Wait(8)
 
 
 class ToughCompositorCasesPageSet(page_set_module.PageSet):
@@ -50,7 +50,8 @@ class ToughCompositorCasesPageSet(page_set_module.PageSet):
     super(ToughCompositorCasesPageSet, self).__init__(
       credentials_path='data/credentials.json',
       user_agent_type='mobile',
-      archive_data_file='data/tough_compositor_cases.json')
+      archive_data_file='data/tough_compositor_cases.json',
+      bucket=page_set_module.PUBLIC_BUCKET)
 
     scroll_urls_list = [
       # Why: Baseline CC scrolling page. A long page with only text. """

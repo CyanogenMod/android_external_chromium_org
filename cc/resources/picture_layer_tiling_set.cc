@@ -103,18 +103,9 @@ void PictureLayerTilingSet::RemoveTilesInRegion(const Region& region) {
     tilings_[i]->RemoveTilesInRegion(region);
 }
 
-void PictureLayerTilingSet::SetCanUseLCDText(bool can_use_lcd_text) {
-  for (size_t i = 0; i < tilings_.size(); ++i)
-    tilings_[i]->SetCanUseLCDText(can_use_lcd_text);
-}
-
 PictureLayerTiling* PictureLayerTilingSet::AddTiling(float contents_scale) {
-  for (size_t i = 0; i < tilings_.size(); ++i) {
-    // TODO(enne): temporary sanity CHECK for http://crbug.com/358350.
-    // If a duplicate tiling gets added, then many assumptions in
-    // PictureLayerImpl fail.
-    CHECK_NE(tilings_[i]->contents_scale(), contents_scale);
-  }
+  for (size_t i = 0; i < tilings_.size(); ++i)
+    DCHECK_NE(tilings_[i]->contents_scale(), contents_scale);
 
   tilings_.push_back(PictureLayerTiling::Create(contents_scale,
                                                 layer_bounds_,
@@ -318,12 +309,9 @@ PictureLayerTilingSet::CoverageIterator::operator bool() const {
 
 void PictureLayerTilingSet::UpdateTilePriorities(
     WhichTree tree,
-    const gfx::Rect& visible_content_rect,
+    const gfx::Rect& visible_layer_rect,
     float layer_contents_scale,
     double current_frame_time_in_seconds) {
-  gfx::Rect visible_layer_rect = gfx::ScaleToEnclosingRect(
-      visible_content_rect, 1.f / layer_contents_scale);
-
   for (size_t i = 0; i < tilings_.size(); ++i) {
     tilings_[i]->UpdateTilePriorities(tree,
                                       visible_layer_rect,

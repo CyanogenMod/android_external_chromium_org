@@ -20,6 +20,11 @@ class WebContents(object):
         'network_quiescence.js')) as f:
       self._quiescence_js = f.read()
 
+  @property
+  def id(self):
+    """Return the unique id string for this tab object."""
+    return self._inspector_backend.id
+
   def WaitForDocumentReadyStateToBeComplete(self,
       timeout=DEFAULT_WEB_CONTENTS_TIMEOUT):
     self.WaitForJavaScriptExpression(
@@ -79,13 +84,13 @@ class WebContents(object):
             "window.__telemetry_testHasReachedNetworkQuiescence()"))
     return has_reached_quiescence
 
-  def ExecuteJavaScript(self, expr, timeout=DEFAULT_WEB_CONTENTS_TIMEOUT):
-    """Executes expr in JavaScript. Does not return the result.
+  def ExecuteJavaScript(self, statement, timeout=DEFAULT_WEB_CONTENTS_TIMEOUT):
+    """Executes statement in JavaScript. Does not return the result.
 
-    If the expression failed to evaluate, EvaluateException will be raised.
+    If the statement failed to evaluate, EvaluateException will be raised.
     """
     return self.ExecuteJavaScriptInContext(
-        expr, context_id=None, timeout=timeout)
+        statement, context_id=None, timeout=timeout)
 
   def EvaluateJavaScript(self, expr, timeout=DEFAULT_WEB_CONTENTS_TIMEOUT):
     """Evalutes expr in JavaScript and returns the JSONized result.
@@ -117,6 +122,11 @@ class WebContents(object):
     """
     return self._inspector_backend.EvaluateJavaScript(
         expr, context_id=context_id, timeout=timeout)
+
+  def EnableAllContexts(self):
+    """Enable all contexts in a page. Returns the number of available contexts.
+    """
+    return self._inspector_backend.EnableAllContexts()
 
   @property
   def message_output_stream(self):

@@ -21,11 +21,11 @@
 
 {
   "accessibilityFeatures.modify": {
-    "channel": "dev",
+    "channel": "stable",
     "extension_types": ["extension", "platform_app"]
   },
   "accessibilityFeatures.read": {
-    "channel": "dev",
+    "channel": "stable",
     "extension_types": ["extension", "platform_app"]
   },
   "accessibilityPrivate": {
@@ -48,10 +48,6 @@
       "AE27D69DBE571F4B1694F05C89B710C646792231", // Published ADT.
       "5107DE9024C329EEA9C9A72D94C16723790C6422"  // Apps Developer Tool Dev.
     ]
-  },
-  "adview": {
-    "channel": "dev",
-    "extension_types": ["platform_app"]
   },
   "alarms": {
     "channel": "stable",
@@ -468,6 +464,10 @@
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"]
   },
+  "gcdPrivate": {
+    "channel": "trunk",
+    "extension_types": ["extension", "platform_app"]
+  },
   "gcm": {
     "channel": "stable",
     "extension_types": ["extension", "platform_app"]
@@ -506,6 +506,10 @@
   },
   "identity": {
     "channel": "stable",
+    "extension_types": ["extension", "platform_app"]
+  },
+  "identity.email": {
+    "channel": "dev",
     "extension_types": ["extension", "platform_app"]
   },
   "identityPrivate": {
@@ -857,7 +861,7 @@
     "extension_types": ["platform_app"]
   },
   "sessions": {
-    "channel": "dev",
+    "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"]
   },
   "signedInDevices": {

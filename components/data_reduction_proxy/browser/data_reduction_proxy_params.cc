@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/metrics/field_trial.h"
 #include "components/data_reduction_proxy/common/data_reduction_proxy_switches.h"
+#include "net/url_request/url_request.h"
 
 using base::FieldTrialList;
 
@@ -25,7 +26,7 @@ bool DataReductionProxyParams::IsIncludedInFieldTrial() {
 // static
 bool DataReductionProxyParams::IsIncludedInAlternativeFieldTrial() {
   return base::FieldTrialList::FindFullName(
-              "DataCompressionProxyAlternativeConfiguration") == kEnabled;
+      "DataCompressionProxyAlternativeConfiguration") == kEnabled;
 }
 
 // static
@@ -160,8 +161,11 @@ bool DataReductionProxyParams::Init(
 
 void DataReductionProxyParams::InitWithoutChecks() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  std::string origin =
-      command_line.GetSwitchValueASCII(switches::kDataReductionProxyDev);
+  std::string origin;
+  if (!command_line.HasSwitch(switches::kDisableDataReductionProxyDev)) {
+      origin = command_line.GetSwitchValueASCII(
+          switches::kDataReductionProxyDev);
+  }
   if (origin.empty())
     origin = command_line.GetSwitchValueASCII(switches::kDataReductionProxy);
   std::string fallback_origin =
@@ -222,6 +226,59 @@ void DataReductionProxyParams::InitWithoutChecks() {
 
 }
 
+bool DataReductionProxyParams::WasDataReductionProxyUsed(
+    const net::URLRequest* request,
+    std::pair<GURL, GURL>* proxy_servers) const {
+  DCHECK(request);
+  return IsDataReductionProxy(request->proxy_server(), proxy_servers);
+}
+
+bool DataReductionProxyParams::IsDataReductionProxy(
+    const net::HostPortPair& host_port_pair,
+    std::pair<GURL, GURL>* proxy_servers) const {
+  if (net::HostPortPair::FromURL(origin()).Equals(host_port_pair)) {
+    if (proxy_servers) {
+      (*proxy_servers).first = origin();
+      if (fallback_allowed())
+        (*proxy_servers).second = fallback_origin();
+    }
+    return true;
+  }
+  if (fallback_allowed() &&
+      net::HostPortPair::FromURL(fallback_origin()).Equals(host_port_pair)) {
+    if (proxy_servers) {
+      (*proxy_servers).first = fallback_origin();
+      (*proxy_servers).second = GURL();
+    }
+    return true;
+  }
+  if (net::HostPortPair::FromURL(alt_origin()).Equals(host_port_pair)) {
+    if (proxy_servers) {
+      (*proxy_servers).first = alt_origin();
+      if (fallback_allowed())
+        (*proxy_servers).second = alt_fallback_origin();
+    }
+    return true;
+  }
+  if (fallback_allowed() &&
+      net::HostPortPair::FromURL(alt_fallback_origin()).Equals(
+      host_port_pair)) {
+    if (proxy_servers) {
+      (*proxy_servers).first = alt_fallback_origin();
+      (*proxy_servers).second = GURL();
+    }
+    return true;
+  }
+  if (net::HostPortPair::FromURL(ssl_origin()).Equals(host_port_pair)) {
+    if (proxy_servers) {
+      (*proxy_servers).first = ssl_origin();
+      (*proxy_servers).second = GURL();
+    }
+    return true;
+  }
+  return false;
+}
+
 std::string DataReductionProxyParams::GetDefaultKey() const {
 #if defined(SPDY_PROXY_AUTH_VALUE)
   return SPDY_PROXY_AUTH_VALUE;
@@ -231,8 +288,12 @@ std::string DataReductionProxyParams::GetDefaultKey() const {
 
 std::string DataReductionProxyParams::GetDefaultDevOrigin() const {
 #if defined(DATA_REDUCTION_DEV_HOST)
-  if (FieldTrialList::FindFullName("DataCompressionProxyDevRollout") ==
-      kEnabled) {
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  if (command_line.HasSwitch(switches::kDisableDataReductionProxyDev))
+    return std::string();
+  if (command_line.HasSwitch(switches::kEnableDataReductionProxyDev) ||
+      (FieldTrialList::FindFullName("DataCompressionProxyDevRollout") ==
+         kEnabled)) {
     return DATA_REDUCTION_DEV_HOST;
   }
 #endif

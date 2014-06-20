@@ -19,8 +19,6 @@ remoting.Settings = function() {};
 // The settings on this file are automatically substituted by build-webapp.py.
 // Do not override them manually, except for running local tests.
 
-/** @type {string} MIME type for the host plugin.*/
-remoting.Settings.prototype.PLUGIN_MIMETYPE = 'HOST_PLUGIN_MIMETYPE';
 /** @type {string} API client ID.*/
 remoting.Settings.prototype.OAUTH2_CLIENT_ID = 'API_CLIENT_ID';
 /** @type {string} API client secret.*/
@@ -51,9 +49,6 @@ remoting.Settings.prototype.XMPP_SERVER_USE_TLS =
 /** @type {string} The third party auth redirect URI. */
 remoting.Settings.prototype.THIRD_PARTY_AUTH_REDIRECT_URI =
     'THIRD_PARTY_AUTH_REDIRECT_URL';
-
-// Whether to use MediaSource API for video rendering.
-remoting.Settings.prototype.USE_MEDIA_SOURCE_RENDERING = false;
 
 // 'native', 'nacl' or 'pnacl'.
 remoting.Settings.prototype.CLIENT_PLUGIN_TYPE = 'CLIENT_PLUGIN_TYPE';

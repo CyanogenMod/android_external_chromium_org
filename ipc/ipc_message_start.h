@@ -66,6 +66,7 @@ enum IPCMessageStart {
   GamepadMsgStart,
   ShellMsgStart,
   AccessibilityMsgStart,
+  PrefetchMsgStart,
   PrerenderMsgStart,
   ChromotingMsgStart,
   OldBrowserPluginMsgStart,
@@ -104,6 +105,8 @@ enum IPCMessageStart {
   PushMessagingMsgStart,
   GinJavaBridgeMsgStart,
   BatteryStatusMsgStart,
+  UtilityPrintingMsgStart,
+  AecDumpMsgStart,
   LastIPCMsgStart  // Must come last.
 };
 

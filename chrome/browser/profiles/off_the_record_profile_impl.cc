@@ -23,12 +23,7 @@
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
-#include "chrome/browser/geolocation/chrome_geolocation_permission_context.h"
-#include "chrome/browser/geolocation/chrome_geolocation_permission_context_factory.h"
-#include "chrome/browser/guest_view/guest_view_manager.h"
 #include "chrome/browser/io_thread.h"
-#include "chrome/browser/media/chrome_midi_permission_context.h"
-#include "chrome/browser/media/chrome_midi_permission_context_factory.h"
 #include "chrome/browser/net/pref_proxy_config_tracker.h"
 #include "chrome/browser/net/proxy_service_factory.h"
 #include "chrome/browser/plugins/chrome_plugin_service_filter.h"
@@ -73,6 +68,10 @@
 
 #if defined(ENABLE_CONFIGURATION_POLICY) && !defined(OS_CHROMEOS)
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
+#endif
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/guest_view/guest_view_manager.h"
 #endif
 
 using content::BrowserThread;
@@ -260,8 +259,8 @@ ExtensionSpecialStoragePolicy*
   return GetOriginalProfile()->GetExtensionSpecialStoragePolicy();
 }
 
-bool OffTheRecordProfileImpl::IsManaged() {
-  return GetOriginalProfile()->IsManaged();
+bool OffTheRecordProfileImpl::IsSupervised() {
+  return GetOriginalProfile()->IsSupervised();
 }
 
 PrefService* OffTheRecordProfileImpl::GetPrefs() {
@@ -317,66 +316,6 @@ OffTheRecordProfileImpl::GetMediaRequestContextForStoragePartition(
       .get();
 }
 
-void OffTheRecordProfileImpl::RequestMidiSysExPermission(
-      int render_process_id,
-      int render_view_id,
-      int bridge_id,
-      const GURL& requesting_frame,
-      bool user_gesture,
-      const MidiSysExPermissionCallback& callback) {
-  ChromeMidiPermissionContext* context =
-      ChromeMidiPermissionContextFactory::GetForProfile(this);
-  context->RequestMidiSysExPermission(render_process_id,
-                                      render_view_id,
-                                      bridge_id,
-                                      requesting_frame,
-                                      user_gesture,
-                                      callback);
-}
-
-void OffTheRecordProfileImpl::CancelMidiSysExPermissionRequest(
-    int render_process_id,
-    int render_view_id,
-    int bridge_id,
-    const GURL& requesting_frame) {
-  ChromeMidiPermissionContext* context =
-      ChromeMidiPermissionContextFactory::GetForProfile(this);
-  context->CancelMidiSysExPermissionRequest(
-      render_process_id, render_view_id, bridge_id, requesting_frame);
-}
-
-void OffTheRecordProfileImpl::RequestProtectedMediaIdentifierPermission(
-    int render_process_id,
-    int render_view_id,
-    const GURL& origin,
-    const ProtectedMediaIdentifierPermissionCallback& callback) {
-#if defined(OS_ANDROID)
-  ProtectedMediaIdentifierPermissionContext* context =
-      ProtectedMediaIdentifierPermissionContextFactory::GetForProfile(this);
-  context->RequestProtectedMediaIdentifierPermission(render_process_id,
-                                                     render_view_id,
-                                                     origin,
-                                                     callback);
-#else
-  NOTIMPLEMENTED();
-  callback.Run(false);
-#endif  // defined(OS_ANDROID)
-}
-
-void OffTheRecordProfileImpl::CancelProtectedMediaIdentifierPermissionRequests(
-    int render_process_id,
-    int render_view_id,
-    const GURL& origin) {
-#if defined(OS_ANDROID)
-  ProtectedMediaIdentifierPermissionContext* context =
-      ProtectedMediaIdentifierPermissionContextFactory::GetForProfile(this);
-  context->CancelProtectedMediaIdentifierPermissionRequests(
-      render_process_id, render_view_id, origin);
-#else
-  NOTIMPLEMENTED();
-#endif  // defined(OS_ANDROID)
-}
-
 net::URLRequestContextGetter*
     OffTheRecordProfileImpl::GetRequestContextForExtensions() {
   return io_data_->GetExtensionsRequestContextGetter().get();
@@ -418,19 +357,24 @@ HostContentSettingsMap* OffTheRecordProfileImpl::GetHostContentSettingsMap() {
   return host_content_settings_map_.get();
 }
 
-content::GeolocationPermissionContext*
-    OffTheRecordProfileImpl::GetGeolocationPermissionContext() {
-  return ChromeGeolocationPermissionContextFactory::GetForProfile(this);
-}
-
 content::BrowserPluginGuestManager*
     OffTheRecordProfileImpl::GetGuestManager() {
+#if defined(ENABLE_EXTENSIONS)
   return GuestViewManager::FromBrowserContext(this);
+#else
+  return NULL;
+#endif
 }
 
 quota::SpecialStoragePolicy*
     OffTheRecordProfileImpl::GetSpecialStoragePolicy() {
   return GetExtensionSpecialStoragePolicy();
+}
+
+content::PushMessagingService*
+OffTheRecordProfileImpl::GetPushMessagingService() {
+  // TODO(johnme): Support push messaging in incognito if possible.
+  return NULL;
 }
 
 bool OffTheRecordProfileImpl::IsSameProfile(Profile* profile) {

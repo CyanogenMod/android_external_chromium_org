@@ -33,7 +33,7 @@
 #include "sync/internal_api/public/util/sync_string_conversions.h"
 
 #if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_user_constants.h"
+#include "chrome/browser/supervised_user/supervised_user_constants.h"
 #endif
 
 using syncer::sessions::SyncSessionSnapshot;
@@ -161,8 +161,8 @@ bool ProfileSyncServiceHarness::SetupSync(
   service()->GoogleSigninSucceeded(username_, password_);
 
 #if defined(ENABLE_MANAGED_USERS)
-  std::string account_id = profile_->IsManaged() ?
-      managed_users::kManagedUserPseudoEmail : username_;
+  std::string account_id = profile_->IsSupervised() ?
+      supervised_users::kSupervisedUserPseudoEmail : username_;
 #else
   std::string account_id = username_;
 #endif

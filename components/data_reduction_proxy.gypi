@@ -30,6 +30,8 @@
         'data_reduction_proxy/browser/data_reduction_proxy_params.h',
         'data_reduction_proxy/browser/data_reduction_proxy_prefs.cc',
         'data_reduction_proxy/browser/data_reduction_proxy_prefs.h',
+        'data_reduction_proxy/browser/data_reduction_proxy_protocol.cc',
+        'data_reduction_proxy/browser/data_reduction_proxy_protocol.h',
         'data_reduction_proxy/browser/data_reduction_proxy_settings.cc',
         'data_reduction_proxy/browser/data_reduction_proxy_settings.h',
         'data_reduction_proxy/browser/http_auth_handler_data_reduction_proxy.cc',
@@ -46,6 +48,8 @@
         '..',
       ],
       'sources': [
+        'data_reduction_proxy/common/data_reduction_proxy_headers.cc',
+        'data_reduction_proxy/common/data_reduction_proxy_headers.h',
         'data_reduction_proxy/common/data_reduction_proxy_pref_names.cc',
         'data_reduction_proxy/common/data_reduction_proxy_pref_names.h',
         'data_reduction_proxy/common/data_reduction_proxy_switches.cc',
@@ -58,6 +62,7 @@
       'dependencies' : [
         '../base/base.gyp:base',
         '../net/net.gyp:net',
+        '../net/net.gyp:net_test_support',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         'data_reduction_proxy_browser',

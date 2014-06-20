@@ -30,6 +30,7 @@
 #include "ui/views/drag_controller.h"
 
 class ActionBoxButtonView;
+class AddToAppLauncherView;
 class CommandUpdater;
 class ContentSettingBubbleModelDelegate;
 class ContentSettingImageView;
@@ -46,6 +47,7 @@ class OriginChipView;
 class PageActionWithBadgeView;
 class PageActionImageView;
 class Profile;
+class SearchButton;
 class SelectedKeywordView;
 class StarView;
 class TemplateURLService;
@@ -65,7 +67,6 @@ class BubbleDelegateView;
 class ImageButton;
 class ImageView;
 class Label;
-class LabelButton;
 class Widget;
 }
 
@@ -495,11 +496,14 @@ class LocationBarView : public LocationBar,
   // The icon for Translate.
   TranslateIconView* translate_icon_view_;
 
+  // The view to add pages to the app launcher.
+  AddToAppLauncherView* add_to_app_launcher_view_;
+
   // The star.
   StarView* star_view_;
 
   // The search/go button.
-  views::LabelButton* search_button_;
+  SearchButton* search_button_;
 
   // Whether we're in popup mode. This value also controls whether the location
   // bar is read-only.

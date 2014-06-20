@@ -312,8 +312,12 @@
         'browser/extensions/api/file_system/file_system_api.h',
         'browser/extensions/api/font_settings/font_settings_api.cc',
         'browser/extensions/api/font_settings/font_settings_api.h',
+        'browser/extensions/api/gcd_private/gcd_private_api.cc',
+        'browser/extensions/api/gcd_private/gcd_private_api.h',
         'browser/extensions/api/gcm/gcm_api.cc',
         'browser/extensions/api/gcm/gcm_api.h',
+        'browser/extensions/api/guest_view/guest_view_internal_api.cc',
+        'browser/extensions/api/guest_view/guest_view_internal_api.h',
         'browser/extensions/api/hid/hid_api.cc',
         'browser/extensions/api/hid/hid_api.h',
         'browser/extensions/api/hid/hid_connection_resource.cc',
@@ -540,6 +544,8 @@
         'browser/extensions/api/sync_file_system/sync_file_system_api_helpers.h',
         'browser/extensions/api/synced_notifications_private/synced_notifications_private_api.cc',
         'browser/extensions/api/synced_notifications_private/synced_notifications_private_api.h',
+        'browser/extensions/api/synced_notifications_private/synced_notifications_shim.cc',
+        'browser/extensions/api/synced_notifications_private/synced_notifications_shim.h',
         'browser/extensions/api/system_cpu/cpu_info_provider.cc',
         'browser/extensions/api/system_cpu/cpu_info_provider.h',
         'browser/extensions/api/system_cpu/cpu_info_provider_android.cc',
@@ -1010,6 +1016,10 @@
           'sources!': [
             'browser/extensions/browser_context_keyed_service_factories.cc',
             'browser/extensions/browser_context_keyed_service_factories.h',
+            'browser/extensions/menu_manager.cc',
+            'browser/extensions/menu_manager.h',
+            'browser/extensions/menu_manager_factory.cc',
+            'browser/extensions/menu_manager_factory.h',
           ],
           'sources/': [
             # Handle files in browser/extensions/api. Exclude everything by default, white list

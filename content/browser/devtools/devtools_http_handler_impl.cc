@@ -5,7 +5,6 @@
 #include "content/browser/devtools/devtools_http_handler_impl.h"
 
 #include <algorithm>
-#include <sstream>
 #include <utility>
 
 #include "base/bind.h"
@@ -15,6 +14,7 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/stl_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/threading/thread.h"
 #include "base/values.h"
 #include "content/browser/devtools/devtools_browser_target.h"
@@ -486,7 +486,7 @@ void DevToolsHttpHandlerImpl::OnJsonRequestUI(
     GURL url(net::UnescapeURLComponent(
         query, net::UnescapeRule::URL_SPECIAL_CHARS));
     if (!url.is_valid())
-      url = GURL(kAboutBlankURL);
+      url = GURL(url::kAboutBlankURL);
     scoped_ptr<DevToolsTarget> target(delegate_->CreateNewTarget(url));
     if (!target) {
       SendJson(connection_id,
@@ -699,10 +699,8 @@ void DevToolsHttpHandlerImpl::WriteActivePortToUserProfile() {
   // so Telemetry can pick it up.
   base::FilePath path = active_port_output_directory_.Append(
       kDevToolsActivePortFileName);
-  std::stringstream port_stream;
-  port_stream << endpoint.port();
-  std::string s = port_stream.str();
-  if (base::WriteFile(path, s.c_str(), s.length()) < 0) {
+  std::string port_string = base::IntToString(endpoint.port());
+  if (base::WriteFile(path, port_string.c_str(), port_string.length()) < 0) {
     LOG(ERROR) << "Error writing DevTools active port to file";
   }
 }

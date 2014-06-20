@@ -358,9 +358,6 @@ IPC_MESSAGE_CONTROL0(ChromeViewHostMsg_ShowBrowserAccountManagementUI)
 
 // JavaScript related messages -----------------------------------------------
 
-// Asks the renderer to send back FPS.
-IPC_MESSAGE_ROUTED0(ChromeViewMsg_GetFPS)
-
 // Tells the frame it is displaying an interstitial page.
 IPC_MESSAGE_ROUTED0(ChromeViewMsg_SetAsInterstitial)
 
@@ -627,11 +624,6 @@ IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_FrameLoadingError,
 // This message indicates the monitored frame loading had completed.
 IPC_MESSAGE_ROUTED0(ChromeViewHostMsg_FrameLoadingCompleted)
 
-// Provide the browser process with current renderer framerate.
-IPC_MESSAGE_CONTROL2(ChromeViewHostMsg_FPS,
-                     int /* routing id */,
-                     float /* frames per second */)
-
 // Logs events from InstantExtended New Tab Pages.
 IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_LogEvent,
                     int /* page_seq_no */,
@@ -707,6 +699,8 @@ IPC_MESSAGE_CONTROL2(ChromeViewMsg_SetSearchURLs,
                      std::vector<GURL> /* search_urls */,
                      GURL /* new_tab_page_url */)
 
+// TODO(thestig) Eventually separate out all the extensions messages.
+#if defined(ENABLE_EXTENSIONS)
 // Tells listeners that a detailed message was reported to the console by
 // WebKit.
 IPC_MESSAGE_ROUTED4(ChromeViewHostMsg_DetailedConsoleMessageAdded,
@@ -714,6 +708,7 @@ IPC_MESSAGE_ROUTED4(ChromeViewHostMsg_DetailedConsoleMessageAdded,
                     base::string16 /* source */,
                     extensions::StackTrace /* stack trace */,
                     int32 /* severity level */)
+#endif
 
 #if defined(ENABLE_PLUGINS)
 // Sent by the renderer to check if crash reporting is enabled.

@@ -42,6 +42,7 @@ include $(LOCAL_PATH)/components/components_resources.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/components_strings.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/data_reduction_proxy_browser.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/data_reduction_proxy_common.target.darwin-arm.mk
+include $(LOCAL_PATH)/components/keyed_service_core.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/navigation_interception.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/navigation_interception_jni_headers.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/os_crypt.target.darwin-arm.mk
@@ -223,6 +224,7 @@ include $(LOCAL_PATH)/third_party/angle/src/translator_lib.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/ashmem/ashmem.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/brotli/brotli.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/expat/expat.target.darwin-arm.mk
+include $(LOCAL_PATH)/third_party/fips181/fips181.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/freetype/ft2.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/harfbuzz-ng/harfbuzz-ng.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/iccjpeg/iccjpeg.target.darwin-arm.mk
@@ -289,7 +291,6 @@ include $(LOCAL_PATH)/third_party/webrtc/common_video/common_video.target.darwin
 include $(LOCAL_PATH)/third_party/webrtc/modules/CNG.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/G711.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/G722.target.darwin-arm.mk
-include $(LOCAL_PATH)/third_party/webrtc/modules/NetEq4.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/PCM16B.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/audio_coding_module.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/audio_conference_mixer.target.darwin-arm.mk
@@ -306,6 +307,7 @@ include $(LOCAL_PATH)/third_party/webrtc/modules/iSAC.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/iSACFix.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/isac_neon.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/media_file.target.darwin-arm.mk
+include $(LOCAL_PATH)/third_party/webrtc/modules/neteq.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/paced_sender.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/remote_bitrate_estimator.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/remote_bitrate_estimator/rbe_components.target.darwin-arm.mk
@@ -361,16 +363,14 @@ include $(LOCAL_PATH)/v8/tools/gyp/mksnapshot.host.darwin-arm.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8.target.darwin-arm.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_base.host.darwin-arm.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_base.target.darwin-arm.mk
-include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.arm.host.darwin-arm.mk
-include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.arm.target.darwin-arm.mk
+include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.host.darwin-arm.mk
+include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.target.darwin-arm.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_nosnapshot.host.darwin-arm.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_snapshot.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/child/overscroller_jni_headers.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/child/webkit_child.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/common/gpu/webkit_gpu.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/common/webkit_common.target.darwin-arm.mk
-include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_bindings.target.darwin-arm.mk
-include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_support.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/webkit_resources.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_browser.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_common.target.darwin-arm.mk

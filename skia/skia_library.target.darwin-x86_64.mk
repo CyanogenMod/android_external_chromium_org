@@ -47,19 +47,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/utils/debugger/SkDebugCanvas.cpp \
 	third_party/skia/src/utils/debugger/SkDrawCommand.cpp \
 	third_party/skia/src/utils/debugger/SkObjectParser.cpp \
-	third_party/skia/src/utils/SkBase64.cpp \
-	third_party/skia/src/utils/SkBitSet.cpp \
-	third_party/skia/src/utils/SkCanvasStack.cpp \
-	third_party/skia/src/utils/SkCanvasStateUtils.cpp \
-	third_party/skia/src/utils/SkEventTracer.cpp \
-	third_party/skia/src/utils/SkDeferredCanvas.cpp \
-	third_party/skia/src/utils/SkMatrix22.cpp \
-	third_party/skia/src/utils/SkMatrix44.cpp \
-	third_party/skia/src/utils/SkNullCanvas.cpp \
-	third_party/skia/src/utils/SkNWayCanvas.cpp \
-	third_party/skia/src/utils/SkPictureUtils.cpp \
-	third_party/skia/src/utils/SkProxyCanvas.cpp \
-	third_party/skia/src/utils/SkRTConf.cpp \
 	third_party/skia/src/core/SkAAClip.cpp \
 	third_party/skia/src/core/SkAnnotation.cpp \
 	third_party/skia/src/core/SkAdvancedTypefaceMetrics.cpp \
@@ -164,6 +151,10 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkRasterClip.cpp \
 	third_party/skia/src/core/SkRasterizer.cpp \
 	third_party/skia/src/core/SkReadBuffer.cpp \
+	third_party/skia/src/core/SkRecordDraw.cpp \
+	third_party/skia/src/core/SkRecordOpts.cpp \
+	third_party/skia/src/core/SkRecorder.cpp \
+	third_party/skia/src/core/SkRecording.cpp \
 	third_party/skia/src/core/SkRect.cpp \
 	third_party/skia/src/core/SkRefDict.cpp \
 	third_party/skia/src/core/SkRegion.cpp \
@@ -308,10 +299,21 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/pdf/SkPDFStream.cpp \
 	third_party/skia/src/pdf/SkPDFTypes.cpp \
 	third_party/skia/src/pdf/SkPDFUtils.cpp \
-	third_party/skia/src/record/SkRecordDraw.cpp \
-	third_party/skia/src/record/SkRecordOpts.cpp \
-	third_party/skia/src/record/SkRecorder.cpp \
-	third_party/skia/src/record/SkRecording.cpp \
+	third_party/skia/src/utils/SkBase64.cpp \
+	third_party/skia/src/utils/SkBitSet.cpp \
+	third_party/skia/src/utils/SkCanvasStack.cpp \
+	third_party/skia/src/utils/SkCanvasStateUtils.cpp \
+	third_party/skia/src/utils/SkDashPath.cpp \
+	third_party/skia/src/utils/SkDeferredCanvas.cpp \
+	third_party/skia/src/utils/SkEventTracer.cpp \
+	third_party/skia/src/utils/SkMatrix22.cpp \
+	third_party/skia/src/utils/SkMatrix44.cpp \
+	third_party/skia/src/utils/SkNWayCanvas.cpp \
+	third_party/skia/src/utils/SkNullCanvas.cpp \
+	third_party/skia/src/utils/SkPictureUtils.cpp \
+	third_party/skia/src/utils/SkProxyCanvas.cpp \
+	third_party/skia/src/utils/SkRTConf.cpp \
+	third_party/skia/src/utils/SkTextureCompressor.cpp \
 	third_party/skia/src/gpu/gl/GrGLCreateNullInterface.cpp \
 	third_party/skia/src/gpu/gl/SkNullGLContext.cpp \
 	third_party/skia/src/gpu/GrAAHairLinePathRenderer.cpp \
@@ -385,6 +387,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/gl/GrGLExtensions.cpp \
 	third_party/skia/src/gpu/gl/GrGLIndexBuffer.cpp \
 	third_party/skia/src/gpu/gl/GrGLInterface.cpp \
+	third_party/skia/src/gpu/gl/GrGLNameAllocator.cpp \
 	third_party/skia/src/gpu/gl/GrGLNoOpInterface.cpp \
 	third_party/skia/src/gpu/gl/GrGLPath.cpp \
 	third_party/skia/src/gpu/gl/GrGLProgram.cpp \
@@ -459,6 +462,7 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_BROWSER_CDMS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
@@ -479,11 +483,11 @@ MY_DEFS_Debug := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_SETCONFIG_INFO' \
+	'-DSK_SUPPORT_LEGACY_BITMAP_CONFIG' \
+	'-DSK_SUPPORT_LEGACY_DEVICE_VIRTUAL_ISOPAQUE' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
+	'-DSK_SUPPORT_LEGACY_SETCONFIG' \
 	'-DSK_IGNORE_ETC1_SUPPORT' \
-	'-DSK_SUPPORT_LEGACY_INSTALLPIXELSPARAMS' \
-	'-DSK_SUPPORT_LEGACY_DRAWPICTURE_API' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
@@ -516,6 +520,7 @@ MY_DEFS_Debug := \
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
+	$(gyp_shared_intermediate_dir) \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
 	$(LOCAL_PATH)/third_party/skia/include/images \
@@ -605,6 +610,7 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_BROWSER_CDMS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
@@ -625,11 +631,11 @@ MY_DEFS_Release := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_SETCONFIG_INFO' \
+	'-DSK_SUPPORT_LEGACY_BITMAP_CONFIG' \
+	'-DSK_SUPPORT_LEGACY_DEVICE_VIRTUAL_ISOPAQUE' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
+	'-DSK_SUPPORT_LEGACY_SETCONFIG' \
 	'-DSK_IGNORE_ETC1_SUPPORT' \
-	'-DSK_SUPPORT_LEGACY_INSTALLPIXELSPARAMS' \
-	'-DSK_SUPPORT_LEGACY_DRAWPICTURE_API' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
@@ -662,6 +668,7 @@ MY_DEFS_Release := \
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
+	$(gyp_shared_intermediate_dir) \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
 	$(LOCAL_PATH)/third_party/skia/include/images \

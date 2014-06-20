@@ -73,7 +73,8 @@ void ReportPrivetUmaEvent(PrivetNotificationsEvent privet_event) {
 
 PrivetNotificationsListener::PrivetNotificationsListener(
     scoped_ptr<PrivetHTTPAsynchronousFactory> privet_http_factory,
-    Delegate* delegate) : delegate_(delegate), devices_active_(0) {
+    Delegate* delegate)
+    : delegate_(delegate), devices_active_(0) {
   privet_http_factory_.swap(privet_http_factory);
 }
 
@@ -116,6 +117,11 @@ void PrivetNotificationsListener::DeviceChanged(
 
 void PrivetNotificationsListener::CreateInfoOperation(
     scoped_ptr<PrivetHTTPClient> http_client) {
+  if (!http_client) {
+    // Do nothing if resolution fails.
+    return;
+  }
+
   std::string name = http_client->GetName();
   DeviceContextMap::iterator device_iter = devices_seen_.find(name);
   DCHECK(device_iter != devices_seen_.end());

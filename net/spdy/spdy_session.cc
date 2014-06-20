@@ -299,6 +299,38 @@ SpdyProtocolErrorDetails MapFramerErrorToProtocolError(
   }
 }
 
+Error MapFramerErrorToNetError(SpdyFramer::SpdyError err) {
+  switch (err) {
+    case SpdyFramer::SPDY_NO_ERROR:
+      return OK;
+    case SpdyFramer::SPDY_INVALID_CONTROL_FRAME:
+      return ERR_SPDY_PROTOCOL_ERROR;
+    case SpdyFramer::SPDY_CONTROL_PAYLOAD_TOO_LARGE:
+      return ERR_SPDY_FRAME_SIZE_ERROR;
+    case SpdyFramer::SPDY_ZLIB_INIT_FAILURE:
+      return ERR_SPDY_COMPRESSION_ERROR;
+    case SpdyFramer::SPDY_UNSUPPORTED_VERSION:
+      return ERR_SPDY_PROTOCOL_ERROR;
+    case SpdyFramer::SPDY_DECOMPRESS_FAILURE:
+      return ERR_SPDY_COMPRESSION_ERROR;
+    case SpdyFramer::SPDY_COMPRESS_FAILURE:
+      return ERR_SPDY_COMPRESSION_ERROR;
+    case SpdyFramer::SPDY_GOAWAY_FRAME_CORRUPT:
+      return ERR_SPDY_PROTOCOL_ERROR;
+    case SpdyFramer::SPDY_RST_STREAM_FRAME_CORRUPT:
+      return ERR_SPDY_PROTOCOL_ERROR;
+    case SpdyFramer::SPDY_INVALID_DATA_FRAME_FLAGS:
+      return ERR_SPDY_PROTOCOL_ERROR;
+    case SpdyFramer::SPDY_INVALID_CONTROL_FRAME_FLAGS:
+      return ERR_SPDY_PROTOCOL_ERROR;
+    case SpdyFramer::SPDY_UNEXPECTED_FRAME:
+      return ERR_SPDY_PROTOCOL_ERROR;
+    default:
+      NOTREACHED();
+      return ERR_SPDY_PROTOCOL_ERROR;
+  }
+}
+
 SpdyProtocolErrorDetails MapRstStreamStatusToProtocolError(
     SpdyRstStreamStatus status) {
   switch(status) {
@@ -333,6 +365,49 @@ SpdyProtocolErrorDetails MapRstStreamStatusToProtocolError(
     default:
       NOTREACHED();
       return static_cast<SpdyProtocolErrorDetails>(-1);
+  }
+}
+
+SpdyGoAwayStatus MapNetErrorToGoAwayStatus(Error err) {
+  switch (err) {
+    case OK:
+      return GOAWAY_NO_ERROR;
+    case ERR_SPDY_PROTOCOL_ERROR:
+      return GOAWAY_PROTOCOL_ERROR;
+    case ERR_SPDY_FLOW_CONTROL_ERROR:
+      return GOAWAY_FLOW_CONTROL_ERROR;
+    case ERR_SPDY_FRAME_SIZE_ERROR:
+      return GOAWAY_FRAME_SIZE_ERROR;
+    case ERR_SPDY_COMPRESSION_ERROR:
+      return GOAWAY_COMPRESSION_ERROR;
+    case ERR_SPDY_INADEQUATE_TRANSPORT_SECURITY:
+      return GOAWAY_INADEQUATE_SECURITY;
+    default:
+      return GOAWAY_PROTOCOL_ERROR;
+  }
+}
+
+void SplitPushedHeadersToRequestAndResponse(const SpdyHeaderBlock& headers,
+                                            SpdyMajorVersion protocol_version,
+                                            SpdyHeaderBlock* request_headers,
+                                            SpdyHeaderBlock* response_headers) {
+  DCHECK(response_headers);
+  DCHECK(request_headers);
+  for (SpdyHeaderBlock::const_iterator it = headers.begin();
+       it != headers.end();
+       ++it) {
+    SpdyHeaderBlock* to_insert = response_headers;
+    if (protocol_version == SPDY2) {
+      if (it->first == "url")
+        to_insert = request_headers;
+    } else {
+      const char* host = protocol_version >= SPDY4 ? ":authority" : ":host";
+      static const char* scheme = ":scheme";
+      static const char* path = ":path";
+      if (it->first == host || it->first == scheme || it->first == path)
+        to_insert = request_headers;
+    }
+    to_insert->insert(*it);
   }
 }
 
@@ -1516,7 +1591,25 @@ void SpdySession::DoDrainSession(Error err, const std::string& description) {
   }
   MakeUnavailable();
 
-  // TODO(jgraettinger): If draining with an |err|, enqueue a GOAWAY frame here.
+  // If |err| indicates an error occurred, inform the peer that we're closing
+  // and why. Don't GOAWAY on a graceful or idle close, as that may
+  // unnecessarily wake the radio. We could technically GOAWAY on network errors
+  // (we'll probably fail to actually write it, but that's okay), however many
+  // unit-tests would need to be updated.
+  if (err != OK &&
+      err != ERR_ABORTED &&  // Used by SpdySessionPool to close idle sessions.
+      err != ERR_NETWORK_CHANGED &&  // Used to deprecate sessions on IP change.
+      err != ERR_SOCKET_NOT_CONNECTED &&
+      err != ERR_CONNECTION_CLOSED && err != ERR_CONNECTION_RESET) {
+    // Enqueue a GOAWAY to inform the peer of why we're closing the connection.
+    SpdyGoAwayIR goaway_ir(0,  // Last accepted stream ID.
+                           MapNetErrorToGoAwayStatus(err),
+                           description);
+    EnqueueSessionWrite(HIGHEST,
+                        GOAWAY,
+                        scoped_ptr<SpdyFrame>(
+                            buffered_spdy_framer_->SerializeFrame(goaway_ir)));
+  }
 
   availability_state_ = STATE_DRAINING;
   error_on_close_ = err;
@@ -1529,7 +1622,12 @@ void SpdySession::DoDrainSession(Error err, const std::string& description) {
   UMA_HISTOGRAM_CUSTOM_COUNTS("Net.SpdySession.BytesRead.OtherErrors",
                               total_bytes_received_, 1, 100000000, 50);
 
-  StartGoingAway(0, err);
+  if (err == OK) {
+    // We ought to be going away already, as this is a graceful close.
+    DcheckGoingAway();
+  } else {
+    StartGoingAway(0, err);
+  }
   DcheckDraining();
   MaybePostWriteLoop();
 }
@@ -1570,6 +1668,7 @@ SpdyStreamId SpdySession::GetNewStreamId() {
 
 void SpdySession::CloseSessionOnError(Error err,
                                       const std::string& description) {
+  DCHECK_LT(err, ERR_IO_PENDING);
   DoDrainSession(err, description);
 }
 
@@ -1668,10 +1767,9 @@ int SpdySession::GetLocalAddress(IPEndPoint* address) const {
 void SpdySession::EnqueueSessionWrite(RequestPriority priority,
                                       SpdyFrameType frame_type,
                                       scoped_ptr<SpdyFrame> frame) {
-  DCHECK(frame_type == RST_STREAM ||
-         frame_type == SETTINGS ||
-         frame_type == WINDOW_UPDATE ||
-         frame_type == PING);
+  DCHECK(frame_type == RST_STREAM || frame_type == SETTINGS ||
+         frame_type == WINDOW_UPDATE || frame_type == PING ||
+         frame_type == GOAWAY);
   EnqueueWrite(
       priority, frame_type,
       scoped_ptr<SpdyBufferProducer>(
@@ -1785,9 +1883,11 @@ void SpdySession::OnError(SpdyFramer::SpdyError error_code) {
   CHECK(in_io_loop_);
 
   RecordProtocolErrorHistogram(MapFramerErrorToProtocolError(error_code));
-  std::string description = base::StringPrintf(
-      "SPDY_ERROR error_code: %d.", error_code);
-  DoDrainSession(ERR_SPDY_PROTOCOL_ERROR, description);
+  std::string description =
+      base::StringPrintf("Framer error: %d (%s).",
+                         error_code,
+                         SpdyFramer::ErrorCodeToString(error_code));
+  DoDrainSession(MapFramerErrorToNetError(error_code), description);
 }
 
 void SpdySession::OnStreamError(SpdyStreamId stream_id,
@@ -2119,9 +2219,21 @@ void SpdySession::OnSynStream(SpdyStreamId stream_id,
   }
 
   // Parse the headers.
-  if (OnInitialResponseHeadersReceived(
-          headers, response_time,
-          recv_first_byte_time, active_it->second.stream) != OK)
+
+  // Split headers to simulate push promise and response.
+  SpdyHeaderBlock request_headers;
+  SpdyHeaderBlock response_headers;
+  SplitPushedHeadersToRequestAndResponse(
+      headers, GetProtocolVersion(), &request_headers, &response_headers);
+
+  if (active_it->second.stream->OnPushPromiseHeadersReceived(request_headers) !=
+      OK)
+    return;
+
+  if (OnInitialResponseHeadersReceived(response_headers,
+                                       response_time,
+                                       recv_first_byte_time,
+                                       active_it->second.stream) != OK)
     return;
 
   base::StatsCounter push_requests("spdy.pushed_streams");
@@ -2297,6 +2409,8 @@ void SpdySession::OnRstStream(SpdyStreamId stream_id,
 void SpdySession::OnGoAway(SpdyStreamId last_accepted_stream_id,
                            SpdyGoAwayStatus status) {
   CHECK(in_io_loop_);
+
+  // TODO(jgraettinger): UMA histogram on |status|.
 
   net_log_.AddEvent(NetLog::TYPE_SPDY_SESSION_GOAWAY,
       base::Bind(&NetLogSpdyGoAwayCallback,
@@ -2879,7 +2993,7 @@ void SpdySession::DecreaseRecvWindowSize(int32 delta_window_size) {
   if (delta_window_size > session_recv_window_size_) {
     RecordProtocolErrorHistogram(PROTOCOL_ERROR_RECEIVE_WINDOW_VIOLATION);
     DoDrainSession(
-        ERR_SPDY_PROTOCOL_ERROR,
+        ERR_SPDY_FLOW_CONTROL_ERROR,
         "delta_window_size is " + base::IntToString(delta_window_size) +
             " in DecreaseRecvWindowSize, which is larger than the receive " +
             "window size of " + base::IntToString(session_recv_window_size_));

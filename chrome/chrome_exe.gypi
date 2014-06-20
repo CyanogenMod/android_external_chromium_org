@@ -229,12 +229,6 @@
               'dependencies': [
                 '../breakpad/breakpad.gyp:dump_syms',
                 '../breakpad/breakpad.gyp:symupload',
-
-                # In order to process symbols for the Remoting Host plugin,
-                # that plugin needs to be built beforehand.  Since the
-                # "Dump Symbols" step hangs off this target, that plugin also
-                # needs to be added as a dependency.
-                '../remoting/remoting.gyp:remoting_host_plugin',
               ],
               # The "Dump Symbols" post-build step is in a target_conditions
               # block so that it will follow the "Strip If Needed" step if that
@@ -433,11 +427,16 @@
                 '../pdf/pdf.gyp:pdf_linux_symbols',
               ],
             }], # OS=="linux" and chromeos==0 and linux_dump_symbols==1
+            # Android doesn't use pdfium.
+            ['OS!="android"', {
+              'dependencies': [
+                # On Mac, this is done in chrome_dll.gypi.
+                '../pdf/pdf.gyp:pdf',
+              ],
+            }], # OS=="android"
           ],
           'dependencies': [
             '../components/components.gyp:startup_metric_utils',
-            # On Mac, this is done in chrome_dll.gypi.
-            '../pdf/pdf.gyp:pdf',
             'chrome_resources.gyp:packed_extra_resources',
             'chrome_resources.gyp:packed_resources',
             # Copy Flash Player files to PRODUCT_DIR if applicable. Let the .gyp

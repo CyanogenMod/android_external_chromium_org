@@ -20,6 +20,7 @@ import logging
 import optparse
 import os
 import pipes
+import platform
 import psutil
 import platform
 import signal
@@ -41,7 +42,7 @@ DEFAULT_SIZES_ENV_VAR = "CHROME_REMOTE_DESKTOP_DEFAULT_DESKTOP_SIZES"
 # with large or multiple monitors. This is a comma-separated list of
 # resolutions that will be made available if the X server supports RANDR. These
 # defaults can be overridden in ~/.profile.
-DEFAULT_SIZES = "1600x1200,3840x1600"
+DEFAULT_SIZES = "1600x1200,3840x2560"
 
 # If RANDR is not available, use a smaller default size. Only a single
 # resolution is supported in this case.
@@ -254,6 +255,14 @@ class Desktop:
       if os.environ.has_key(key):
         self.child_env[key] = os.environ[key]
 
+    # Ensure that the software-rendering GL drivers are loaded by the desktop
+    # session, instead of any hardware GL drivers installed on the system.
+    self.child_env["LD_LIBRARY_PATH"] = (
+        "/usr/lib/%(arch)s-linux-gnu/mesa:"
+        "/usr/lib/%(arch)s-linux-gnu/dri:"
+        "/usr/lib/%(arch)s-linux-gnu/gallium-pipe" %
+        { "arch": platform.machine() })
+
     # Read from /etc/environment if it exists, as it is a standard place to
     # store system-wide environment settings. During a normal login, this would
     # typically be done by the pam_env PAM module, depending on the local PAM
@@ -294,8 +303,6 @@ class Desktop:
     try:
       if not os.path.exists(pulse_path):
         os.mkdir(pulse_path)
-      if not os.path.exists(pipe_name):
-        os.mkfifo(pipe_name)
     except IOError, e:
       logging.error("Failed to create pulseaudio pipe: " + str(e))
       return False

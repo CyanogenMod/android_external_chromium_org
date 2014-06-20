@@ -28,6 +28,8 @@ component("base") {
     "android/content_uri_utils.cc",
     "android/content_uri_utils.h",
     "android/cpu_features.cc",
+    "android/event_log.cc",
+    "android/event_log.h",
     "android/fifo_utils.cc",
     "android/fifo_utils.h",
     "android/important_file_writer_android.cc",
@@ -184,8 +186,12 @@ component("base") {
     "files/file_path_constants.cc",
     "files/file_path_watcher.cc",
     "files/file_path_watcher.h",
+    "files/file_path_watcher_fsevents.cc",
+    "files/file_path_watcher_fsevents.h",
     "files/file_path_watcher_kqueue.cc",
+    "files/file_path_watcher_kqueue.h",
     "files/file_path_watcher_linux.cc",
+    "files/file_path_watcher_mac.cc",
     "files/file_path_watcher_win.cc",
     "files/file_proxy.cc",
     "files/file_proxy.h",
@@ -836,7 +842,12 @@ component("base") {
     deps += [ "//third_party/mach_override" ]
   } else {
     # Non-Mac.
-    sources -= [ "files/file_path_watcher_kqueue.cc" ]
+    sources -= [
+      "files/file_path_watcher_fsevents.cc",
+      "files/file_path_watcher_fsevents.h",
+      "files/file_path_watcher_kqueue.cc",
+      "files/file_path_watcher_kqueue.h",
+    ]
   }
 
   # Linux.
@@ -1308,6 +1319,7 @@ if (is_android) {
       "android/java/src/org/chromium/base/CommandLine.java",
       "android/java/src/org/chromium/base/ContentUriUtils.java",
       "android/java/src/org/chromium/base/CpuFeatures.java",
+      "android/java/src/org/chromium/base/EventLog.java",
       "android/java/src/org/chromium/base/ImportantFileWriterAndroid.java",
       "android/java/src/org/chromium/base/library_loader/LibraryLoader.java",
       "android/java/src/org/chromium/base/MemoryPressureListener.java",

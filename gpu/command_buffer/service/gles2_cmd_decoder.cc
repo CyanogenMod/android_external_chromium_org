@@ -937,7 +937,14 @@ class GLES2DecoderImpl : public GLES2Decoder,
       GLsizei height);
 
   void DoProduceTextureCHROMIUM(GLenum target, const GLbyte* key);
+  void DoProduceTextureDirectCHROMIUM(GLuint texture, GLenum target,
+      const GLbyte* key);
+  void ProduceTextureRef(std::string func_name, TextureRef* texture_ref,
+      GLenum target, const GLbyte* data);
+
   void DoConsumeTextureCHROMIUM(GLenum target, const GLbyte* key);
+  void DoCreateAndConsumeTextureCHROMIUM(GLenum target, const GLbyte* key,
+    GLuint client_id);
 
   void DoBindTexImage2DCHROMIUM(
       GLenum target,
@@ -4721,21 +4728,6 @@ void GLES2DecoderImpl::DoBindAttribLocation(
   glBindAttribLocation(program->service_id(), index, name);
 }
 
-error::Error GLES2DecoderImpl::HandleBindAttribLocation(
-    uint32 immediate_data_size, const cmds::BindAttribLocation& c) {
-  GLuint program = static_cast<GLuint>(c.program);
-  GLuint index = static_cast<GLuint>(c.index);
-  uint32 name_size = c.data_size;
-  const char* name = GetSharedMemoryAs<const char*>(
-      c.name_shm_id, c.name_shm_offset, name_size);
-  if (name == NULL) {
-    return error::kOutOfBounds;
-  }
-  std::string name_str(name, name_size);
-  DoBindAttribLocation(program, index, name_str.c_str());
-  return error::kNoError;
-}
-
 error::Error GLES2DecoderImpl::HandleBindAttribLocationBucket(
     uint32 immediate_data_size, const cmds::BindAttribLocationBucket& c) {
   GLuint program = static_cast<GLuint>(c.program);
@@ -4784,21 +4776,6 @@ void GLES2DecoderImpl::DoBindUniformLocationCHROMIUM(
         GL_INVALID_VALUE,
         "glBindUniformLocationCHROMIUM", "location out of range");
   }
-}
-
-error::Error GLES2DecoderImpl::HandleBindUniformLocationCHROMIUM(
-    uint32 immediate_data_size, const cmds::BindUniformLocationCHROMIUM& c) {
-  GLuint program = static_cast<GLuint>(c.program);
-  GLint location = static_cast<GLint>(c.location);
-  uint32 name_size = c.data_size;
-  const char* name = GetSharedMemoryAs<const char*>(
-      c.name_shm_id, c.name_shm_offset, name_size);
-  if (name == NULL) {
-    return error::kOutOfBounds;
-  }
-  std::string name_str(name, name_size);
-  DoBindUniformLocationCHROMIUM(program, location, name_str.c_str());
-  return error::kNoError;
 }
 
 error::Error GLES2DecoderImpl::HandleBindUniformLocationCHROMIUMBucket(
@@ -6694,17 +6671,6 @@ error::Error GLES2DecoderImpl::ShaderSourceHelper(
   return error::kNoError;
 }
 
-error::Error GLES2DecoderImpl::HandleShaderSource(
-    uint32 immediate_data_size, const cmds::ShaderSource& c) {
-  uint32 data_size = c.data_size;
-  const char* data = GetSharedMemoryAs<const char*>(
-      c.data_shm_id, c.data_shm_offset, data_size);
-  if (!data) {
-    return error::kOutOfBounds;
-  }
-  return ShaderSourceHelper(c.shader, data, data_size);
-}
-
 error::Error GLES2DecoderImpl::HandleShaderSourceBucket(
   uint32 immediate_data_size, const cmds::ShaderSourceBucket& c) {
   Bucket* bucket = GetBucket(c.data_bucket_id);
@@ -7630,19 +7596,6 @@ error::Error GLES2DecoderImpl::GetAttribLocationHelper(
 
 error::Error GLES2DecoderImpl::HandleGetAttribLocation(
     uint32 immediate_data_size, const cmds::GetAttribLocation& c) {
-  uint32 name_size = c.data_size;
-  const char* name = GetSharedMemoryAs<const char*>(
-      c.name_shm_id, c.name_shm_offset, name_size);
-  if (!name) {
-    return error::kOutOfBounds;
-  }
-  std::string name_str(name, name_size);
-  return GetAttribLocationHelper(
-    c.program, c.location_shm_id, c.location_shm_offset, name_str);
-}
-
-error::Error GLES2DecoderImpl::HandleGetAttribLocationBucket(
-    uint32 immediate_data_size, const cmds::GetAttribLocationBucket& c) {
   Bucket* bucket = GetBucket(c.name_bucket_id);
   if (!bucket) {
     return error::kInvalidArguments;
@@ -7689,19 +7642,6 @@ error::Error GLES2DecoderImpl::GetUniformLocationHelper(
 
 error::Error GLES2DecoderImpl::HandleGetUniformLocation(
     uint32 immediate_data_size, const cmds::GetUniformLocation& c) {
-  uint32 name_size = c.data_size;
-  const char* name = GetSharedMemoryAs<const char*>(
-      c.name_shm_id, c.name_shm_offset, name_size);
-  if (!name) {
-    return error::kOutOfBounds;
-  }
-  std::string name_str(name, name_size);
-  return GetUniformLocationHelper(
-    c.program, c.location_shm_id, c.location_shm_offset, name_str);
-}
-
-error::Error GLES2DecoderImpl::HandleGetUniformLocationBucket(
-    uint32 immediate_data_size, const cmds::GetUniformLocationBucket& c) {
   Bucket* bucket = GetBucket(c.name_bucket_id);
   if (!bucket) {
     return error::kInvalidArguments;
@@ -10197,25 +10137,44 @@ void GLES2DecoderImpl::DoProduceTextureCHROMIUM(GLenum target,
       "context", logger_.GetLogPrefix(),
       "mailbox[0]", static_cast<unsigned char>(data[0]));
 
+  TextureRef* texture_ref = texture_manager()->GetTextureInfoForTarget(
+      &state_, target);
+  ProduceTextureRef("glProduceTextureCHROMIUM", texture_ref, target, data);
+}
+
+void GLES2DecoderImpl::DoProduceTextureDirectCHROMIUM(GLuint client_id,
+    GLenum target, const GLbyte* data) {
+  TRACE_EVENT2("gpu", "GLES2DecoderImpl::DoProduceTextureDirectCHROMIUM",
+      "context", logger_.GetLogPrefix(),
+      "mailbox[0]", static_cast<unsigned char>(data[0]));
+
+  ProduceTextureRef("glProduceTextureDirectCHROMIUM", GetTexture(client_id),
+      target, data);
+}
+
+void GLES2DecoderImpl::ProduceTextureRef(std::string func_name,
+    TextureRef* texture_ref, GLenum target, const GLbyte* data) {
   const Mailbox& mailbox = *reinterpret_cast<const Mailbox*>(data);
-  DLOG_IF(ERROR, !mailbox.Verify()) << "ProduceTextureCHROMIUM was passed a "
+  DLOG_IF(ERROR, !mailbox.Verify()) << func_name << " was passed a "
                                        "mailbox that was not generated by "
                                        "GenMailboxCHROMIUM.";
 
-  TextureRef* texture_ref = texture_manager()->GetTextureInfoForTarget(
-      &state_, target);
   if (!texture_ref) {
     LOCAL_SET_GL_ERROR(
-        GL_INVALID_OPERATION,
-        "glProduceTextureCHROMIUM", "unknown texture for target");
+        GL_INVALID_OPERATION, func_name.c_str(), "unknown texture for target");
     return;
   }
 
   Texture* produced = texture_manager()->Produce(texture_ref);
   if (!produced) {
     LOCAL_SET_GL_ERROR(
-        GL_INVALID_OPERATION,
-        "glProduceTextureCHROMIUM", "invalid texture");
+        GL_INVALID_OPERATION, func_name.c_str(), "invalid texture");
+    return;
+  }
+
+  if (produced->target() != target) {
+    LOCAL_SET_GL_ERROR(
+        GL_INVALID_OPERATION, func_name.c_str(), "invalid target");
     return;
   }
 
@@ -10284,6 +10243,70 @@ void GLES2DecoderImpl::DoConsumeTextureCHROMIUM(GLenum target,
       NOTREACHED();  // Validation should prevent us getting here.
       break;
   }
+}
+
+error::Error GLES2DecoderImpl::HandleCreateAndConsumeTextureCHROMIUMImmediate(
+    uint32_t immediate_data_size,
+    const gles2::cmds::CreateAndConsumeTextureCHROMIUMImmediate& c) {
+  GLenum target = static_cast<GLenum>(c.target);
+  uint32_t data_size;
+  if (!ComputeDataSize(1, sizeof(GLbyte), 64, &data_size)) {
+    return error::kOutOfBounds;
+  }
+  if (data_size > immediate_data_size) {
+    return error::kOutOfBounds;
+  }
+  const GLbyte* mailbox =
+      GetImmediateDataAs<const GLbyte*>(c, data_size, immediate_data_size);
+  if (!validators_->texture_bind_target.IsValid(target)) {
+    LOCAL_SET_GL_ERROR_INVALID_ENUM(
+        "glCreateAndConsumeTextureCHROMIUM", target, "target");
+    return error::kNoError;
+  }
+  if (mailbox == NULL) {
+    return error::kOutOfBounds;
+  }
+  uint32_t client_id = c.client_id;
+  DoCreateAndConsumeTextureCHROMIUM(target, mailbox, client_id);
+  return error::kNoError;
+}
+
+void GLES2DecoderImpl::DoCreateAndConsumeTextureCHROMIUM(GLenum target,
+    const GLbyte* data, GLuint client_id) {
+  TRACE_EVENT2("gpu", "GLES2DecoderImpl::DoCreateAndConsumeTextureCHROMIUM",
+      "context", logger_.GetLogPrefix(),
+      "mailbox[0]", static_cast<unsigned char>(data[0]));
+  const Mailbox& mailbox = *reinterpret_cast<const Mailbox*>(data);
+  DLOG_IF(ERROR, !mailbox.Verify()) << "CreateAndConsumeTextureCHROMIUM was "
+                                       "passed a mailbox that was not "
+                                       "generated by GenMailboxCHROMIUM.";
+
+  TextureRef* texture_ref = GetTexture(client_id);
+  if (texture_ref) {
+    LOCAL_SET_GL_ERROR(
+        GL_INVALID_OPERATION,
+        "glCreateAndConsumeTextureCHROMIUM", "client id already in use");
+    return;
+  }
+  Texture* texture = group_->mailbox_manager()->ConsumeTexture(target, mailbox);
+  if (!texture) {
+    LOCAL_SET_GL_ERROR(
+        GL_INVALID_OPERATION,
+        "glCreateAndConsumeTextureCHROMIUM", "invalid mailbox name");
+    return;
+  }
+  if (texture->target() != target) {
+    LOCAL_SET_GL_ERROR(
+        GL_INVALID_OPERATION,
+        "glCreateAndConsumeTextureCHROMIUM", "invalid target");
+    return;
+  }
+
+  IdAllocatorInterface* id_allocator =
+      group_->GetIdAllocator(id_namespaces::kTextures);
+  id_allocator->MarkAsUsed(client_id);
+
+  texture_ref = texture_manager()->Consume(client_id, texture);
 }
 
 void GLES2DecoderImpl::DoInsertEventMarkerEXT(
@@ -10535,8 +10558,6 @@ error::Error GLES2DecoderImpl::HandleAsyncTexImage2DCHROMIUM(
   TRACE_EVENT0("gpu", "GLES2DecoderImpl::HandleAsyncTexImage2DCHROMIUM");
   GLenum target = static_cast<GLenum>(c.target);
   GLint level = static_cast<GLint>(c.level);
-  // TODO(kloveless): Change HandleAsyncTexImage2DCHROMIUM command to use
-  // unsigned integer for internalformat.
   GLenum internal_format = static_cast<GLenum>(c.internalformat);
   GLsizei width = static_cast<GLsizei>(c.width);
   GLsizei height = static_cast<GLsizei>(c.height);

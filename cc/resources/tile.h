@@ -20,7 +20,7 @@ namespace cc {
 
 class CC_EXPORT Tile : public RefCountedManaged<Tile> {
  public:
-  enum TileRasterFlags { USE_LCD_TEXT = 1 << 0, USE_PICTURE_ANALYSIS = 1 << 1 };
+  enum TileRasterFlags { USE_PICTURE_ANALYSIS = 1 << 0 };
 
   typedef uint64 Id;
 
@@ -66,17 +66,6 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
     return priority_[PENDING_TREE].required_for_activation;
   }
 
-  void set_can_use_lcd_text(bool can_use_lcd_text) {
-    if (can_use_lcd_text)
-      flags_ |= USE_LCD_TEXT;
-    else
-      flags_ &= ~USE_LCD_TEXT;
-  }
-
-  bool can_use_lcd_text() const {
-    return !!(flags_ & USE_LCD_TEXT);
-  }
-
   bool use_picture_analysis() const {
     return !!(flags_ & USE_PICTURE_ANALYSIS);
   }
@@ -112,10 +101,6 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
   }
 
   gfx::Rect opaque_rect() const { return opaque_rect_; }
-  bool has_text(RasterMode mode) const {
-    return managed_state_.tile_versions[mode].has_text_;
-  }
-
   float contents_scale() const { return contents_scale_; }
   gfx::Rect content_rect() const { return content_rect_; }
 

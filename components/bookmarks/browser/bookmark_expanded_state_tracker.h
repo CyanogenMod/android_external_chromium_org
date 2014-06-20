@@ -13,6 +13,8 @@ class BookmarkModel;
 class BookmarkNode;
 class PrefService;
 
+namespace bookmarks {
+
 // BookmarkExpandedStateTracker is used to track a set of expanded nodes. The
 // nodes are persisted in preferences. If an expanded node is removed from the
 // model BookmarkExpandedStateTracker removes the node.
@@ -39,7 +41,7 @@ class BookmarkExpandedStateTracker : public BaseBookmarkModelObserver {
                                    int old_index,
                                    const BookmarkNode* node,
                                    const std::set<GURL>& removed_urls) OVERRIDE;
-  virtual void BookmarkAllNodesRemoved(
+  virtual void BookmarkAllUserNodesRemoved(
       BookmarkModel* model,
       const std::set<GURL>& removed_urls) OVERRIDE;
 
@@ -52,5 +54,7 @@ class BookmarkExpandedStateTracker : public BaseBookmarkModelObserver {
 
   DISALLOW_COPY_AND_ASSIGN(BookmarkExpandedStateTracker);
 };
+
+}  // namespace bookmarks
 
 #endif  // COMPONENTS_BOOKMARKS_BROWSER_BOOKMARK_EXPANDED_STATE_TRACKER_H_

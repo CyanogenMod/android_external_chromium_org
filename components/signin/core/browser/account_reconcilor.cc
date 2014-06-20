@@ -575,6 +575,19 @@ void AccountReconcilor::OnGetTokenFailure(
   HandleFailedAccountIdCheck(account_id);
 }
 
+void AccountReconcilor::OnNewProfileManagementFlagChanged(
+    bool new_flag_status) {
+  if (new_flag_status) {
+    // The reconciler may have been newly created just before this call, or may
+    // have already existed and in mid-reconcile. To err on the safe side, force
+    // a restart.
+    Shutdown();
+    Initialize(true);
+  } else {
+    Shutdown();
+  }
+}
+
 void AccountReconcilor::FinishReconcile() {
   // Make sure that the process of validating the gaia cookie and the oauth2
   // tokens individually is done before proceeding with reconciliation.
@@ -644,10 +657,12 @@ void AccountReconcilor::FinishReconcile() {
   }
 
   // For each account in the gaia cookie not known to chrome,
-  // PerformAddToChromeAction.
+  // PerformAddToChromeAction. Make a copy of |add_to_chrome| since calls to
+  // PerformAddToChromeAction() may modify this array.
+  std::vector<std::pair<std::string, int> > add_to_chrome_copy = add_to_chrome_;
   for (std::vector<std::pair<std::string, int> >::const_iterator i =
-           add_to_chrome_.begin();
-       i != add_to_chrome_.end();
+           add_to_chrome_copy.begin();
+       i != add_to_chrome_copy.end();
        ++i) {
     PerformAddToChromeAction(i->first, i->second);
   }

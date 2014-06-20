@@ -329,7 +329,7 @@ public class Tab implements NavigationClient {
      * Adds a {@link TabObserver} to be notified on {@link Tab} changes.
      * @param observer The {@link TabObserver} to add.
      */
-    public final void addObserver(TabObserver observer) {
+    public void addObserver(TabObserver observer) {
         mObservers.addObserver(observer);
     }
 
@@ -337,7 +337,7 @@ public class Tab implements NavigationClient {
      * Removes a {@link TabObserver}.
      * @param observer The {@link TabObserver} to remove.
      */
-    public final void removeObserver(TabObserver observer) {
+    public void removeObserver(TabObserver observer) {
         mObservers.removeObserver(observer);
     }
 
@@ -707,6 +707,16 @@ public class Tab implements NavigationClient {
     }
 
     /**
+     * Replaces the current NativePage with a empty stand-in for a NativePage. This can be used
+     * to reduce memory pressure.
+     */
+    public void freezeNativePage() {
+        if (mNativePage == null || mNativePage instanceof FrozenNativePage) return;
+        assert mNativePage.getView().getParent() == null : "Cannot freeze visible native page";
+        mNativePage = FrozenNativePage.freeze(mNativePage);
+    }
+
+    /**
      * Hides the current {@link NativePage}, if any, and shows the {@link ContentViewCore}'s view.
      */
     protected void showRenderedPage() {
@@ -1054,7 +1064,6 @@ public class Tab implements NavigationClient {
         mContentViewCore.onSizeChanged(originalWidth, originalHeight, 0, 0);
         mContentViewCore.onShow();
         mContentViewCore.attachImeAdapter();
-        for (TabObserver observer : mObservers) observer.onContentChanged(this);
         destroyNativePageInternal(previousNativePage);
         for (TabObserver observer : mObservers) {
             observer.onWebContentsSwapped(this, didStartLoad, didFinishLoad);

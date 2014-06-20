@@ -79,6 +79,10 @@ base::string16 BuildBrowserVersionString() {
   browser_version += ")";
 #endif
 
+#if defined(ARCH_CPU_64_BITS)
+  browser_version += " (64-bit)";
+#endif
+
   return base::UTF8ToUTF16(browser_version);
 }
 
@@ -149,8 +153,7 @@ void HelpHandler::GetLocalizedValues(content::WebUIDataSource* source) {
   };
 
   static L10nResources resources[] = {
-    { "helpTitle", IDS_HELP_TITLE },
-    { "aboutTitle", IDS_ABOUT_TAB_TITLE },
+    { "aboutTitle", IDS_ABOUT_TITLE },
 #if defined(OS_CHROMEOS)
     { "aboutProductTitle", IDS_PRODUCT_OS_NAME },
 #else

@@ -46,8 +46,7 @@ class QuicServerSessionVisitor {
 class QuicServerSession : public QuicSession {
  public:
   QuicServerSession(const QuicConfig& config,
-                    QuicConnection *connection,
-                    uint32 max_flow_control_window_bytes,
+                    QuicConnection* connection,
                     QuicServerSessionVisitor* visitor);
 
   // Override the base class to notify the owner of the connection close.
@@ -74,7 +73,7 @@ class QuicServerSession : public QuicSession {
   virtual bool ShouldCreateIncomingDataStream(QuicStreamId id);
 
   virtual QuicCryptoServerStream* CreateQuicCryptoServerStream(
-    const QuicCryptoServerConfig& crypto_config);
+      const QuicCryptoServerConfig& crypto_config);
 
  private:
   friend class test::QuicServerSessionPeer;

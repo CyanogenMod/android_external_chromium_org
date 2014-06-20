@@ -211,10 +211,48 @@ std::vector<gfx::Rect> CalculateNonDraggableRegions(
 @end
 @implementation ShellNSWindow
 
+- (instancetype)initWithContentRect:(NSRect)contentRect
+                          styleMask:(NSUInteger)windowStyle
+                            backing:(NSBackingStoreType)bufferingType
+                              defer:(BOOL)deferCreation {
+  if ((self = [super initWithContentRect:contentRect
+                               styleMask:windowStyle
+                                 backing:bufferingType
+                                   defer:deferCreation])) {
+    if ([self respondsToSelector:@selector(setTitleVisibility:)])
+      self.titleVisibility = NSWindowTitleHidden;
+  }
+
+  return self;
+}
+
 // Similar to ChromeBrowserWindow, don't draw the title, but allow it to be seen
 // in menus, Expose, etc.
 - (BOOL)_isTitleHidden {
-  return YES;
+  // Only intervene with 10.6-10.9.
+  if ([self respondsToSelector:@selector(setTitleVisibility:)])
+    return [super _isTitleHidden];
+  else
+    return YES;
+}
+
+- (void)drawCustomFrameRect:(NSRect)frameRect forView:(NSView*)view {
+  // Make the background color of the content area white. We can't just call
+  // -setBackgroundColor as that causes the title bar to be drawn in a solid
+  // color.
+  NSRect rect = [self contentRectForFrameRect:frameRect];
+  [[NSColor whiteColor] set];
+  NSRectFill(rect);
+
+  // Draw the native title bar. We remove the content area since the native
+  // implementation draws a gray background.
+  rect.origin.y = NSMaxY(rect);
+  rect.size.height = CGFLOAT_MAX;
+  rect = NSIntersectionRect(rect, frameRect);
+
+  [NSBezierPath clipRect:rect];
+  [super drawCustomFrameRect:frameRect
+                     forView:view];
 }
 
 @end

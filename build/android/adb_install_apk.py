@@ -13,17 +13,16 @@ import sys
 from pylib import android_commands
 from pylib import constants
 from pylib.device import device_utils
-from pylib.utils import apk_helper
 
 
 def AddInstallAPKOption(option_parser):
   """Adds apk option used to install the APK to the OptionParser."""
   option_parser.add_option('--apk',
-                           help=('The name of the apk containing the '
+                           help=('DEPRECATED The name of the apk containing the'
                                  ' application (with the .apk extension).'))
   option_parser.add_option('--apk_package',
-                           help=('The package name used by the apk containing '
-                                 'the application.'))
+                           help=('DEPRECATED The package name used by the apk '
+                                 'containing the application.'))
   option_parser.add_option('--keep_data',
                            action='store_true',
                            default=False,
@@ -38,12 +37,21 @@ def AddInstallAPKOption(option_parser):
                            dest='build_type',
                            help='If set, run test suites under out/Release. '
                            'Default is env var BUILDTYPE or Debug.')
+  option_parser.add_option('-d', '--device', dest='device',
+                           help='Target device for apk to install on.')
 
 
-def ValidateInstallAPKOption(option_parser, options):
+def ValidateInstallAPKOption(option_parser, options, args):
   """Validates the apk option and potentially qualifies the path."""
   if not options.apk:
-    option_parser.error('--apk is mandatory.')
+    if len(args) > 1:
+      options.apk = args[1]
+    else:
+      option_parser.error('apk target not specified.')
+
+  if not options.apk.endswith('.apk'):
+    options.apk += '.apk'
+
   if not os.path.exists(options.apk):
     options.apk = os.path.join(constants.GetOutDirectory(), 'apks',
                                options.apk)
@@ -51,22 +59,31 @@ def ValidateInstallAPKOption(option_parser, options):
 
 def main(argv):
   parser = optparse.OptionParser()
+  parser.set_usage("usage: %prog [options] target")
   AddInstallAPKOption(parser)
   options, args = parser.parse_args(argv)
+
+  if len(args) > 1 and options.apk:
+    parser.error("Appending the apk as argument can't be used with --apk.")
+  elif len(args) > 2:
+    parser.error("Too many arguments.")
+
   constants.SetBuildType(options.build_type)
-  ValidateInstallAPKOption(parser, options)
-  if len(args) > 1:
-    raise Exception('Error: Unknown argument:', args[1:])
+  ValidateInstallAPKOption(parser, options, args)
 
   devices = android_commands.GetAttachedDevices()
+
+  if options.device:
+    if options.device not in devices:
+      raise Exception('Error: %s not in attached devices %s' % (options.device,
+                      ','.join(devices)))
+    devices = [options.device]
+
   if not devices:
     raise Exception('Error: no connected devices')
 
-  if not options.apk_package:
-    options.apk_package = apk_helper.GetPackageName(options.apk)
-
-  device_utils.DeviceUtils.parallel(devices).old_interface.ManagedInstall(
-      options.apk, options.keep_data, options.apk_package).pFinish(None)
+  device_utils.DeviceUtils.parallel(devices).Install(
+      options.apk, reinstall=options.keep_data)
 
 
 if __name__ == '__main__':

@@ -93,13 +93,14 @@ const char *kResumableScreens[] = {
   chromeos::WizardController::kUpdateScreenName,
   chromeos::WizardController::kEulaScreenName,
   chromeos::WizardController::kEnrollmentScreenName,
-  chromeos::WizardController::kTermsOfServiceScreenName
+  chromeos::WizardController::kTermsOfServiceScreenName,
+  chromeos::WizardController::kAutoEnrollmentCheckScreenName
 };
 
 // Checks flag for HID-detection screen show.
 bool CanShowHIDDetectionScreen() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
-      chromeos::switches::kEnableHIDDetectionOnOOBE);
+  return !CommandLine::ForCurrentProcess()->HasSwitch(
+        chromeos::switches::kDisableHIDDetectionOnOOBE);
 }
 
 bool IsResumableScreen(const std::string& screen) {
@@ -544,7 +545,9 @@ void WizardController::SkipUpdateEnrollAfterEula() {
 ///////////////////////////////////////////////////////////////////////////////
 // WizardController, ExitHandlers:
 void WizardController::OnHIDDetectionCompleted() {
-  ShowNetworkScreen();
+  // Check for tests configuration.
+  if (!StartupUtils::IsOobeCompleted())
+    ShowNetworkScreen();
 }
 
 void WizardController::OnNetworkConnected() {
@@ -595,8 +598,7 @@ void WizardController::OnEulaAccepted() {
 
   if (skip_update_enroll_after_eula_) {
     PerformPostEulaActions();
-    PerformOOBECompletedActions();
-    ShowEnrollmentScreen();
+    ShowAutoEnrollmentCheckScreen();
   } else {
     InitiateOOBEUpdate();
   }
@@ -886,7 +888,10 @@ void WizardController::OnExit(ExitCodes exit_code) {
       ShowNetworkScreen();
       break;
     case ENTERPRISE_AUTO_ENROLLMENT_CHECK_COMPLETED:
-      OnOOBECompleted();
+      if (skip_update_enroll_after_eula_)
+        ShowEnrollmentScreen();
+      else
+        OnOOBECompleted();
       break;
     case ENTERPRISE_ENROLLMENT_COMPLETED:
       OnEnrollmentDone();

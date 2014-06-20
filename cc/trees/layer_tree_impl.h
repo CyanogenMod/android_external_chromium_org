@@ -42,6 +42,7 @@ class LayerTreeSettings;
 class MemoryHistory;
 class OutputSurface;
 class PaintTimeCounter;
+class PictureLayerImpl;
 class Proxy;
 class ResourceProvider;
 class TileManager;
@@ -154,6 +155,9 @@ class CC_EXPORT LayerTreeImpl {
   void SetPageScaleFactorAndLimits(float page_scale_factor,
       float min_page_scale_factor, float max_page_scale_factor);
   void SetPageScaleDelta(float delta);
+  void SetPageScaleValues(float page_scale_factor,
+      float min_page_scale_factor, float max_page_scale_factor,
+      float page_scale_delta);
   float total_page_scale_factor() const {
     return page_scale_factor_ * page_scale_delta_;
   }
@@ -167,8 +171,8 @@ class CC_EXPORT LayerTreeImpl {
   float sent_page_scale_delta() const { return sent_page_scale_delta_; }
 
   // Updates draw properties and render surface layer list, as well as tile
-  // priorities.
-  void UpdateDrawProperties();
+  // priorities. Returns false if it was unable to update.
+  bool UpdateDrawProperties();
 
   void set_needs_update_draw_properties() {
     needs_update_draw_properties_ = true;
@@ -258,6 +262,9 @@ class CC_EXPORT LayerTreeImpl {
 
   LayerImpl* FindLayerThatIsHitByPointInTouchHandlerRegion(
       const gfx::PointF& screen_space_point);
+
+  void RegisterPictureLayerImpl(PictureLayerImpl* layer);
+  void UnregisterPictureLayerImpl(PictureLayerImpl* layer);
 
  protected:
   explicit LayerTreeImpl(LayerTreeHostImpl* layer_tree_host_impl);

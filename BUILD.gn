@@ -8,6 +8,8 @@
 # you add a new build file, there must be some path of dependencies from this
 # file to your new one or GN won't know about it.
 
+import("//build/config/ui.gni")
+
 # In GN, a "group" is a dummy target that just lists other targets.
 group("root") {
   # Note that some dependencies are commented out. These are things that are
@@ -19,7 +21,7 @@ group("root") {
 
     "//apps/common/api:apps_api",
     "//cc",
-    #"//chrome",
+    "//chrome:resources",
     "//components/favicon_base",
     "//components/language_usage_metrics",
     "//components/metrics",
@@ -33,19 +35,19 @@ group("root") {
     "//components/translate:translate_core_browser",
     "//components/translate:translate_core_common",
     "//components/url_matcher",
-    #"//content/public/browser",  # Exists but doesn't build yet.
-    "//content/public/child",
-    "//content/public/common",
-    "//content/public/renderer",
+    "//content",
     "//crypto",
     "//extensions/common/api:extensions_api",
-    "//dbus",
     "//device/usb",
     "//gin",
     "//gpu",
     "//google_apis",
     "//ipc",
     "//mojo",
+    "//mojo/common",
+    "//mojo/environment:chromium",
+    "//mojo/service_manager",
+    "//mojo/system",
     "//net",
     "//pdf",
     "//ppapi:ppapi_c",
@@ -56,6 +58,7 @@ group("root") {
     "//sql",
     "//third_party/angle:translator",
     "//third_party/brotli",
+    "//third_party/flac",
     "//third_party/harfbuzz-ng",
     "//third_party/iccjpeg",
     "//third_party/icu",
@@ -64,7 +67,9 @@ group("root") {
     "//third_party/libusb",
     "//third_party/libwebm",
     "//third_party/libwebp",
+    "//third_party/libxslt",
     "//third_party/libyuv",
+    "//third_party/lzma_sdk",
     "//third_party/mesa",
     "//third_party/ots",
     "//third_party/protobuf:protobuf_lite",
@@ -73,11 +78,13 @@ group("root") {
     "//third_party/smhasher:cityhash",
     "//third_party/smhasher:murmurhash3",
     "//third_party/smhasher:pmurhash",
-    # "//third_party/WebKit/Source/platform",
+    "//third_party/speex",
+    "//third_party/WebKit/public:blink_headers",
     "//third_party/WebKit/Source/wtf",
     "//third_party/zlib",
     "//third_party:jpeg",
     "//tools/gn",
+    "//ui/aura",
     "//ui/accessibility",
     "//ui/base",
     "//ui/events",
@@ -94,8 +101,14 @@ group("root") {
     "//webkit/child",
   ]
 
+  if (!is_win) {
+    # TODO(brettw) re-enable once this compiles reliably.
+    #deps += [ "//breakpad:symupload" ]
+  }
+
   if (is_linux) {
     deps += [
+      "//dbus",
       "//third_party/fontconfig",
       "//third_party/freetype2",
     ]
@@ -114,24 +127,44 @@ group("root") {
     ]
   }
 
+  if (cpu_arch == "x86" || cpu_arch == "x64") {
+    # YASM is x86/x64 only.
+    deps += [ "//third_party/yasm($host_toolchain)" ]
+  }
+
   if (is_android) {
     deps -= [
       "//cc",
-      "//content/public/common",
-      "//content/public/renderer",
-      "//dbus",
+      "//content",
       "//extensions/common/api:extensions_api",
       "//pdf",  # Not compiled on Android in GYP yet, either.
       "//ppapi:ppapi_c",
-      "//third_party/libusb",
-      # "//third_party/WebKit/Source/platform",
-      "//third_party/WebKit/Source/wtf",  # TODO(brettw) re-enable for Android.
       "//sandbox",
+      "//third_party/libusb",
+
+      # Seems to not be compiled on Android. Otherwise it will need a config.h.
+      "//third_party/libxslt",
+
       "//tools/gn",
+      "//ui/aura",
+
+      # Fails on Android for unknown reasons.
+      "//third_party/flac",
+
+      # TODO(brettw) make Blink work on Android.
+      "//third_party/WebKit/public:blink_headers",
+      "//third_party/WebKit/Source/wtf",
 
       # Not tested on Android yet:
       "//webkit/browser:storage",
       "//webkit/child",
+    ]
+  }
+
+  if (use_ozone) {
+    deps += [
+      "//ui/events/ozone:events_ozone",
+      "//ui/events/ozone:events_ozone_evdev",
     ]
   }
 }

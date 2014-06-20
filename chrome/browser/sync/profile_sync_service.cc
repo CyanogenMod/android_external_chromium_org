@@ -11,6 +11,7 @@
 
 #include "base/basictypes.h"
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
@@ -29,7 +30,7 @@
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/defaults.h"
-#include "chrome/browser/invalidation/invalidation_service_factory.h"
+#include "chrome/browser/invalidation/profile_invalidation_provider_factory.h"
 #include "chrome/browser/net/chrome_cookie_notification_details.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/profiles/profile.h"
@@ -63,6 +64,7 @@
 #include "chrome/common/url_constants.h"
 #include "components/gcm_driver/gcm_driver.h"
 #include "components/invalidation/invalidation_service.h"
+#include "components/invalidation/profile_invalidation_provider.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/signin/core/browser/about_signin_internals.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
@@ -184,7 +186,7 @@ bool ShouldShowActionOnUI(
 ProfileSyncService::ProfileSyncService(
     ProfileSyncComponentsFactory* factory,
     Profile* profile,
-    ManagedUserSigninManagerWrapper* signin_wrapper,
+    scoped_ptr<ManagedUserSigninManagerWrapper> signin_wrapper,
     ProfileOAuth2TokenService* oauth2_token_service,
     ProfileSyncServiceStartBehavior start_behavior)
     : OAuth2TokenService::Consumer("sync"),
@@ -193,12 +195,12 @@ ProfileSyncService::ProfileSyncService(
       factory_(factory),
       profile_(profile),
       sync_prefs_(profile_->GetPrefs()),
-      sync_service_url_(kDevServerUrl),
+      sync_service_url_(GetSyncServiceURL(*CommandLine::ForCurrentProcess())),
       is_first_time_sync_configure_(false),
       backend_initialized_(false),
       sync_disabled_by_admin_(false),
       is_auth_in_progress_(false),
-      signin_(signin_wrapper),
+      signin_(signin_wrapper.Pass()),
       unrecoverable_error_reason_(ERROR_REASON_UNSET),
       expect_sync_configuration_aborted_(false),
       encrypted_types_(syncer::SyncEncryptionHandler::SensitiveTypes()),
@@ -216,12 +218,13 @@ ProfileSyncService::ProfileSyncService(
           start_behavior,
           oauth2_token_service,
           &sync_prefs_,
-          signin_wrapper,
+          signin_.get(),
           base::Bind(&ProfileSyncService::StartUpSlowBackendComponents,
                      startup_controller_weak_factory_.GetWeakPtr(),
                      SYNC)),
       backup_rollback_controller_(
-          &sync_prefs_, signin_wrapper,
+          &sync_prefs_,
+          signin_.get(),
           base::Bind(&ProfileSyncService::StartUpSlowBackendComponents,
                      startup_controller_weak_factory_.GetWeakPtr(),
                      BACKUP),
@@ -232,19 +235,6 @@ ProfileSyncService::ProfileSyncService(
       backup_start_delay_(base::TimeDelta::FromSeconds(kBackupStartDelay)),
       clear_browsing_data_(base::Bind(&ClearBrowsingData)) {
   DCHECK(profile);
-  // By default, dev, canary, and unbranded Chromium users will go to the
-  // development servers. Development servers have more features than standard
-  // sync servers. Users with officially-branded Chrome stable and beta builds
-  // will go to the standard sync servers.
-  //
-  // GetChannel hits the registry on Windows. See http://crbug.com/70380.
-  base::ThreadRestrictions::ScopedAllowIO allow_io;
-  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
-  if (channel == chrome::VersionInfo::CHANNEL_STABLE ||
-      channel == chrome::VersionInfo::CHANNEL_BETA) {
-    sync_service_url_ = GURL(kSyncServerUrl);
-  }
-
   syncer::SyncableService::StartSyncFlare flare(
       sync_start_util::GetFlareForSyncableService(profile->GetPath()));
   scoped_ptr<browser_sync::LocalSessionEventRouter> router(
@@ -277,8 +267,6 @@ bool ProfileSyncService::IsOAuthRefreshTokenAvailable() {
 }
 
 void ProfileSyncService::Initialize() {
-  InitSettings();
-
   // We clear this here (vs Shutdown) because we want to remember that an error
   // happened on shutdown so we can display details (message, location) about it
   // in about:sync.
@@ -322,6 +310,18 @@ void ProfileSyncService::Initialize() {
   startup_controller_.TryStart();
 
   backup_rollback_controller_.Start(backup_start_delay_);
+
+#if defined(OS_WIN) || defined(OS_MACOSX) || (defined(OS_LINUX) && !defined(OS_CHROMEOS))
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSyncDisableBackup)) {
+    profile_->GetIOTaskRunner()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(base::IgnoreResult(base::DeleteFile),
+                   profile_->GetPath().Append(kSyncBackupDataFolderName),
+                   true),
+        backup_start_delay_);
+  }
+#endif
 }
 
 void ProfileSyncService::TrySyncDatatypePrefRecovery() {
@@ -502,26 +502,6 @@ void ProfileSyncService::GetDataTypeControllerStates(
       (*state_map)[iter->first] = iter->second.get()->state();
 }
 
-void ProfileSyncService::InitSettings() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-
-  // Override the sync server URL from the command-line, if sync server
-  // command-line argument exists.
-  if (command_line.HasSwitch(switches::kSyncServiceURL)) {
-    std::string value(command_line.GetSwitchValueASCII(
-        switches::kSyncServiceURL));
-    if (!value.empty()) {
-      GURL custom_sync_url(value);
-      if (custom_sync_url.is_valid()) {
-        sync_service_url_ = custom_sync_url;
-      } else {
-        LOG(WARNING) << "The following sync URL specified at the command-line "
-                     << "is invalid: " << value;
-      }
-    }
-  }
-}
-
 SyncCredentials ProfileSyncService::GetCredentials() {
   SyncCredentials credentials;
   if (backend_mode_ == SYNC) {
@@ -560,7 +540,7 @@ void ProfileSyncService::InitializeBackend(bool delete_stale_data) {
   scoped_refptr<net::URLRequestContextGetter> request_context_getter(
       profile_->GetRequestContext());
 
-  if (delete_stale_data)
+  if (backend_mode_ == SYNC && delete_stale_data)
     ClearStaleErrors();
 
   scoped_ptr<syncer::UnrecoverableErrorHandler>
@@ -672,9 +652,14 @@ void ProfileSyncService::StartUpSlowBackendComponents(
       base::FilePath(kSyncDataFolderName) :
       base::FilePath(kSyncBackupDataFolderName);
 
-  invalidation::InvalidationService* invalidator = backend_mode_ == SYNC ?
-      invalidation::InvalidationServiceFactory::GetForProfile(profile_) :
-      NULL;
+  invalidation::InvalidationService* invalidator = NULL;
+  if (backend_mode_ == SYNC) {
+    invalidation::ProfileInvalidationProvider* provider =
+        invalidation::ProfileInvalidationProviderFactory::GetForProfile(
+            profile_);
+    if (provider)
+      invalidator = provider->GetInvalidationService();
+  }
 
   backend_.reset(
       factory_->CreateSyncBackendHost(
@@ -1005,10 +990,8 @@ void ProfileSyncService::UpdateBackendInitUMA(bool success) {
 }
 
 void ProfileSyncService::PostBackendInitialization() {
-  if (backend_mode_ == BACKUP || backend_mode_ == ROLLBACK) {
-    ConfigureDataTypeManager();
-    return;
-  }
+  // Never get here for backup / restore.
+  DCHECK_EQ(backend_mode_, SYNC);
 
   if (protocol_event_observers_.might_have_observers()) {
     backend_->RequestBufferedProtocolEventsAndEnableForwarding();
@@ -1084,7 +1067,18 @@ void ProfileSyncService::OnBackendInitialized(
   sync_js_controller_.AttachJsBackend(js_backend);
   debug_info_listener_ = debug_info_listener;
 
-  PostBackendInitialization();
+  // Give the DataTypeControllers a handle to the now initialized backend
+  // as a UserShare.
+  for (DataTypeController::TypeMap::iterator it =
+       directory_data_type_controllers_.begin();
+       it != directory_data_type_controllers_.end(); ++it) {
+    it->second->OnUserShareReady(GetUserShare());
+  }
+
+  if (backend_mode_ == BACKUP || backend_mode_ == ROLLBACK)
+    ConfigureDataTypeManager();
+  else
+    PostBackendInitialization();
 }
 
 void ProfileSyncService::OnSyncCycleCompleted() {
@@ -1437,7 +1431,7 @@ void ProfileSyncService::OnConfigureDone(
     if (configure_status_ == DataTypeManager::OK ||
         configure_status_ == DataTypeManager::PARTIAL_SUCCESS) {
       StartSyncingWithServer();
-    } else {
+    } else if (!expect_sync_configuration_aborted_) {
       DVLOG(1) << "Backup/rollback backend failed to configure.";
       ShutdownImpl(browser_sync::SyncBackendHost::STOP_AND_CLAIM_THREAD);
     }
@@ -2530,4 +2524,36 @@ void ProfileSyncService::ClearBrowsingDataSinceFirstSync() {
 void ProfileSyncService::SetClearingBrowseringDataForTesting(
     base::Callback<void(Profile*, base::Time, base::Time)> c) {
   clear_browsing_data_ = c;
+}
+
+GURL ProfileSyncService::GetSyncServiceURL(
+    const base::CommandLine& command_line) {
+  // By default, dev, canary, and unbranded Chromium users will go to the
+  // development servers. Development servers have more features than standard
+  // sync servers. Users with officially-branded Chrome stable and beta builds
+  // will go to the standard sync servers.
+  GURL result(kDevServerUrl);
+
+  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
+  if (channel == chrome::VersionInfo::CHANNEL_STABLE ||
+      channel == chrome::VersionInfo::CHANNEL_BETA) {
+    result = GURL(kSyncServerUrl);
+  }
+
+  // Override the sync server URL from the command-line, if sync server
+  // command-line argument exists.
+  if (command_line.HasSwitch(switches::kSyncServiceURL)) {
+    std::string value(command_line.GetSwitchValueASCII(
+        switches::kSyncServiceURL));
+    if (!value.empty()) {
+      GURL custom_sync_url(value);
+      if (custom_sync_url.is_valid()) {
+        result = custom_sync_url;
+      } else {
+        LOG(WARNING) << "The following sync URL specified at the command-line "
+                     << "is invalid: " << value;
+      }
+    }
+  }
+  return result;
 }

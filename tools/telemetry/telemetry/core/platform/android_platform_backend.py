@@ -3,14 +3,13 @@
 # found in the LICENSE file.
 
 import logging
-import subprocess
 import tempfile
 
 from telemetry import decorators
-from telemetry.core import bitmap
 from telemetry.core import exceptions
 from telemetry.core import platform
 from telemetry.core import util
+from telemetry.core import video
 from telemetry.core.platform import proc_supporting_platform_backend
 from telemetry.core.platform.power_monitor import android_ds2784_power_monitor
 from telemetry.core.platform.power_monitor import android_dumpsys_power_monitor
@@ -35,6 +34,7 @@ except Exception:
 _HOST_APPLICATIONS = [
     'avconv',
     'ipfw',
+    'perfhost',
     ]
 
 
@@ -122,8 +122,12 @@ class AndroidPlatformBackend(
   def PurgeUnpinnedMemory(self):
     """Purges the unpinned ashmem memory for the whole system.
 
-    This can be used to make memory measurements more stable in particular.
+    This can be used to make memory measurements more stable. Requires root.
     """
+    if not self._can_access_protected_file_contents:
+      logging.warning('Cannot run purge_ashmem. Requires a rooted device.')
+      return
+
     if not android_prebuilt_profiler_helper.InstallOnDevice(
         self._device, 'purge_ashmem'):
       raise Exception('Error installing purge_ashmem.')
@@ -180,8 +184,7 @@ class AndroidPlatformBackend(
     raise NotImplementedError()
 
   def FlushDnsCache(self):
-    self._device.old_interface.RunShellCommandWithSU(
-        'ndc resolver flushdefaultif')
+    self._device.RunShellCommand('ndc resolver flushdefaultif', root=True)
 
   def LaunchApplication(
       self, application, parameters=None, elevate_privilege=False):
@@ -193,8 +196,7 @@ class AndroidPlatformBackend(
       raise NotImplementedError("elevate_privilege isn't supported on android.")
     if not parameters:
       parameters = ''
-    self._device.old_interface.RunShellCommand(
-        'am start ' + parameters + ' ' + application)
+    self._device.RunShellCommand('am start ' + parameters + ' ' + application)
 
   def IsApplicationRunning(self, application):
     if application in _HOST_APPLICATIONS:
@@ -218,6 +220,7 @@ class AndroidPlatformBackend(
     return self.GetOSVersionName() >= 'K'
 
   def StartVideoCapture(self, min_bitrate_mbps):
+    """Starts the video capture at specified bitrate."""
     min_bitrate_mbps = max(min_bitrate_mbps, 0.1)
     if min_bitrate_mbps > 100:
       raise ValueError('Android video capture cannot capture at %dmbps. '
@@ -237,10 +240,10 @@ class AndroidPlatformBackend(
   def StopVideoCapture(self):
     assert self.is_video_capture_running, 'Must start video capture first'
     self._video_recorder.Stop()
-    self._video_output = self._video_recorder.Pull()
+    self._video_recorder.Pull()
     self._video_recorder = None
-    for frame in self._FramesFromMp4(self._video_output):
-      yield frame
+
+    return video.Video(self, self._video_output)
 
   def CanMonitorPower(self):
     return self._powermonitor.CanMonitorPower()
@@ -250,60 +253,6 @@ class AndroidPlatformBackend(
 
   def StopMonitoringPower(self):
     return self._powermonitor.StopMonitoringPower()
-
-  def _FramesFromMp4(self, mp4_file):
-    if not self.CanLaunchApplication('avconv'):
-      self.InstallApplication('avconv')
-
-    def GetDimensions(video):
-      proc = subprocess.Popen(['avconv', '-i', video], stderr=subprocess.PIPE)
-      dimensions = None
-      output = ''
-      for line in proc.stderr.readlines():
-        output += line
-        if 'Video:' in line:
-          dimensions = line.split(',')[2]
-          dimensions = map(int, dimensions.split()[0].split('x'))
-          break
-      proc.communicate()
-      assert dimensions, ('Failed to determine video dimensions. output=%s' %
-                          output)
-      return dimensions
-
-    def GetFrameTimestampMs(stderr):
-      """Returns the frame timestamp in integer milliseconds from the dump log.
-
-      The expected line format is:
-      '  dts=1.715  pts=1.715\n'
-
-      We have to be careful to only read a single timestamp per call to avoid
-      deadlock because avconv interleaves its writes to stdout and stderr.
-      """
-      while True:
-        line = ''
-        next_char = ''
-        while next_char != '\n':
-          next_char = stderr.read(1)
-          line += next_char
-        if 'pts=' in line:
-          return int(1000 * float(line.split('=')[-1]))
-
-    dimensions = GetDimensions(mp4_file)
-    frame_length = dimensions[0] * dimensions[1] * 3
-    frame_data = bytearray(frame_length)
-
-    # Use rawvideo so that we don't need any external library to parse frames.
-    proc = subprocess.Popen(['avconv', '-i', mp4_file, '-vcodec',
-                             'rawvideo', '-pix_fmt', 'rgb24', '-dump',
-                             '-loglevel', 'debug', '-f', 'rawvideo', '-'],
-                            stderr=subprocess.PIPE, stdout=subprocess.PIPE)
-    while True:
-      num_read = proc.stdout.readinto(frame_data)
-      if not num_read:
-        raise StopIteration
-      assert num_read == len(frame_data), 'Unexpected frame size: %d' % num_read
-      yield (GetFrameTimestampMs(proc.stderr),
-             bitmap.Bitmap(3, dimensions[0], dimensions[1], frame_data))
 
   def _GetFileContents(self, fname):
     if not self._can_access_protected_file_contents:
@@ -318,8 +267,7 @@ class AndroidPlatformBackend(
     command = 'ps'
     if pid:
       command += ' -p %d' % pid
-    ps = self._device.old_interface.RunShellCommand(
-        command, log_result=False)[1:]
+    ps = self._device.RunShellCommand(command)[1:]
     output = []
     for line in ps:
       data = line.split()

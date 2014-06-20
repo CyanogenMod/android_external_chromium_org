@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/base64.h"
+#include "base/guid.h"
 #include "base/logging.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -64,7 +65,7 @@
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_mode_resource_throttle.h"
+#include "chrome/browser/supervised_user/supervised_user_resource_throttle.h"
 #endif
 
 #if defined(USE_SYSTEM_PROTOBUF)
@@ -156,23 +157,12 @@ void UpdatePrerenderNetworkBytesCallback(int render_process_id,
 }
 
 #if !defined(OS_ANDROID)
-// Goes through the extension's file browser handlers and checks if there is one
-// that can handle the |mime_type|.
-// |extension| must not be NULL.
-bool ExtensionCanHandleMimeType(const Extension* extension,
-                                const std::string& mime_type) {
-  MimeTypesHandler* handler = MimeTypesHandler::GetHandler(extension);
-  if (!handler)
-    return false;
-
-  return handler->CanHandleMIMEType(mime_type);
-}
-
 void SendExecuteMimeTypeHandlerEvent(scoped_ptr<content::StreamHandle> stream,
                                      int64 expected_content_size,
                                      int render_process_id,
                                      int render_view_id,
-                                     const std::string& extension_id) {
+                                     const std::string& extension_id,
+                                     const std::string& view_id) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
   content::WebContents* web_contents =
@@ -196,7 +186,8 @@ void SendExecuteMimeTypeHandlerEvent(scoped_ptr<content::StreamHandle> stream,
   if (!streams_private)
     return;
   streams_private->ExecuteMimeTypeHandler(
-      extension_id, web_contents, stream.Pass(), expected_content_size);
+      extension_id, web_contents, stream.Pass(), view_id,
+      expected_content_size);
 }
 
 void LaunchURL(const GURL& url, int render_process_id, int render_view_id,
@@ -264,6 +255,7 @@ ChromeResourceDispatcherHostDelegate::ChromeResourceDispatcherHostDelegate(
 }
 
 ChromeResourceDispatcherHostDelegate::~ChromeResourceDispatcherHostDelegate() {
+  CHECK(stream_target_info_.empty());
 }
 
 bool ChromeResourceDispatcherHostDelegate::ShouldBeginRequest(
@@ -485,10 +477,15 @@ void ChromeResourceDispatcherHostDelegate::AppendStandardResourceThrottles(
 #if defined(FULL_SAFE_BROWSING) || defined(MOBILE_SAFE_BROWSING)
   // Insert safe browsing at the front of the list, so it gets to decide on
   // policies first.
-  if (io_data->safe_browsing_enabled()->GetValue()) {
+  if (io_data->safe_browsing_enabled()->GetValue()
+#if defined(OS_ANDROID)
+      || io_data->data_reduction_proxy_enabled()->GetValue()
+#endif
+  ) {
     bool is_subresource_request = resource_type != ResourceType::MAIN_FRAME;
     content::ResourceThrottle* throttle =
         SafeBrowsingResourceThrottleFactory::Create(request,
+                                                    resource_context,
                                                     is_subresource_request,
                                                     safe_browsing_.get());
     if (throttle)
@@ -498,9 +495,9 @@ void ChromeResourceDispatcherHostDelegate::AppendStandardResourceThrottles(
 
 #if defined(ENABLE_MANAGED_USERS)
   bool is_subresource_request = resource_type != ResourceType::MAIN_FRAME;
-  throttles->push_back(new ManagedModeResourceThrottle(
+  throttles->push_back(new SupervisedUserResourceThrottle(
         request, !is_subresource_request,
-        io_data->managed_mode_url_filter()));
+        io_data->supervised_user_url_filter()));
 #endif
 
   content::ResourceThrottle* throttle =
@@ -549,14 +546,14 @@ bool ChromeResourceDispatcherHostDelegate::ShouldForceDownloadResource(
 }
 
 bool ChromeResourceDispatcherHostDelegate::ShouldInterceptResourceAsStream(
-    content::ResourceContext* resource_context,
-    const GURL& url,
+    net::URLRequest* request,
     const std::string& mime_type,
     GURL* origin,
-    std::string* target_id) {
+    std::string* payload) {
 #if !defined(OS_ANDROID)
+  const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
   ProfileIOData* io_data =
-      ProfileIOData::FromResourceContext(resource_context);
+      ProfileIOData::FromResourceContext(info->GetContext());
   bool profile_is_off_the_record = io_data->IsOffTheRecord();
   const scoped_refptr<const extensions::InfoMap> extension_info_map(
       io_data->GetExtensionInfoMap());
@@ -575,9 +572,17 @@ bool ChromeResourceDispatcherHostDelegate::ShouldInterceptResourceAsStream(
       continue;
     }
 
-    if (ExtensionCanHandleMimeType(extension, mime_type)) {
+    MimeTypesHandler* handler = MimeTypesHandler::GetHandler(extension);
+    if (handler && handler->CanHandleMIMEType(mime_type)) {
+      StreamTargetInfo target_info;
       *origin = Extension::GetBaseURLFromExtensionId(extension_id);
-      *target_id = extension_id;
+      target_info.extension_id = extension_id;
+      if (!handler->handler_url().empty()) {
+        target_info.view_id = base::GenerateGUID();
+        *payload = origin->spec() + handler->handler_url() +
+            "?id=" + target_info.view_id;
+      }
+      stream_target_info_[request] = target_info;
       return true;
     }
   }
@@ -586,18 +591,20 @@ bool ChromeResourceDispatcherHostDelegate::ShouldInterceptResourceAsStream(
 }
 
 void ChromeResourceDispatcherHostDelegate::OnStreamCreated(
-    content::ResourceContext* resource_context,
-    int render_process_id,
-    int render_view_id,
-    const std::string& target_id,
-    scoped_ptr<content::StreamHandle> stream,
-    int64 expected_content_size) {
+    net::URLRequest* request,
+    scoped_ptr<content::StreamHandle> stream) {
 #if !defined(OS_ANDROID)
+  const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
+  std::map<net::URLRequest*, StreamTargetInfo>::iterator ix =
+      stream_target_info_.find(request);
+  CHECK(ix != stream_target_info_.end());
   content::BrowserThread::PostTask(
       content::BrowserThread::UI, FROM_HERE,
       base::Bind(&SendExecuteMimeTypeHandlerEvent, base::Passed(&stream),
-                 expected_content_size, render_process_id, render_view_id,
-                 target_id));
+                 request->GetExpectedContentSize(),
+                 info->GetChildID(), info->GetRouteID(),
+                 ix->second.extension_id, ix->second.view_id));
+  stream_target_info_.erase(request);
 #endif
 }
 
@@ -655,7 +662,7 @@ void ChromeResourceDispatcherHostDelegate::OnResponseStarted(
   if (request_spec == chrome::kChromeUIChromeSigninURL) {
 #endif
     net::HttpResponseHeaders* response_headers = request->response_headers();
-    if (response_headers->HasHeader("x-frame-options"))
+    if (response_headers && response_headers->HasHeader("x-frame-options"))
       response_headers->RemoveHeader("x-frame-options");
   }
 

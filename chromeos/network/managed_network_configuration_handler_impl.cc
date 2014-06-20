@@ -19,7 +19,6 @@
 #include "chromeos/dbus/shill_profile_client.h"
 #include "chromeos/dbus/shill_service_client.h"
 #include "chromeos/network/device_state.h"
-#include "chromeos/network/favorite_state.h"
 #include "chromeos/network/network_configuration_handler.h"
 #include "chromeos/network/network_device_handler.h"
 #include "chromeos/network/network_event_log.h"
@@ -242,8 +241,8 @@ void ManagedNetworkConfigurationHandlerImpl::SetProperties(
     const base::DictionaryValue& user_settings,
     const base::Closure& callback,
     const network_handler::ErrorCallback& error_callback) const {
-  const FavoriteState* state =
-      network_state_handler_->GetFavoriteStateFromServicePath(
+  const NetworkState* state =
+      network_state_handler_->GetNetworkStateFromServicePath(
           service_path, true /* configured_only */);
   if (!state) {
     InvokeErrorCallback(service_path, error_callback, kUnknownNetwork);
@@ -489,8 +488,10 @@ void ManagedNetworkConfigurationHandlerImpl::
   shill_properties.SetStringWithoutPathExpansion(shill::kProfileProperty,
                                                  profile);
 
-  if (!shill_property_util::CopyIdentifyingProperties(existing_properties,
-                                                      &shill_properties)) {
+  if (!shill_property_util::CopyIdentifyingProperties(
+          existing_properties,
+          true /* properties were read from Shill */,
+          &shill_properties)) {
     NET_LOG_ERROR("Missing identifying properties",
                   shill_property_util::GetNetworkIdFromProperties(
                       existing_properties));
@@ -507,9 +508,6 @@ void ManagedNetworkConfigurationHandlerImpl::
 }
 
 void ManagedNetworkConfigurationHandlerImpl::OnPoliciesApplied() {
-  // After all policies were applied, trigger an update of the network lists.
-  if (network_state_handler_)
-    network_state_handler_->UpdateManagerProperties();
 }
 
 const base::DictionaryValue*

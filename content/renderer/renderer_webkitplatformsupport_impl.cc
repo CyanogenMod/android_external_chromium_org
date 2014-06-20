@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/lazy_instance.h"
+#include "base/logging.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
@@ -32,7 +33,6 @@
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "content/common/mime_registry_messages.h"
-#include "content/common/screen_orientation_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/webplugininfo.h"
@@ -52,7 +52,6 @@
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_clipboard_client.h"
 #include "content/renderer/screen_orientation/mock_screen_orientation_controller.h"
-#include "content/renderer/screen_orientation/screen_orientation_dispatcher.h"
 #include "content/renderer/webclipboard_impl.h"
 #include "content/renderer/webgraphicscontext3d_provider_impl.h"
 #include "content/renderer/webpublicsuffixlist_impl.h"
@@ -72,7 +71,6 @@
 #include "third_party/WebKit/public/platform/WebMediaStreamCenter.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamCenterClient.h"
 #include "third_party/WebKit/public/platform/WebPluginListBuilder.h"
-#include "third_party/WebKit/public/platform/WebScreenOrientationListener.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "ui/gfx/color_profile.h"
@@ -100,7 +98,7 @@
 
 #include "base/synchronization/lock.h"
 #include "content/common/child_process_sandbox_support_impl_linux.h"
-#include "third_party/WebKit/public/platform/linux/WebFontFamily.h"
+#include "third_party/WebKit/public/platform/linux/WebFallbackFont.h"
 #include "third_party/WebKit/public/platform/linux/WebSandboxSupport.h"
 #include "third_party/icu/source/common/unicode/utf16.h"
 #endif
@@ -207,10 +205,10 @@ class RendererWebKitPlatformSupportImpl::SandboxSupport
       CGFontRef* container,
       uint32* font_id);
 #elif defined(OS_POSIX)
-  virtual void getFontFamilyForCharacter(
+  virtual void getFallbackFontForCharacter(
       blink::WebUChar32 character,
       const char* preferred_locale,
-      blink::WebFontFamily* family);
+      blink::WebFallbackFont* fallbackFont);
   virtual void getRenderStyleForStrike(
       const char* family, int sizeAndStyle, blink::WebFontRenderStyle* out);
 
@@ -219,7 +217,7 @@ class RendererWebKitPlatformSupportImpl::SandboxSupport
   // unicode code points. It needs this information frequently so we cache it
   // here.
   base::Lock unicode_font_families_mutex_;
-  std::map<int32_t, blink::WebFontFamily> unicode_font_families_;
+  std::map<int32_t, blink::WebFallbackFont> unicode_font_families_;
 #endif
 };
 #endif  // defined(OS_ANDROID)
@@ -428,8 +426,7 @@ RendererWebKitPlatformSupportImpl::MimeRegistry::supportsMediaMIMEType(
     std::string key_system_ascii =
         GetUnprefixedKeySystemName(base::UTF16ToASCII(key_system));
     std::vector<std::string> strict_codecs;
-    bool strip_suffix = !net::IsStrictMediaMimeType(mime_type_ascii);
-    net::ParseCodecString(ToASCIIOrEmpty(codecs), &strict_codecs, strip_suffix);
+    net::ParseCodecString(ToASCIIOrEmpty(codecs), &strict_codecs, true);
 
     if (!IsSupportedKeySystemWithMediaMimeType(
             mime_type_ascii, strict_codecs, key_system_ascii)) {
@@ -444,14 +441,8 @@ RendererWebKitPlatformSupportImpl::MimeRegistry::supportsMediaMIMEType(
     // Check if the codecs are a perfect match.
     std::vector<std::string> strict_codecs;
     net::ParseCodecString(ToASCIIOrEmpty(codecs), &strict_codecs, false);
-    if (net::IsSupportedStrictMediaMimeType(mime_type_ascii, strict_codecs))
-      return IsSupported;
-
-    // We support the container, but no codecs were specified.
-    if (codecs.isNull())
-      return MayBeSupported;
-
-    return IsNotSupported;
+    return static_cast<WebMimeRegistry::SupportsType> (
+        net::IsSupportedStrictMediaMimeType(mime_type_ascii, strict_codecs));
   }
 
   // If we don't recognize the codec, it's possible we support it.
@@ -608,22 +599,24 @@ bool RendererWebKitPlatformSupportImpl::SandboxSupport::loadFont(
 #elif defined(OS_POSIX)
 
 void
-RendererWebKitPlatformSupportImpl::SandboxSupport::getFontFamilyForCharacter(
+RendererWebKitPlatformSupportImpl::SandboxSupport::getFallbackFontForCharacter(
     blink::WebUChar32 character,
     const char* preferred_locale,
-    blink::WebFontFamily* family) {
+    blink::WebFallbackFont* fallbackFont) {
   base::AutoLock lock(unicode_font_families_mutex_);
-  const std::map<int32_t, blink::WebFontFamily>::const_iterator iter =
+  const std::map<int32_t, blink::WebFallbackFont>::const_iterator iter =
       unicode_font_families_.find(character);
   if (iter != unicode_font_families_.end()) {
-    family->name = iter->second.name;
-    family->isBold = iter->second.isBold;
-    family->isItalic = iter->second.isItalic;
+    fallbackFont->name = iter->second.name;
+    fallbackFont->filename = iter->second.filename;
+    fallbackFont->ttcIndex = iter->second.ttcIndex;
+    fallbackFont->isBold = iter->second.isBold;
+    fallbackFont->isItalic = iter->second.isItalic;
     return;
   }
 
-  GetFontFamilyForCharacter(character, preferred_locale, family);
-  unicode_font_families_.insert(std::make_pair(character, *family));
+  GetFallbackFontForCharacter(character, preferred_locale, fallbackFont);
+  unicode_font_families_.insert(std::make_pair(character, *fallbackFont));
 }
 
 void
@@ -1083,7 +1076,8 @@ void RendererWebKitPlatformSupportImpl::SetMockDeviceMotionDataForTesting(
 // static
 void RendererWebKitPlatformSupportImpl::ResetMockScreenOrientationForTesting()
 {
-  g_test_screen_orientation_controller.Get().ResetData();
+  if (!(g_test_screen_orientation_controller == 0))
+    g_test_screen_orientation_controller.Get().ResetData();
 }
 
 //------------------------------------------------------------------------------
@@ -1126,60 +1120,12 @@ void RendererWebKitPlatformSupportImpl::cancelVibration() {
 
 //------------------------------------------------------------------------------
 
-void RendererWebKitPlatformSupportImpl::EnsureScreenOrientationDispatcher() {
-  if (screen_orientation_dispatcher_)
-    return;
-
-  screen_orientation_dispatcher_.reset(new ScreenOrientationDispatcher());
-}
-
-void RendererWebKitPlatformSupportImpl::setScreenOrientationListener(
-    blink::WebScreenOrientationListener* listener) {
-  if (RenderThreadImpl::current() &&
-      RenderThreadImpl::current()->layout_test_mode()) {
-    // If we are in test mode, we want to fully disable the screen orientation
-    // backend in order to let Blink get tested properly, That means that screen
-    // orientation updates have to be done manually instead of from signals sent
-    // by the browser process.
-    g_test_screen_orientation_controller.Get().SetListener(listener);
-    return;
-  }
-
-
-  EnsureScreenOrientationDispatcher();
-  screen_orientation_dispatcher_->setListener(listener);
-}
-
-void RendererWebKitPlatformSupportImpl::lockOrientation(
-    blink::WebScreenOrientationLockType orientation,
-    blink::WebLockOrientationCallback* callback) {
-  if (RenderThreadImpl::current() &&
-      RenderThreadImpl::current()->layout_test_mode()) {
-    g_test_screen_orientation_controller.Get().UpdateLock(orientation);
-    return;
-  }
-
-  EnsureScreenOrientationDispatcher();
-  screen_orientation_dispatcher_->LockOrientation(
-      orientation, scoped_ptr<blink::WebLockOrientationCallback>(callback));
-}
-
-void RendererWebKitPlatformSupportImpl::unlockOrientation() {
-  if (RenderThreadImpl::current() &&
-      RenderThreadImpl::current()->layout_test_mode()) {
-    g_test_screen_orientation_controller.Get().ResetLock();
-    return;
-  }
-
-  EnsureScreenOrientationDispatcher();
-  screen_orientation_dispatcher_->UnlockOrientation();
-}
-
 // static
 void RendererWebKitPlatformSupportImpl::SetMockScreenOrientationForTesting(
+    RenderView* render_view,
     blink::WebScreenOrientationType orientation) {
   g_test_screen_orientation_controller.Get()
-      .UpdateDeviceOrientation(orientation);
+      .UpdateDeviceOrientation(render_view, orientation);
 }
 
 //------------------------------------------------------------------------------

@@ -197,7 +197,7 @@ void SigninManagerAndroid::OnPolicyFetchDone(bool success) {
 
 void SigninManagerAndroid::OnBrowsingDataRemoverDone() {
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile_);
-  model->RemoveAll();
+  model->RemoveAllUserBookmarks();
 
   // All the Profile data has been wiped. Clear the last signed in username as
   // well, so that the next signin doesn't trigger the acount change dialog.
@@ -233,7 +233,7 @@ void SigninManagerAndroid::LogInSignedInUser(JNIEnv* env, jobject obj) {
             profile_);
     const std::string& primary_acct =
         signin_manager->GetAuthenticatedAccountId();
-    token_service->ValidateAccounts(primary_acct);
+    token_service->ValidateAccounts(primary_acct, true);
 
   } else {
     DVLOG(1) << "SigninManagerAndroid::LogInSignedInUser "

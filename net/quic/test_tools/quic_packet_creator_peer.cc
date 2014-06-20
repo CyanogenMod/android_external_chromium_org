@@ -33,19 +33,5 @@ QuicSequenceNumberLength QuicPacketCreatorPeer::GetSequenceNumberLength(
   return creator->sequence_number_length_;
 }
 
-// static
-void QuicPacketCreatorPeer::SetIsServer(QuicPacketCreator* creator,
-                                        bool is_server) {
-  creator->is_server_ = is_server;
-}
-
-// static
-bool QuicPacketCreatorPeer::SwitchFecProtectionOn(
-    QuicPacketCreator* creator, size_t max_packets_per_fec_group) {
-  creator->set_max_packets_per_fec_group(max_packets_per_fec_group);
-  creator->StartFecProtectingPackets();
-  return creator->IsFecProtected();
-}
-
 }  // namespace test
 }  // namespace net

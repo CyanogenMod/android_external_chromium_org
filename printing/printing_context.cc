@@ -9,7 +9,7 @@
 #include "printing/page_setup.h"
 #include "printing/page_size_margins.h"
 #include "printing/print_job_constants.h"
-#include "printing/print_settings_initializer.h"
+#include "printing/print_settings_conversion.h"
 #include "printing/units.h"
 
 namespace printing {
@@ -63,16 +63,14 @@ PrintingContext::Result PrintingContext::UsePdfSettings() {
   pdf_settings->SetBoolean(kSettingPrintToPDF, true);
   pdf_settings->SetBoolean(kSettingCloudPrintDialog, false);
   pdf_settings->SetBoolean(kSettingPrintWithPrivet, false);
-  return UpdatePrintSettings(*pdf_settings, PageRanges());
+  return UpdatePrintSettings(*pdf_settings);
 }
 
 PrintingContext::Result PrintingContext::UpdatePrintSettings(
-    const base::DictionaryValue& job_settings,
-    const PageRanges& ranges) {
+    const base::DictionaryValue& job_settings) {
   ResetSettings();
 
-  if (!PrintSettingsInitializer::InitSettings(job_settings, ranges,
-                                              &settings_)) {
+  if (!PrintSettingsFromJobSettings(job_settings, &settings_)) {
     NOTREACHED();
     return OnError();
   }
@@ -96,19 +94,13 @@ PrintingContext::Result PrintingContext::UpdatePrintSettings(
                                     is_cloud_dialog || print_with_privet)) {
     settings_.set_dpi(kDefaultPdfDpi);
     gfx::Size paper_size(GetPdfPaperSizeDeviceUnits());
-    const base::DictionaryValue* media_size = NULL;
-    if (job_settings.GetDictionary(kSettingMediaSize, &media_size)) {
-      int width_microns = 0;
-      int height_microns = 0;
-      if (media_size->GetInteger(kSettingMediaSizeWidthMicrons,
-                                 &width_microns) &&
-          media_size->GetInteger(kSettingMediaSizeHeightMicrons,
-                                 &height_microns)) {
-        float deviceMicronsPerDeviceUnit =
-            (kHundrethsMMPerInch * 10.0f) / settings_.device_units_per_inch();
-        paper_size = gfx::Size(width_microns / deviceMicronsPerDeviceUnit,
-                               height_microns / deviceMicronsPerDeviceUnit);
-      }
+    if (!settings_.requested_media().size_microns.IsEmpty()) {
+      float deviceMicronsPerDeviceUnit =
+          (kHundrethsMMPerInch * 10.0f) / settings_.device_units_per_inch();
+      paper_size = gfx::Size(settings_.requested_media().size_microns.width() /
+                                 deviceMicronsPerDeviceUnit,
+                             settings_.requested_media().size_microns.height() /
+                                 deviceMicronsPerDeviceUnit);
     }
     gfx::Rect paper_rect(0, 0, paper_size.width(), paper_size.height());
     if (print_to_cloud || print_with_privet) {

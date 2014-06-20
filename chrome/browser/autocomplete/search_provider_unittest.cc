@@ -26,7 +26,6 @@
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
-#include "chrome/browser/search_engines/search_engine_type.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
@@ -38,6 +37,7 @@
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/google/core/browser/google_switches.h"
+#include "components/search_engines/search_engine_type.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/sync_driver/pref_names.h"
 #include "components/variations/entropy_provider.h"
@@ -253,7 +253,7 @@ void SearchProviderTest::SetUp() {
   data.suggestions_url = "http://defaultturl2/{searchTerms}";
   data.instant_url = "http://does/not/exist?strk=1";
   data.search_terms_replacement_key = "strk";
-  default_t_url_ = new TemplateURL(&profile_, data);
+  default_t_url_ = new TemplateURL(data);
   turl_model->Add(default_t_url_);
   turl_model->SetUserSelectedDefaultSearchProvider(default_t_url_);
   TemplateURLID default_provider_id = default_t_url_->id();
@@ -267,7 +267,7 @@ void SearchProviderTest::SetUp() {
   data.SetKeyword(ASCIIToUTF16("k"));
   data.SetURL("http://keyword/{searchTerms}");
   data.suggestions_url = "http://suggest_keyword/{searchTerms}";
-  keyword_t_url_ = new TemplateURL(&profile_, data);
+  keyword_t_url_ = new TemplateURL(data);
   turl_model->Add(keyword_t_url_);
   ASSERT_NE(0, keyword_t_url_->id());
 
@@ -362,10 +362,12 @@ void SearchProviderTest::QueryForInputAndSetWYTMatch(
   if (!wyt_match)
     return;
   ASSERT_GE(provider_->matches().size(), 1u);
-  EXPECT_TRUE(FindMatchWithDestination(GURL(
-      default_t_url_->url_ref().ReplaceSearchTerms(
+  EXPECT_TRUE(FindMatchWithDestination(
+      GURL(default_t_url_->url_ref().ReplaceSearchTerms(
           TemplateURLRef::SearchTermsArgs(base::CollapseWhitespace(
-              text, false)))),
+              text, false)),
+          TemplateURLServiceFactory::GetForProfile(
+              &profile_)->search_terms_data())),
       wyt_match));
 }
 
@@ -376,7 +378,9 @@ GURL SearchProviderTest::AddSearchToHistory(TemplateURL* t_url,
       HistoryServiceFactory::GetForProfile(&profile_,
                                            Profile::EXPLICIT_ACCESS);
   GURL search(t_url->url_ref().ReplaceSearchTerms(
-      TemplateURLRef::SearchTermsArgs(term)));
+      TemplateURLRef::SearchTermsArgs(term),
+      TemplateURLServiceFactory::GetForProfile(
+          &profile_)->search_terms_data()));
   static base::Time last_added_time;
   last_added_time = std::max(base::Time::Now(),
       last_added_time + base::TimeDelta::FromMicroseconds(1));
@@ -481,7 +485,9 @@ TEST_F(SearchProviderTest, QueryDefaultProvider) {
 
   // And the URL matches what we expected.
   GURL expected_url(default_t_url_->suggestions_url_ref().ReplaceSearchTerms(
-      TemplateURLRef::SearchTermsArgs(term)));
+      TemplateURLRef::SearchTermsArgs(term),
+      TemplateURLServiceFactory::GetForProfile(
+          &profile_)->search_terms_data()));
   ASSERT_TRUE(fetcher->GetOriginalURL() == expected_url);
 
   // Tell the SearchProvider the suggest query is done.
@@ -502,7 +508,10 @@ TEST_F(SearchProviderTest, QueryDefaultProvider) {
   AutocompleteMatch wyt_match;
   EXPECT_TRUE(FindMatchWithDestination(
       GURL(default_t_url_->url_ref().ReplaceSearchTerms(
-          TemplateURLRef::SearchTermsArgs(term))), &wyt_match));
+          TemplateURLRef::SearchTermsArgs(term),
+          TemplateURLServiceFactory::GetForProfile(
+              &profile_)->search_terms_data())),
+      &wyt_match));
   EXPECT_TRUE(wyt_match.description.empty());
 
   // The match for term1 should be more relevant than the what you typed match.
@@ -548,7 +557,9 @@ TEST_F(SearchProviderTest, QueryKeywordProvider) {
 
   // And the URL matches what we expected.
   GURL expected_url(keyword_t_url_->suggestions_url_ref().ReplaceSearchTerms(
-      TemplateURLRef::SearchTermsArgs(term)));
+      TemplateURLRef::SearchTermsArgs(term),
+      TemplateURLServiceFactory::GetForProfile(
+          &profile_)->search_terms_data()));
   ASSERT_TRUE(keyword_fetcher->GetOriginalURL() == expected_url);
 
   // Tell the SearchProvider the keyword suggest query is done.
@@ -747,7 +758,9 @@ TEST_F(SearchProviderTest, AutocompleteMultipleVisitsImmediately) {
 TEST_F(SearchProviderTest, AutocompleteAfterSpace) {
   AddSearchToHistory(default_t_url_, ASCIIToUTF16("two  searches "), 2);
   GURL suggested_url(default_t_url_->url_ref().ReplaceSearchTerms(
-      TemplateURLRef::SearchTermsArgs(ASCIIToUTF16("two searches"))));
+      TemplateURLRef::SearchTermsArgs(ASCIIToUTF16("two searches")),
+      TemplateURLServiceFactory::GetForProfile(
+          &profile_)->search_terms_data()));
   profile_.BlockUntilHistoryProcessesPendingRequests();
 
   AutocompleteMatch wyt_match;
@@ -1020,7 +1033,7 @@ TEST_F(SearchProviderTest, CommandLineOverrides) {
   data.short_name = ASCIIToUTF16("default");
   data.SetKeyword(data.short_name);
   data.SetURL("{google:baseURL}{searchTerms}");
-  default_t_url_ = new TemplateURL(&profile_, data);
+  default_t_url_ = new TemplateURL(data);
   turl_model->Add(default_t_url_);
   turl_model->SetUserSelectedDefaultSearchProvider(default_t_url_);
 
@@ -2883,7 +2896,7 @@ TEST_F(SearchProviderTest, CanSendURL) {
   template_url_data.instant_url = "http://does/not/exist?strk=1";
   template_url_data.search_terms_replacement_key = "strk";
   template_url_data.id = SEARCH_ENGINE_GOOGLE;
-  TemplateURL google_template_url(&profile_, template_url_data);
+  TemplateURL google_template_url(template_url_data);
 
   // Create field trial.
   base::FieldTrial* field_trial = base::FieldTrialList::CreateFieldTrial(
@@ -3118,7 +3131,7 @@ TEST_F(SearchProviderTest, SuggestQueryUsesToken) {
   data.SetURL("http://example/{searchTerms}{google:sessionToken}");
   data.suggestions_url =
       "http://suggest/?q={searchTerms}&{google:sessionToken}";
-  default_t_url_ = new TemplateURL(&profile_, data);
+  default_t_url_ = new TemplateURL(data);
   turl_model->Add(default_t_url_);
   turl_model->SetUserSelectedDefaultSearchProvider(default_t_url_);
 
@@ -3134,7 +3147,7 @@ TEST_F(SearchProviderTest, SuggestQueryUsesToken) {
   TemplateURLRef::SearchTermsArgs search_terms_args(term);
   search_terms_args.session_token = provider_->current_token_;
   GURL expected_url(default_t_url_->suggestions_url_ref().ReplaceSearchTerms(
-      search_terms_args));
+      search_terms_args, turl_model->search_terms_data()));
   EXPECT_EQ(fetcher->GetOriginalURL().spec(), expected_url.spec());
 
   // Complete running the fetcher to clean up.

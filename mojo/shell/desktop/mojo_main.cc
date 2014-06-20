@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 #include "base/at_exit.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
-#include "mojo/public/cpp/environment/environment.h"
 #include "mojo/shell/child_process.h"
 #include "mojo/shell/context.h"
 #include "mojo/shell/init.h"
@@ -16,7 +16,6 @@
 
 int main(int argc, char** argv) {
   base::AtExitManager at_exit;
-  mojo::Environment env;
   base::CommandLine::Init(argc, argv);
   mojo::shell::InitializeLogging();
 
@@ -34,7 +33,7 @@ int main(int argc, char** argv) {
     const base::CommandLine& command_line =
         *base::CommandLine::ForCurrentProcess();
     if (command_line.HasSwitch(switches::kOrigin)) {
-      shell_context.set_mojo_origin(
+      shell_context.mojo_url_resolver()->set_origin(
           command_line.GetSwitchValueASCII(switches::kOrigin));
     }
 

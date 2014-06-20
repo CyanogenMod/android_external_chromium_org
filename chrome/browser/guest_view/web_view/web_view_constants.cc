@@ -51,6 +51,7 @@ const char kOldURL[] = "oldUrl";
 const char kPermission[] = "permission";
 const char kPermissionTypeDialog[] = "dialog";
 const char kPermissionTypeDownload[] = "download";
+const char kPermissionTypeFileSystem[] = "filesystem";
 const char kPermissionTypeGeolocation[] = "geolocation";
 const char kPermissionTypeLoadPlugin[] = "loadplugin";
 const char kPermissionTypeMedia[] = "media";
@@ -89,6 +90,8 @@ const char kParameterUserAgentOverride[] = "userAgentOverride";
 // Miscellaneous.
 const char kMenuItemCommandId[] = "commandId";
 const char kMenuItemLabel[] = "label";
+const char kPersistPrefix[] = "persist:";
+const char kStoragePartitionId[] = "storagePartitionId";
 const unsigned int kMaxOutstandingPermissionRequests = 1024;
 const int kInvalidPermissionRequestID = 0;
 

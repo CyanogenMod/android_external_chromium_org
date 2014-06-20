@@ -26,12 +26,14 @@
 #include "chrome/browser/net/cookie_store_util.h"
 #include "chrome/browser/net/http_server_properties_manager.h"
 #include "chrome/browser/net/predictor.h"
+#include "chrome/browser/net/sdch_dictionary_fetcher.h"
 #include "chrome/browser/net/sqlite_server_bound_cert_store.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/data_reduction_proxy/common/data_reduction_proxy_pref_names.h"
 #include "components/domain_reliability/monitor.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/cookie_store_factory.h"
@@ -41,6 +43,7 @@
 #include "extensions/browser/extension_protocols.h"
 #include "extensions/common/constants.h"
 #include "net/base/cache_type.h"
+#include "net/base/sdch_manager.h"
 #include "net/ftp/ftp_network_layer.h"
 #include "net/http/http_cache.h"
 #include "net/ssl/server_bound_cert_service.h"
@@ -355,6 +358,12 @@ void ProfileImplIOData::Handle::LazyInitialize() const {
   io_data_->safe_browsing_enabled()->MoveToThread(
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
 #endif
+#if defined(OS_ANDROID) || defined(OS_IOS)
+  io_data_->data_reduction_proxy_enabled()->Init(
+      data_reduction_proxy::prefs::kDataReductionProxyEnabled, pref_service);
+  io_data_->data_reduction_proxy_enabled()->MoveToThread(
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
+#endif
   io_data_->InitializeOnUIThread(profile_);
 }
 
@@ -522,6 +531,19 @@ void ProfileImplIOData::InitializeInternal(
   InitializeExtensionsRequestContext(profile_params);
 #endif
 
+  // Setup the SDCHManager for this profile.
+  sdch_manager_.reset(new net::SdchManager);
+  sdch_manager_->set_sdch_fetcher(
+      new SdchDictionaryFetcher(
+          sdch_manager_.get(),
+          // SdchDictionaryFetcher takes a reference to the Getter, and
+          // hence implicitly takes ownership.
+          new net::TrivialURLRequestContextGetter(
+              main_context,
+              content::BrowserThread::GetMessageLoopProxyForThread(
+                  content::BrowserThread::IO))));
+  main_context->set_sdch_manager(sdch_manager_.get());
+
   // Create a media request context based on the main context, but using a
   // media cache.  It shares the same job factory as the main context.
   StoragePartitionDescriptor details(profile_path_, false);
@@ -531,7 +553,10 @@ void ProfileImplIOData::InitializeInternal(
   if (IsDomainReliabilityMonitoringEnabled()) {
     domain_reliability_monitor_.reset(
         new domain_reliability::DomainReliabilityMonitor(
-            main_context, kDomainReliabilityUploadReporterString));
+            kDomainReliabilityUploadReporterString));
+    domain_reliability_monitor_->Init(
+        main_context,
+        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
     domain_reliability_monitor_->AddBakedInConfigs();
     network_delegate()->set_domain_reliability_monitor(
         domain_reliability_monitor_.get());

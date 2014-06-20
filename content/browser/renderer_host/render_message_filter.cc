@@ -331,10 +331,10 @@ RenderMessageFilter::~RenderMessageFilter() {
   // This function should be called on the IO thread.
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(plugin_host_clients_.empty());
+  HostSharedBitmapManager::current()->ProcessRemoved(PeerHandle());
 }
 
 void RenderMessageFilter::OnChannelClosing() {
-  HostSharedBitmapManager::current()->ProcessRemoved(PeerHandle());
 #if defined(ENABLE_PLUGINS)
   for (std::set<OpenChannelToNpapiPluginCallback*>::iterator it =
        plugin_host_clients_.begin(); it != plugin_host_clients_.end(); ++it) {
@@ -405,12 +405,14 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message) {
 #endif
     IPC_MESSAGE_HANDLER_GENERIC(ViewHostMsg_SwapCompositorFrame,
         render_widget_helper_->DidReceiveBackingStoreMsg(message))
+    IPC_MESSAGE_HANDLER_GENERIC(ViewHostMsg_UpdateRect,
+        render_widget_helper_->DidReceiveBackingStoreMsg(message))
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_CheckPermission,
                         OnCheckNotificationPermission)
     IPC_MESSAGE_HANDLER(ChildProcessHostMsg_SyncAllocateSharedMemory,
                         OnAllocateSharedMemory)
-    IPC_MESSAGE_HANDLER(ChildProcessHostMsg_SyncAllocateSharedBitmap,
-                        OnAllocateSharedBitmap)
+    IPC_MESSAGE_HANDLER_DELAY_REPLY(
+        ChildProcessHostMsg_SyncAllocateSharedBitmap, OnAllocateSharedBitmap)
     IPC_MESSAGE_HANDLER(ChildProcessHostMsg_AllocatedSharedBitmap,
                         OnAllocatedSharedBitmap)
     IPC_MESSAGE_HANDLER(ChildProcessHostMsg_DeletedSharedBitmap,
@@ -900,12 +902,29 @@ void RenderMessageFilter::OnAllocateSharedMemory(
       buffer_size, PeerHandle(), handle);
 }
 
-void RenderMessageFilter::OnAllocateSharedBitmap(
+void RenderMessageFilter::AllocateSharedBitmapOnFileThread(
     uint32 buffer_size,
     const cc::SharedBitmapId& id,
-    base::SharedMemoryHandle* handle) {
+    IPC::Message* reply_msg) {
+  base::SharedMemoryHandle handle;
   HostSharedBitmapManager::current()->AllocateSharedBitmapForChild(
-      PeerHandle(), buffer_size, id, handle);
+      PeerHandle(), buffer_size, id, &handle);
+  ChildProcessHostMsg_SyncAllocateSharedBitmap::WriteReplyParams(reply_msg,
+                                                                 handle);
+  Send(reply_msg);
+}
+
+void RenderMessageFilter::OnAllocateSharedBitmap(uint32 buffer_size,
+                                                 const cc::SharedBitmapId& id,
+                                                 IPC::Message* reply_msg) {
+  BrowserThread::PostTask(
+      BrowserThread::FILE_USER_BLOCKING,
+      FROM_HERE,
+      base::Bind(&RenderMessageFilter::AllocateSharedBitmapOnFileThread,
+                 this,
+                 buffer_size,
+                 id,
+                 reply_msg));
 }
 
 void RenderMessageFilter::OnAllocatedSharedBitmap(
@@ -1154,9 +1173,11 @@ void RenderMessageFilter::OnDidLose3DContext(
 #if defined(OS_WIN)
 void RenderMessageFilter::OnPreCacheFontCharacters(const LOGFONT& font,
                                                    const base::string16& str) {
-  // TODO(scottmg): Move this to FontCacheDispatcher, http://crbug.com/356346.
-  if (!ShouldUseDirectWrite())
-    return;
+  // TODO(scottmg): pdf/ppapi still require the renderer to be able to precache
+  // GDI fonts (http://crbug.com/383227), even when using DirectWrite.
+  // Eventually this shouldn't be added and should be moved to
+  // FontCacheDispatcher too. http://crbug.com/356346.
+
   // First, comments from FontCacheDispatcher::OnPreCacheFont do apply here too.
   // Except that for True Type fonts,
   // GetTextMetrics will not load the font in memory.

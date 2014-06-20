@@ -4,8 +4,6 @@
 
 #include "chrome/browser/printing/print_view_manager_base.h"
 
-#include <map>
-
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_service.h"
@@ -31,11 +29,6 @@
 #include "printing/printed_document.h"
 #include "ui/base/l10n/l10n_util.h"
 
-#if defined(OS_WIN)
-#include "base/command_line.h"
-#include "chrome/common/chrome_switches.h"
-#endif
-
 #if defined(ENABLE_FULL_PRINTING)
 #include "chrome/browser/printing/print_error_dialog.h"
 #endif
@@ -50,12 +43,16 @@
 using base::TimeDelta;
 using content::BrowserThread;
 
+namespace printing {
+
+namespace {
+
 #if defined(OS_WIN) && !defined(WIN_PDF_METAFILE_FOR_PRINTING)
 // Limits memory usage by raster to 64 MiB.
 const int kMaxRasterSizeInPixels = 16*1024*1024;
 #endif
 
-namespace printing {
+}  // namespace
 
 PrintViewManagerBase::PrintViewManagerBase(content::WebContents* web_contents)
     : content::WebContentsObserver(web_contents),
@@ -220,10 +217,12 @@ void PrintViewManagerBase::OnDidPrintPage(
 #if !defined(WIN_PDF_METAFILE_FOR_PRINTING)
   // Update the rendered document. It will send notifications to the listener.
   document->SetPage(params.page_number,
-    metafile.release(),
-    params.actual_shrink,
-    params.page_size,
-    params.content_area);
+                    metafile.release(),
+#if defined(OS_WIN)
+                    params.actual_shrink,
+#endif  // OS_WIN
+                    params.page_size,
+                    params.content_area);
 
   ShouldQuitFromInnerMessageLoop();
 #else
@@ -232,10 +231,12 @@ void PrintViewManagerBase::OnDidPrintPage(
         reinterpret_cast<const unsigned char*>(shared_buf.memory()),
         params.data_size);
 
+    document->DebugDumpData(bytes, FILE_PATH_LITERAL(".pdf"));
+
     if (!pdf_to_emf_converter_)
       pdf_to_emf_converter_ = PdfToEmfConverter::CreateDefault();
 
-    const int kPrinterDpi = 600;
+    const int kPrinterDpi = print_job_->settings().dpi();
     pdf_to_emf_converter_->Start(
         bytes,
         printing::PdfRenderSettings(params.content_area, kPrinterDpi, false),

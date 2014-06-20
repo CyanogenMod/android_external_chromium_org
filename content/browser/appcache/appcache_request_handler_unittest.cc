@@ -36,7 +36,7 @@ using appcache::AppCacheHost;
 using appcache::AppCacheInfo;
 using appcache::AppCacheRequestHandler;
 using appcache::AppCacheURLRequestJob;
-using appcache::kNoCacheId;
+using appcache::kAppCacheNoCacheId;
 
 namespace content {
 
@@ -50,14 +50,14 @@ class AppCacheRequestHandlerTest : public testing::Test {
         int host_id, const appcache::AppCacheInfo& info) OVERRIDE {}
 
     virtual void OnStatusChanged(const std::vector<int>& host_ids,
-                                 appcache::Status status) OVERRIDE {}
+                                 appcache::AppCacheStatus status) OVERRIDE {}
 
     virtual void OnEventRaised(const std::vector<int>& host_ids,
-                               appcache::EventID event_id) OVERRIDE {}
+                               appcache::AppCacheEventID event_id) OVERRIDE {}
 
-    virtual void OnErrorEventRaised(const std::vector<int>& host_ids,
-                                    const appcache::ErrorDetails& details)
-        OVERRIDE {}
+    virtual void OnErrorEventRaised(
+        const std::vector<int>& host_ids,
+        const appcache::AppCacheErrorDetails& details) OVERRIDE {}
 
     virtual void OnProgressEventRaised(const std::vector<int>& host_ids,
                                        const GURL& url,
@@ -66,7 +66,7 @@ class AppCacheRequestHandlerTest : public testing::Test {
     }
 
     virtual void OnLogMessage(int host_id,
-                              appcache::LogLevel log_level,
+                              appcache::AppCacheLogLevel log_level,
                               const std::string& message) OVERRIDE {
     }
 
@@ -292,10 +292,10 @@ class AppCacheRequestHandlerTest : public testing::Test {
     EXPECT_FALSE(job_->is_waiting());
     EXPECT_TRUE(job_->is_delivering_network_response());
 
-    int64 cache_id = kNoCacheId;
+    int64 cache_id = kAppCacheNoCacheId;
     GURL manifest_url;
     handler_->GetExtraResponseInfo(&cache_id, &manifest_url);
-    EXPECT_EQ(kNoCacheId, cache_id);
+    EXPECT_EQ(kAppCacheNoCacheId, cache_id);
     EXPECT_EQ(GURL(), manifest_url);
     EXPECT_EQ(0, handler_->found_group_id_);
 
@@ -344,7 +344,7 @@ class AppCacheRequestHandlerTest : public testing::Test {
     EXPECT_FALSE(job_->is_waiting());
     EXPECT_TRUE(job_->is_delivering_appcache_response());
 
-    int64 cache_id = kNoCacheId;
+    int64 cache_id = kAppCacheNoCacheId;
     GURL manifest_url;
     handler_->GetExtraResponseInfo(&cache_id, &manifest_url);
     EXPECT_EQ(1, cache_id);
@@ -429,7 +429,7 @@ class AppCacheRequestHandlerTest : public testing::Test {
     EXPECT_TRUE(job_.get());
     EXPECT_TRUE(job_->is_delivering_appcache_response());
 
-    int64 cache_id = kNoCacheId;
+    int64 cache_id = kAppCacheNoCacheId;
     GURL manifest_url;
     handler_->GetExtraResponseInfo(&cache_id, &manifest_url);
     EXPECT_EQ(1, cache_id);

@@ -4,22 +4,22 @@
 
 import "../geometry/geometry.mojom"
 import "../input_events/input_events.mojom"
+import "view_manager_constants.mojom"
 
 module mojo.view_manager {
 
-struct INode {
+struct NodeData {
   uint32 parent_id;
   uint32 node_id;
   uint32 view_id;
   mojo.Rect bounds;
 };
 
-// IViewManagerInit is responsible for launching the client that controls the
-// root node. mojo::view_manager returns an instance of this. All other
+// ViewManagerInitService is responsible for launching the client that controls
+// the root node. mojo::view_manager returns an instance of this. All other
 // connections are established by the client this creates.
-interface IViewManagerInit {
-  // Connects to |url| creating a connection that has the roots |nodes|.
-  Connect(string url) => (bool success);
+interface ViewManagerInitService {
+  EmbedRoot(string url) => (bool success);
 };
 
 // Functions that mutate the hierarchy take a change id. This is an ever
@@ -32,8 +32,8 @@ interface IViewManagerInit {
 // connection id, and the lower 16 the id assigned by the client.
 //
 // The root node is identified with a connection id of 0, and value of 1.
-[Client=IViewManagerClient]
-interface IViewManager {
+[Client=ViewManagerClient]
+interface ViewManagerService {
   // Creates a new node with the specified id. It is up to the client to ensure
   // the id is unique to the connection (the id need not be globally unique).
   // Additionally the connection id (embedded in |node_id|) must match that of
@@ -43,7 +43,7 @@ interface IViewManager {
   // Deletes a node. This does not recurse. No hierarchy change notifications
   // are sent as a result of this. Only the connection that created the node can
   // delete it.
-  DeleteNode(uint32 node_id) => (bool success);
+  DeleteNode(uint32 node_id, uint32 change_id) => (bool success);
 
   // Sets the specified bounds of the specified node.
   SetNodeBounds(uint32 node_id, mojo.Rect bounds) => (bool success);
@@ -73,11 +73,20 @@ interface IViewManager {
   RemoveNodeFromParent(uint32 node_id,
                        uint32 server_change_id) => (bool success);
 
+  // Reorders a node in its parent, relative to |relative_node_id| according to
+  // |direction|.
+  // Only the connection that created the node's parent can reorder its
+  // children.
+  ReorderNode(uint32 node_id,
+              uint32 relative_node_id,
+              OrderDirection direction,
+              uint32 server_change_id) => (bool success);
+
   // Returns the nodes comprising the tree starting at |node_id|. |node_id| is
   // the first result in the return value, unless |node_id| is invalid, in which
   // case an empty vector is returned. The nodes are visited using a depth first
   // search (pre-order).
-  GetNodeTree(uint32 node_id) => (INode[] nodes);
+  GetNodeTree(uint32 node_id) => (NodeData[] nodes);
 
   // Creates a new view with the specified id. It is up to the client to ensure
   // the id is unique to the connection (the id need not be globally unique).
@@ -97,31 +106,42 @@ interface IViewManager {
                   handle<shared_buffer> buffer,
                   uint32 buffer_size) => (bool success);
 
-  // Connects to |url| creating a connection that has the roots |nodes|. Fails
+  // Sets focus to the specified node.
+  SetFocus(uint32 node_id) => (bool success);
+
+  // Embeds the app at |url| in the specified nodes. More specifically this
+  // creates a new connection to the specified url, expecting to get an
+  // ViewManagerClient and configures it with the root nodes |nodes|. Fails
   // if |nodes| is empty or contains nodes that were not created by this
   // connection.
-  // If a particular client invokes Connect() multiple times with the same url,
-  // the connection is reused. When this happens the IViewManagerClient is
+  // If a particular client invokes Embed() multiple times with the same url,
+  // the connection is reused. When this happens the ViewManagerClient is
   // notified of the additional roots by way of OnRootsAdded().
-  Connect(string url, uint32[] nodes) => (bool success);
+  Embed(string url, uint32[] nodes) => (bool success);
+
+  // TODO(sky): move these to a separate interface when FIFO works.
+
+  // Sends OnViewInputEvent() to the owner of the specified view.
+  DispatchOnViewInputEvent(uint32 view_id, mojo.Event event);
 };
 
 // Changes to nodes/views are not sent to the connection that originated the
 // change. For example, if connection 1 attaches a view to a node (SetView())
 // connection 1 does not receive OnNodeViewReplaced().
-[Client=IViewManager]
-interface IViewManagerClient {
+[Client=ViewManagerService]
+interface ViewManagerClient {
   // Invoked once the connection has been established. |connection_id| is the id
   // that uniquely identifies this connection. |next_server_change_id| is the
   // id of the next change the server is expecting. |nodes| are the nodes
   // parented to the root.
   OnViewManagerConnectionEstablished(uint16 connection_id,
+                                     string creator_url,
                                      uint32 next_server_change_id,
-                                     INode[] nodes);
+                                     NodeData[] nodes);
 
-  // See description of IViewManager::Connect() for details as to when this is
-  // invoked.
-  OnRootsAdded(INode[] nodes);
+  // See description of ViewManagerService::Connect() for details as to when
+  // this is invoked.
+  OnRootsAdded(NodeData[] nodes);
 
   // This is sent to clients when a change is made to the server that results
   // in the |server_change_id| changing but the client isn't notified. This is
@@ -144,7 +164,13 @@ interface IViewManagerClient {
                          uint32 new_parent,
                          uint32 old_parent,
                          uint32 server_change_id,
-                         INode[] nodes);
+                         NodeData[] nodes);
+
+  // Invoked when the order of nodes within a parent changes.
+  OnNodeReordered(uint32 node_id,
+                  uint32 relative_node_id,
+                  OrderDirection direction,
+                  uint32 server_change_id);                     
 
   // Invoked when a node is deleted.
   OnNodeDeleted(uint32 node, uint32 server_change_id);
@@ -158,6 +184,10 @@ interface IViewManagerClient {
 
   // Invoked when an event is targeted at the specified view.
   OnViewInputEvent(uint32 view, mojo.Event event) => ();
+
+  // TODO(sky): move to separate interface when FIFO sorted out.
+
+  DispatchOnViewInputEvent(uint32 view, mojo.Event event);
 };
 
 }

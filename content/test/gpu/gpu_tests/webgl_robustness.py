@@ -58,8 +58,7 @@ class WebglRobustnessPage(page.Page):
 
   def RunNavigateSteps(self, action_runner):
     action_runner.NavigateToPage(self)
-    action_runner.RunAction(
-      WaitAction({'javascript': 'webglTestHarness._finished'}))
+    action_runner.WaitForJavaScriptCondition('webglTestHarness._finished')
 
 class WebglRobustness(test.Test):
   test = WebglConformanceValidator
@@ -67,7 +66,6 @@ class WebglRobustness(test.Test):
   def CreatePageSet(self, options):
     ps = page_set.PageSet(
       file_path=conformance_path,
-      description='Test cases for WebGL robustness',
       user_agent_type='desktop',
       serving_dirs=[''])
     ps.AddPage(WebglRobustnessPage(ps, ps.base_dir))

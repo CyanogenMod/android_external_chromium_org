@@ -283,11 +283,11 @@ void InspectUI::InspectBrowserWithCustomFrontend(
   WebContents* inspect_ui = web_ui()->GetWebContents();
   WebContents* front_end = inspect_ui->GetDelegate()->OpenURLFromTab(
       inspect_ui,
-      content::OpenURLParams(GURL(content::kAboutBlankURL),
-                    content::Referrer(),
-                    NEW_FOREGROUND_TAB,
-                    content::PAGE_TRANSITION_AUTO_TOPLEVEL,
-                    false));
+      content::OpenURLParams(GURL(url::kAboutBlankURL),
+                             content::Referrer(),
+                             NEW_FOREGROUND_TAB,
+                             content::PAGE_TRANSITION_AUTO_TOPLEVEL,
+                             false));
 
   // Install devtools bindings.
   DevToolsUIBindings* bindings = new DevToolsUIBindings(front_end,
@@ -326,8 +326,12 @@ void InspectUI::StartListeningNotifications() {
       DevToolsTargetsUIHandler::CreateForRenderers(callback));
   AddTargetUIHandler(
       DevToolsTargetsUIHandler::CreateForWorkers(callback));
-  AddTargetUIHandler(
-      DevToolsTargetsUIHandler::CreateForAdb(callback, profile));
+  if (profile->IsOffTheRecord()) {
+    ShowIncognitoWarning();
+  } else {
+    AddTargetUIHandler(
+        DevToolsTargetsUIHandler::CreateForAdb(callback, profile));
+  }
 
   port_status_serializer_.reset(
       new PortForwardingStatusSerializer(
@@ -482,4 +486,8 @@ void InspectUI::PopulateTargets(const std::string& source,
 
 void InspectUI::PopulatePortStatus(const base::Value& status) {
   web_ui()->CallJavascriptFunction("populatePortStatus", status);
+}
+
+void InspectUI::ShowIncognitoWarning() {
+  web_ui()->CallJavascriptFunction("showIncognitoWarning");
 }

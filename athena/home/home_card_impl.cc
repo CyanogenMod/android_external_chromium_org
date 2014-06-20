@@ -5,10 +5,10 @@
 #include "athena/home/public/home_card.h"
 
 #include "athena/home/app_list_view_delegate.h"
+#include "athena/home/public/app_model_builder.h"
 #include "athena/input/public/accelerator_manager.h"
-#include "athena/input/public/input_manager.h"
 #include "athena/screen/public/screen_manager.h"
-#include "ui/app_list/pagination_model.h"
+#include "ui/app_list/search_provider.h"
 #include "ui/app_list/views/app_list_view.h"
 #include "ui/aura/layout_manager.h"
 #include "ui/aura/window.h"
@@ -72,7 +72,7 @@ class HomeCardLayoutManager : public aura::LayoutManager {
 
 class HomeCardImpl : public HomeCard, public AcceleratorHandler {
  public:
-  HomeCardImpl();
+  explicit HomeCardImpl(AppModelBuilder* model_builder);
   virtual ~HomeCardImpl();
 
   void Init();
@@ -83,22 +83,37 @@ class HomeCardImpl : public HomeCard, public AcceleratorHandler {
   };
   void InstallAccelerators();
 
+  // Overridden from HomeCard:
+  virtual void RegisterSearchProvider(
+      app_list::SearchProvider* search_provider) OVERRIDE;
+
   // AcceleratorHandler:
   virtual bool IsCommandEnabled(int command_id) const OVERRIDE { return true; }
   virtual bool OnAcceleratorFired(int command_id,
                                   const ui::Accelerator& accelerator) OVERRIDE {
     DCHECK_EQ(COMMAND_SHOW_HOME_CARD, command_id);
-    home_card_widget_->Show();
+    if (home_card_widget_->IsVisible())
+      home_card_widget_->Hide();
+    else
+      home_card_widget_->Show();
     return true;
   }
 
+  scoped_ptr<AppModelBuilder> model_builder_;
+
   views::Widget* home_card_widget_;
+  AppListViewDelegate* view_delegate_;
+
+  // Right now HomeCard allows only one search provider.
+  // TODO(mukai): port app-list's SearchController and Mixer.
+  scoped_ptr<app_list::SearchProvider> search_provider_;
 
   DISALLOW_COPY_AND_ASSIGN(HomeCardImpl);
 };
 
-HomeCardImpl::HomeCardImpl()
-  : home_card_widget_(NULL) {
+HomeCardImpl::HomeCardImpl(AppModelBuilder* model_builder)
+    : model_builder_(model_builder),
+      home_card_widget_(NULL) {
   DCHECK(!instance);
   instance = this;
 }
@@ -106,7 +121,15 @@ HomeCardImpl::HomeCardImpl()
 HomeCardImpl::~HomeCardImpl() {
   DCHECK(instance);
   home_card_widget_->CloseNow();
+  view_delegate_ = NULL;
   instance = NULL;
+}
+
+void HomeCardImpl::RegisterSearchProvider(
+    app_list::SearchProvider* search_provider) {
+  DCHECK(!search_provider_);
+  search_provider_.reset(search_provider);
+  view_delegate_->RegisterSearchProvider(search_provider_.get());
 }
 
 void HomeCardImpl::Init() {
@@ -117,8 +140,10 @@ void HomeCardImpl::Init() {
   container->SetLayoutManager(new HomeCardLayoutManager(container));
   wm::SetChildWindowVisibilityChangesAnimated(container);
 
-  app_list::AppListView* view = new app_list::AppListView(
-      new AppListViewDelegate);
+  view_delegate_ = new AppListViewDelegate(model_builder_.get());
+  if (search_provider_)
+    view_delegate_->RegisterSearchProvider(search_provider_.get());
+  app_list::AppListView* view = new app_list::AppListView(view_delegate_);
   view->InitAsBubbleAtFixedLocation(
       container,
       0 /* initial_apps_page */,
@@ -134,15 +159,15 @@ void HomeCardImpl::InstallAccelerators() {
       {TRIGGER_ON_PRESS, ui::VKEY_L, ui::EF_CONTROL_DOWN,
        COMMAND_SHOW_HOME_CARD, AF_NONE},
   };
-  InputManager::Get()->GetAcceleratorManager()->RegisterAccelerators(
+  AcceleratorManager::Get()->RegisterAccelerators(
       accelerator_data, arraysize(accelerator_data), this);
 }
 
 }  // namespace
 
 // static
-HomeCard* HomeCard::Create() {
-  (new HomeCardImpl())->Init();
+HomeCard* HomeCard::Create(AppModelBuilder* model_builder) {
+  (new HomeCardImpl(model_builder))->Init();
   DCHECK(instance);
   return instance;
 }
@@ -152,6 +177,12 @@ void HomeCard::Shutdown() {
   DCHECK(instance);
   delete instance;
   instance = NULL;
+}
+
+// static
+HomeCard* HomeCard::Get() {
+  DCHECK(instance);
+  return instance;
 }
 
 }  // namespace athena

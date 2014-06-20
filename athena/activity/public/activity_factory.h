@@ -8,6 +8,10 @@
 #include "athena/athena_export.h"
 #include "url/gurl.h"
 
+namespace apps {
+class ShellAppWindow;
+}
+
 namespace content {
 class BrowserContext;
 }
@@ -31,6 +35,10 @@ class ATHENA_EXPORT ActivityFactory {
   // Create an activity of a web page.
   virtual Activity* CreateWebActivity(content::BrowserContext* browser_context,
                                       const GURL& url) = 0;
+
+  // Create an activity of an app with |app_window|. The returned activity
+  // should own |app_window|.
+  virtual Activity* CreateAppActivity(apps::ShellAppWindow* app_window) = 0;
 };
 
 }  // namespace athena

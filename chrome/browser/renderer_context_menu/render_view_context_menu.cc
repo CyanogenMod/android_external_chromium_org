@@ -44,7 +44,6 @@
 #include "chrome/browser/renderer_context_menu/spellchecker_submenu_observer.h"
 #include "chrome/browser/renderer_context_menu/spelling_menu_observer.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/search_terms_data.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
@@ -826,12 +825,13 @@ void RenderViewContextMenu::AppendImageItems() {
 }
 
 void RenderViewContextMenu::AppendSearchWebForImageItems() {
+  TemplateURLService* service =
+      TemplateURLServiceFactory::GetForProfile(profile_);
   const TemplateURL* const default_provider =
-      TemplateURLServiceFactory::GetForProfile(profile_)->
-          GetDefaultSearchProvider();
+      service->GetDefaultSearchProvider();
   if (params_.has_image_contents && default_provider &&
       !default_provider->image_url().empty() &&
-      default_provider->image_url_ref().IsValid()) {
+      default_provider->image_url_ref().IsValid(service->search_terms_data())) {
     menu_model_.AddItem(
         IDC_CONTENT_CONTEXT_SEARCHWEBFORIMAGE,
         l10n_util::GetStringFUTF16(IDS_CONTENT_CONTEXT_SEARCHWEBFORIMAGE,
@@ -1847,7 +1847,7 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
             TemplateURL::GenerateFaviconURL(params_.page_url.GetOrigin());
         // Takes ownership of the TemplateURL.
         search_engine_tab_helper->delegate()->
-            ConfirmAddSearchProvider(new TemplateURL(profile_, data), profile_);
+            ConfirmAddSearchProvider(new TemplateURL(data), profile_);
       }
       break;
     }

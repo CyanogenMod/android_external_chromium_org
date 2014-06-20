@@ -13,6 +13,7 @@ var NetworkUI = (function() {
     'Name',
     'Type',
     'ConnectionState',
+    'connectable',
     'ErrorState',
     'WiFi.Security',
     ['Cellular.NetworkTechnology',
@@ -27,7 +28,8 @@ var NetworkUI = (function() {
     'GUID',
     'Name',
     'Type',
-    'Profile',
+    'profile_path',
+    'visible',
     'onc_source'
   ];
 

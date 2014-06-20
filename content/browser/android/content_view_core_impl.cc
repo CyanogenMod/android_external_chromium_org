@@ -24,7 +24,7 @@
 #include "content/browser/frame_host/navigation_controller_impl.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/geolocation/geolocation_dispatcher_host.h"
-#include "content/browser/media/android/media_web_contents_observer.h"
+#include "content/browser/media/media_web_contents_observer.h"
 #include "content/browser/renderer_host/compositor_impl_android.h"
 #include "content/browser/renderer_host/input/motion_event_android.h"
 #include "content/browser/renderer_host/input/web_input_event_builders_android.h"
@@ -944,7 +944,9 @@ jboolean ContentViewCoreImpl::OnTouchEvent(JNIEnv* env,
                                            jint pointer_id_0,
                                            jint pointer_id_1,
                                            jfloat touch_major_0,
-                                           jfloat touch_major_1) {
+                                           jfloat touch_major_1,
+                                           jfloat raw_pos_x,
+                                           jfloat raw_pos_y) {
   RenderWidgetHostViewAndroid* rwhv = GetRenderWidgetHostViewAndroid();
   // Avoid synthesizing a touch event if it cannot be forwarded.
   if (!rwhv)
@@ -965,7 +967,9 @@ jboolean ContentViewCoreImpl::OnTouchEvent(JNIEnv* env,
                            pointer_id_0,
                            pointer_id_1,
                            touch_major_0,
-                           touch_major_1);
+                           touch_major_1,
+                           raw_pos_x,
+                           raw_pos_y);
 
   return rwhv->OnTouchEvent(event);
 }
@@ -1538,38 +1542,6 @@ void ContentViewCoreImpl::SendOrientationChangeEventInternal() {
   RenderWidgetHostViewAndroid* rwhv = GetRenderWidgetHostViewAndroid();
   if (rwhv)
     rwhv->UpdateScreenInfo(GetViewAndroid());
-
-  // TODO(mlamouri): temporary plumbing for Screen Orientation, this will change
-  // in the future. The OnResize IPC message sent from UpdateScreenInfo() will
-  // propagate the information.
-  blink::WebScreenOrientationType orientation =
-      blink::WebScreenOrientationPortraitPrimary;
-
-  switch (device_orientation_) {
-    case 0:
-      orientation = blink::WebScreenOrientationPortraitPrimary;
-      break;
-    case 90:
-      orientation = blink::WebScreenOrientationLandscapePrimary;
-      break;
-    case -90:
-      orientation = blink::WebScreenOrientationLandscapeSecondary;
-      break;
-    case 180:
-      orientation = blink::WebScreenOrientationPortraitSecondary;
-      break;
-    default:
-      NOTREACHED();
-  }
-
-  ScreenOrientationDispatcherHost* sodh =
-      static_cast<RenderProcessHostImpl*>(web_contents_->
-          GetRenderProcessHost())->screen_orientation_dispatcher_host();
-
-  // sodh can be null if the RenderProcessHost is in the process of being
-  // destroyed or not yet initialized.
-  if (sodh)
-    sodh->OnOrientationChange(orientation);
 }
 
 void ContentViewCoreImpl::ExtractSmartClipData(JNIEnv* env,

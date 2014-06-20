@@ -1282,6 +1282,7 @@
             'android/java/src/org/chromium/base/CommandLine.java',
             'android/java/src/org/chromium/base/ContentUriUtils.java',
             'android/java/src/org/chromium/base/CpuFeatures.java',
+            'android/java/src/org/chromium/base/EventLog.java',
             'android/java/src/org/chromium/base/ImportantFileWriterAndroid.java',
             'android/java/src/org/chromium/base/library_loader/LibraryLoader.java',
             'android/java/src/org/chromium/base/MemoryPressureListener.java',
@@ -1426,7 +1427,10 @@
                 '-finstrument-functions',
               ],
               'dependencies': [
-                '<(android_ndk_root)/crazy_linker.gyp:crazy_linker',
+                # The NDK contains the crazy_linker here:
+                #   '<(android_ndk_root)/crazy_linker.gyp:crazy_linker'
+                # However, we use our own fork.  See bug 384700.
+                '../third_party/android_crazy_linker/crazy_linker.gyp:crazy_linker',
               ],
             }],
           ],

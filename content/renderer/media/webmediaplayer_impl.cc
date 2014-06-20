@@ -24,6 +24,7 @@
 #include "cc/layers/video_layer.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/render_frame.h"
+#include "content/renderer/compositor_bindings/web_layer_impl.h"
 #include "content/renderer/media/buffered_data_source.h"
 #include "content/renderer/media/crypto/key_systems.h"
 #include "content/renderer/media/render_media_log.h"
@@ -71,7 +72,6 @@
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "v8/include/v8.h"
-#include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
 #if defined(ENABLE_PEPPER_CDMS)
 #include "content/renderer/media/crypto/pepper_cdm_wrapper_impl.h"
@@ -243,40 +243,6 @@ WebMediaPlayerImpl::~WebMediaPlayerImpl() {
   }
 }
 
-namespace {
-
-// Helper enum for reporting scheme histograms.
-enum URLSchemeForHistogram {
-  kUnknownURLScheme,
-  kMissingURLScheme,
-  kHttpURLScheme,
-  kHttpsURLScheme,
-  kFtpURLScheme,
-  kChromeExtensionURLScheme,
-  kJavascriptURLScheme,
-  kFileURLScheme,
-  kBlobURLScheme,
-  kDataURLScheme,
-  kFileSystemScheme,
-  kMaxURLScheme = kFileSystemScheme  // Must be equal to highest enum value.
-};
-
-URLSchemeForHistogram URLScheme(const GURL& url) {
-  if (!url.has_scheme()) return kMissingURLScheme;
-  if (url.SchemeIs("http")) return kHttpURLScheme;
-  if (url.SchemeIs("https")) return kHttpsURLScheme;
-  if (url.SchemeIs("ftp")) return kFtpURLScheme;
-  if (url.SchemeIs("chrome-extension")) return kChromeExtensionURLScheme;
-  if (url.SchemeIs("javascript")) return kJavascriptURLScheme;
-  if (url.SchemeIs("file")) return kFileURLScheme;
-  if (url.SchemeIs("blob")) return kBlobURLScheme;
-  if (url.SchemeIs("data")) return kDataURLScheme;
-  if (url.SchemeIs("filesystem")) return kFileSystemScheme;
-  return kUnknownURLScheme;
-}
-
-}  // namespace
-
 void WebMediaPlayerImpl::load(LoadType load_type, const blink::WebURL& url,
                               CORSMode cors_mode) {
   DVLOG(1) << __FUNCTION__ << "(" << load_type << ", " << url << ", "
@@ -295,7 +261,7 @@ void WebMediaPlayerImpl::DoLoad(LoadType load_type,
   DCHECK(main_loop_->BelongsToCurrentThread());
 
   GURL gurl(url);
-  UMA_HISTOGRAM_ENUMERATION("Media.URLScheme", URLScheme(gurl), kMaxURLScheme);
+  ReportMediaSchemeUma(gurl);
 
   // Set subresource URL for crash reporting.
   base::debug::SetCrashKeyValue("subresource_url", gurl.spec());
@@ -796,6 +762,8 @@ WebMediaPlayerImpl::GenerateKeyRequestInternal(const std::string& key_system,
           // Create() must be called synchronously as |frame_| may not be
           // valid afterwards.
           base::Bind(&PepperCdmWrapperImpl::Create, frame_),
+#elif defined(ENABLE_BROWSER_CDMS)
+#error Browser side CDM in WMPI for prefixed EME API not supported yet.
 #endif
           BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnKeyAdded),
           BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnKeyError),
@@ -996,7 +964,7 @@ void WebMediaPlayerImpl::OnPipelineMetadata(
   if (hasVideo()) {
     DCHECK(!video_weblayer_);
     video_weblayer_.reset(
-        new webkit::WebLayerImpl(cc::VideoLayer::Create(compositor_)));
+        new WebLayerImpl(cc::VideoLayer::Create(compositor_)));
     video_weblayer_->setOpaque(opaque_);
     client_->setWebLayer(video_weblayer_.get());
   }

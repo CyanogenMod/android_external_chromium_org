@@ -22,7 +22,7 @@ class WGetApp : public Application, public URLLoaderClient {
   virtual void OnReceivedRedirect(URLResponsePtr response,
                                   const String& new_url,
                                   const String& new_method) MOJO_OVERRIDE {
-    assert(false);  // This should never be called.
+    PrintResponse(response);
   }
 
   virtual void OnReceivedResponse(URLResponsePtr response) MOJO_OVERRIDE {
@@ -50,7 +50,7 @@ class WGetApp : public Application, public URLLoaderClient {
     URLRequestPtr request(URLRequest::New());
     request->url = url;
     request->method = "GET";
-    request->follow_redirects = true;
+    request->auto_follow_redirects = true;
 
     DataPipe data_pipe;
     response_body_stream_ = data_pipe.consumer_handle.Pass();
@@ -89,7 +89,7 @@ class WGetApp : public Application, public URLLoaderClient {
           MOJO_READ_DATA_FLAG_NONE);
       if (result == MOJO_RESULT_SHOULD_WAIT) {
         Wait(response_body_stream_.get(),
-             MOJO_WAIT_FLAG_READABLE,
+             MOJO_HANDLE_SIGNAL_READABLE,
              MOJO_DEADLINE_INDEFINITE);
       } else if (result == MOJO_RESULT_OK) {
         fwrite(buf, num_bytes, 1, stdout);

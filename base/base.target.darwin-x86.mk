@@ -48,6 +48,7 @@ LOCAL_SRC_FILES := \
 	base/android/command_line_android.cc \
 	base/android/content_uri_utils.cc \
 	base/android/cpu_features.cc \
+	base/android/event_log.cc \
 	base/android/fifo_utils.cc \
 	base/android/important_file_writer_android.cc \
 	base/android/scoped_java_ref.cc \
@@ -77,6 +78,7 @@ LOCAL_SRC_FILES := \
 	base/command_line.cc \
 	base/cpu.cc \
 	base/debug/alias.cc \
+	base/debug/asan_invalid_access.cc \
 	base/debug/crash_logging.cc \
 	base/debug/debugger.cc \
 	base/debug/debugger_posix.cc \
@@ -310,6 +312,7 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_BROWSER_CDMS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
@@ -341,6 +344,7 @@ MY_DEFS_Debug := \
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
+	$(gyp_shared_intermediate_dir) \
 	$(gyp_shared_intermediate_dir)/base \
 	$(LOCAL_PATH) \
 	$(PWD)/frameworks/wilhelm/include \
@@ -404,6 +408,7 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_BROWSER_CDMS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
@@ -436,6 +441,7 @@ MY_DEFS_Release := \
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
+	$(gyp_shared_intermediate_dir) \
 	$(gyp_shared_intermediate_dir)/base \
 	$(LOCAL_PATH) \
 	$(PWD)/frameworks/wilhelm/include \

@@ -101,6 +101,7 @@
 #include "chrome/common/url_constants.h"
 #include "components/password_manager/core/browser/password_manager.h"
 #include "components/signin/core/common/profile_management_switches.h"
+#include "components/translate/core/browser/language_state.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_service.h"
@@ -901,11 +902,10 @@ void BrowserView::UpdateFullscreenExitBubbleContent(
 }
 
 bool BrowserView::ShouldHideUIForFullscreen() const {
-#if defined(USE_ASH)
   // Immersive mode needs UI for the slide-down top panel.
   if (immersive_mode_controller_->IsEnabled())
     return false;
-#endif
+
   return IsFullscreen();
 }
 
@@ -1838,7 +1838,7 @@ bool BrowserView::AcceleratorPressed(const ui::Accelerator& accelerator) {
   // functionality.
   if (accelerator.key_code() == ui::VKEY_LWIN &&
       g_browser_process->local_state()->GetBoolean(
-          prefs::kSpokenFeedbackEnabled)) {
+          prefs::kAccessibilitySpokenFeedbackEnabled)) {
     TtsController::GetInstance()->Stop();
     return false;
   }
@@ -2379,39 +2379,41 @@ void BrowserView::ShowAvatarBubble(WebContents* web_contents,
 void BrowserView::ShowAvatarBubbleFromAvatarButton(
     AvatarBubbleMode mode,
     signin::GAIAServiceType service_type) {
+  views::BubbleBorder::Arrow arrow = views::BubbleBorder::TOP_RIGHT;
+  views::BubbleBorder::BubbleAlignment alignment =
+    views::BubbleBorder::ALIGN_ARROW_TO_MID_ANCHOR;
+  views::View* anchor_view = frame_->GetAvatarMenuButton();
+  if (!anchor_view)
+    anchor_view = toolbar_->app_menu();
+  else if (!frame_->GetAvatarMenuButton()->button_on_right())
+    arrow = views::BubbleBorder::TOP_LEFT;
+
   if (switches::IsNewAvatarMenu()) {
     NewAvatarButton* button = frame_->GetNewAvatarMenuButton();
     if (button) {
-      gfx::Point origin;
-      views::View::ConvertPointToScreen(button, &origin);
-      gfx::Rect bounds(origin, size());
-
-      profiles::BubbleViewMode view_mode;
-      switch (mode) {
-        case AVATAR_BUBBLE_MODE_ACCOUNT_MANAGEMENT:
-          view_mode = profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT;
-          break;
-        case AVATAR_BUBBLE_MODE_SIGNIN:
-          view_mode = profiles::BUBBLE_VIEW_MODE_GAIA_SIGNIN;
-          break;
-        case AVATAR_BUBBLE_MODE_REAUTH:
-          view_mode = profiles::BUBBLE_VIEW_MODE_GAIA_REAUTH;
-          break;
-        default:
-          view_mode = profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER;
-          break;
-      }
-      ProfileChooserView::ShowBubble(
-          view_mode, service_type, button, views::BubbleBorder::TOP_RIGHT,
-          views::BubbleBorder::ALIGN_EDGE_TO_ANCHOR_EDGE, bounds, browser());
+      anchor_view = button;
+      arrow = views::BubbleBorder::TOP_RIGHT;
+      alignment = views::BubbleBorder::ALIGN_EDGE_TO_ANCHOR_EDGE;
     }
+
+    profiles::BubbleViewMode view_mode;
+    switch (mode) {
+      case AVATAR_BUBBLE_MODE_ACCOUNT_MANAGEMENT:
+        view_mode = profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT;
+        break;
+      case AVATAR_BUBBLE_MODE_SIGNIN:
+        view_mode = profiles::BUBBLE_VIEW_MODE_GAIA_SIGNIN;
+        break;
+      case AVATAR_BUBBLE_MODE_REAUTH:
+        view_mode = profiles::BUBBLE_VIEW_MODE_GAIA_REAUTH;
+        break;
+      default:
+        view_mode = profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER;
+        break;
+    }
+    ProfileChooserView::ShowBubble(view_mode, service_type, anchor_view, arrow,
+                                   alignment, browser());
   } else {
-    views::BubbleBorder::Arrow arrow = views::BubbleBorder::TOP_RIGHT;
-    views::View* anchor_view = frame_->GetAvatarMenuButton();
-    if (!anchor_view)
-      anchor_view = toolbar_->app_menu();
-    else if (!frame_->GetAvatarMenuButton()->button_on_right())
-      arrow = views::BubbleBorder::TOP_LEFT;
     gfx::Point origin;
     views::View::ConvertPointToScreen(anchor_view, &origin);
     gfx::Rect bounds(origin, anchor_view->size());
@@ -2419,7 +2421,7 @@ void BrowserView::ShowAvatarBubbleFromAvatarButton(
         ShouldHideUIForFullscreen() ? views::BubbleBorder::PAINT_TRANSPARENT :
                                       views::BubbleBorder::PAINT_NORMAL;
     AvatarMenuBubbleView::ShowBubble(anchor_view, arrow, arrow_paint_type,
-        views::BubbleBorder::ALIGN_ARROW_TO_MID_ANCHOR, bounds, browser());
+                                     alignment, bounds, browser());
     ProfileMetrics::LogProfileOpenMethod(ProfileMetrics::ICON_AVATAR_BUBBLE);
   }
 }

@@ -14,6 +14,7 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_V
 GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,content_content_resources_gyp,,,$(GYP_VAR_PREFIX))/content_resources.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_common_mojo_bindings_gyp,,,$(GYP_VAR_PREFIX))/content_content_common_mojo_bindings_gyp.a \
+	$(call intermediates-dir-for,GYP,gpu_gpu_gyp,,,$(GYP_VAR_PREFIX))/gpu.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_service_provider_bindings_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_service_provider_bindings_gyp.a \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp,,,$(GYP_VAR_PREFIX))/skia.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp,,,$(GYP_VAR_PREFIX))/skia_skia_library_gyp.a \
@@ -66,6 +67,26 @@ LOCAL_SRC_FILES := \
 	content/renderer/browser_plugin/browser_plugin_manager.cc \
 	content/renderer/clipboard_utils.cc \
 	content/renderer/child_frame_compositing_helper.cc \
+	content/renderer/compositor_bindings/scrollbar_impl.cc \
+	content/renderer/compositor_bindings/web_animation_curve_common.cc \
+	content/renderer/compositor_bindings/web_animation_impl.cc \
+	content/renderer/compositor_bindings/web_compositor_support_impl.cc \
+	content/renderer/compositor_bindings/web_content_layer_impl.cc \
+	content/renderer/compositor_bindings/web_external_bitmap_impl.cc \
+	content/renderer/compositor_bindings/web_external_texture_layer_impl.cc \
+	content/renderer/compositor_bindings/web_filter_animation_curve_impl.cc \
+	content/renderer/compositor_bindings/web_filter_operations_impl.cc \
+	content/renderer/compositor_bindings/web_float_animation_curve_impl.cc \
+	content/renderer/compositor_bindings/web_image_layer_impl.cc \
+	content/renderer/compositor_bindings/web_layer_impl.cc \
+	content/renderer/compositor_bindings/web_layer_impl_fixed_bounds.cc \
+	content/renderer/compositor_bindings/web_nine_patch_layer_impl.cc \
+	content/renderer/compositor_bindings/web_scroll_offset_animation_curve_impl.cc \
+	content/renderer/compositor_bindings/web_scrollbar_layer_impl.cc \
+	content/renderer/compositor_bindings/web_solid_color_layer_impl.cc \
+	content/renderer/compositor_bindings/web_to_cc_animation_delegate_adapter.cc \
+	content/renderer/compositor_bindings/web_transform_animation_curve_impl.cc \
+	content/renderer/compositor_bindings/web_transform_operations_impl.cc \
 	content/renderer/context_menu_params_builder.cc \
 	content/renderer/cursor_utils.cc \
 	content/renderer/date_time_suggestion_builder.cc \
@@ -112,6 +133,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/java/java_bridge_channel.cc \
 	content/renderer/java/java_bridge_dispatcher.cc \
 	content/renderer/media/active_loader.cc \
+	content/renderer/media/aec_dump_message_filter.cc \
 	content/renderer/media/android/audio_decoder_android.cc \
 	content/renderer/media/android/media_info_loader.cc \
 	content/renderer/media/android/media_source_delegate.cc \
@@ -134,8 +156,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/crypto/key_systems_support_uma.cc \
 	content/renderer/media/crypto/pepper_cdm_wrapper_impl.cc \
 	content/renderer/media/crypto/proxy_decryptor.cc \
-	content/renderer/media/crypto/proxy_media_keys.cc \
-	content/renderer/media/crypto/renderer_cdm_manager.cc \
 	content/renderer/media/media_stream_audio_level_calculator.cc \
 	content/renderer/media/media_stream_audio_renderer.cc \
 	content/renderer/media/media_stream_constraints_util.cc \
@@ -199,6 +219,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/service_worker/service_worker_script_context.cc \
 	content/renderer/shared_memory_seqlock_reader.cc \
 	content/renderer/shared_worker_repository.cc \
+	content/renderer/shared_worker/embedded_shared_worker_permission_client_proxy.cc \
 	content/renderer/shared_worker/embedded_shared_worker_stub.cc \
 	content/renderer/skia_benchmarking_extension.cc \
 	content/renderer/speech_recognition_dispatcher.cc \
@@ -275,7 +296,9 @@ LOCAL_SRC_FILES := \
 	content/renderer/p2p/ipc_socket_factory.cc \
 	content/renderer/p2p/port_allocator.cc \
 	content/renderer/p2p/socket_client_impl.cc \
-	content/renderer/p2p/socket_dispatcher.cc
+	content/renderer/p2p/socket_dispatcher.cc \
+	content/renderer/media/crypto/proxy_media_keys.cc \
+	content/renderer/media/crypto/renderer_cdm_manager.cc
 
 
 # Flags passed to both C and C++ files.
@@ -324,6 +347,7 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_BROWSER_CDMS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
@@ -348,11 +372,11 @@ MY_DEFS_Debug := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_SETCONFIG_INFO' \
+	'-DSK_SUPPORT_LEGACY_BITMAP_CONFIG' \
+	'-DSK_SUPPORT_LEGACY_DEVICE_VIRTUAL_ISOPAQUE' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
+	'-DSK_SUPPORT_LEGACY_SETCONFIG' \
 	'-DSK_IGNORE_ETC1_SUPPORT' \
-	'-DSK_SUPPORT_LEGACY_INSTALLPIXELSPARAMS' \
-	'-DSK_SUPPORT_LEGACY_DRAWPICTURE_API' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
@@ -397,8 +421,8 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
-	$(LOCAL_PATH) \
 	$(gyp_shared_intermediate_dir) \
+	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/WebKit/Source \
 	$(LOCAL_PATH)/third_party/khronos \
@@ -506,6 +530,7 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_BROWSER_CDMS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
@@ -530,11 +555,11 @@ MY_DEFS_Release := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_SETCONFIG_INFO' \
+	'-DSK_SUPPORT_LEGACY_BITMAP_CONFIG' \
+	'-DSK_SUPPORT_LEGACY_DEVICE_VIRTUAL_ISOPAQUE' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
+	'-DSK_SUPPORT_LEGACY_SETCONFIG' \
 	'-DSK_IGNORE_ETC1_SUPPORT' \
-	'-DSK_SUPPORT_LEGACY_INSTALLPIXELSPARAMS' \
-	'-DSK_SUPPORT_LEGACY_DRAWPICTURE_API' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
@@ -580,8 +605,8 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
-	$(LOCAL_PATH) \
 	$(gyp_shared_intermediate_dir) \
+	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/WebKit/Source \
 	$(LOCAL_PATH)/third_party/khronos \

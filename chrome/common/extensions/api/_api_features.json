@@ -36,10 +36,6 @@
     "dependencies": ["permission:activityLogPrivate"],
     "contexts": ["blessed_extension"]
   },
-  "adview": {
-    "dependencies": ["permission:adview"],
-    "contexts": ["blessed_extension"]
-  },
   "alarms": {
     "dependencies": ["permission:alarms"],
     "contexts": ["blessed_extension"]
@@ -433,9 +429,18 @@
     "dependencies": ["permission:fontSettings"],
     "contexts": ["blessed_extension"]
   },
+  "gcdPrivate": {
+    "dependencies": ["permission:gcdPrivate"],
+    "contexts": ["blessed_extension"]
+  },
   "gcm": {
     "dependencies": ["permission:gcm"],
     "contexts": ["blessed_extension"]
+  },
+  "guestViewInternal": {
+    "internal": true,
+    "channel": "stable",
+    "contexts": ["blessed_extension", "unblessed_extension"]
   },
   "hangoutsPrivate": {
     "channel": "stable",
@@ -472,6 +477,11 @@
   "identity.getAccounts": {
     "channel": "dev",
     "dependencies": ["permission:identity"],
+    "contexts": ["blessed_extension"]
+  },
+  "identity.getProfileUserInfo": {
+    "channel": "dev",
+    "dependencies": ["permission:identity.email"],
     "contexts": ["blessed_extension"]
   },
   "identityPrivate": {
@@ -531,21 +541,6 @@
     "dependencies": [],
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app", "platform_app"]
-  },
-  "management.createAppShortcut": {
-    "dependencies": ["permission:management"],
-    "channel": "dev",
-    "contexts": ["blessed_extension"]
-  },
-  "management.setLaunchType": {
-    "dependencies": ["permission:management"],
-    "channel": "dev",
-    "contexts": ["blessed_extension"]
-  },
-  "management.generateAppForLink": {
-    "dependencies": ["permission:management"],
-    "channel": "dev",
-    "contexts": ["blessed_extension"]
   },
   // This is not a real API, only here for documentation purposes.
   // See http://crbug.com/275944 for background.

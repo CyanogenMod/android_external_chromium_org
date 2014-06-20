@@ -28,6 +28,7 @@
 // To use, derive your test base class from RenderViewHostImplTestHarness.
 
 struct FrameHostMsg_DidCommitProvisionalLoad_Params;
+struct ViewHostMsg_TextInputState_Params;
 
 namespace gfx {
 class Rect;
@@ -98,9 +99,8 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
   virtual void Blur() OVERRIDE {}
   virtual void SetIsLoading(bool is_loading) OVERRIDE {}
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE {}
-  virtual void TextInputTypeChanged(ui::TextInputType type,
-                                    ui::TextInputMode input_mode,
-                                    bool can_compose_inline) OVERRIDE {}
+  virtual void TextInputStateChanged(
+      const ViewHostMsg_TextInputState_Params& params) OVERRIDE {}
   virtual void ImeCancelComposition() OVERRIDE {}
 #if defined(OS_MACOSX) || defined(USE_AURA)
   virtual void ImeCompositionRangeChanged(
@@ -109,7 +109,6 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
 #endif
   virtual void RenderProcessGone(base::TerminationStatus status,
                                  int error_code) OVERRIDE;
-  virtual void WillDestroyRenderWidget(RenderWidgetHost* rwh) { }
   virtual void Destroy() OVERRIDE;
   virtual void SetTooltipText(const base::string16& tooltip_text) OVERRIDE {}
   virtual void SelectionBoundsChanged(
@@ -148,8 +147,6 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
 #endif
   virtual void GetScreenInfo(blink::WebScreenInfo* results) OVERRIDE {}
   virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
-  virtual void SetScrollOffsetPinning(
-      bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE { }
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
   virtual bool LockMouse() OVERRIDE;
   virtual void UnlockMouse() OVERRIDE;

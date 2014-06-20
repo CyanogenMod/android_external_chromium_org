@@ -37,41 +37,45 @@ TEST(MessagePipeDispatcherTest, Basic) {
 
   // Run this test both with |d0| as port 0, |d1| as port 1 and vice versa.
   for (unsigned i = 0; i < 2; i++) {
-    scoped_refptr<MessagePipeDispatcher> d0(new MessagePipeDispatcher());
+    scoped_refptr<MessagePipeDispatcher> d0(new MessagePipeDispatcher(
+        MessagePipeDispatcher::kDefaultCreateOptions));
     EXPECT_EQ(Dispatcher::kTypeMessagePipe, d0->GetType());
-    scoped_refptr<MessagePipeDispatcher> d1(new MessagePipeDispatcher());
+    scoped_refptr<MessagePipeDispatcher> d1(new MessagePipeDispatcher(
+        MessagePipeDispatcher::kDefaultCreateOptions));
     {
       scoped_refptr<MessagePipe> mp(new MessagePipe());
       d0->Init(mp, i);  // 0, 1.
       d1->Init(mp, i ^ 1);  // 1, 0.
     }
     Waiter w;
+    uint32_t context = 0;
 
     // Try adding a writable waiter when already writable.
     w.Init();
     EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS,
-              d0->AddWaiter(&w, MOJO_WAIT_FLAG_WRITABLE, 0));
+              d0->AddWaiter(&w, MOJO_HANDLE_SIGNAL_WRITABLE, 0));
     // Shouldn't need to remove the waiter (it was not added).
 
     // Add a readable waiter to |d0|, then make it readable (by writing to
     // |d1|), then wait.
     w.Init();
     EXPECT_EQ(MOJO_RESULT_OK,
-              d0->AddWaiter(&w, MOJO_WAIT_FLAG_READABLE, 1));
+              d0->AddWaiter(&w, MOJO_HANDLE_SIGNAL_READABLE, 1));
     buffer[0] = 123456789;
     EXPECT_EQ(MOJO_RESULT_OK,
               d1->WriteMessage(buffer, kBufferSize,
                                NULL,
                                MOJO_WRITE_MESSAGE_FLAG_NONE));
     stopwatch.Start();
-    EXPECT_EQ(1, w.Wait(MOJO_DEADLINE_INDEFINITE));
+    EXPECT_EQ(MOJO_RESULT_OK, w.Wait(MOJO_DEADLINE_INDEFINITE, &context));
+    EXPECT_EQ(1u, context);
     EXPECT_LT(stopwatch.Elapsed(), test::EpsilonTimeout());
     d0->RemoveWaiter(&w);
 
     // Try adding a readable waiter when already readable (from above).
     w.Init();
     EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS,
-              d0->AddWaiter(&w, MOJO_WAIT_FLAG_READABLE, 2));
+              d0->AddWaiter(&w, MOJO_HANDLE_SIGNAL_READABLE, 2));
     // Shouldn't need to remove the waiter (it was not added).
 
     // Make |d0| no longer readable (by reading from it).
@@ -87,19 +91,19 @@ TEST(MessagePipeDispatcherTest, Basic) {
     // Wait for zero time for readability on |d0| (will time out).
     w.Init();
     EXPECT_EQ(MOJO_RESULT_OK,
-              d0->AddWaiter(&w, MOJO_WAIT_FLAG_READABLE, 3));
+              d0->AddWaiter(&w, MOJO_HANDLE_SIGNAL_READABLE, 3));
     stopwatch.Start();
-    EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED, w.Wait(0));
+    EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED, w.Wait(0, NULL));
     EXPECT_LT(stopwatch.Elapsed(), test::EpsilonTimeout());
     d0->RemoveWaiter(&w);
 
     // Wait for non-zero, finite time for readability on |d0| (will time out).
     w.Init();
     EXPECT_EQ(MOJO_RESULT_OK,
-              d0->AddWaiter(&w, MOJO_WAIT_FLAG_READABLE, 3));
+              d0->AddWaiter(&w, MOJO_HANDLE_SIGNAL_READABLE, 3));
     stopwatch.Start();
     EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED,
-              w.Wait(2 * test::EpsilonTimeout().InMicroseconds()));
+              w.Wait(2 * test::EpsilonTimeout().InMicroseconds(), NULL));
     base::TimeDelta elapsed = stopwatch.Elapsed();
     EXPECT_GT(elapsed, (2-1) * test::EpsilonTimeout());
     EXPECT_LT(elapsed, (2+1) * test::EpsilonTimeout());
@@ -113,8 +117,10 @@ TEST(MessagePipeDispatcherTest, Basic) {
 TEST(MessagePipeDispatcherTest, InvalidParams) {
   char buffer[1];
 
-  scoped_refptr<MessagePipeDispatcher> d0(new MessagePipeDispatcher());
-  scoped_refptr<MessagePipeDispatcher> d1(new MessagePipeDispatcher());
+  scoped_refptr<MessagePipeDispatcher> d0(new MessagePipeDispatcher(
+        MessagePipeDispatcher::kDefaultCreateOptions));
+  scoped_refptr<MessagePipeDispatcher> d1(new MessagePipeDispatcher(
+        MessagePipeDispatcher::kDefaultCreateOptions));
   {
     scoped_refptr<MessagePipe> mp(new MessagePipe());
     d0->Init(mp, 0);
@@ -153,8 +159,10 @@ TEST(MessagePipeDispatcherTest, BasicClosed) {
 
   // Run this test both with |d0| as port 0, |d1| as port 1 and vice versa.
   for (unsigned i = 0; i < 2; i++) {
-    scoped_refptr<MessagePipeDispatcher> d0(new MessagePipeDispatcher());
-    scoped_refptr<MessagePipeDispatcher> d1(new MessagePipeDispatcher());
+    scoped_refptr<MessagePipeDispatcher> d0(new MessagePipeDispatcher(
+        MessagePipeDispatcher::kDefaultCreateOptions));
+    scoped_refptr<MessagePipeDispatcher> d1(new MessagePipeDispatcher(
+        MessagePipeDispatcher::kDefaultCreateOptions));
     {
       scoped_refptr<MessagePipe> mp(new MessagePipe());
       d0->Init(mp, i);  // 0, 1.
@@ -177,7 +185,7 @@ TEST(MessagePipeDispatcherTest, BasicClosed) {
     // Try waiting for readable on |d0|; should fail (already satisfied).
     w.Init();
     EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS,
-              d0->AddWaiter(&w, MOJO_WAIT_FLAG_READABLE, 0));
+              d0->AddWaiter(&w, MOJO_HANDLE_SIGNAL_READABLE, 0));
 
     // Try reading from |d1|; should fail (nothing to read).
     buffer[0] = 0;
@@ -193,7 +201,7 @@ TEST(MessagePipeDispatcherTest, BasicClosed) {
     // Try waiting for readable on |d0|; should fail (already satisfied).
     w.Init();
     EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS,
-              d0->AddWaiter(&w, MOJO_WAIT_FLAG_READABLE, 1));
+              d0->AddWaiter(&w, MOJO_HANDLE_SIGNAL_READABLE, 1));
 
     // Read from |d0|.
     buffer[0] = 0;
@@ -208,7 +216,7 @@ TEST(MessagePipeDispatcherTest, BasicClosed) {
     // Try waiting for readable on |d0|; should fail (already satisfied).
     w.Init();
     EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS,
-              d0->AddWaiter(&w, MOJO_WAIT_FLAG_READABLE, 2));
+              d0->AddWaiter(&w, MOJO_HANDLE_SIGNAL_READABLE, 2));
 
     // Read again from |d0|.
     buffer[0] = 0;
@@ -223,12 +231,12 @@ TEST(MessagePipeDispatcherTest, BasicClosed) {
     // Try waiting for readable on |d0|; should fail (unsatisfiable).
     w.Init();
     EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION,
-              d0->AddWaiter(&w, MOJO_WAIT_FLAG_READABLE, 3));
+              d0->AddWaiter(&w, MOJO_HANDLE_SIGNAL_READABLE, 3));
 
     // Try waiting for writable on |d0|; should fail (unsatisfiable).
     w.Init();
     EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION,
-              d0->AddWaiter(&w, MOJO_WAIT_FLAG_WRITABLE, 4));
+              d0->AddWaiter(&w, MOJO_HANDLE_SIGNAL_WRITABLE, 4));
 
     // Try reading from |d0|; should fail (nothing to read and other end
     // closed).
@@ -258,11 +266,14 @@ TEST(MessagePipeDispatcherTest, BasicThreaded) {
   base::TimeDelta elapsed;
   bool did_wait;
   MojoResult result;
+  uint32_t context;
 
   // Run this test both with |d0| as port 0, |d1| as port 1 and vice versa.
   for (unsigned i = 0; i < 2; i++) {
-    scoped_refptr<MessagePipeDispatcher> d0(new MessagePipeDispatcher());
-    scoped_refptr<MessagePipeDispatcher> d1(new MessagePipeDispatcher());
+    scoped_refptr<MessagePipeDispatcher> d0(new MessagePipeDispatcher(
+        MessagePipeDispatcher::kDefaultCreateOptions));
+    scoped_refptr<MessagePipeDispatcher> d1(new MessagePipeDispatcher(
+        MessagePipeDispatcher::kDefaultCreateOptions));
     {
       scoped_refptr<MessagePipe> mp(new MessagePipe());
       d0->Init(mp, i);  // 0, 1.
@@ -272,10 +283,10 @@ TEST(MessagePipeDispatcherTest, BasicThreaded) {
     // Wait for readable on |d1|, which will become readable after some time.
     {
       test::WaiterThread thread(d1,
-                               MOJO_WAIT_FLAG_READABLE,
+                               MOJO_HANDLE_SIGNAL_READABLE,
                                MOJO_DEADLINE_INDEFINITE,
-                               0,
-                               &did_wait, &result);
+                               1,
+                               &did_wait, &result, &context);
       stopwatch.Start();
       thread.Start();
       base::PlatformThread::Sleep(2 * test::EpsilonTimeout());
@@ -290,15 +301,16 @@ TEST(MessagePipeDispatcherTest, BasicThreaded) {
     EXPECT_GT(elapsed, (2-1) * test::EpsilonTimeout());
     EXPECT_LT(elapsed, (2+1) * test::EpsilonTimeout());
     EXPECT_TRUE(did_wait);
-    EXPECT_EQ(0, result);
+    EXPECT_EQ(MOJO_RESULT_OK, result);
+    EXPECT_EQ(1u, context);
 
     // Now |d1| is already readable. Try waiting for it again.
     {
       test::WaiterThread thread(d1,
-                                MOJO_WAIT_FLAG_READABLE,
+                                MOJO_HANDLE_SIGNAL_READABLE,
                                 MOJO_DEADLINE_INDEFINITE,
-                                1,
-                                &did_wait, &result);
+                                2,
+                                &did_wait, &result, &context);
       stopwatch.Start();
       thread.Start();
     }  // Joins the thread.
@@ -320,10 +332,10 @@ TEST(MessagePipeDispatcherTest, BasicThreaded) {
     // cancel that wait.
     {
       test::WaiterThread thread(d1,
-                                MOJO_WAIT_FLAG_READABLE,
+                                MOJO_HANDLE_SIGNAL_READABLE,
                                 MOJO_DEADLINE_INDEFINITE,
-                                0,
-                                &did_wait, &result);
+                                3,
+                                &did_wait, &result, &context);
       stopwatch.Start();
       thread.Start();
       base::PlatformThread::Sleep(2 * test::EpsilonTimeout());
@@ -334,13 +346,16 @@ TEST(MessagePipeDispatcherTest, BasicThreaded) {
     EXPECT_LT(elapsed, (2+1) * test::EpsilonTimeout());
     EXPECT_TRUE(did_wait);
     EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION, result);
+    EXPECT_EQ(3u, context);
 
     EXPECT_EQ(MOJO_RESULT_OK, d1->Close());
   }
 
   for (unsigned i = 0; i < 2; i++) {
-    scoped_refptr<MessagePipeDispatcher> d0(new MessagePipeDispatcher());
-    scoped_refptr<MessagePipeDispatcher> d1(new MessagePipeDispatcher());
+    scoped_refptr<MessagePipeDispatcher> d0(new MessagePipeDispatcher(
+        MessagePipeDispatcher::kDefaultCreateOptions));
+    scoped_refptr<MessagePipeDispatcher> d1(new MessagePipeDispatcher(
+        MessagePipeDispatcher::kDefaultCreateOptions));
     {
       scoped_refptr<MessagePipe> mp(new MessagePipe());
       d0->Init(mp, i);  // 0, 1.
@@ -351,10 +366,10 @@ TEST(MessagePipeDispatcherTest, BasicThreaded) {
     // cancel that wait.
     {
       test::WaiterThread thread(d1,
-                                MOJO_WAIT_FLAG_READABLE,
+                                MOJO_HANDLE_SIGNAL_READABLE,
                                 MOJO_DEADLINE_INDEFINITE,
-                                0,
-                                &did_wait, &result);
+                                4,
+                                &did_wait, &result, &context);
       stopwatch.Start();
       thread.Start();
       base::PlatformThread::Sleep(2 * test::EpsilonTimeout());
@@ -365,6 +380,7 @@ TEST(MessagePipeDispatcherTest, BasicThreaded) {
     EXPECT_LT(elapsed, (2+1) * test::EpsilonTimeout());
     EXPECT_TRUE(did_wait);
     EXPECT_EQ(MOJO_RESULT_CANCELLED, result);
+    EXPECT_EQ(4u, context);
 
     EXPECT_EQ(MOJO_RESULT_OK, d0->Close());
   }
@@ -454,12 +470,12 @@ class ReaderThread : public base::SimpleThread {
     for (;;) {
       // Wait for it to be readable.
       w.Init();
-      result = read_dispatcher_->AddWaiter(&w, MOJO_WAIT_FLAG_READABLE, 0);
+      result = read_dispatcher_->AddWaiter(&w, MOJO_HANDLE_SIGNAL_READABLE, 0);
       EXPECT_TRUE(result == MOJO_RESULT_OK ||
                   result == MOJO_RESULT_ALREADY_EXISTS) << "result: " << result;
       if (result == MOJO_RESULT_OK) {
         // Actually need to wait.
-        EXPECT_EQ(0, w.Wait(MOJO_DEADLINE_INDEFINITE));
+        EXPECT_EQ(MOJO_RESULT_OK, w.Wait(MOJO_DEADLINE_INDEFINITE, NULL));
         read_dispatcher_->RemoveWaiter(&w);
       }
 
@@ -513,8 +529,10 @@ TEST(MessagePipeDispatcherTest, Stress) {
   static const size_t kNumWriters = 30;
   static const size_t kNumReaders = kNumWriters;
 
-  scoped_refptr<MessagePipeDispatcher> d_write(new MessagePipeDispatcher());
-  scoped_refptr<MessagePipeDispatcher> d_read(new MessagePipeDispatcher());
+  scoped_refptr<MessagePipeDispatcher> d_write(new MessagePipeDispatcher(
+        MessagePipeDispatcher::kDefaultCreateOptions));
+  scoped_refptr<MessagePipeDispatcher> d_read(new MessagePipeDispatcher(
+        MessagePipeDispatcher::kDefaultCreateOptions));
   {
     scoped_refptr<MessagePipe> mp(new MessagePipe());
     d_write->Init(mp, 0);

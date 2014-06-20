@@ -64,37 +64,31 @@ LOCAL_SRC_FILES := \
 	third_party/opus/src/silk/enc_API.c \
 	third_party/opus/src/silk/encode_indices.c \
 	third_party/opus/src/silk/encode_pulses.c \
-	third_party/opus/src/silk/float/apply_sine_window_FLP.c \
-	third_party/opus/src/silk/float/autocorrelation_FLP.c \
-	third_party/opus/src/silk/float/burg_modified_FLP.c \
-	third_party/opus/src/silk/float/bwexpander_FLP.c \
-	third_party/opus/src/silk/float/corrMatrix_FLP.c \
-	third_party/opus/src/silk/float/encode_frame_FLP.c \
-	third_party/opus/src/silk/float/energy_FLP.c \
-	third_party/opus/src/silk/float/find_LPC_FLP.c \
-	third_party/opus/src/silk/float/find_LTP_FLP.c \
-	third_party/opus/src/silk/float/find_pitch_lags_FLP.c \
-	third_party/opus/src/silk/float/find_pred_coefs_FLP.c \
-	third_party/opus/src/silk/float/inner_product_FLP.c \
-	third_party/opus/src/silk/float/k2a_FLP.c \
-	third_party/opus/src/silk/float/levinsondurbin_FLP.c \
-	third_party/opus/src/silk/float/LPC_analysis_filter_FLP.c \
-	third_party/opus/src/silk/float/LPC_inv_pred_gain_FLP.c \
-	third_party/opus/src/silk/float/LTP_analysis_filter_FLP.c \
-	third_party/opus/src/silk/float/LTP_scale_ctrl_FLP.c \
-	third_party/opus/src/silk/float/noise_shape_analysis_FLP.c \
-	third_party/opus/src/silk/float/pitch_analysis_core_FLP.c \
-	third_party/opus/src/silk/float/prefilter_FLP.c \
-	third_party/opus/src/silk/float/process_gains_FLP.c \
-	third_party/opus/src/silk/float/regularize_correlations_FLP.c \
-	third_party/opus/src/silk/float/residual_energy_FLP.c \
-	third_party/opus/src/silk/float/scale_copy_vector_FLP.c \
-	third_party/opus/src/silk/float/scale_vector_FLP.c \
-	third_party/opus/src/silk/float/schur_FLP.c \
-	third_party/opus/src/silk/float/solve_LS_FLP.c \
-	third_party/opus/src/silk/float/sort_FLP.c \
-	third_party/opus/src/silk/float/warped_autocorrelation_FLP.c \
-	third_party/opus/src/silk/float/wrappers_FLP.c \
+	third_party/opus/src/silk/fixed/apply_sine_window_FIX.c \
+	third_party/opus/src/silk/fixed/autocorr_FIX.c \
+	third_party/opus/src/silk/fixed/burg_modified_FIX.c \
+	third_party/opus/src/silk/fixed/corrMatrix_FIX.c \
+	third_party/opus/src/silk/fixed/encode_frame_FIX.c \
+	third_party/opus/src/silk/fixed/find_LPC_FIX.c \
+	third_party/opus/src/silk/fixed/find_LTP_FIX.c \
+	third_party/opus/src/silk/fixed/find_pitch_lags_FIX.c \
+	third_party/opus/src/silk/fixed/find_pred_coefs_FIX.c \
+	third_party/opus/src/silk/fixed/k2a_FIX.c \
+	third_party/opus/src/silk/fixed/k2a_Q16_FIX.c \
+	third_party/opus/src/silk/fixed/LTP_analysis_filter_FIX.c \
+	third_party/opus/src/silk/fixed/LTP_scale_ctrl_FIX.c \
+	third_party/opus/src/silk/fixed/noise_shape_analysis_FIX.c \
+	third_party/opus/src/silk/fixed/pitch_analysis_core_FIX.c \
+	third_party/opus/src/silk/fixed/prefilter_FIX.c \
+	third_party/opus/src/silk/fixed/process_gains_FIX.c \
+	third_party/opus/src/silk/fixed/regularize_correlations_FIX.c \
+	third_party/opus/src/silk/fixed/residual_energy16_FIX.c \
+	third_party/opus/src/silk/fixed/residual_energy_FIX.c \
+	third_party/opus/src/silk/fixed/schur64_FIX.c \
+	third_party/opus/src/silk/fixed/schur_FIX.c \
+	third_party/opus/src/silk/fixed/solve_LS_FIX.c \
+	third_party/opus/src/silk/fixed/vector_ops_FIX.c \
+	third_party/opus/src/silk/fixed/warped_autocorrelation_FIX.c \
 	third_party/opus/src/silk/gain_quant.c \
 	third_party/opus/src/silk/HP_variable_cutoff.c \
 	third_party/opus/src/silk/init_decoder.c \
@@ -187,7 +181,7 @@ MY_CFLAGS_Debug := \
 	-Wno-format-security \
 	-Wno-return-type \
 	-Wno-sequence-point \
-	-Os \
+	-O3 \
 	-g \
 	-fomit-frame-pointer \
 	-fdata-sections \
@@ -204,6 +198,7 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_BROWSER_CDMS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
@@ -221,6 +216,7 @@ MY_DEFS_Debug := \
 	'-DHAVE_LRINT' \
 	'-DHAVE_LRINTF' \
 	'-DVAR_ARRAYS' \
+	'-DFIXED_POINT' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-DANDROID' \
@@ -235,10 +231,11 @@ MY_DEFS_Debug := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Debug := \
+	$(gyp_shared_intermediate_dir) \
 	$(LOCAL_PATH)/third_party/opus/src/celt \
 	$(LOCAL_PATH)/third_party/opus/src/include \
 	$(LOCAL_PATH)/third_party/opus/src/silk \
-	$(LOCAL_PATH)/third_party/opus/src/silk/float \
+	$(LOCAL_PATH)/third_party/opus/src/silk/fixed \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -282,7 +279,7 @@ MY_CFLAGS_Release := \
 	-Wno-format-security \
 	-Wno-return-type \
 	-Wno-sequence-point \
-	-Os \
+	-O3 \
 	-fno-ident \
 	-fdata-sections \
 	-ffunction-sections \
@@ -299,6 +296,7 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_BROWSER_CDMS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
@@ -316,6 +314,7 @@ MY_DEFS_Release := \
 	'-DHAVE_LRINT' \
 	'-DHAVE_LRINTF' \
 	'-DVAR_ARRAYS' \
+	'-DFIXED_POINT' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-DANDROID' \
@@ -330,10 +329,11 @@ MY_DEFS_Release := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Release := \
+	$(gyp_shared_intermediate_dir) \
 	$(LOCAL_PATH)/third_party/opus/src/celt \
 	$(LOCAL_PATH)/third_party/opus/src/include \
 	$(LOCAL_PATH)/third_party/opus/src/silk \
-	$(LOCAL_PATH)/third_party/opus/src/silk/float \
+	$(LOCAL_PATH)/third_party/opus/src/silk/fixed \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

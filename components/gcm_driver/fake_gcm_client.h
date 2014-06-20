@@ -7,7 +7,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
-#include "google_apis/gcm/gcm_client.h"
+#include "components/gcm_driver/gcm_client.h"
 
 namespace base {
 class SequencedTaskRunner;
@@ -39,7 +39,6 @@ class FakeGCMClient : public GCMClient {
   virtual void Initialize(
       const ChromeBuildInfo& chrome_build_info,
       const base::FilePath& store_path,
-      const std::vector<std::string>& account_ids,
       const scoped_refptr<base::SequencedTaskRunner>& blocking_task_runner,
       const scoped_refptr<net::URLRequestContextGetter>&
           url_request_context_getter,

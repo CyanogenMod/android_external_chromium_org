@@ -11,6 +11,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "content/common/content_export.h"
+#include "content/common/service_worker/service_worker_types.h"
 #include "webkit/common/resource_type.h"
 
 namespace IPC {
@@ -28,7 +29,7 @@ class ServiceWorkerDispatcherHost;
 class ServiceWorkerRequestHandler;
 class ServiceWorkerVersion;
 
-// This class is the browser-process representation of a serice worker
+// This class is the browser-process representation of a service worker
 // provider. There is a provider per document and the lifetime of this
 // object is tied to the lifetime of its document in the renderer process.
 // This class holds service worker state that is scoped to an individual
@@ -73,14 +74,14 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   void SetDocumentUrl(const GURL& url);
   const GURL& document_url() const { return document_url_; }
 
-  // Associate |version| to this provider as its '.active' or '.waiting'
+  // Associates |version| to this provider as its '.active' or '.waiting'
   // version.
   // Giving NULL to this method will unset the corresponding field.
   void SetActiveVersion(ServiceWorkerVersion* version);
   void SetWaitingVersion(ServiceWorkerVersion* version);
 
   // Returns false if the version is not in the expected STARTING in our
-  // our process state. That would be indicative of a bad IPC message.
+  // process state. That would be indicative of a bad IPC message.
   bool SetHostedVersionId(int64 versions_id);
 
   // Returns a handler for a request, the handler may return NULL if
@@ -89,11 +90,24 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
       ResourceType::Type resource_type,
       base::WeakPtr<webkit_blob::BlobStorageContext> blob_storage_context);
 
+  // Returns true if |version| has the same registration as active and waiting
+  // versions.
+  bool ValidateVersionForAssociation(ServiceWorkerVersion* version);
+
+  // Returns true if the context referred to by this host (i.e. |context_|) is
+  // still alive.
+  bool IsContextAlive();
+
   // Dispatches message event to the document.
   void PostMessage(const base::string16& message,
                    const std::vector<int>& sent_message_port_ids);
 
  private:
+  // Creates a ServiceWorkerHandle to retain |version| and returns a
+  // ServiceWorkerInfo with the handle ID to pass to the provider. The
+  // provider is responsible for releasing the handle.
+  ServiceWorkerObjectInfo CreateHandleAndPass(ServiceWorkerVersion* version);
+
   const int process_id_;
   const int provider_id_;
   GURL document_url_;

@@ -363,6 +363,9 @@ IPC_STRUCT_BEGIN(ViewHostMsg_TextInputState_Params)
   // The type of input field
   IPC_STRUCT_MEMBER(ui::TextInputType, type)
 
+  // The mode of input field
+  IPC_STRUCT_MEMBER(ui::TextInputMode, mode)
+
   // The value of the input field
   IPC_STRUCT_MEMBER(std::string, value)
 
@@ -686,6 +689,11 @@ IPC_MESSAGE_CONTROL3(ViewMsg_SetZoomLevelForCurrentURL,
                      std::string /* host */,
                      double /* zoom_level */)
 
+// Set the zoom level for a particular render view.
+IPC_MESSAGE_ROUTED2(ViewMsg_SetZoomLevelForView,
+                    bool /* uses_temporary_zoom_level */,
+                    double /* zoom_level */)
+
 // Change encoding of page in the renderer.
 IPC_MESSAGE_ROUTED1(ViewMsg_SetPageEncoding,
                     std::string /*new encoding name*/)
@@ -837,10 +845,9 @@ IPC_MESSAGE_ROUTED0(ViewMsg_WorkerScriptLoadFailed)
 // This message is sent only if the worker successfully loaded the script.
 IPC_MESSAGE_ROUTED0(ViewMsg_WorkerConnected)
 
-// Tells the renderer that the network state has changed so that
-// navigator.onLine and navigator.connection can be updated.
-IPC_MESSAGE_CONTROL2(ViewMsg_NetworkStateChanged,
-                     bool /* is_online */,
+// Tells the renderer that the network type has changed so that navigator.onLine
+// and navigator.connection can be updated.
+IPC_MESSAGE_CONTROL1(ViewMsg_NetworkTypeChanged,
                      net::NetworkChangeNotifier::ConnectionType /* type */)
 
 // Reply to ViewHostMsg_OpenChannelToPpapiBroker
@@ -1288,11 +1295,6 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_DidContentsPreferredSizeChange,
 // ViewHostMsg_DidChangeScrollOffset works properly in this case.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_DidChangeScrollOffset)
 
-// Notifies that the pinned-to-side state of the content changed.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_DidChangeScrollOffsetPinningForMainFrame,
-                    bool /* pinned_to_left */,
-                    bool /* pinned_to_right */)
-
 // Notifies whether there are JavaScript touch event handlers or not.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_HasTouchEventHandlers,
                     bool /* has_handlers */)
@@ -1419,11 +1421,6 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_TakeFocus,
 // Required for opening a date/time dialog
 IPC_MESSAGE_ROUTED1(ViewHostMsg_OpenDateTimeDialog,
                     ViewHostMsg_DateTimeDialogValue_Params /* value */)
-
-IPC_MESSAGE_ROUTED3(ViewHostMsg_TextInputTypeChanged,
-                    ui::TextInputType /* TextInputType of the focused node */,
-                    ui::TextInputMode /* TextInputMode of the focused node */,
-                    bool /* can_compose_inline in the focused node */)
 
 // Required for updating text input state.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_TextInputStateChanged,
@@ -1684,11 +1681,6 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_PluginFocusChanged,
 
 // Instructs the browser to start plugin IME.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_StartPluginIme)
-
-// Notifies that the scrollbars-visible state of the content changed.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_DidChangeScrollbarsForMainFrame,
-                    bool /* has_horizontal_scrollbar */,
-                    bool /* has_vertical_scrollbar */)
 
 #elif defined(OS_WIN)
 // Request that the given font characters be loaded by the browser so it's

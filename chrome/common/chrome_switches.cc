@@ -215,10 +215,6 @@ const char kDisableAsyncDns[]               = "disable-async-dns";
 const char kDisableAuthNegotiateCnameLookup[] =
     "disable-auth-negotiate-cname-lookup";
 
-// Disables background mode (background apps will not keep chrome running in
-// the background).
-const char kDisableBackgroundMode[]         = "disable-background-mode";
-
 // Disable several subsystems which run network requests in the background.
 // This is for use when doing network performance testing to avoid noise in the
 // measurements.
@@ -272,10 +268,6 @@ const char kDisableExtensionsFileAccessCheck[] =
 const char kDisableExtensionsHttpThrottling[] =
     "disable-extensions-http-throttling";
 
-// Disable mandatory enforcement of web_accessible_resources in extensions.
-const char kDisableExtensionsResourceWhitelist[] =
-    "disable-extensions-resource-whitelist";
-
 // Disables embedding of Flash fullscreen widgets within the browser window.
 // This restores the old code paths where Flash fullscreen would display in its
 // own separate, always-on-top window.  In addition, this disables the new logic
@@ -300,6 +292,10 @@ const char kDisableNTPOtherSessionsMenu[]   = "disable-ntp-other-sessions-menu";
 // Disable auto-reload of error pages if offline.
 const char kDisableOfflineAutoReload[]       = "disable-offline-auto-reload";
 
+// Disable only auto-reloading error pages when the tab is visible.
+const char kDisableOfflineAutoReloadVisibleOnly[] =
+    "disable-offline-auto-reload-visible-only";
+
 // Disable the origin chip.
 const char kDisableOriginChip[]             = "disable-origin-chip";
 
@@ -310,6 +306,9 @@ const char kDisablePasswordManagerReauthentication[] =
 
 // Enables searching for people from the apps list search box.
 const char kDisablePeopleSearch[]           = "disable-people-search";
+
+// Don't use bubbles for content permissions requests instead of infobars.
+const char kDisablePermissionsBubbles[]      = "disable-permissions-bubbles";
 
 // Disable pop-up blocking.
 const char kDisablePopupBlocking[]          = "disable-popup-blocking";
@@ -351,11 +350,6 @@ const char kDisableQuicPortSelection[]      = "disable-quic-port-selection";
 // This only has an effect if QUIC protocol is enabled.
 const char kDisableQuicTimeBasedLossDetection[] =
     "disable-quic-time-based-loss-detection";
-
-// Prevents the URLs of BackgroundContents from being remembered and
-// re-launched when the browser restarts.
-const char kDisableRestoreBackgroundContents[] =
-    "disable-restore-background-contents";
 
 // Prevents the save password bubble from being enabled.
 const char kDisableSavePasswordBubble[] = "disable-save-password-bubble";
@@ -425,9 +419,6 @@ extern const char kEasyUnlockAppPath[]      = "easy-unlock-app-path";
 // supervised user sends an access request.
 extern const char kEnableAccessRequestNotifications[] =
     "enable-access-request-notifications";
-
-// Enables the <adview> tag in packaged apps.
-const char kEnableAdview[]                  = "enable-adview";
 
 // Enable Answers in Suggest.
 const char kEnableAnswersInSuggest[]        = "enable-answers-in-suggest";
@@ -525,6 +516,10 @@ const char kEnableNpnHttpOnly[]             = "enable-npn-http";
 // Enable auto-reload of error pages if offline.
 const char kEnableOfflineAutoReload[]       = "enable-offline-auto-reload";
 
+// Only auto-reload error pages when the tab is visible.
+const char kEnableOfflineAutoReloadVisibleOnly[] =
+    "enable-offline-auto-reload-visible-only";
+
 // Enable/Disable offering a "Load stale copy" option to the user if offline.
 const char kEnableOfflineLoadStaleCache[]   = "enable-offline-load-stale-cache";
 const char kDisableOfflineLoadStaleCache[]  =
@@ -608,8 +603,14 @@ const char kEnableSearchButtonInOmniboxForStrOrIip[] =
 // Enables using bubbles for session restore request instead of infobars.
 const char kEnableSessionCrashedBubble[] = "enable-session-crashed-bubble";
 
-// Enable settings in a separate browser window per profile.
-const char kEnableSettingsWindow[]          = "enable-settings-window";
+// Enables the deprecated window.showModalDialog API. This is slated for
+// removal.
+const char kEnableShowModalDialog[] = "enable-show-modal-dialog";
+
+// Enable or disable settings in a separate browser window per profile
+// (see SettingsWindowEnabled() below).
+const char kEnableSettingsWindow[]           = "enable-settings-window";
+const char kDisableSettingsWindow[]          = "disable-settings-window";
 
 // Enable SPDY/4, aka HTTP/2. This is a temporary testing flag.
 const char kEnableSpdy4[]                   = "enable-spdy4";
@@ -814,14 +815,14 @@ const char kMalwareInterstitialVersionV3[]  = "malware-interstitial-v3";
 // Makes Chrome default browser
 const char kMakeDefaultBrowser[]            = "make-default-browser";
 
-// Sets the managed user ID for any loaded or newly created profile to the
+// Sets the supervised user ID for any loaded or newly created profile to the
 // given value. Pass an empty string to mark the profile as non-supervised.
 // Used for testing.
-const char kManagedUserId[]                 = "managed-user-id";
+const char kSupervisedUserId[]              = "managed-user-id";
 
-// Used to authenticate requests to the Sync service for managed users. Setting
-// this switch also causes Sync to be set up for a managed user.
-const char kManagedUserSyncToken[]          = "managed-user-sync-token";
+// Used to authenticate requests to the Sync service for supervised users.
+// Setting this switch also causes Sync to be set up for a supervised user.
+const char kSupervisedUserSyncToken[]       = "managed-user-sync-token";
 
 // Use to opt-in user into Finch experiment groups.
 const char kManualEnhancedBookmarks[] = "manual-enhanced-bookmarks";
@@ -898,7 +899,7 @@ const char kNoStartupWindow[]               = "no-startup-window";
 // a supervised user. Also disables the timeout during registration that waits
 // for the ack. Useful when debugging against a server that does not
 // support notifications.
-const char kNoManagedUserAcknowledgmentCheck[]  =
+const char kNoSupervisedUserAcknowledgmentCheck[]  =
     "no-managed-user-acknowledgment-check";
 
 // Specifies the maximum number of threads to use for running the Proxy
@@ -1105,10 +1106,6 @@ const char kSigninProcess[]                 = "signin-process";
 // chrome.debugger page. Required to attach to extension background pages.
 const char kSilentDebuggerExtensionAPI[]    = "silent-debugger-extension-api";
 
-// Changes the DCHECKS to dump memory and continue instead of displaying error
-// dialog. This is valid only in Release mode when gyp dcheck_always_on=1.
-const char kSilentDumpOnDCHECK[]            = "silent-dump-on-dcheck";
-
 // Causes Chrome to launch without opening any windows by default. Useful if
 // one wishes to use Chrome as an ash server.
 const char kSilentLaunch[]                  = "silent-launch";
@@ -1191,8 +1188,11 @@ const char kSyncEnableGetUpdateAvoidance[]   =
 const char kSyncfsEnableDirectoryOperation[] =
     "enable-syncfs-directory-operation";
 
-// Enables backup/rollback of user's data.
-const char kSyncEnableBackupRollback[] = "enable-sync-backup-rollback";
+// Disable data backup when user's not signed in.
+const char kSyncDisableBackup[] = "disable-sync-backup";
+
+// Enable data rollback when receiving sync rollback command.
+const char kSyncEnableRollback[] = "enable-sync-rollback";
 
 // Passes the name of the current running automated test to Chrome.
 const char kTestName[]                      = "test-name";
@@ -1393,6 +1393,16 @@ const char kDebugPrint[] = "debug-print";
 // Enables overriding the path of file manager extension.
 const char kFileManagerExtensionPath[]      = "filemgr-ext-path";
 #endif
+
+bool SettingsWindowEnabled() {
+#if defined(OS_CHROMEOS)
+  return !CommandLine::ForCurrentProcess()->HasSwitch(
+      ::switches::kDisableSettingsWindow);
+#else
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+      ::switches::kEnableSettingsWindow);
+#endif
+}
 
 // -----------------------------------------------------------------------------
 // DO NOT ADD YOUR CRAP TO THE BOTTOM OF THIS FILE.

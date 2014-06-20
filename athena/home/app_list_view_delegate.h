@@ -9,15 +9,22 @@
 #include "base/memory/scoped_ptr.h"
 #include "ui/app_list/app_list_view_delegate.h"
 
+namespace app_list {
+class SearchProvider;
+}
+
 namespace athena {
+class AppModelBuilder;
 
 class AppListViewDelegate : public app_list::AppListViewDelegate {
  public:
-  AppListViewDelegate();
+  explicit AppListViewDelegate(AppModelBuilder* model_builder);
   virtual ~AppListViewDelegate();
 
+  void RegisterSearchProvider(app_list::SearchProvider* search_provider);
+
  private:
-  void PopulateApps();
+  void SearchResultChanged();
 
   // Overridden from app_list::AppListViewDelegate:
   virtual bool ForceNativeDesktop() const OVERRIDE;
@@ -55,6 +62,8 @@ class AppListViewDelegate : public app_list::AppListViewDelegate {
   scoped_ptr<app_list::AppListModel> model_;
   scoped_ptr<app_list::SpeechUIModel> speech_ui_;
   Users users_;
+
+  std::vector<app_list::SearchProvider*> search_providers_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListViewDelegate);
 };

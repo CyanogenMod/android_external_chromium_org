@@ -76,7 +76,6 @@ void DelegatedRendererLayerImpl::PushPropertiesTo(LayerImpl* layer) {
   delegated_layer->own_child_id_ = true;
   own_child_id_ = false;
 
-  delegated_layer->SetDisplaySize(display_size_);
   if (have_render_passes_to_push_) {
     // This passes ownership of the render passes to the active tree.
     delegated_layer->SetRenderPasses(&render_passes_in_draw_order_);
@@ -155,13 +154,6 @@ void DelegatedRendererLayerImpl::SetFrameData(
 
   SetRenderPasses(&render_pass_list);
   have_render_passes_to_push_ = true;
-}
-
-void DelegatedRendererLayerImpl::SetDisplaySize(const gfx::Size& size) {
-  if (display_size_ == size)
-    return;
-  display_size_ = size;
-  NoteLayerPropertyChanged();
 }
 
 void DelegatedRendererLayerImpl::SetRenderPasses(
@@ -404,9 +396,6 @@ void DelegatedRendererLayerImpl::AppendRenderPassQuads(
       bool is_root_delegated_render_pass =
           delegated_render_pass == render_passes_in_draw_order_.back();
       if (is_root_delegated_render_pass) {
-        // Don't allow areas inside the bounds that are empty.
-        DCHECK(display_size_.IsEmpty() ||
-               gfx::Rect(display_size_).Contains(gfx::Rect(bounds())));
         gfx::Transform delegated_frame_to_target_transform = draw_transform();
         delegated_frame_to_target_transform.Scale(inverse_device_scale_factor_,
                                                   inverse_device_scale_factor_);

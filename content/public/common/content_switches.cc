@@ -154,9 +154,6 @@ const char kDisableFlashStage3d[]           = "disable-flash-stage3d";
 
 const char kDisableGestureTapHighlight[]    = "disable-gesture-tap-highlight";
 
-// Disable GL multisampling.
-const char kDisableGLMultisampling[]        = "disable-gl-multisampling";
-
 // Disables GPU hardware acceleration.  If software renderer is not in place,
 // then the GPU process won't launch.
 const char kDisableGpu[]                    = "disable-gpu";
@@ -278,11 +275,6 @@ const char kDisableSSLFalseStart[]          = "disable-ssl-false-start";
 
 // Disable multithreaded GPU compositing of web content.
 const char kDisableThreadedCompositing[]     = "disable-threaded-compositing";
-
-// Disable accelerated overflow scrolling in corner cases (that would not be
-// handled by enable-accelerated-overflow-scroll).
-const char kDisableUniversalAcceleratedOverflowScroll[] =
-    "disable-universal-accelerated-overflow-scroll";
 
 // Don't enforce the same-origin policy. (Used by people testing their sites.)
 const char kDisableWebSecurity[]            = "disable-web-security";
@@ -509,10 +501,6 @@ const char kEnableTcpFastOpen[]             = "enable-tcp-fastopen";
 // Enable multithreaded GPU compositing of web content.
 const char kEnableThreadedCompositing[]     = "enable-threaded-compositing";
 
-// Enable accelerated overflow scrolling in all cases.
-const char kEnableUniversalAcceleratedOverflowScroll[] =
-    "enable-universal-accelerated-overflow-scroll";
-
 // Enable screen capturing support for MediaStream API.
 const char kEnableUserMediaScreenCapturing[] =
     "enable-usermedia-screen-capturing";
@@ -551,9 +539,6 @@ const char kEnableZeroCopy[]                = "enable-zero-copy";
 
 // Load NPAPI plugins from the specified directory.
 const char kExtraPluginDir[]                = "extra-plugin-dir";
-
-// Enable force_compositing_mode in layout tests.
-const char kForceCompositingMode[]          = "force-compositing-mode";
 
 // Some field trials may be randomized in the browser, and the randomly selected
 // outcome needs to be propagated to the renderer. For instance, this is used
@@ -966,11 +951,11 @@ const char kDisableCoreAnimationPlugins[] =
 // Device scale factor passed to certain processes like renderers, etc.
 const char kDeviceScaleFactor[]     = "device-scale-factor";
 
+// Disables the DirectWrite font rendering system on windows.
+const char kDisableDirectWrite[]             = "disable-direct-write";
+
 // Disable the Legacy Window which corresponds to the size of the WebContents.
 const char kDisableLegacyIntermediateWindow[] = "disable-legacy-window";
-
-// Enables the DirectWrite font rendering system on windows.
-const char kEnableDirectWrite[]             = "enable-direct-write";
 
 // Use high resolution timers for TimeTicks.
 const char kEnableHighResolutionTime[]      = "enable-high-resolution-time";

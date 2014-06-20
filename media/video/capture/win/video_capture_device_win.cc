@@ -142,6 +142,7 @@ VideoPixelFormat VideoCaptureDeviceWin::TranslateMediaSubtypeToPixelFormat(
     { MEDIASUBTYPE_MJPG, PIXEL_FORMAT_MJPEG },
     { MEDIASUBTYPE_UYVY, PIXEL_FORMAT_UYVY },
     { MEDIASUBTYPE_ARGB32, PIXEL_FORMAT_ARGB },
+    { kMediaSubTypeHDYC, PIXEL_FORMAT_UYVY },
   };
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(pixel_formats); ++i) {
     if (sub_type == pixel_formats[i].sub_type)
@@ -192,29 +193,6 @@ void VideoCaptureDeviceWin::ScopedMediaType::DeleteMediaType(
     FreeMediaType(mt);
     CoTaskMemFree(mt);
   }
-}
-
-// TODO(mcasas): Remove the following static methods when they are no longer
-// referenced from VideoCaptureDeviceFactory, i.e. when all OS platforms have
-// splitted the VideoCaptureDevice into VideoCaptureDevice and
-// VideoCaptureDeviceFactory.
-// static
-void VideoCaptureDevice::GetDeviceNames(Names* device_names) {
-  NOTIMPLEMENTED();
-}
-
-// static
-void VideoCaptureDevice::GetDeviceSupportedFormats(const Name& device,
-    VideoCaptureFormats* formats) {
-  NOTIMPLEMENTED();
-}
-
-// static
-VideoCaptureDevice* VideoCaptureDevice::Create(
-    scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
-    const Name& device_name) {
-  NOTIMPLEMENTED();
-  return NULL;
 }
 
 VideoCaptureDeviceWin::VideoCaptureDeviceWin(const Name& device_name)

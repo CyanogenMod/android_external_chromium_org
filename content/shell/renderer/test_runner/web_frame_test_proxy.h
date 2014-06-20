@@ -203,8 +203,8 @@ class WebFrameTestProxy : public Base {
   virtual void willSendRequest(blink::WebLocalFrame* frame, unsigned identifier,
                                blink::WebURLRequest& request,
                                const blink::WebURLResponse& redirectResponse) {
-    base_proxy_->WillSendRequest(frame, identifier, request, redirectResponse);
     Base::willSendRequest(frame, identifier, request, redirectResponse);
+    base_proxy_->WillSendRequest(frame, identifier, request, redirectResponse);
   }
 
   virtual void didReceiveResponse(blink::WebLocalFrame* frame,
@@ -253,6 +253,11 @@ class WebFrameTestProxy : public Base {
 
   virtual blink::WebUserMediaClient* userMediaClient() {
     return base_proxy_->GetUserMediaClient();
+  }
+
+  
+  virtual blink::WebMIDIClient* webMIDIClient() {
+    return base_proxy_->GetWebMIDIClient();
   }
 
   virtual bool willCheckAndDispatchMessageEvent(

@@ -53,8 +53,6 @@
         '../ui/events/events.gyp:events_base',
         '../ui/events/events.gyp:events_test_support',
         '../ui/events/events.gyp:gesture_detection',
-        '../ui/gfx/gfx.gyp:gfx',
-        '../ui/gfx/gfx.gyp:gfx_geometry',
         '../ui/gfx/gfx.gyp:gfx_test_support',
         '../ui/resources/ui_resources.gyp:ui_resources',
         '../url/url.gyp:url_lib',
@@ -268,6 +266,7 @@
             'content.gyp:content_renderer',
             'content.gyp:content_utility',
             'content.gyp:content_worker',
+            '../cc/cc.gyp:cc',
             '../cc/cc_tests.gyp:cc_test_support',
             '../media/media.gyp:media',
             '../ppapi/ppapi_internal.gyp:ppapi_host',
@@ -279,7 +278,6 @@
             '../v8/tools/gyp/v8.gyp:v8',
             '../webkit/child/webkit_child.gyp:webkit_child',
             '../webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
-            '../webkit/renderer/compositor_bindings/compositor_bindings.gyp:webkit_compositor_support',
             '../webkit/storage_browser.gyp:webkit_storage_browser',
             '../webkit/storage_common.gyp:webkit_storage_common',
           ],
@@ -513,6 +511,7 @@
         'browser/media/capture/web_contents_audio_input_stream_unittest.cc',
         'browser/media/capture/web_contents_video_capture_device_unittest.cc',
         'browser/media/media_internals_unittest.cc',
+        'browser/media/midi_host_unittest.cc',
         'browser/media/webrtc_identity_store_unittest.cc',
         'browser/net/sqlite_persistent_cookie_store_unittest.cc',
         'browser/notification_service_impl_unittest.cc',
@@ -549,7 +548,6 @@
         'browser/renderer_host/media/media_stream_dispatcher_host_unittest.cc',
         'browser/renderer_host/media/media_stream_manager_unittest.cc',
         'browser/renderer_host/media/media_stream_ui_proxy_unittest.cc',
-        'browser/renderer_host/media/midi_host_unittest.cc',
         'browser/renderer_host/media/video_capture_buffer_pool_unittest.cc',
         'browser/renderer_host/media/video_capture_controller_unittest.cc',
         'browser/renderer_host/media/video_capture_host_unittest.cc',
@@ -571,7 +569,6 @@
         'browser/renderer_host/web_input_event_aura_unittest.cc',
         'browser/renderer_host/websocket_dispatcher_host_unittest.cc',
         'browser/resolve_proxy_msg_helper_unittest.cc',
-        'browser/screen_orientation/screen_orientation_dispatcher_host_unittest.cc',
         'browser/service_worker/embedded_worker_instance_unittest.cc',
         'browser/service_worker/embedded_worker_test_helper.cc',
         'browser/service_worker/embedded_worker_test_helper.h',
@@ -656,6 +653,9 @@
         'renderer/android/phone_number_detector_unittest.cc',
         'renderer/battery_status/battery_status_dispatcher_unittest.cc',
         'renderer/bmp_image_decoder_unittest.cc',
+        'renderer/compositor_bindings/web_animation_unittest.cc',
+        'renderer/compositor_bindings/web_float_animation_curve_unittest.cc',
+        'renderer/compositor_bindings/web_layer_impl_fixed_bounds_unittest.cc',
         'renderer/device_sensors/device_motion_event_pump_unittest.cc',
         'renderer/device_sensors/device_orientation_event_pump_unittest.cc',
         'renderer/disambiguation_popup_helper_unittest.cc',
@@ -717,6 +717,8 @@
             'content.gyp:content_renderer',
             'content_resources.gyp:content_resources',
             '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+            '../cc/cc.gyp:cc',
+            '../cc/cc_tests.gyp:cc_test_support',
             '../gpu/gpu.gyp:gpu',
             '../gpu/gpu.gyp:gpu_unittest_utils',
             '../ipc/ipc.gyp:test_support_ipc',
@@ -875,6 +877,7 @@
         }],
         ['OS == "android"', {
           'sources': [
+            'browser/renderer_host/java/gin_java_method_invocation_helper_unittest.cc',
             'browser/renderer_host/java/jni_helper_unittest.cc',
             'renderer/java/gin_java_bridge_value_converter_unittest.cc',
           ],
@@ -1079,6 +1082,7 @@
             'browser/accessibility/android_hit_testing_browsertest.cc',
             'browser/accessibility/cross_platform_accessibility_browsertest.cc',
             'browser/accessibility/dump_accessibility_tree_browsertest.cc',
+            'browser/battery_status/battery_status_browsertest.cc',
             'browser/compositor/image_transport_factory_browsertest.cc',
             'browser/bookmarklet_browsertest.cc',
             'browser/child_process_security_policy_browsertest.cc',
@@ -1198,10 +1202,6 @@
               },
               # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
               'msvs_disabled_warnings': [ 4267, ],
-            }, {  # OS!="win"
-              'sources!': [
-                'browser/accessibility/accessibility_win_browsertest.cc',
-              ],
             }],
             ['OS=="win" and win_use_allocator_shim==1', {
               'dependencies': [
@@ -1234,11 +1234,6 @@
               ],
               'sources': [
                 'renderer/external_popup_menu_browsertest.cc',
-              ],
-            }],
-            ['use_aura==1', {
-              'sources!': [
-                'browser/accessibility/accessibility_win_browsertest.cc',
               ],
             }],
             ['use_aura==1 and OS!="win"', {

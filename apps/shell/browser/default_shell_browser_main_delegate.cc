@@ -4,6 +4,7 @@
 
 #include "apps/shell/browser/default_shell_browser_main_delegate.h"
 
+#include "apps/shell/browser/default_shell_app_window_controller.h"
 #include "apps/shell/browser/shell_desktop_controller.h"
 #include "apps/shell/browser/shell_extension_system.h"
 #include "base/command_line.h"
@@ -29,7 +30,9 @@ void DefaultShellBrowserMainDelegate::Start(
     extensions::ShellExtensionSystem* extension_system =
         static_cast<extensions::ShellExtensionSystem*>(
             extensions::ExtensionSystem::Get(browser_context));
-    extension_system->LoadAndLaunchApp(app_absolute_dir);
+    if (!extension_system->LoadApp(app_absolute_dir))
+      return;
+    extension_system->LaunchApp();
   } else {
     LOG(ERROR) << "--" << kAppSwitch << " unset; boredom is in your future";
   }
@@ -40,7 +43,9 @@ void DefaultShellBrowserMainDelegate::Shutdown() {
 
 ShellDesktopController*
 DefaultShellBrowserMainDelegate::CreateDesktopController() {
-  return new ShellDesktopController();
+  ShellDesktopController* desktop = new ShellDesktopController();
+  desktop->SetAppWindowController(new DefaultShellAppWindowController(desktop));
+  return desktop;
 }
 
 }  // namespace apps

@@ -11,7 +11,6 @@
 #include "net/quic/test_tools/quic_connection_peer.h"
 #include "net/quic/test_tools/quic_data_stream_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
-#include "net/tools/epoll_server/epoll_server.h"
 #include "net/tools/quic/quic_spdy_server_stream.h"
 #include "net/tools/quic/test_tools/quic_test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -53,11 +52,11 @@ class QuicServerSessionTest : public ::testing::TestWithParam<QuicVersion> {
                        QuicRandom::GetInstance()) {
     config_.SetDefaults();
     config_.set_max_streams_per_connection(3, 3);
+    config_.SetInitialFlowControlWindowToSend(kInitialFlowControlWindowForTest);
 
     connection_ =
         new StrictMock<MockConnection>(true, SupportedVersions(GetParam()));
-    session_.reset(new QuicServerSession(
-        config_, connection_, kInitialFlowControlWindowForTest, &owner_));
+    session_.reset(new QuicServerSession(config_, connection_, &owner_));
     session_->InitializeSession(crypto_config_);
     visitor_ = QuicConnectionPeer::GetVisitor(connection_);
   }

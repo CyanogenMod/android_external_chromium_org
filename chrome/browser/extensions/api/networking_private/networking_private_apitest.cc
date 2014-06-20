@@ -225,8 +225,6 @@ class ExtensionNetworkingPrivateApiTest
         "stub_cellular1",
         shill::kRoamingStateProperty,
         base::StringValue(shill::kRoamingStateHome));
-    DBusThreadManager::Get()->GetShillManagerClient()->GetTestInterface()->
-        SortManagerServices();
     content::RunAllPendingInMessageLoop();
   }
 
@@ -237,7 +235,7 @@ class ExtensionNetworkingPrivateApiTest
     const bool add_to_visible = true;
     // Tests need a known GUID, so use 'service_path'.
     service_test_->AddServiceWithIPConfig(
-        service_path, service_path /* guid */, name,
+        service_path, service_path + "_GUID" /* guid */, name,
         type, state, "" /* ipconfig_path */,
         add_to_visible);
   }
@@ -263,7 +261,6 @@ class ExtensionNetworkingPrivateApiTest
 
     device_test_->ClearDevices();
     service_test_->ClearServices();
-    profile_test->ClearProfiles();
 
     // Sends a notification about the added profile.
     profile_test->AddProfile(kUser1ProfilePath, userhash_);
@@ -327,7 +324,7 @@ class ExtensionNetworkingPrivateApiTest
     AddService("stub_wifi2", "wifi2_PSK", shill::kTypeWifi, shill::kStateIdle);
     service_test_->SetServiceProperty("stub_wifi2",
                                       shill::kGuidProperty,
-                                      base::StringValue("stub_wifi2"));
+                                      base::StringValue("stub_wifi2_GUID"));
     service_test_->SetServiceProperty("stub_wifi2",
                                       shill::kSecurityProperty,
                                       base::StringValue(shill::kSecurityPsk));
@@ -353,8 +350,6 @@ class ExtensionNetworkingPrivateApiTest
     profile_test->AddService(kUser1ProfilePath, "stub_wifi2");
 
     AddService("stub_vpn1", "vpn1", shill::kTypeVPN, shill::kStateOnline);
-
-    manager_test_->SortManagerServices();
 
     content::RunAllPendingInMessageLoop();
   }
@@ -427,11 +422,14 @@ IN_PROC_BROWSER_TEST_F(ExtensionNetworkingPrivateApiTest,
 #if defined(OS_CHROMEOS)
 // TODO(stevenjb/mef): Fix these on non-Chrome OS, crbug.com/371442.
 IN_PROC_BROWSER_TEST_F(ExtensionNetworkingPrivateApiTest, GetNetworks) {
-  // Remove "stub_wifi2" from the visible list.
-  manager_test_->RemoveManagerService("stub_wifi2", false);
+  // Hide stub_wifi2.
+  service_test_->SetServiceProperty("stub_wifi2",
+                                    shill::kVisibleProperty,
+                                    base::FundamentalValue(false));
   // Add a couple of additional networks that are not configured (saved).
   AddService("stub_wifi3", "wifi3", shill::kTypeWifi, shill::kStateIdle);
   AddService("stub_wifi4", "wifi4", shill::kTypeWifi, shill::kStateIdle);
+  content::RunAllPendingInMessageLoop();
   EXPECT_TRUE(RunNetworkingSubtest("getNetworks")) << message_;
 }
 
@@ -610,7 +608,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionNetworkingPrivateApiTest,
 
 IN_PROC_BROWSER_TEST_F(ExtensionNetworkingPrivateApiTest,
                        CaptivePortalNotification) {
-  detector()->SetDefaultNetworkPathForTesting("wifi");
+  detector()->SetDefaultNetworkPathForTesting("wifi", "wifi_GUID");
   NetworkPortalDetector::CaptivePortalState state;
   state.status = NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_ONLINE;
   detector()->SetDetectionResultsForTesting("wifi", state);

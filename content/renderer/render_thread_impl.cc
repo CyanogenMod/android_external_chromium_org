@@ -63,6 +63,8 @@
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/public/renderer/render_process_observer.h"
 #include "content/public/renderer/render_view_visitor.h"
+#include "content/renderer/compositor_bindings/web_external_bitmap_impl.h"
+#include "content/renderer/compositor_bindings/web_layer_impl.h"
 #include "content/renderer/devtools/devtools_agent_filter.h"
 #include "content/renderer/dom_storage/dom_storage_dispatcher.h"
 #include "content/renderer/dom_storage/webstoragearea_impl.h"
@@ -72,6 +74,7 @@
 #include "content/renderer/gpu/gpu_benchmarking_extension.h"
 #include "content/renderer/input/input_event_filter.h"
 #include "content/renderer/input/input_handler_manager.h"
+#include "content/renderer/media/aec_dump_message_filter.h"
 #include "content/renderer/media/audio_input_message_filter.h"
 #include "content/renderer/media/audio_message_filter.h"
 #include "content/renderer/media/audio_renderer_mixer_manager.h"
@@ -121,8 +124,6 @@
 #include "ui/base/layout.h"
 #include "ui/base/ui_base_switches.h"
 #include "v8/include/v8.h"
-#include "webkit/renderer/compositor_bindings/web_external_bitmap_impl.h"
-#include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
 #if defined(OS_ANDROID)
 #include <cpu-features.h>
@@ -143,7 +144,6 @@
 #include <objbase.h>
 #else
 // TODO(port)
-#include "base/memory/scoped_handle.h"
 #include "content/child/npapi/np_channel_base.h"
 #endif
 
@@ -197,7 +197,9 @@ class RenderViewZoomer : public RenderViewVisitor {
     GURL url(document.url());
     // Empty scheme works as wildcard that matches any scheme,
     if ((net::GetHostOrSpecFromURL(url) == host_) &&
-        (scheme_.empty() || scheme_ == url.scheme())) {
+        (scheme_.empty() || scheme_ == url.scheme()) &&
+        !static_cast<RenderViewImpl*>(render_view)
+             ->uses_temporary_zoom_level()) {
       webview->hidePopups();
       webview->setZoomLevel(zoom_level_);
     }
@@ -380,9 +382,13 @@ void RenderThreadImpl::Init() {
 
   webrtc_identity_service_.reset(new WebRTCIdentityService());
 
+  aec_dump_message_filter_ =
+      new AecDumpMessageFilter(GetIOMessageLoopProxy(),
+                               message_loop()->message_loop_proxy());
+  AddFilter(aec_dump_message_filter_.get());
+
   peer_connection_factory_.reset(new PeerConnectionDependencyFactory(
       p2p_socket_dispatcher_.get()));
-  AddObserver(peer_connection_factory_.get());
 #endif  // defined(ENABLE_WEBRTC)
 
   audio_input_message_filter_ =
@@ -412,8 +418,7 @@ void RenderThreadImpl::Init() {
 
   is_impl_side_painting_enabled_ =
       command_line.HasSwitch(switches::kEnableImplSidePainting);
-  webkit::WebLayerImpl::SetImplSidePaintingEnabled(
-      is_impl_side_painting_enabled_);
+  WebLayerImpl::SetImplSidePaintingEnabled(is_impl_side_painting_enabled_);
 
   is_zero_copy_enabled_ = command_line.HasSwitch(switches::kEnableZeroCopy) &&
                           !command_line.HasSwitch(switches::kDisableZeroCopy);
@@ -807,7 +812,7 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
   if (GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden())
     ScheduleIdleHandler(kLongIdleHandlerDelayMs);
 
-  webkit::SetSharedMemoryAllocationFunction(AllocateSharedMemoryFunction);
+  SetSharedMemoryAllocationFunction(AllocateSharedMemoryFunction);
 
   // Limit use of the scaled image cache to when deferred image decoding is
   // enabled.
@@ -1224,7 +1229,7 @@ bool RenderThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
     // is there a new non-windows message I should add here?
     IPC_MESSAGE_HANDLER(ViewMsg_New, OnCreateNewView)
     IPC_MESSAGE_HANDLER(ViewMsg_PurgePluginListCache, OnPurgePluginListCache)
-    IPC_MESSAGE_HANDLER(ViewMsg_NetworkStateChanged, OnNetworkStateChanged)
+    IPC_MESSAGE_HANDLER(ViewMsg_NetworkTypeChanged, OnNetworkTypeChanged)
     IPC_MESSAGE_HANDLER(ViewMsg_TempCrashWithData, OnTempCrashWithData)
     IPC_MESSAGE_HANDLER(WorkerProcessMsg_CreateWorker, OnCreateNewSharedWorker)
     IPC_MESSAGE_HANDLER(ViewMsg_TimezoneChange, OnUpdateTimezone)
@@ -1355,10 +1360,10 @@ void RenderThreadImpl::OnPurgePluginListCache(bool reload_pages) {
   FOR_EACH_OBSERVER(RenderProcessObserver, observers_, PluginListChanged());
 }
 
-void RenderThreadImpl::OnNetworkStateChanged(
-    bool online,
+void RenderThreadImpl::OnNetworkTypeChanged(
     net::NetworkChangeNotifier::ConnectionType type) {
   EnsureWebKitInitialized();
+  bool online = type != net::NetworkChangeNotifier::CONNECTION_NONE;
   WebNetworkStateNotifier::setOnLine(online);
   FOR_EACH_OBSERVER(
       RenderProcessObserver, observers_, NetworkStateChanged(online));

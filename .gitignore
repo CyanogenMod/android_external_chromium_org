@@ -66,7 +66,6 @@ v8.log
 /chrome/gles2_conform_test_run.xml
 /chrome/tab_capture_performance_tests_run.xml
 /chrome/telemetry_gpu_test_run.xml
-/chrome/app/address_input_strings.grdp
 /chrome/app/theme/default_100_percent/google_chrome
 /chrome/app/theme/default_200_percent/google_chrome
 /chrome/app/theme/google_chrome
@@ -82,7 +81,6 @@ v8.log
 /chrome/browser/resources/pdf/html_office
 /chrome/browser/resources/settings_internal/
 /chrome/browser/resources/software_rendering_list
-/chrome/browser/search_engines/prepopulated_engines.xml
 /chrome/browser/spellchecker/internal
 /chrome/browser_tests_run.xml
 /chrome/chrome_run.xml
@@ -136,6 +134,7 @@ v8.log
 /components/chrome_settings_proto_generated_compile.xml
 /components/cloud_policy_proto_generated_compile.xml
 /components/rappor.xml
+/components/search_engines/prepopulated_engines.xml
 /components/variations.xml
 /content/content_unittests_run.xml
 /content/test/data/gpu/generated/
@@ -220,6 +219,11 @@ v8.log
 /third_party/angle_dx11
 /third_party/aosp
 /third_party/apache-mime4j
+/third_party/apache-win32/bin/*.exe
+/third_party/apache-win32/bin/*.dll
+/third_party/apache-win32/bin/iconv/*.so
+/third_party/apache-win32/modules/*.so
+/third_party/apache-win32/modules/*.dll
 /third_party/asan
 /third_party/bidichecker
 /third_party/bison
@@ -233,6 +237,7 @@ v8.log
 /third_party/clang_format/script
 !/third_party/clang_format/bin/*/*.sha1
 /third_party/cld_2/src
+/third_party/colorama/src
 /third_party/cros
 /third_party/cros_system_api
 /third_party/cygwin

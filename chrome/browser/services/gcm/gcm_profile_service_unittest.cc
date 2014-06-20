@@ -18,13 +18,13 @@
 #include "components/gcm_driver/fake_gcm_app_handler.h"
 #include "components/gcm_driver/fake_gcm_client.h"
 #include "components/gcm_driver/fake_gcm_client_factory.h"
+#include "components/gcm_driver/gcm_client.h"
 #include "components/gcm_driver/gcm_client_factory.h"
 #include "components/gcm_driver/gcm_driver.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread_bundle.h"
-#include "google_apis/gcm/gcm_client.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace gcm {
@@ -58,6 +58,9 @@ class GCMProfileServiceTest : public testing::Test {
   virtual void TearDown() OVERRIDE;
 
   FakeGCMClient* GetGCMClient() const;
+
+  void CreateGCMProfileService();
+  void SignIn();
 
   void RegisterAndWaitForCompletion(const std::vector<std::string>& sender_ids);
   void UnregisterAndWaitForCompletion();
@@ -116,22 +119,26 @@ void GCMProfileServiceTest::SetUp() {
   builder.AddTestingFactory(SigninManagerFactory::GetInstance(),
                             FakeSigninManager::Build);
   profile_ = builder.Build();
+}
 
+void GCMProfileServiceTest::TearDown() {
+  gcm_profile_service_->driver()->RemoveAppHandler(kTestAppID);
+}
+
+void GCMProfileServiceTest::CreateGCMProfileService() {
   gcm_profile_service_ = static_cast<GCMProfileService*>(
       GCMProfileServiceFactory::GetInstance()->SetTestingFactoryAndUse(
           profile_.get(),
           &BuildGCMProfileService));
   gcm_profile_service_->driver()->AddAppHandler(
       kTestAppID, gcm_app_handler_.get());
+}
 
+void GCMProfileServiceTest::SignIn() {
   FakeSigninManager* signin_manager = static_cast<FakeSigninManager*>(
       SigninManagerFactory::GetInstance()->GetForProfile(profile_.get()));
   signin_manager->SignIn(kTestAccountID);
   base::RunLoop().RunUntilIdle();
-}
-
-void GCMProfileServiceTest::TearDown() {
-  gcm_profile_service_->driver()->RemoveAppHandler(kTestAppID);
 }
 
 void GCMProfileServiceTest::RegisterAndWaitForCompletion(
@@ -194,7 +201,27 @@ void GCMProfileServiceTest::SendCompleted(
   callback.Run();
 }
 
+TEST_F(GCMProfileServiceTest, CreateGCMProfileServiceBeforeSignIn) {
+  CreateGCMProfileService();
+  EXPECT_FALSE(driver()->IsStarted());
+
+  SignIn();
+  EXPECT_TRUE(driver()->IsStarted());
+}
+
+TEST_F(GCMProfileServiceTest, CreateGCMProfileServiceAfterSignIn) {
+  SignIn();
+  // Note that we can't check if GCM is started or not since the
+  // GCMProfileService that hosts the GCMDriver is not created yet.
+
+  CreateGCMProfileService();
+  EXPECT_TRUE(driver()->IsStarted());
+}
+
 TEST_F(GCMProfileServiceTest, RegisterAndUnregister) {
+  CreateGCMProfileService();
+  SignIn();
+
   std::vector<std::string> sender_ids;
   sender_ids.push_back("sender");
   RegisterAndWaitForCompletion(sender_ids);
@@ -209,6 +236,9 @@ TEST_F(GCMProfileServiceTest, RegisterAndUnregister) {
 }
 
 TEST_F(GCMProfileServiceTest, Send) {
+  CreateGCMProfileService();
+  SignIn();
+
   GCMClient::OutgoingMessage message;
   message.id = "1";
   message.data["key1"] = "value1";

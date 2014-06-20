@@ -526,7 +526,7 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
 
 void RunFaviconCallbackAsync(
     const favicon_base::FaviconResultsCallback& callback,
-    const std::vector<favicon_base::FaviconBitmapResult>* results) {
+    const std::vector<favicon_base::FaviconRawBitmapResult>* results) {
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE,
       base::Bind(&FaviconService::FaviconResultsCallbackRunner,
@@ -586,19 +586,19 @@ void ChromeWebUIControllerFactory::GetFaviconForURL(
     ExtensionWebUI::GetFaviconForURL(profile, url, callback);
 #else
     RunFaviconCallbackAsync(
-        callback, new std::vector<favicon_base::FaviconBitmapResult>());
+        callback, new std::vector<favicon_base::FaviconRawBitmapResult>());
 #endif
     return;
   }
 
-  std::vector<favicon_base::FaviconBitmapResult>* favicon_bitmap_results =
-      new std::vector<favicon_base::FaviconBitmapResult>();
+  std::vector<favicon_base::FaviconRawBitmapResult>* favicon_bitmap_results =
+      new std::vector<favicon_base::FaviconRawBitmapResult>();
 
   for (size_t i = 0; i < scale_factors.size(); ++i) {
     scoped_refptr<base::RefCountedMemory> bitmap(GetFaviconResourceBytes(
           url, scale_factors[i]));
     if (bitmap.get() && bitmap->size()) {
-      favicon_base::FaviconBitmapResult bitmap_result;
+      favicon_base::FaviconRawBitmapResult bitmap_result;
       bitmap_result.bitmap_data = bitmap;
       // Leave |bitmap_result|'s icon URL as the default of GURL().
       bitmap_result.icon_type = favicon_base::FAVICON;
@@ -606,7 +606,7 @@ void ChromeWebUIControllerFactory::GetFaviconForURL(
 
       // Assume that |bitmap| is |gfx::kFaviconSize| x |gfx::kFaviconSize|
       // DIP.
-      float scale = ui::GetImageScale(scale_factors[i]);
+      float scale = ui::GetScaleForScaleFactor(scale_factors[i]);
       int edge_pixel_size =
           static_cast<int>(gfx::kFaviconSize * scale + 0.5f);
       bitmap_result.pixel_size = gfx::Size(edge_pixel_size, edge_pixel_size);

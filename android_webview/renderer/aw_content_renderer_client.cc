@@ -9,6 +9,7 @@
 #include "android_webview/common/url_constants.h"
 #include "android_webview/renderer/aw_key_systems.h"
 #include "android_webview/renderer/aw_permission_client.h"
+#include "android_webview/renderer/aw_render_frame_ext.h"
 #include "android_webview/renderer/aw_render_view_ext.h"
 #include "android_webview/renderer/print_render_frame_observer.h"
 #include "android_webview/renderer/print_web_view_helper.h"
@@ -96,9 +97,9 @@ bool AwContentRendererClient::HandleNavigation(
   // For HTTP schemes, only top-level navigations can be overridden. Similarly,
   // WebView Classic lets app override only top level about:blank navigations.
   // So we filter out non-top about:blank navigations here.
-  if (frame->parent() && (gurl.SchemeIs(url::kHttpScheme) ||
-                          gurl.SchemeIs(url::kHttpsScheme) ||
-                          gurl.SchemeIs(content::kAboutScheme)))
+  if (frame->parent() &&
+      (gurl.SchemeIs(url::kHttpScheme) || gurl.SchemeIs(url::kHttpsScheme) ||
+       gurl.SchemeIs(url::kAboutScheme)))
     return false;
 
   // use NavigationInterception throttle to handle the call as that can
@@ -120,6 +121,7 @@ void AwContentRendererClient::RenderFrameCreated(
     content::RenderFrame* render_frame) {
   new AwPermissionClient(render_frame);
   new PrintRenderFrameObserver(render_frame);
+  new AwRenderFrameExt(render_frame);
 
   // TODO(jam): when the frame tree moves into content and parent() works at
   // RenderFrame construction, simplify this by just checking parent().

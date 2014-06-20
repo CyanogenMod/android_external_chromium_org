@@ -202,8 +202,6 @@ class AutofillInteractiveTest : public InProcessBrowserTest {
 
   // InProcessBrowserTest:
   virtual void SetUpOnMainThread() OVERRIDE {
-    TranslateService::SetUseInfobar(true);
-
     // Don't want Keychain coming up on Mac.
     test::DisableSystemServices(browser()->profile()->GetPrefs());
 
@@ -220,7 +218,7 @@ class AutofillInteractiveTest : public InProcessBrowserTest {
     content::WebContents* web_contents = GetWebContents();
     AutofillManager* autofill_manager = ContentAutofillDriver::FromWebContents(
                                             web_contents)->autofill_manager();
-    autofill_manager->delegate()->HideAutofillPopup();
+    autofill_manager->client()->HideAutofillPopup();
   }
 
   PersonalDataManager* GetPersonalDataManager() {
@@ -928,6 +926,10 @@ IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, AutofillAfterReload) {
 }
 
 IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, AutofillAfterTranslate) {
+  // TODO(port): Test corresponding bubble translate UX: http://crbug.com/383235
+  if (TranslateService::IsTranslateBubbleEnabled())
+    return;
+
   CreateTestProfile();
 
   GURL url(std::string(kDataURIPrefix) +

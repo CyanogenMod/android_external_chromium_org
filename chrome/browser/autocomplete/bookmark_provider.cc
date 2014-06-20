@@ -12,14 +12,17 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
 #include "chrome/browser/autocomplete/history_provider.h"
-#include "chrome/browser/autocomplete/url_prefix.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
+#include "components/autocomplete/url_prefix.h"
 #include "components/bookmarks/browser/bookmark_match.h"
 #include "components/bookmarks/browser/bookmark_model.h"
+#include "components/metrics/proto/omnibox_input_type.pb.h"
 #include "net/base/net_util.h"
+
+using bookmarks::BookmarkMatch;
 
 typedef std::vector<BookmarkMatch> BookmarkMatches;
 
@@ -45,7 +48,7 @@ void BookmarkProvider::Start(const AutocompleteInput& input,
   matches_.clear();
 
   if (input.text().empty() ||
-      (input.type() == AutocompleteInput::FORCED_QUERY))
+      (input.type() == metrics::OmniboxInputType::FORCED_QUERY))
     return;
 
   DoAutocomplete(input);

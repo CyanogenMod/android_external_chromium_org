@@ -574,3 +574,33 @@ USER32.dll!ReleaseDC
 *!base::AtExitManager::ProcessCallbacksNow
 *!base::AtExitManager::~AtExitManager
 *!base::TestSuite::~TestSuite
+
+UNADDRESSABLE ACCESS
+name=http://crbug.com/382784
+*!content::PepperMediaStreamAudioTrackHost::AudioSink::OnData
+*!content::MediaStreamAudioSinkOwner::OnData
+*!content::WebRtcLocalAudioTrack::Capture
+*!content::WebRtcAudioCapturer::Capture
+*!media::AudioInputDevice::AudioThreadCallback::Process
+*!media::AudioDeviceThread::Thread::Run
+*!media::AudioDeviceThread::Thread::ThreadMain
+
+HANDLE LEAK
+name=http://crbug.com/383408
+system call NtCreateEvent
+...
+*!base::internal::LockImpl::Lock
+*!mojo::system::MessagePipe::RemoveWaiter
+*!mojo::system::MessagePipeDispatcher::RemoveWaiterImplNoLock
+*!mojo::system::Dispatcher::RemoveWaiter
+*!mojo::system::Core::WaitManyInternal
+*!mojo::system::Core::WaitMany
+*!MojoWaitMany
+
+UNADDRESSABLE ACCESS
+name=IntentionalCrashPluginTest.plugin_client.cc
+npapi_test_plugin.dll!NP_Initialize
+...
+*!content::PluginLib::NP_Initialize
+*!content::PluginThread::PluginThread
+*!content::PluginMain

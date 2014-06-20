@@ -131,7 +131,7 @@ void IndexedDBTransaction::Abort() {
 }
 
 void IndexedDBTransaction::Abort(const IndexedDBDatabaseError& error) {
-  IDB_TRACE("IndexedDBTransaction::Abort");
+  IDB_TRACE1("IndexedDBTransaction::Abort", "txn.id", id());
   if (state_ == FINISHED)
     return;
 
@@ -209,7 +209,8 @@ void IndexedDBTransaction::Start() {
 
 class BlobWriteCallbackImpl : public IndexedDBBackingStore::BlobWriteCallback {
  public:
-  BlobWriteCallbackImpl(scoped_refptr<IndexedDBTransaction> transaction)
+  explicit BlobWriteCallbackImpl(
+      scoped_refptr<IndexedDBTransaction> transaction)
       : transaction_(transaction) {}
   virtual void Run(bool succeeded) OVERRIDE {
     transaction_->BlobWriteComplete(succeeded);
@@ -235,7 +236,7 @@ void IndexedDBTransaction::BlobWriteComplete(bool success) {
 }
 
 void IndexedDBTransaction::Commit() {
-  IDB_TRACE("IndexedDBTransaction::Commit");
+  IDB_TRACE1("IndexedDBTransaction::Commit", "txn.id", id());
 
   // In multiprocess ports, front-end may have requested a commit but
   // an abort has already been initiated asynchronously by the
@@ -255,9 +256,9 @@ void IndexedDBTransaction::Commit() {
 
   state_ = COMMITTING;
 
-  if (!used_)
+  if (!used_) {
     CommitPhaseTwo();
-  else {
+  } else {
     scoped_refptr<IndexedDBBackingStore::BlobWriteCallback> callback(
         new BlobWriteCallbackImpl(this));
     // CommitPhaseOne will call the callback synchronously if there are no blobs
@@ -318,7 +319,7 @@ void IndexedDBTransaction::CommitPhaseTwo() {
 }
 
 void IndexedDBTransaction::ProcessTaskQueue() {
-  IDB_TRACE("IndexedDBTransaction::ProcessTaskQueue");
+  IDB_TRACE1("IndexedDBTransaction::ProcessTaskQueue", "txn.id", id());
 
   // May have been aborted.
   if (!should_process_queue_)

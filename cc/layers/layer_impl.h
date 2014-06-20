@@ -359,15 +359,6 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   float contents_scale_y() const { return draw_properties_.contents_scale_y; }
   void SetContentsScale(float contents_scale_x, float contents_scale_y);
 
-  virtual void CalculateContentsScale(float ideal_contents_scale,
-                                      float device_scale_factor,
-                                      float page_scale_factor,
-                                      float maximum_animation_contents_scale,
-                                      bool animating_transform_to_screen,
-                                      float* contents_scale_x,
-                                      float* contents_scale_y,
-                                      gfx::Size* content_bounds);
-
   void SetScrollOffsetDelegate(ScrollOffsetDelegate* scroll_offset_delegate);
   bool IsExternalFlingActive() const;
 
@@ -514,8 +505,6 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   gfx::Rect LayerRectToContentRect(const gfx::RectF& layer_rect) const;
 
   virtual skia::RefPtr<SkPicture> GetPicture();
-
-  virtual bool AreVisibleResourcesReady() const;
 
   virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl);
   virtual void PushPropertiesTo(LayerImpl* layer);

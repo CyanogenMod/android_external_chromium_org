@@ -654,9 +654,6 @@ AutofillDialogControllerImpl::~AutofillDialogControllerImpl() {
 
 bool CountryFilter(const std::set<base::string16>& possible_values,
                    const std::string& country_code) {
-  if (!i18ninput::CountryIsFullySupported(country_code))
-    return false;
-
   if (!possible_values.empty() &&
       !possible_values.count(base::ASCIIToUTF16(country_code))) {
     return false;
@@ -667,11 +664,11 @@ bool CountryFilter(const std::set<base::string16>& possible_values,
 
 // static
 base::WeakPtr<AutofillDialogControllerImpl>
-    AutofillDialogControllerImpl::Create(
+AutofillDialogControllerImpl::Create(
     content::WebContents* contents,
     const FormData& form_structure,
     const GURL& source_url,
-    const AutofillManagerDelegate::ResultCallback& callback) {
+    const AutofillClient::ResultCallback& callback) {
   // AutofillDialogControllerImpl owns itself.
   AutofillDialogControllerImpl* autofill_dialog_controller =
       new AutofillDialogControllerImpl(contents,
@@ -711,7 +708,7 @@ base::WeakPtr<AutofillDialogController> AutofillDialogController::Create(
     content::WebContents* contents,
     const FormData& form_structure,
     const GURL& source_url,
-    const AutofillManagerDelegate::ResultCallback& callback) {
+    const AutofillClient::ResultCallback& callback) {
   return AutofillDialogControllerImpl::Create(contents,
                                               form_structure,
                                               source_url,
@@ -730,7 +727,7 @@ void AutofillDialogControllerImpl::Show() {
   // Fail if the author didn't specify autocomplete types.
   if (!has_types) {
     callback_.Run(
-        AutofillManagerDelegate::AutocompleteResultErrorDisabled,
+        AutofillClient::AutocompleteResultErrorDisabled,
         base::ASCIIToUTF16("Form is missing autocomplete attributes."),
         NULL);
     delete this;
@@ -749,11 +746,11 @@ void AutofillDialogControllerImpl::Show() {
   }
 
   if (!has_credit_card_field) {
-    callback_.Run(
-        AutofillManagerDelegate::AutocompleteResultErrorDisabled,
-        base::ASCIIToUTF16("Form is not a payment form (must contain "
-                           "some autocomplete=\"cc-*\" fields). "),
-        NULL);
+    callback_.Run(AutofillClient::AutocompleteResultErrorDisabled,
+                  base::ASCIIToUTF16(
+                      "Form is not a payment form (must contain "
+                      "some autocomplete=\"cc-*\" fields). "),
+                  NULL);
     delete this;
     return;
   }
@@ -2284,9 +2281,8 @@ bool AutofillDialogControllerImpl::OnCancel() {
   HidePopup();
   if (!is_submitting_)
     LogOnCancelMetrics();
-  callback_.Run(AutofillManagerDelegate::AutocompleteResultErrorCancel,
-                base::string16(),
-                NULL);
+  callback_.Run(
+      AutofillClient::AutocompleteResultErrorCancel, base::string16(), NULL);
   return true;
 }
 
@@ -2766,7 +2762,7 @@ AutofillDialogControllerImpl::AutofillDialogControllerImpl(
     content::WebContents* contents,
     const FormData& form_structure,
     const GURL& source_url,
-    const AutofillManagerDelegate::ResultCallback& callback)
+    const AutofillClient::ResultCallback& callback)
     : WebContentsObserver(contents),
       profile_(Profile::FromBrowserContext(contents->GetBrowserContext())),
       initial_user_state_(AutofillMetrics::DIALOG_USER_STATE_UNKNOWN),
@@ -3032,9 +3028,7 @@ void AutofillDialogControllerImpl::SuggestionsUpdated() {
       for (size_t i = 0; i < profiles.size(); ++i) {
         const AutofillProfile& profile = *profiles[i];
         if (!i18ninput::AddressHasCompleteAndVerifiedData(
-                profile, g_browser_process->GetApplicationLocale()) ||
-            !i18ninput::CountryIsFullySupported(
-                base::UTF16ToASCII(profile.GetRawInfo(ADDRESS_HOME_COUNTRY)))) {
+                profile, g_browser_process->GetApplicationLocale())) {
           continue;
         }
 
@@ -3895,7 +3889,7 @@ void AutofillDialogControllerImpl::DoFinishSubmit() {
   LogOnFinishSubmitMetrics();
 
   // Callback should be called as late as possible.
-  callback_.Run(AutofillManagerDelegate::AutocompleteResultSuccess,
+  callback_.Run(AutofillClient::AutocompleteResultSuccess,
                 base::string16(),
                 &form_structure_);
   data_was_passed_back_ = true;

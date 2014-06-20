@@ -180,9 +180,8 @@ void LocalDiscoveryUIHandler::HandleStart(const base::ListValue* args) {
     service_discovery_client_ = ServiceDiscoverySharedClient::GetInstance();
     privet_lister_.reset(
         new PrivetDeviceListerImpl(service_discovery_client_.get(), this));
-    privet_http_factory_ =
-        PrivetHTTPAsynchronousFactory::CreateInstance(
-            service_discovery_client_.get(), profile->GetRequestContext());
+    privet_http_factory_ = PrivetHTTPAsynchronousFactory::CreateInstance(
+        service_discovery_client_.get(), profile->GetRequestContext());
 
     SigninManagerBase* signin_manager =
         SigninManagerFactory::GetInstance()->GetForProfile(profile);
@@ -240,18 +239,20 @@ void LocalDiscoveryUIHandler::HandleRequestDeviceList(
   succeded_list_count_ = 0;
   cloud_devices_.clear();
 
-  cloud_print_printer_list_ = CreateApiFlow(
-      scoped_ptr<GCDApiFlow::Request>(new CloudPrintPrinterList(this)));
+  cloud_print_printer_list_ = CreateApiFlow();
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableCloudDevices)) {
-    cloud_device_list_ = CreateApiFlow(
-        scoped_ptr<GCDApiFlow::Request>(new CloudDeviceList(this)));
+    cloud_device_list_ = CreateApiFlow();
   }
 
-  if (cloud_print_printer_list_)
-    cloud_print_printer_list_->Start();
-  if (cloud_device_list_)
-    cloud_device_list_->Start();
+  if (cloud_print_printer_list_) {
+    cloud_print_printer_list_->Start(
+        make_scoped_ptr<GCDApiFlow::Request>(new CloudPrintPrinterList(this)));
+  }
+  if (cloud_device_list_) {
+    cloud_device_list_->Start(
+        make_scoped_ptr<GCDApiFlow::Request>(new CloudDeviceList(this)));
+  }
   CheckListingDone();
 }
 
@@ -286,7 +287,7 @@ void LocalDiscoveryUIHandler::HandleShowSyncUI(
 
 void LocalDiscoveryUIHandler::StartRegisterHTTP(
     scoped_ptr<PrivetHTTPClient> http_client) {
-  current_http_client_.swap(http_client);
+  current_http_client_ = PrivetV1HTTPClient::CreateDefault(http_client.Pass());
 
   std::string user = GetSyncAccount();
 
@@ -311,16 +312,16 @@ void LocalDiscoveryUIHandler::OnPrivetRegisterClaimToken(
     return;
   }
 
-  confirm_api_call_flow_ = CreateApiFlow(
-      scoped_ptr<GCDApiFlow::Request>(new PrivetConfirmApiCallFlow(
-          token,
-          base::Bind(&LocalDiscoveryUIHandler::OnConfirmDone,
-                     base::Unretained(this)))));
+  confirm_api_call_flow_ = CreateApiFlow();
   if (!confirm_api_call_flow_) {
     SendRegisterError();
     return;
   }
-  confirm_api_call_flow_->Start();
+  confirm_api_call_flow_->Start(
+      make_scoped_ptr<GCDApiFlow::Request>(new PrivetConfirmApiCallFlow(
+          token,
+          base::Bind(&LocalDiscoveryUIHandler::OnConfirmDone,
+                     base::Unretained(this)))));
 }
 
 void LocalDiscoveryUIHandler::OnPrivetRegisterError(
@@ -481,7 +482,7 @@ std::string LocalDiscoveryUIHandler::GetSyncAccount() {
 
 // TODO(noamsml): Create master object for registration flow.
 void LocalDiscoveryUIHandler::ResetCurrentRegistration() {
-  if (current_register_operation_.get()) {
+  if (current_register_operation_) {
     current_register_operation_->Cancel();
     current_register_operation_.reset();
   }
@@ -529,8 +530,7 @@ void LocalDiscoveryUIHandler::CheckListingDone() {
   cloud_device_list_.reset();
 }
 
-scoped_ptr<GCDApiFlow> LocalDiscoveryUIHandler::CreateApiFlow(
-    scoped_ptr<GCDApiFlow::Request> request) {
+scoped_ptr<GCDApiFlow> LocalDiscoveryUIHandler::CreateApiFlow() {
   Profile* profile = Profile::FromWebUI(web_ui());
   if (!profile)
     return scoped_ptr<GCDApiFlow>();
@@ -542,11 +542,9 @@ scoped_ptr<GCDApiFlow> LocalDiscoveryUIHandler::CreateApiFlow(
       SigninManagerFactory::GetInstance()->GetForProfile(profile);
   if (!signin_manager)
     return scoped_ptr<GCDApiFlow>();
-  return make_scoped_ptr(
-      new GCDApiFlow(profile->GetRequestContext(),
-                     token_service,
-                     signin_manager->GetAuthenticatedAccountId(),
-                     request.Pass()));
+  return GCDApiFlow::Create(profile->GetRequestContext(),
+                            token_service,
+                            signin_manager->GetAuthenticatedAccountId());
 }
 
 #if defined(CLOUD_PRINT_CONNECTOR_UI_AVAILABLE)

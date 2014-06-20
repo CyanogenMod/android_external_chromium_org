@@ -35,6 +35,7 @@
 #include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/demo_mode/demo_app_launcher.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
+#include "chrome/browser/chromeos/login/session/session_manager.h"
 #include "chrome/browser/chromeos/login/signin/auth_sync_observer.h"
 #include "chrome/browser/chromeos/login/signin/auth_sync_observer_factory.h"
 #include "chrome/browser/chromeos/login/ui/login_display.h"
@@ -51,12 +52,12 @@
 #include "chrome/browser/chromeos/profiles/multiprofiles_session_aborted_dialog.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/session_length_limiter.h"
-#include "chrome/browser/managed_mode/chromeos/managed_user_password_service_factory.h"
-#include "chrome/browser/managed_mode/chromeos/manager_password_service_factory.h"
 #include "chrome/browser/net/nss_context.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profiles_state.h"
+#include "chrome/browser/supervised_user/chromeos/manager_password_service_factory.h"
+#include "chrome/browser/supervised_user/chromeos/supervised_user_password_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/common/chrome_constants.h"
@@ -316,10 +317,11 @@ const UserList& UserManagerImpl::GetUsers() const {
 }
 
 UserList UserManagerImpl::GetUsersAdmittedForMultiProfile() const {
-  // Supervised users are not allowed to use multi profile.
+  // Supervised users are not allowed to use multi-profiles.
   if (logged_in_users_.size() == 1 &&
-      GetPrimaryUser()->GetType() != User::USER_TYPE_REGULAR)
+      GetPrimaryUser()->GetType() != User::USER_TYPE_REGULAR) {
     return UserList();
+  }
 
   UserList result;
   int num_users_allowed = 0;
@@ -336,8 +338,10 @@ UserList UserManagerImpl::GetUsersAdmittedForMultiProfile() const {
 
       // Users with a policy that prevents them being added to a session will be
       // shown in login UI but will be grayed out.
+      // Same applies to owner account (see http://crbug.com/385034).
       if (check == MultiProfileUserController::ALLOWED ||
-          check == MultiProfileUserController::NOT_ALLOWED_POLICY_FORBIDS) {
+          check == MultiProfileUserController::NOT_ALLOWED_POLICY_FORBIDS ||
+          check == MultiProfileUserController::NOT_ALLOWED_OWNER_AS_SECONDARY) {
         result.push_back(*it);
         if (check == MultiProfileUserController::ALLOWED)
           num_users_allowed++;
@@ -938,7 +942,7 @@ void UserManagerImpl::Observe(int type,
           !IsLoggedInAsGuest() &&
           !IsLoggedInAsKioskApp()) {
         if (IsLoggedInAsLocallyManagedUser())
-          ManagedUserPasswordServiceFactory::GetForProfile(profile);
+          SupervisedUserPasswordServiceFactory::GetForProfile(profile);
         if (IsLoggedInAsRegularUser())
           ManagerPasswordServiceFactory::GetForProfile(profile);
 
@@ -1200,7 +1204,7 @@ void UserManagerImpl::OnProfilePrepared(Profile* profile) {
     // users once it is fully multi-profile aware. http://crbug.com/238987
     // For now if we have other user pending sessions they'll override OAuth
     // session restore for previous users.
-    LoginUtils::Get()->RestoreAuthenticationSession(profile);
+    SessionManager::GetInstance()->RestoreAuthenticationSession(profile);
   }
 
   // Restore other user sessions if any.
@@ -1289,7 +1293,7 @@ void UserManagerImpl::EnsureUsersLoaded() {
 
 void UserManagerImpl::RetrieveTrustedDevicePolicies() {
   ephemeral_users_enabled_ = false;
-  owner_email_ = "";
+  owner_email_.clear();
 
   // Schedule a callback if device policy has not yet been verified.
   if (CrosSettingsProvider::TRUSTED != cros_settings_->PrepareTrustedValues(
@@ -1962,7 +1966,12 @@ void UserManagerImpl::UpdateLoginState() {
   else
     login_user_type = LoginState::LOGGED_IN_USER_REGULAR;
 
-  LoginState::Get()->SetLoggedInState(logged_in_state, login_user_type);
+  if (primary_user_) {
+    LoginState::Get()->SetLoggedInStateAndPrimaryUser(
+        logged_in_state, login_user_type, primary_user_->username_hash());
+  } else {
+    LoginState::Get()->SetLoggedInState(logged_in_state, login_user_type);
+  }
 }
 
 void UserManagerImpl::SetLRUUser(User* user) {
@@ -2033,7 +2042,6 @@ void UserManagerImpl::RestorePendingUserSessions() {
     user_context.SetIsUsingOAuth(false);
     // Will call OnProfilePrepared() once profile has been loaded.
     LoginUtils::Get()->PrepareProfile(user_context,
-                                      std::string(),  // display_email
                                       false,          // has_cookies
                                       true,           // has_active_session
                                       this);

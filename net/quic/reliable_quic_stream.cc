@@ -78,7 +78,7 @@ class ReliableQuicStream::ProxyAckNotifierDelegate
 
  protected:
   // Delegates are ref counted.
-  virtual ~ProxyAckNotifierDelegate() {
+  virtual ~ProxyAckNotifierDelegate() OVERRIDE {
   }
 
  private:
@@ -121,7 +121,10 @@ ReliableQuicStream::ReliableQuicStream(QuicStreamId id, QuicSession* session)
       write_side_closed_(false),
       fin_buffered_(false),
       fin_sent_(false),
+      fin_received_(false),
       rst_sent_(false),
+      rst_received_(false),
+      fec_policy_(FEC_PROTECT_OPTIONAL),
       is_server_(session_->is_server()),
       flow_controller_(
           session_->connection(),
@@ -130,8 +133,8 @@ ReliableQuicStream::ReliableQuicStream(QuicStreamId id, QuicSession* session)
           session_->config()->HasReceivedInitialFlowControlWindowBytes() ?
               session_->config()->ReceivedInitialFlowControlWindowBytes() :
               kDefaultFlowControlSendWindow,
-          session_->max_flow_control_receive_window_bytes(),
-          session_->max_flow_control_receive_window_bytes()),
+          session_->config()->GetInitialFlowControlWindowToSend(),
+          session_->config()->GetInitialFlowControlWindowToSend()),
       connection_flow_controller_(session_->flow_controller()) {
 }
 
@@ -148,6 +151,10 @@ bool ReliableQuicStream::OnStreamFrame(const QuicStreamFrame& frame) {
   if (frame.stream_id != id_) {
     LOG(ERROR) << "Error!";
     return false;
+  }
+
+  if (frame.fin) {
+    fin_received_ = true;
   }
 
   // This count include duplicate data received.
@@ -178,6 +185,7 @@ int ReliableQuicStream::num_duplicate_frames_received() const {
 }
 
 void ReliableQuicStream::OnStreamReset(const QuicRstStreamFrame& frame) {
+  rst_received_ = true;
   MaybeIncreaseHighestReceivedOffset(frame.byte_offset);
 
   stream_error_ = frame.error_code;
@@ -354,7 +362,8 @@ QuicConsumedData ReliableQuicStream::WritevData(
   data.AppendIovecAtMostBytes(iov, iov_count, write_length);
 
   QuicConsumedData consumed_data = session()->WritevData(
-      id(), data, stream_bytes_written_, fin, ack_notifier_delegate);
+      id(), data, stream_bytes_written_, fin, GetFecProtection(),
+      ack_notifier_delegate);
   stream_bytes_written_ += consumed_data.bytes_consumed;
 
   AddBytesSent(consumed_data.bytes_consumed);
@@ -373,6 +382,10 @@ QuicConsumedData ReliableQuicStream::WritevData(
     session_->MarkWriteBlocked(id(), EffectivePriority());
   }
   return consumed_data;
+}
+
+FecProtection ReliableQuicStream::GetFecProtection() {
+  return fec_policy_ == FEC_PROTECT_ALWAYS ? MUST_FEC_PROTECT : MAY_FEC_PROTECT;
 }
 
 void ReliableQuicStream::CloseReadSide() {

@@ -11,6 +11,7 @@
 
 namespace content {
 class BrowserContext;
+class WebContents;
 }
 
 namespace views {
@@ -31,8 +32,9 @@ class WebActivity : public Activity,
   virtual athena::ActivityViewModel* GetActivityViewModel() OVERRIDE;
 
   // ActivityViewModel:
+  virtual void Init() OVERRIDE;
   virtual SkColor GetRepresentativeColor() OVERRIDE;
-  virtual std::string GetTitle() OVERRIDE;
+  virtual base::string16 GetTitle() OVERRIDE;
   virtual views::View* GetContentsView() OVERRIDE;
 
   // content::WebContentsObserver:
@@ -43,6 +45,7 @@ class WebActivity : public Activity,
 
  private:
   content::BrowserContext* browser_context_;
+  content::WebContents* web_contents_;
   const GURL url_;
   views::WebView* web_view_;
 

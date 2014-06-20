@@ -169,8 +169,6 @@ DirectoryModel.prototype.updateSelectionAndPublishEvent_ =
 DirectoryModel.prototype.onWatcherDirectoryChanged_ = function() {
   // Clear the metadata cache since something in this directory has changed.
   var directoryEntry = this.getCurrentDirEntry();
-  if (!util.isFakeEntry(directoryEntry))
-    this.metadataCache_.clearRecursively(directoryEntry, '*');
 
   this.rescanSoon();
 };
@@ -497,6 +495,7 @@ DirectoryModel.prototype.replaceDirectoryContents_ = function(dirContents) {
     var leadIndex = this.fileListSelection_.leadIndex;
     var leadEntry = this.getLeadEntry_();
 
+    this.currentDirContents_.dispose();
     this.currentDirContents_ = dirContents;
     dirContents.replaceContextFileList();
 
@@ -962,7 +961,6 @@ DirectoryModel.prototype.search = function(query,
             this.currentFileListContext_,
             currentDirEntry);
         this.clearAndScan_(newDirContents,
-                           sequence,
                            callback);
       } else {
         callback();
@@ -981,7 +979,6 @@ DirectoryModel.prototype.search = function(query,
     this.onClearSearch_ = onClearSearch;
     this.addEventListener('scan-completed', this.onSearchCompleted_);
     this.clearAndScan_(newDirContents,
-                       sequence,
                        callback);
   }.bind(this, this.changeDirectorySequence_));
 };

@@ -21,7 +21,6 @@
         # Disable schema compiler to generate model extension API code.
         # Only register the extension functions in extension system.
         'non_compiled_schema_files': [
-          'adview.json',
           'browsing_data.json',
           'chromeos_info_private.json',
           'extension.json',
@@ -76,7 +75,9 @@
               'file_system_provider.idl',
               'file_system_provider_internal.idl',
               'font_settings.json',
+              'gcd_private.idl',
               'gcm.json',
+              'guest_view_internal.json',
               'hangouts_private.idl',
               'hid.idl',
               'history.json',
@@ -137,8 +138,6 @@
               'schema_files': [
                 # These should be eliminated. See crbug.com/305852.
                 'activity_log_private.json',
-                'app_window.idl',
-                'context_menus.json',
                 'events.json',
                 'file_system.idl',
                 'manifest_types.json',

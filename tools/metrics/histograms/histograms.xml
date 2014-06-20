@@ -682,7 +682,59 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Ash.TouchView.TouchViewActive" units="milliseconds">
+  <owner>girard@chromium.org</owner>
+  <summary>
+    The length of time that TouchView is active, for each activation.
+  </summary>
+</histogram>
+
+<histogram name="Ash.TouchView.TouchViewActivePercentage" units="%">
+  <owner>girard@chromium.org</owner>
+  <summary>The proportion of time spent in TouchView during a session.</summary>
+</histogram>
+
+<histogram name="Ash.TouchView.TouchViewActiveTotal" units="seconds">
+  <owner>girard@chromium.org</owner>
+  <summary>The total time that TouchView is active during a session.</summary>
+</histogram>
+
+<histogram name="Ash.TouchView.TouchViewInactive" units="milliseconds">
+  <owner>girard@chromium.org</owner>
+  <summary>The length of time between TouchView activations.</summary>
+</histogram>
+
+<histogram name="Ash.TouchView.TouchViewInactiveTotal" units="seconds">
+  <owner>girard@chromium.org</owner>
+  <summary>
+    The total time that TouchView is not active during a session.
+  </summary>
+</histogram>
+
+<histogram name="Ash.WindowCycleController.CycleTime" units="milliseconds">
+  <owner>flackr@chromium.org</owner>
+  <owner>kuscher@google.com</owner>
+  <summary>
+    The amount of time the Alt key is held after pressing Alt+Tab to begin
+    cycling through windows.
+  </summary>
+</histogram>
+
+<histogram name="Ash.WindowSelector.ArrowKeyPresses">
+  <owner>flackr@chromium.org</owner>
+  <owner>tdanderson@chromium.org</owner>
+  <summary>
+    The number of times the arrow keys are pressed in overview mode per session,
+    i.e. between bringing up overview mode and ending it. This is only measured
+    for the sessions that end by selecting a window with the enter key.
+  </summary>
+</histogram>
+
 <histogram name="Ash.WindowSelector.CycleTime" units="milliseconds">
+  <obsolete>
+    Deprecated as of 06/2014. No longer relevant since alt-tab switching was
+    separated from WindowSelector.
+  </obsolete>
   <owner>flackr@chromium.org</owner>
   <owner>kuscher@google.com</owner>
   <summary>
@@ -696,8 +748,24 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>kuscher@google.com</owner>
   <summary>
     The number of items (single windows or groups of windows such as panels) in
-    the window selection. Window selection occurs when a user begins alt-tabbing
-    or presses the overview button (F5 key).
+    the overview mode, present at the start of each session.
+  </summary>
+</histogram>
+
+<histogram name="Ash.WindowSelector.KeyPressesOverItemsRatio" units="%">
+  <owner>flackr@chromium.org</owner>
+  <owner>tdanderson@chromium.org</owner>
+  <summary>
+    The ratio between the arrow key presses and the number of overview items,
+    expressed as a percentage for a single session.
+  </summary>
+</histogram>
+
+<histogram name="Ash.WindowSelector.OverviewClosedItems">
+  <owner>flackr@chromium.org</owner>
+  <owner>tdanderson@chromium.org</owner>
+  <summary>
+    The number of items closed from the window overview for a single session.
   </summary>
 </histogram>
 
@@ -705,9 +773,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>flackr@chromium.org</owner>
   <owner>kuscher@google.com</owner>
   <summary>
-    The amount of time between uses of window selection to switch between
-    windows. Window selection is entered by alt-tabbing or by pressing the
-    overview button (F5 key).
+    The amount of time between uses of overview mode to switch between windows.
   </summary>
 </histogram>
 
@@ -715,11 +781,10 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>flackr@chromium.org</owner>
   <owner>kuscher@google.com</owner>
   <summary>
-    The amount of time spent in overview mode. Overview mode is engaged when
-    lingering on a window while alt-tabbing or by pressing the overview button.
-    The time is measured from the moment the windows begin animating to a
-    thumbnail size preview to when a window is selected or selection is
-    canceled.
+    The amount of time spent in overview mode. Overview mode is engaged by
+    pressing the overview button. The time is measured from the moment the
+    windows begin animating to a thumbnail size preview to when a window is
+    selected or selection is canceled.
   </summary>
 </histogram>
 
@@ -1764,6 +1829,13 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="BatteryStatus.StartAndroid" enum="BooleanSuccess">
+  <owner>timvolodine@chromium.org</owner>
+  <summary>
+    Whether the Battery Status API was successfully started up on Android.
+  </summary>
+</histogram>
+
 <histogram name="Blacklist.Blocked" enum="DllHash">
   <owner>csharp@chromium.org</owner>
   <summary>
@@ -1780,12 +1852,21 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Blacklist.RetryAttempts.Success">
+  <owner>csharp@chromium.org</owner>
+  <owner>krstnmnlsn@chromium.org</owner>
+  <summary>
+    Records the number of attempts needed before the blacklist is properly set
+    up. This is logged immediately after a successful setup.
+  </summary>
+</histogram>
+
 <histogram name="Blacklist.Setup" enum="BlacklistSetup">
   <owner>csharp@chromium.org</owner>
   <summary>
     Records the successes and failures when running the browser blacklist setup
     code. Used to determine if the blacklist is working as intended during
-    startup(since the blacklist runs before crash reporting is set up).  This
+    startup (since the blacklist runs before crash reporting is set up). This
     only occurs on Windows.
   </summary>
 </histogram>
@@ -4985,6 +5066,19 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="EasyUnlock.StartupTimeFromSuspend" units="milliseconds">
+  <owner>joshwoodward@google.com</owner>
+  <owner>tengs@chromium.org</owner>
+  <summary>
+    The time it takes after resuming from a suspended state (ie. opening the
+    Chromebook lid) to when a remote device is connected and a request is made.
+    Note that it is possible for the remote device not to be present when
+    resuming from suspend, and the device may be connected at a later time.
+    Therefore, large values for this metric may not be too meaningful due to
+    meddling users.
+  </summary>
+</histogram>
+
 <histogram name="EasyUnlock.UnlockEvent" enum="EasyUnlockUnlockEvent">
   <owner>joshwoodward@google.com</owner>
   <owner>tbarzic@chromium.org</owner>
@@ -5040,6 +5134,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>joaodasilva@chromium.org</owner>
   <summary>
     Events related to device enrollment on new installs of Chrome OS devices.
+  </summary>
+</histogram>
+
+<histogram name="Enterprise.IOSPolicies">
+  <owner>joaodasilva@chromium.org</owner>
+  <summary>
+    Number of policies loaded at startup on iOS, and when a change is detected
+    at runtime.
   </summary>
 </histogram>
 
@@ -6000,7 +6102,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 
 <histogram name="ExtensionInstallVerifier.ActualStatus"
     enum="ExtensionInstallVerifierStatus">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>asargent@chromium.org</owner>
   <summary>
     Logged during InstallVerifier::Init, to indicate the actual enforcement
     status used (usually determined by the ExtensionInstallVerifier field trial
@@ -6010,7 +6112,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 
 <histogram name="ExtensionInstallVerifier.ExperimentStatus"
     enum="ExtensionInstallVerifierStatus">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>asargent@chromium.org</owner>
   <summary>
     Logged during InstallVerifier::Init to indicate the enforcement status as
     determined by the ExtensionInstallVerifier field trial experiment.
@@ -6019,13 +6121,13 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 
 <histogram name="ExtensionInstallVerifier.GetSignatureResult"
     enum="ExtensionInstallVerifierGetSignatureResult">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>asargent@chromium.org</owner>
   <summary>The result of the verifier trying to get a new signature.</summary>
 </histogram>
 
 <histogram name="ExtensionInstallVerifier.InitResult"
     enum="ExtensionInstallVerifierInitResult">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>asargent@chromium.org</owner>
   <summary>
     The result of initialization for the extension install verifier.
   </summary>
@@ -6033,7 +6135,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 
 <histogram name="ExtensionInstallVerifier.MustRemainDisabled"
     enum="ExtensionInstallVerifierMustRemainDisabled">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>asargent@chromium.org</owner>
   <summary>
     The outcome for each call to InstallVerifier::MustRemainDisabled.
   </summary>
@@ -9351,6 +9453,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>The version of glibc used. (Linux only)</summary>
 </histogram>
 
+<histogram name="Linux.WindowManager" enum="LinuxWindowManagerName">
+  <owner>pkotwicz@chromium.org</owner>
+  <summary>The window manager used. (Linux only) Logged at startup.</summary>
+</histogram>
+
 <histogram name="LocalDiscovery.ClientRestartAttempts">
   <owner>noamsml@chromium.org</owner>
   <owner>vitalybuka@chromium.org</owner>
@@ -11502,6 +11609,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Rough estimate of the fastest round-trip-time seen on a 2G connection,
     before the NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11510,6 +11622,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Rough estimate of the fastest round-trip-time seen on a 3G connection,
     before the NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11518,6 +11635,24 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Rough estimate of the fastest round-trip-time seen on a 4G connection,
     before the NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change. This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
+  </summary>
+</histogram>
+
+<histogram name="NCN.CM.FastestRTTOnBluetooth" units="milliseconds">
+  <owner>pauljensen@chromium.org</owner>
+  <summary>
+    Rough estimate of the fastest round-trip-time seen on a Bluetooth
+    connection, before the NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11526,6 +11661,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Rough estimate of the fastest round-trip-time seen on an Ethernet
     connection, before the NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11535,6 +11675,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
     Rough estimate of the fastest round-trip-time seen while the
     NetworkChangeNotifier thought there was no network connection, before the
     NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11543,6 +11688,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Rough estimate of the fastest round-trip-time seen on an unknown connection
     type, before the NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11551,6 +11701,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Rough estimate of the fastest round-trip-time seen on a Wifi connection,
     before the NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11559,6 +11714,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Time between switching to a 2G connection and receiving the first network
     data.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11567,6 +11727,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Time between switching to a 3G connection and receiving the first network
     data.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11575,6 +11740,24 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Time between switching to a 4G connection and receiving the first network
     data.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
+  </summary>
+</histogram>
+
+<histogram name="NCN.CM.FirstReadOnBluetooth" units="milliseconds">
+  <owner>pauljensen@chromium.org</owner>
+  <summary>
+    Time between switching to a Bluetooth connection and receiving the first
+    network data.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11583,6 +11766,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Time between switching to an Ethernet connection and receiving the first
     network data.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11590,6 +11778,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>pauljensen@chromium.org</owner>
   <summary>
     Time between disconnecting and receiving the first network data.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11598,6 +11791,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Time between switching to an unknown connection type and receiving the first
     network data.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11606,6 +11804,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Time between switching to a Wifi connection and receiving the first network
     data.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11614,6 +11817,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     How much data was transfered while connected via a 2G connection, before the
     NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11622,6 +11830,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     How much data was transfered while connected via a 3G connection, before the
     NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11630,6 +11843,24 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     How much data was transfered while connected via a 4G connection, before the
     NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
+  </summary>
+</histogram>
+
+<histogram name="NCN.CM.KBTransferedOnBluetooth" units="KB">
+  <owner>pauljensen@chromium.org</owner>
+  <summary>
+    How much data was transfered while connected via a Bluetooth connection,
+    before the NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11638,6 +11869,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     How much data was transfered while connected via an Ethernet connection,
     before the NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11647,6 +11883,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
     How much data was transfered while the NetworkChangeNotifier thought there
     was no network connection, before the NetworkChangeNotifier detected a
     connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11655,6 +11896,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     How much data was transfered while connected via an unknown connection type,
     before the NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11663,6 +11909,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     How much data was transfered while connected via a Wifi connection, before
     the NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11671,6 +11922,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Rough estimate of peak throughput seen on a 2G connection, before the
     NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11679,6 +11935,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Rough estimate of peak throughput seen on a 3G connection, before the
     NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11687,6 +11948,24 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Rough estimate of peak throughput seen on a 4G connection, before the
     NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
+  </summary>
+</histogram>
+
+<histogram name="NCN.CM.PeakKbpsOnBluetooth" units="Kbps">
+  <owner>pauljensen@chromium.org</owner>
+  <summary>
+    Rough estimate of peak throughput seen on a Bluetooth connection, before the
+    NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11695,6 +11974,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Rough estimate of peak throughput seen on an Ethernet connection, before the
     NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11704,6 +11988,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
     Rough estimate of peak throughput seen while the NetworkChangeNotifier
     thought there was no network connection, before the NetworkChangeNotifier
     detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11712,6 +12001,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Rough estimate of peak throughput seen on an unknown connection type, before
     the NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11720,6 +12014,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Rough estimate of peak throughput seen on a Wifi connection, before the
     NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11728,6 +12027,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     How long was spent connected via a 2G connection, before the
     NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11736,6 +12040,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     How long was spent connected via a 3G connection, before the
     NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11744,6 +12053,24 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     How long was spent connected via a 4G connection, before the
     NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
+  </summary>
+</histogram>
+
+<histogram name="NCN.CM.TimeOnBluetooth" units="milliseconds">
+  <owner>pauljensen@chromium.org</owner>
+  <summary>
+    How long was spent connected via a Bluetooth connection, before the
+    NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11752,6 +12079,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     How long was spent connected via an Ethernet connection, before the
     NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11760,6 +12092,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     How long was spent disconnected, before the NetworkChangeNotifier detected a
     connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11768,6 +12105,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     How long was spent connected via an unknown connection type, before the
     NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -11776,6 +12118,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     How long was spent connected via a Wifi connection, before the
     NetworkChangeNotifier detected a connectivity change.
+
+    This metric is recorded when the NetworkChangeNotifier detects a
+    connectivity change.  This will miss data from users whose connection type
+    never changes and will be biased to users whose connection type changes
+    frequently.
   </summary>
 </histogram>
 
@@ -13531,6 +13878,18 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Net.MainFrameNoStore" enum="MainFrameStorable">
+  <owner>jkarlin@chromium.org</owner>
+  <summary>
+    The distribution of storable vs &quot;cache-control: no-store&quot;
+    main-frame resources.
+
+    Counted after response headers have completed and before the content has
+    completed. Redirects are counted. All HTTP cache transactions are counted,
+    not just those that require the network.
+  </summary>
+</histogram>
+
 <histogram name="Net.MTPR_GetProxyForUrl_Thread_Wait_Time" units="milliseconds">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <summary>
@@ -13887,6 +14246,15 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Net.ProxyAuthRequested.HasConnection">
+  <owner>rch@chromium.org</owner>
+  <summary>
+    When a PROXY_AUTH_REQUESTED error code is handled in
+    net::HttpStreamFactoryImpl::Job::RunLoop, this is true if connection_ has an
+    associated value.
+  </summary>
+</histogram>
+
 <histogram name="Net.ProxyPollConfigurationTime">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <summary>
@@ -14229,6 +14597,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>The reason a QUIC handshake failed.</summary>
 </histogram>
 
+<histogram
+    name="Net.QuicSession.ConnectionClose.NumOpenStreams.HandshakeTimedOut">
+  <owner>rch@chromium.org</owner>
+  <summary>
+    The number of streams open when a QUIC session crypto handshake timed out.
+  </summary>
+</histogram>
+
 <histogram name="Net.QuicSession.ConnectionClose.NumOpenStreams.TimedOut">
   <owner>rch@chromium.org</owner>
   <summary>The number of streams open when a QUIC session timed out.</summary>
@@ -14294,6 +14670,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>rch@chromium.org</owner>
   <summary>
     The value of the TCP cubic sender's CWND when the session is closed.
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicSession.HandshakeConfirmedTime" units="Milliseconds">
+  <owner>rch@chromium.org</owner>
+  <summary>
+    The elapsed time between starting the crypto handshake, and receiving
+    confirmation from the server.
   </summary>
 </histogram>
 
@@ -19011,6 +19395,15 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>Chrome OS stateful partition usage level.</summary>
 </histogram>
 
+<histogram name="Platform.Storage.Flash.BadBlocks">
+  <owner>dehrenberg@chromium.org</owner>
+  <summary>
+    The number of blocks marked bad in an MTD partition. This is relevant for
+    devices with raw NAND flash, such as Chromecast. Sampled once daily, if the
+    Chromecast is on for any significant length of time in the day.
+  </summary>
+</histogram>
+
 <histogram name="Platform.SwapInLong" units="pages/second">
   <owner>sonnyrao@chromium.org</owner>
   <summary>
@@ -19896,6 +20289,51 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Number of disk sectors per second written by Chrome OS in a short interval
     (currently 1s, sampled every 30s)
+  </summary>
+</histogram>
+
+<histogram name="Platform.ZramCompressedSize" units="MB">
+  <owner>semenzato@google.com</owner>
+  <summary>
+    Compressed swap size in megabytes.  This is the actual amount of RAM used by
+    the system to compress memory (i.e. after compression).  Snapshot every 30s.
+  </summary>
+</histogram>
+
+<histogram name="Platform.ZramCompressionRatioPercent" units="%">
+  <owner>semenzato@google.com</owner>
+  <summary>
+    The ratio of compressed memory (zram) before and after compression when the
+    denominator at least 1 MB. Ratios of interest are between 1 and 6 (typically
+    between 2 and 3), and we express them as a percentage (between 100% and
+    600%). The size of memory before compression includes zero-filled pages.
+    Values close to 100% indicate low compression effectiveness. Snapshot every
+    30s.
+  </summary>
+</histogram>
+
+<histogram name="Platform.ZramSavings" units="MB">
+  <owner>semenzato@google.com</owner>
+  <summary>
+    RAM savings in megabytes from using memory compression.  This is the
+    difference between the RAM size before and after compression.  Snapshot
+    every 30s.
+  </summary>
+</histogram>
+
+<histogram name="Platform.ZramZeroPages" units="pages">
+  <owner>semenzato@google.com</owner>
+  <summary>
+    Number of zero-filled pages that the OS is compressing.  A large number
+    suggests wasteful allocation.  Snapshot every 30s.
+  </summary>
+</histogram>
+
+<histogram name="Platform.ZramZeroRatioPercent" units="%">
+  <owner>semenzato@google.com</owner>
+  <summary>
+    The fraction of compressed memory that consists of zero-filled pages.
+    Snapshot every 30s.
   </summary>
 </histogram>
 
@@ -22008,6 +22446,16 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Profile.LockedProfilesDuration" units="minutes">
+  <owner>mlerman@chromium.org</owner>
+  <summary>
+    How long locked profiles have been locked for. This is logged each time any
+    profile is loaded. Note that this does not track the total time the profile
+    was locked, but rather the span from when the profile was locked to when the
+    measurement takes place.
+  </summary>
+</histogram>
+
 <histogram name="Profile.NetUserCount" enum="ProfileNetUserCount">
   <owner>bcwhite@chromium.org</owner>
   <owner>rlp@chromium.org</owner>
@@ -23195,6 +23643,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="SafeBrowsing.EnabledSettingChanged" enum="BooleanEnabled">
+  <owner>feng@chromium.org</owner>
+  <summary>
+    Records the user action that enables/disables safe browsing feature in the
+    Settings page on Android.
+  </summary>
+</histogram>
+
 <histogram name="SB.BloomFilter" units="milliseconds">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <summary>
@@ -23507,6 +23963,15 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <summary>Records results of SafeBrowsing download url check.</summary>
+</histogram>
+
+<histogram name="SB2.ExtendedReportingIsEnabled" enum="BooleanEnabled">
+  <owner>felt@chromium.org</owner>
+  <summary>
+    Whether the user has Safe Browsing extended reporting enabled at the time a
+    Safe Browsing warning was dismissed.  This tracks the fraction of all SB
+    interstitials that had reporting enabled.
+  </summary>
 </histogram>
 
 <histogram name="SB2.FailedUpdate">
@@ -23911,6 +24376,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="SB2.ReportingIsEnabled" enum="BooleanEnabled">
+  <obsolete>
+    Deprecated 06/2014.  Replaced by SB2.ExtendedReportingIsEnabled.
+  </obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <summary>
     Whether the user has Safe Browsing extended reporting enabled at the time a
@@ -23919,7 +24387,18 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="SB2.SetExtendedReportingEnabled" enum="BooleanEnabled">
+  <owner>felt@chromium.org</owner>
+  <summary>
+    Tracks changes to the Safe Browsing extended reporting opt-in which is shown
+    in the Safe Browsing interstitial.
+  </summary>
+</histogram>
+
 <histogram name="SB2.SetReportingEnabled" enum="BooleanEnabled">
+  <obsolete>
+    Deprecated 06/2014.  Replaced by SB2.SetExtendedReportingEnabled.
+  </obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <summary>
     Tracks changes to the Safe Browsing extended reporting opt-in which is shown
@@ -23994,6 +24473,22 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 <histogram name="SB2.UpdateSize" units="bytes">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <summary>The size of all the chunk URLs in an update response.</summary>
+</histogram>
+
+<histogram name="SB2.UpdateSizeBackground" units="bytes">
+  <owner>feng@chromium.org</owner>
+  <summary>
+    The size of all the chunk URLs in an update response when Chrome is in the
+    foreground.
+  </summary>
+</histogram>
+
+<histogram name="SB2.UpdateSizeForeground" units="bytes">
+  <owner>feng@chromium.org</owner>
+  <summary>
+    The size of all the chunk URLs in an update response when Chrome is in the
+    background.
+  </summary>
 </histogram>
 
 <histogram name="SB2.UpdateUrls">
@@ -24508,6 +25003,63 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="SBIRS.EnvCollectionTime" units="milliseconds">
+  <owner>grt@google.com</owner>
+  <summary>
+    The elapsed time to collect environmental data for a safe browsing incident
+    report.
+  </summary>
+</histogram>
+
+<histogram name="SBIRS.Incident" enum="IncidentType">
+  <owner>grt@google.com</owner>
+  <summary>
+    The type of incident given to the safe browsing incident reporting service.
+  </summary>
+</histogram>
+
+<histogram name="SBIRS.IncidentCount">
+  <owner>grt@google.com</owner>
+  <summary>
+    The number of incidents collated into a single safe browsing incident report
+    before pruning.
+  </summary>
+</histogram>
+
+<histogram name="SBIRS.InterIncidentTime" units="milliseconds">
+  <owner>grt@google.com</owner>
+  <summary>
+    The elapsed time between two successive incidents collated into the same
+    incident report by the safe browsing incident reporting service.
+  </summary>
+</histogram>
+
+<histogram name="SBIRS.PruneRatio" units="percentage">
+  <owner>grt@google.com</owner>
+  <summary>
+    The percentage of incidents pruned from a safe browsing incident report on
+    account of having been previously reported.
+  </summary>
+</histogram>
+
+<histogram name="SBIRS.ReportPayloadSize" units="bytes">
+  <owner>grt@google.com</owner>
+  <summary>The size, in bytes, of a safe browsing incident report.</summary>
+</histogram>
+
+<histogram name="SBIRS.ReportUploadTime" units="milliseconds">
+  <owner>grt@google.com</owner>
+  <summary>The elapsed time to upload a safe browsing incident report.</summary>
+</histogram>
+
+<histogram name="SBIRS.UploadResult" enum="UploadResult">
+  <owner>grt@google.com</owner>
+  <summary>
+    The result of a report upload by the safe browsing incident reporting
+    service.
+  </summary>
+</histogram>
+
 <histogram name="Search.ContextualSearchOptCard"
     enum="ContextualSearchOptCardAction">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
@@ -24602,6 +25154,29 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>nhiroki@chromium.org</owner>
   <summary>
     Records result of write operations in ServiceWorkerDatabase.
+  </summary>
+</histogram>
+
+<histogram name="ServiceWorker.DiskCache.InitResult">
+  <owner>nhiroki@chromium.org</owner>
+  <summary>
+    Records result of opening a disk cache for ServiceWorkerDiskCache.
+  </summary>
+</histogram>
+
+<histogram name="ServiceWorker.DiskCache.ReadResponseResult"
+    enum="ServiceWorkerReadResponseResult">
+  <owner>nhiroki@chromium.org</owner>
+  <summary>
+    Records result of reading response from ServiceWorkerDiskCache.
+  </summary>
+</histogram>
+
+<histogram name="ServiceWorker.DiskCache.WriteResponseResult"
+    enum="ServiceWorkerWriteResponseResult">
+  <owner>nhiroki@chromium.org</owner>
+  <summary>
+    Records result of writing response into ServiceWorkerDiskCache.
   </summary>
 </histogram>
 
@@ -24717,6 +25292,15 @@ Therefore, the affected-histogram name has to have at least one dot in it.
     master_preferences. True if serializing the generated Preferences file to
     disk was successful, false otherwise. Note: this event does not occur if
     there is no master_preferences file on first run.
+  </summary>
+</histogram>
+
+<histogram name="Settings.MigratedHashesFromLocalState" enum="BooleanMigrated">
+  <owner>csharp@chromium.org</owner>
+  <owner>gab@chromium.org</owner>
+  <summary>
+    Whether, while loading a profile, any preference hashes were migrated from
+    Local State to either Preferences or Protected Preferences.
   </summary>
 </histogram>
 
@@ -24878,6 +25462,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 
 <histogram name="Settings.TrackedPreferencesAlternateStoreVersion"
     enum="PrefHashStoreVersion">
+  <obsolete>
+    Deprecated 2014-06.
+  </obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <summary>
     The version of a PrefHashStore, reported once for each alternate
@@ -24888,6 +25475,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 
 <histogram name="Settings.TrackedPreferencesAlternateStoreVersionUpdatedFrom"
     enum="PrefHashStoreVersion">
+  <obsolete>
+    Deprecated 2014-06.
+  </obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <summary>
     The previous version of an alternate PrefHashStore (not associated to the
@@ -25001,6 +25591,15 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     The time it takes for the ShortcutsProvider to perform a query after the
     user has typed N characters.
+  </summary>
+</histogram>
+
+<histogram name="Signin" enum="SigninHelperFlow">
+  <owner>mlerman@chromium.org</owner>
+  <summary>
+    Tracks user interactions as they sign in through a flow. The suffix of the
+    histogram indicates what UI widget or application flow triggered the signin
+    flow.
   </summary>
 </histogram>
 
@@ -31824,6 +32423,24 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>The success or failure of web fonts CORS-enabled fetching.</summary>
 </histogram>
 
+<histogram name="WebFont.DiskCache.EntryAge.Evict" units="hours">
+  <owner>kenjibaheux@chromium.org</owner>
+  <owner>ksakamoto@chromium.org</owner>
+  <summary>
+    Recorded upon an eviction of a cache entry for a font in Google Fonts.
+    Records the age of the cache entry.
+  </summary>
+</histogram>
+
+<histogram name="WebFont.DiskCache.EntryAge.Hit" units="hours">
+  <owner>kenjibaheux@chromium.org</owner>
+  <owner>ksakamoto@chromium.org</owner>
+  <summary>
+    Recorded upon a cache hit for a font in Google Fonts. Records the age of the
+    cache entry.
+  </summary>
+</histogram>
+
 <histogram name="WebFont.DiskCache.ReuseCount.Evict">
   <owner>kenjibaheux@chromium.org</owner>
   <owner>ksakamoto@chromium.org</owner>
@@ -31842,7 +32459,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
-<histogram name="WebFont.DiskCacheHit.opensans" enum="WebFontDiskCacheHit">
+<histogram name="WebFont.DiskCacheHit" enum="WebFontDiskCacheHit">
   <owner>kenjibaheux@chromium.org</owner>
   <owner>ksakamoto@chromium.org</owner>
   <summary>
@@ -32007,6 +32624,15 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Whether a locallly installed font is actually used when @font-face had local
     sources.
+  </summary>
+</histogram>
+
+<histogram name="WebFont.PackageFormat" enum="WebFontPackageFormat">
+  <owner>kenjibaheux@chromium.org</owner>
+  <owner>ksakamoto@chromium.org</owner>
+  <summary>
+    The packaging format of the font file (e.g. SFNT, WOFF ...) upon a webfont
+    load.
   </summary>
 </histogram>
 
@@ -32436,7 +33062,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="WrenchMenu.RecentTabsSubMenu" enum="RecentTabsAction">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>rpop@chromium.org</owner>
   <summary>
     The number of times each tab or window restore option in the Recent Tabs
     submenu is clicked.
@@ -33043,6 +33669,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="48" label="Password, Unknown"/>
   <int value="49" label="Password, Match"/>
   <int value="50" label="Password, Mismatch"/>
+  <int value="51" label="Addr. line 3, Unknown"/>
+  <int value="52" label="Addr. line 3, Match"/>
+  <int value="53" label="Addr. line 3, Mismatch"/>
 </enum>
 
 <enum name="AutofillUserHappiness" type="int">
@@ -33078,6 +33707,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="2" label="Blacklist failed."/>
   <int value="3" label="Blacklist thunk setup failed."/>
   <int value="4" label="Blacklist interception failed."/>
+  <int value="5" label="Blacklist disabled."/>
 </enum>
 
 <enum name="BluetoothPairingMethod" type="int">
@@ -33355,9 +33985,12 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="12" label="Lion (10.7), 8-bit (?)"/>
   <int value="13" label="Mountain Lion (10.8), 8-bit (?)"/>
   <int value="14" label="Mavericks (10.9), 8-bit (?)"/>
-  <int value="15" label="FutureCat (&gt;10.9), 32-bit (?)"/>
-  <int value="16" label="FutureCat (&gt;10.9), 64-bit"/>
-  <int value="17" label="FutureCat (&gt;10.9), 8-bit (?)"/>
+  <int value="15" label="Yosemite (10.10), 32-bit (?)"/>
+  <int value="16" label="Yosemite (10.10), 64-bit"/>
+  <int value="17" label="Yosemite (10.10), 8-bit (?)"/>
+  <int value="18" label="FutureCat (&gt;10.10), 32-bit (?)"/>
+  <int value="19" label="FutureCat (&gt;10.10), 64-bit"/>
+  <int value="20" label="FutureCat (&gt;10.10), 8-bit (?)"/>
 </enum>
 
 <enum name="ChannelLayout" type="int">
@@ -33757,6 +34390,8 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="3" label="Bypass due to other error"/>
   <int value="4" label="Bypass due to missing via header"/>
   <int value="5" label="Bypass due to 4xx response"/>
+  <int value="6"
+      label="Bypass due to 407 response from proxy without a challenge"/>
 </enum>
 
 <enum name="DataReductionProxyProbeURLFetchResult" type="int">
@@ -34855,6 +35490,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="265" label="Enables the old web-based signin"/>
   <int value="266" label="Block developer mode"/>
   <int value="267" label="Show the apps shortcut in the bookmark bar"/>
+  <int value="268" label="Register protocol handlers"/>
 </enum>
 
 <enum name="EnterprisePolicyInvalidations" type="int">
@@ -35543,7 +36179,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="434" label="WALLPAPERPRIVATE_SETCUSTOMWALLPAPERLAYOUT"/>
   <int value="435" label="DOWNLOADSINTERNAL_DETERMINEFILENAME"/>
   <int value="436" label="SYNCFILESYSTEM_GETFILESYNCSTATUSES"/>
-  <int value="437" label="MEDIAGALLERIESPRIVATE_GETHANDLERS"/>
+  <int value="437" label="DELETED_MEDIAGALLERIESPRIVATE_GETHANDLERS"/>
   <int value="438" label="WALLPAPERPRIVATE_RESETWALLPAPER"/>
   <int value="439" label="DEVELOPERPRIVATE_PERMISSIONS"/>
   <int value="440" label="WEBSTOREPRIVATE_ENABLEAPPLAUNCHER"/>
@@ -35902,6 +36538,12 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="783" label="STREAMSPRIVATE_ABORT"/>
   <int value="784" label="MANAGEMENT_SETLAUNCHTYPE"/>
   <int value="785" label="MANAGEMENT_GENERATEAPPFORLINK"/>
+  <int value="786" label="GUESTVIEWINTERNAL_ALLOCATEINSTANCEID"/>
+  <int value="787" label="WEBVIEW_NAVIGATE"/>
+  <int value="788" label="INPUTMETHODPRIVATE_GETCURRENTINPUTMETHOD"/>
+  <int value="789" label="INPUTMETHODPRIVATE_SETCURRENTINPUTMETHOD"/>
+  <int value="790" label="INPUTMETHODPRIVATE_GETINPUTMETHODS"/>
+  <int value="791" label="IDENTITY_GETPROFILEUSERINFO"/>
 </enum>
 
 <enum name="ExtensionInstallCause" type="int">
@@ -35953,12 +36595,16 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="6" label="NO_SIGNATURE"/>
   <int value="7" label="NOT_VERIFIED_BUT_NOT_ENFORCING"/>
   <int value="8" label="NOT_VERIFIED"/>
+  <int value="9" label="NOT_VERIFIED_BUT_INSTALL_TIME_NEWER_THAN_SIGNATURE"/>
+  <int value="10" label="NOT_VERIFIED_BUT_UNKNOWN_ID"/>
+  <int value="11" label="COMPONENT"/>
 </enum>
 
 <enum name="ExtensionInstallVerifierStatus" type="int">
   <int value="0" label="NONE"/>
   <int value="1" label="BOOTSTRAP"/>
   <int value="2" label="ENFORCE"/>
+  <int value="3" label="ENFORCE_STRICT"/>
 </enum>
 
 <enum name="ExtensionLaunchType" type="int">
@@ -36630,6 +37276,45 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="423" label="MixedContentFont"/>
   <int value="424" label="PrefixedCursorZoomIn"/>
   <int value="425" label="PrefixedCursorZoomOut"/>
+  <int value="426" label="CSSCharsetRuleEncoding"/>
+  <int value="427" label="DocumentSetCharset"/>
+  <int value="428" label="DocumentDefaultCharset"/>
+  <int value="429" label="TextEncoderConstructor"/>
+  <int value="430" label="TextEncoderEncode"/>
+  <int value="431" label="TextDecoderConstructor"/>
+  <int value="432" label="TextDecoderDecode"/>
+  <int value="433" label="FocusInOutEvent"/>
+  <int value="434" label="MouseEventMovementX"/>
+  <int value="435" label="MouseEventMovementY"/>
+  <int value="436" label="MixedContentTextTrack"/>
+  <int value="437" label="MixedContentRaw"/>
+  <int value="438" label="MixedContentImage"/>
+  <int value="439" label="MixedContentMedia"/>
+  <int value="440" label="DocumentFonts"/>
+  <int value="441" label="MixedContentFormsSubmitted"/>
+  <int value="442" label="FormsSubmitted"/>
+  <int value="443" label="TextInputEventOnInput"/>
+  <int value="444" label="TextInputEventOnTextArea"/>
+  <int value="445" label="TextInputEventOnContentEditable"/>
+  <int value="446" label="TextInputEventOnNotNode"/>
+  <int value="447" label="WebkitBeforeTextInsertedOnInput"/>
+  <int value="448" label="WebkitBeforeTextInsertedOnTextArea"/>
+  <int value="449" label="WebkitBeforeTextInsertedOnContentEditable"/>
+  <int value="450" label="WebkitBeforeTextInsertedOnNotNode"/>
+  <int value="451" label="WebkitEditableContentChangedOnInput"/>
+  <int value="452" label="WebkitEditableContentChangedOnTextArea"/>
+  <int value="453" label="WebkitEditableContentChangedOnContentEditable"/>
+  <int value="454" label="WebkitEditableContentChangedOnNotNode"/>
+  <int value="455" label="HTMLImports"/>
+  <int value="456" label="ElementCreateShadowRoot"/>
+  <int value="457" label="DocumentRegisterElement"/>
+  <int value="458" label="EditingAppleInterchangeNewline"/>
+  <int value="459" label="EditingAppleConvertedSpace"/>
+  <int value="460" label="EditingApplePasteAsQuotation"/>
+  <int value="461" label="EditingAppleStyleSpanClass"/>
+  <int value="462" label="EditingAppleTabSpanClass"/>
+  <int value="463" label="HTMLImportsAsyncAttribute"/>
+  <int value="464" label="FontFaceSetReady"/>
 </enum>
 
 <enum name="FFmpegCodecs" type="int">
@@ -37730,6 +38415,10 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </int>
 </enum>
 
+<enum name="IncidentType" type="int">
+  <int value="1" label="TrackedPreference"/>
+</enum>
+
 <enum name="IndexedDatabaseMethods" type="int">
   <int value="0" label="CreateObjectStore()"/>
   <int value="1" label="DeleteObjectStore()"/>
@@ -38545,6 +39234,21 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="10" label="2.19"/>
 </enum>
 
+<enum name="LinuxWindowManagerName" type="int">
+  <int value="0" label="Other"/>
+  <int value="1" label="Blackbox"/>
+  <int value="2" label="Chrome OS"/>
+  <int value="3" label="Compiz"/>
+  <int value="4" label="Enlightment"/>
+  <int value="5" label="IceWM"/>
+  <int value="6" label="KWin"/>
+  <int value="7" label="Metacity"/>
+  <int value="8" label="Muffin"/>
+  <int value="9" label="Mutter"/>
+  <int value="10" label="Openbox"/>
+  <int value="11" label="Xfwm4"/>
+</enum>
+
 <enum name="LoadType" type="int">
   <int value="0" label="UNDEFINED_LOAD">Not yet initialized</int>
   <int value="1" label="RELOAD">User pressed reload</int>
@@ -38657,6 +39361,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="3" label="INCOGNITO_DEVELOPER">Incognito Dev</int>
   <int value="4" label="OWNER_DEVELOPER">Owner Dev</int>
   <int value="5" label="OTHER_DEVELOPER">Other Dev</int>
+</enum>
+
+<enum name="MainFrameStorable" type="int">
+  <int value="0" label="Storable"/>
+  <int value="1" label="cache-control: no-store"/>
 </enum>
 
 <enum name="ManagedUserPasswordChange" type="int">
@@ -41138,6 +41847,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="62905097" label="PPB_TrueTypeFont(Dev);0.1"/>
   <int value="79708274" label="PPB_TCPSocket;1.1"/>
   <int value="110360074" label="PPB_Var;1.1"/>
+  <int value="126651696" label="PPB_ContentDecryptor_Private;0.12"/>
   <int value="138418890" label="PPB_Memory(Dev);0.1"/>
   <int value="153443470" label="PPB_URLResponseInfo;1.0"/>
   <int value="153532707" label="PPB_Buffer(Dev);0.4"/>
@@ -41264,6 +41974,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="1981643755" label="PPB_FileMapping;0.1"/>
   <int value="1994108724" label="PPB_Flash_File_FileRef;2"/>
   <int value="1998274350" label="PPB_Font(Dev);0.6"/>
+  <int value="2001322203" label="PPB_Messaging;1.1"/>
   <int value="2003778556" label="PPB_MouseInputEvent;1.1"/>
   <int value="2005291722" label="PPB_NetAddress_Private;1.1"/>
   <int value="2012645499" label="PPB_Find(Dev);0.3"/>
@@ -41384,6 +42095,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="1" label="LOAD_FAILED"/>
   <int value="2" label="ENTRY_POINT_MISSING"/>
   <int value="3" label="INIT_FAILED"/>
+  <int value="4" label="FILE_MISSING"/>
 </enum>
 
 <enum name="PNaClOptionsOptLevelEnum" type="int">
@@ -42828,7 +43540,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </obsolete>
   <summary>
     Indices of most popular prepopulated search engines as defined in
-    chrome/browser/search_engines/search_engine_type.h.
+    components/search_engines/search_engine_type.h.
   </summary>
   <int value="0" label="OTHER"/>
   <int value="1" label="GOOGLE"/>
@@ -42914,6 +43626,18 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="4" label="Operation Error"/>
 </enum>
 
+<enum name="ServiceWorkerReadResponseResult" type="int">
+  <int value="0" label="OK"/>
+  <int value="1" label="Read headers error"/>
+  <int value="2" label="Read data error"/>
+</enum>
+
+<enum name="ServiceWorkerWriteResponseResult" type="int">
+  <int value="0" label="OK"/>
+  <int value="1" label="Write headers error"/>
+  <int value="2" label="Write data error"/>
+</enum>
+
 <enum name="SessionStartupPref" type="int">
   <int value="0" label="Open home page (unused)"/>
   <int value="1" label="Continue from last opened pages"/>
@@ -42989,6 +43713,35 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="11" label="Learn more close"/>
   <int value="12" label="Learn more escape"/>
   <int value="13" label="Learn more undo"/>
+</enum>
+
+<enum name="SigninHelperFlow" type="int">
+  <int value="0" label="Shown">The signin flow was shown to the user.</int>
+  <int value="1" label="Accepted">The user pressed accept to sign in.</int>
+  <int value="2" label="Rejected">The user pressed the reject to sign in.</int>
+  <int value="3" label="Dismissed">
+    The user pressed the X button to dismiss the signin promo.
+  </int>
+  <int value="4" label="Ignored">
+    The user completely ignored the signin promo. Either they navigated away, or
+    they used the page as is.
+  </int>
+  <int value="5" label="Learn More">
+    The user clicked on the learn more link in the signin promo.
+  </int>
+  <int value="6" label="Accept with Defaults">
+    The sync was started with default settings.
+  </int>
+  <int value="7" label="Accept with Advanced">
+    The sync was started with advanced settings.
+  </int>
+  <int value="8" label="Auto-Accept with Defaults">
+    The sync was started through auto-accept with default settings.
+  </int>
+  <int value="9" label="Auto-Accept with Advanced">
+    The sync was started through auto-accept with advanced settings.
+  </int>
+  <int value="10" label="Undo">The sync was aborted with an undo button.</int>
 </enum>
 
 <enum name="SimpleCache.EntryCreatedAndStream2Omitted" type="int">
@@ -44576,6 +45329,15 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="3" label="AUTO_UPDATES_ONLY"/>
 </enum>
 
+<enum name="UploadResult" type="int">
+  <int value="0" label="Success"/>
+  <int value="1" label="Suppressed">CSD Whitelist killswitch present</int>
+  <int value="2" label="InvalidRequest"/>
+  <int value="3" label="Cancelled"/>
+  <int value="4" label="RequestFailed"/>
+  <int value="5" label="InvalidResponse"/>
+</enum>
+
 <enum name="UrlResolutionResult" type="int">
   <int value="0" label="Absolute URL"/>
   <int value="1" label="Resolutions Differ"/>
@@ -44832,6 +45594,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="2" label="Previously in the cache"/>
 </enum>
 
+<enum name="WebFontPackageFormat" type="int">
+  <int value="0" label="Unknown / Decode error"/>
+  <int value="1" label="SFNT"/>
+  <int value="2" label="WOFF"/>
+  <int value="3" label="WOFF 2.0"/>
+  <int value="4" label="SVG"/>
+</enum>
+
 <enum name="WebFontUsageType" type="int">
   <int value="0" label="Styled, and used"/>
   <int value="1" label="Styled, but not used"/>
@@ -45041,6 +45811,27 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <affected-histogram name="Autofill.Quality.PredictedType.ByFieldType"/>
   <affected-histogram name="Autofill.Quality.ServerType"/>
   <affected-histogram name="Autofill.Quality.ServerType.ByFieldType"/>
+</histogram_suffixes>
+
+<histogram_suffixes name="BadBlockCounts" separator=".">
+  <suffix name="Backupsys" label="backupsys partition"/>
+  <suffix name="Bbt" label="bbt partition"/>
+  <suffix name="Block0" label="block0 partition"/>
+  <suffix name="Bootloader" label="bootloader partition"/>
+  <suffix name="Cache" label="cache partition"/>
+  <suffix name="Factory_store" label="factory_store partition"/>
+  <suffix name="Fts" label="fts partition"/>
+  <suffix name="Kernel" label="kernel partition"/>
+  <suffix name="Postbootloader" label="postbootloader partition"/>
+  <suffix name="Postbootloader-B" label="postbootloader-B partition"/>
+  <suffix name="Prebootloader" label="prebootloader partition"/>
+  <suffix name="Recovery" label="recovery partition"/>
+  <suffix name="Rootfs" label="rootfs partition"/>
+  <suffix name="Total" label="total partition"/>
+  <suffix name="TZ" label="TZ partition"/>
+  <suffix name="TZ-B" label="TZ-B partition"/>
+  <suffix name="Userdata" label="userdata partition"/>
+  <affected-histogram name="Platform.Storage.Flash.BadBlocks"/>
 </histogram_suffixes>
 
 <histogram_suffixes name="CacheListSize">
@@ -47360,7 +48151,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <suffix name="exp8" label="Likelihood threshold experiment 8."/>
   <suffix name="exp9" label="Likelihood threshold experiment 9."/>
   <suffix name="gws" label="GWS triggered prerender."/>
-  <suffix name="instant" label="Instant search prerender."/>
+  <suffix name="Instant" label="Instant search prerender."/>
   <suffix name="localpredictor" label="Local predictor triggered prerender."/>
   <suffix name="omnibox" label="Triggered from the omnibox."/>
   <suffix name="wash" label="Multiple sources could have triggered."/>
@@ -47829,6 +48620,23 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <affected-histogram name="Extensions.UpdateSource"/>
 </histogram_suffixes>
 
+<histogram_suffixes name="Signin.Actions" separator=".">
+  <suffix name="AllAccessPointActions"/>
+  <suffix name="AndroidAccountConsistencyFirstRunActions"
+      label="Signin Flow shown on android after Account Consistency flag was
+             enabled."/>
+  <suffix name="AppLauncherActions"/>
+  <suffix name="ExtensionInstallBubbleActions"/>
+  <suffix name="MenuActions"/>
+  <suffix name="NTPLinkActions"/>
+  <suffix name="OneClickActions"/>
+  <suffix name="SettingsActions"/>
+  <suffix name="StartPageActions"/>
+  <suffix name="UnknownActions"/>
+  <suffix name="WebstoreInstallActions"/>
+  <affected-histogram name="Signin"/>
+</histogram_suffixes>
+
 <histogram_suffixes name="Signin.Reconciler" separator=".">
   <suffix name="FirstRun"
       label="First execution of the reconciler after the profile was loaded
@@ -48006,6 +48814,8 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <suffix name="roboto" label="Roboto font"/>
   <suffix name="opensans" label="Open Sans font"/>
   <suffix name="others" label="Fonts other than Roboto and Open Sans"/>
+  <affected-histogram name="WebFont.DiskCache.EntryAge.Evict"/>
+  <affected-histogram name="WebFont.DiskCache.EntryAge.Hit"/>
   <affected-histogram name="WebFont.DiskCache.ReuseCount.Evict"/>
   <affected-histogram name="WebFont.DiskCache.ReuseCount.Hit"/>
   <affected-histogram name="WebFont.DiskCacheHit"/>

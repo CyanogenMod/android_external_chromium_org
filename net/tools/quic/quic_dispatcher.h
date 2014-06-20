@@ -17,7 +17,6 @@
 #include "net/base/linked_hash_map.h"
 #include "net/quic/quic_blocked_writer_interface.h"
 #include "net/quic/quic_protocol.h"
-#include "net/tools/epoll_server/epoll_server.h"
 #include "net/tools/quic/quic_server_session.h"
 #include "net/tools/quic/quic_time_wait_list_manager.h"
 
@@ -62,8 +61,7 @@ class QuicDispatcher : public QuicServerSessionVisitor {
   QuicDispatcher(const QuicConfig& config,
                  const QuicCryptoServerConfig& crypto_config,
                  const QuicVersionVector& supported_versions,
-                 EpollServer* epoll_server,
-                 uint32 initial_flow_control_window_bytes);
+                 EpollServer* epoll_server);
 
   virtual ~QuicDispatcher();
 
@@ -167,10 +165,6 @@ class QuicDispatcher : public QuicServerSessionVisitor {
 
   QuicPacketWriter* writer() { return writer_.get(); }
 
-  const uint32 initial_flow_control_window_bytes() const {
-    return initial_flow_control_window_bytes_;
-  }
-
  private:
   class QuicFramerVisitor;
   friend class net::tools::test::QuicDispatcherPeer;
@@ -228,7 +222,7 @@ class QuicDispatcher : public QuicServerSessionVisitor {
   // This is used to construct new QuicConnections when connection flow control
   // is disabled via flag.
   // TODO(rjshade): Remove this when
-  // FLAGS_enable_quic_connection_flow_control is removed.
+  // FLAGS_enable_quic_connection_flow_control_2 is removed.
   QuicVersionVector supported_versions_no_connection_flow_control_;
 
   // Information about the packet currently being handled.
@@ -238,10 +232,6 @@ class QuicDispatcher : public QuicServerSessionVisitor {
 
   QuicFramer framer_;
   scoped_ptr<QuicFramerVisitor> framer_visitor_;
-
-  // Initial flow control window size to advertize to peer on newly created
-  // connections.
-  const uint32 initial_flow_control_window_bytes_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicDispatcher);
 };

@@ -229,6 +229,7 @@
       'type': 'static_library',
       'dependencies': [
         '../components/components.gyp:keyed_service_content',
+        '../components/components.gyp:keyed_service_core',
         '../components/components.gyp:pref_registry',
         '../components/components.gyp:usb_service',
         '../content/content.gyp:content_browser',
@@ -387,6 +388,7 @@
         'browser/image_util.h',
         'browser/info_map.cc',
         'browser/info_map.h',
+        'browser/install_flag.h',
         'browser/file_highlighter.cc',
         'browser/file_highlighter.h',
         'browser/file_reader.cc',

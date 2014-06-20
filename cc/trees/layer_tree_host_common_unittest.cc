@@ -156,6 +156,52 @@ TEST_F(LayerTreeHostCommonTest, TransformsForNoOpLayer) {
                                   grand_child->screen_space_transform());
 }
 
+TEST_F(LayerTreeHostCommonTest, DoNotSkipLayersWithHandlers) {
+  scoped_refptr<Layer> parent = Layer::Create();
+  scoped_refptr<Layer> child = Layer::Create();
+  scoped_refptr<Layer> grand_child = Layer::Create();
+  parent->AddChild(child);
+  child->AddChild(grand_child);
+
+  scoped_ptr<FakeLayerTreeHost> host = FakeLayerTreeHost::Create();
+  host->SetRootLayer(parent);
+
+  gfx::Transform identity_matrix;
+  SetLayerPropertiesForTesting(parent.get(),
+                               identity_matrix,
+                               gfx::Point3F(),
+                               gfx::PointF(),
+                               gfx::Size(100, 100),
+                               true,
+                               false);
+  SetLayerPropertiesForTesting(child.get(),
+                               identity_matrix,
+                               gfx::Point3F(),
+                               gfx::PointF(10, 10),
+                               gfx::Size(100, 100),
+                               true,
+                               false);
+  // This would have previously caused us to skip our subtree, but this would be
+  // wrong; we need up-to-date draw properties to do hit testing on the layers
+  // with handlers.
+  child->SetOpacity(0.f);
+  SetLayerPropertiesForTesting(grand_child.get(),
+                               identity_matrix,
+                               gfx::Point3F(),
+                               gfx::PointF(10, 10),
+                               gfx::Size(100, 100),
+                               true,
+                               false);
+  grand_child->SetTouchEventHandlerRegion(gfx::Rect(0, 0, 100, 100));
+
+  ExecuteCalculateDrawProperties(parent.get());
+
+  // Check that we've computed draw properties for the subtree rooted at
+  // |child|.
+  EXPECT_FALSE(child->draw_transform().IsIdentity());
+  EXPECT_FALSE(grand_child->draw_transform().IsIdentity());
+}
+
 TEST_F(LayerTreeHostCommonTest, TransformsForSingleLayer) {
   gfx::Transform identity_matrix;
   scoped_refptr<Layer> layer = Layer::Create();
@@ -7820,37 +7866,12 @@ class AnimationScaleFactorTrackingLayerImpl : public LayerImpl {
 
   virtual ~AnimationScaleFactorTrackingLayerImpl() {}
 
-  virtual void CalculateContentsScale(float ideal_contents_scale,
-                                      float device_scale_factor,
-                                      float page_scale_factor,
-                                      float maximum_animation_contents_scale,
-                                      bool animating_transform_to_screen,
-                                      float* contents_scale_x,
-                                      float* contents_scale_y,
-                                      gfx::Size* content_bounds) OVERRIDE {
-    last_maximum_animation_contents_scale_ = maximum_animation_contents_scale;
-    LayerImpl::CalculateContentsScale(ideal_contents_scale,
-                                      device_scale_factor,
-                                      page_scale_factor,
-                                      maximum_animation_contents_scale,
-                                      animating_transform_to_screen,
-                                      contents_scale_x,
-                                      contents_scale_y,
-                                      content_bounds);
-  }
-
-  float last_maximum_animation_contents_scale() {
-    return last_maximum_animation_contents_scale_;
-  }
-
  private:
   explicit AnimationScaleFactorTrackingLayerImpl(LayerTreeImpl* tree_impl,
                                                  int id)
-      : LayerImpl(tree_impl, id), last_maximum_animation_contents_scale_(0.f) {
+      : LayerImpl(tree_impl, id) {
     SetDrawsContent(true);
   }
-
-  float last_maximum_animation_contents_scale_;
 };
 
 TEST_F(LayerTreeHostCommonTest, MaximumAnimationScaleFactor) {
@@ -7907,10 +7928,13 @@ TEST_F(LayerTreeHostCommonTest, MaximumAnimationScaleFactor) {
   ExecuteCalculateDrawProperties(grand_parent.get());
 
   // No layers have animations.
-  EXPECT_EQ(0.f, grand_parent->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, parent_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, child_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, grand_child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f,
+            grand_parent->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f,
+            parent_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f, child_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(
+      0.f, grand_child_raw->draw_properties().maximum_animation_contents_scale);
 
   TransformOperations translation;
   translation.AppendTranslate(1.f, 2.f, 3.f);
@@ -7919,10 +7943,13 @@ TEST_F(LayerTreeHostCommonTest, MaximumAnimationScaleFactor) {
       parent_raw, 1.0, TransformOperations(), translation);
 
   // No layers have scale-affecting animations.
-  EXPECT_EQ(0.f, grand_parent->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, parent_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, child_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, grand_child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f,
+            grand_parent->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f,
+            parent_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f, child_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(
+      0.f, grand_child_raw->draw_properties().maximum_animation_contents_scale);
 
   TransformOperations scale;
   scale.AppendScale(5.f, 4.f, 3.f);
@@ -7931,31 +7958,40 @@ TEST_F(LayerTreeHostCommonTest, MaximumAnimationScaleFactor) {
   ExecuteCalculateDrawProperties(grand_parent.get());
 
   // Only |child| has a scale-affecting animation.
-  EXPECT_EQ(0.f, grand_parent->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, parent_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(5.f, child_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(5.f, grand_child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f,
+            grand_parent->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f,
+            parent_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(5.f, child_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(
+      5.f, grand_child_raw->draw_properties().maximum_animation_contents_scale);
 
   AddAnimatedTransformToLayer(
       grand_parent.get(), 1.0, TransformOperations(), scale);
   ExecuteCalculateDrawProperties(grand_parent.get());
 
   // |grand_parent| and |child| have scale-affecting animations.
-  EXPECT_EQ(5.f, grand_parent->last_maximum_animation_contents_scale());
-  EXPECT_EQ(5.f, parent_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(5.f,
+            grand_parent->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(5.f,
+            parent_raw->draw_properties().maximum_animation_contents_scale);
   // We don't support combining animated scales from two nodes; 0.f means
   // that the maximum scale could not be computed.
-  EXPECT_EQ(0.f, child_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, grand_child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f, child_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(
+      0.f, grand_child_raw->draw_properties().maximum_animation_contents_scale);
 
   AddAnimatedTransformToLayer(parent_raw, 1.0, TransformOperations(), scale);
   ExecuteCalculateDrawProperties(grand_parent.get());
 
   // |grand_parent|, |parent|, and |child| have scale-affecting animations.
-  EXPECT_EQ(5.f, grand_parent->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, parent_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, child_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, grand_child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(5.f,
+            grand_parent->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f,
+            parent_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f, child_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(
+      0.f, grand_child_raw->draw_properties().maximum_animation_contents_scale);
 
   grand_parent->layer_animation_controller()->AbortAnimations(
       Animation::Transform);
@@ -7973,10 +8009,13 @@ TEST_F(LayerTreeHostCommonTest, MaximumAnimationScaleFactor) {
 
   // |child| has a scale-affecting animation but computing the maximum of this
   // animation is not supported.
-  EXPECT_EQ(0.f, grand_parent->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, parent_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, child_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, grand_child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f,
+            grand_parent->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f,
+            parent_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f, child_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(
+      0.f, grand_child_raw->draw_properties().maximum_animation_contents_scale);
 
   child_raw->layer_animation_controller()->AbortAnimations(
       Animation::Transform);
@@ -7990,10 +8029,15 @@ TEST_F(LayerTreeHostCommonTest, MaximumAnimationScaleFactor) {
 
   // |grand_parent| and |parent| each have scale 2.f. |parent| has a  scale
   // animation with maximum scale 5.f.
-  EXPECT_EQ(0.f, grand_parent->last_maximum_animation_contents_scale());
-  EXPECT_EQ(10.f, parent_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(10.f, child_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(10.f, grand_child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f,
+            grand_parent->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(10.f,
+            parent_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(10.f,
+            child_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(
+      10.f,
+      grand_child_raw->draw_properties().maximum_animation_contents_scale);
 
   gfx::Transform perspective_matrix;
   perspective_matrix.ApplyPerspectiveDepth(2.f);
@@ -8001,20 +8045,26 @@ TEST_F(LayerTreeHostCommonTest, MaximumAnimationScaleFactor) {
   ExecuteCalculateDrawProperties(grand_parent.get());
 
   // |child| has a transform that's neither a translation nor a scale.
-  EXPECT_EQ(0.f, grand_parent->last_maximum_animation_contents_scale());
-  EXPECT_EQ(10.f, parent_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, child_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, grand_child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f,
+            grand_parent->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(10.f,
+            parent_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f, child_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(
+      0.f, grand_child_raw->draw_properties().maximum_animation_contents_scale);
 
   parent_raw->SetTransform(perspective_matrix);
   ExecuteCalculateDrawProperties(grand_parent.get());
 
   // |parent| and |child| have transforms that are neither translations nor
   // scales.
-  EXPECT_EQ(0.f, grand_parent->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, parent_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, child_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, grand_child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f,
+            grand_parent->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f,
+            parent_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f, child_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(
+      0.f, grand_child_raw->draw_properties().maximum_animation_contents_scale);
 
   parent_raw->SetTransform(identity_matrix);
   child_raw->SetTransform(identity_matrix);
@@ -8023,10 +8073,13 @@ TEST_F(LayerTreeHostCommonTest, MaximumAnimationScaleFactor) {
   ExecuteCalculateDrawProperties(grand_parent.get());
 
   // |grand_parent| has a transform that's neither a translation nor a scale.
-  EXPECT_EQ(0.f, grand_parent->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, parent_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, child_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, grand_child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f,
+            grand_parent->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f,
+            parent_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f, child_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(
+      0.f, grand_child_raw->draw_properties().maximum_animation_contents_scale);
 }
 
 static int membership_id(LayerImpl* layer) {
@@ -8312,5 +8365,238 @@ TEST_F(LayerTreeHostCommonTest, RenderSurfaceLayerListMembership) {
   GatherDrawnLayers(render_surface_layer_list_impl(), &actual);
   EXPECT_EQ(expected, actual);
 }
+
+TEST_F(LayerTreeHostCommonTest, DrawPropertyScales) {
+  FakeImplProxy proxy;
+  TestSharedBitmapManager shared_bitmap_manager;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
+
+  scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl.active_tree(), 1);
+  LayerImpl* root_layer = root.get();
+  scoped_ptr<LayerImpl> child1 = LayerImpl::Create(host_impl.active_tree(), 2);
+  LayerImpl* child1_layer = child1.get();
+  scoped_ptr<LayerImpl> child2 = LayerImpl::Create(host_impl.active_tree(), 3);
+  LayerImpl* child2_layer = child2.get();
+
+  root->AddChild(child1.Pass());
+  root->AddChild(child2.Pass());
+
+  gfx::Transform identity_matrix, scale_transform_child1,
+      scale_transform_child2;
+  scale_transform_child1.Scale(2, 3);
+  scale_transform_child2.Scale(4, 5);
+
+  SetLayerPropertiesForTesting(root_layer,
+                               identity_matrix,
+                               gfx::Point3F(),
+                               gfx::PointF(),
+                               gfx::Size(1, 1),
+                               true,
+                               false);
+  SetLayerPropertiesForTesting(child1_layer,
+                               scale_transform_child1,
+                               gfx::Point3F(),
+                               gfx::PointF(),
+                               gfx::Size(),
+                               true,
+                               false);
+
+  child1_layer->SetMaskLayer(
+      LayerImpl::Create(host_impl.active_tree(), 4).Pass());
+
+  scoped_ptr<LayerImpl> replica_layer =
+      LayerImpl::Create(host_impl.active_tree(), 5);
+  replica_layer->SetMaskLayer(LayerImpl::Create(host_impl.active_tree(), 6));
+  child1_layer->SetReplicaLayer(replica_layer.Pass());
+
+  ExecuteCalculateDrawProperties(root_layer);
+
+  TransformOperations scale;
+  scale.AppendScale(5.f, 8.f, 3.f);
+
+  AddAnimatedTransformToLayer(child2_layer, 1.0, TransformOperations(), scale);
+  SetLayerPropertiesForTesting(child2_layer,
+                               scale_transform_child2,
+                               gfx::Point3F(),
+                               gfx::PointF(),
+                               gfx::Size(),
+                               true,
+                               false);
+
+  ExecuteCalculateDrawProperties(root_layer);
+
+  EXPECT_FLOAT_EQ(1.f, root_layer->draw_properties().ideal_contents_scale);
+  EXPECT_FLOAT_EQ(3.f, child1_layer->draw_properties().ideal_contents_scale);
+  EXPECT_FLOAT_EQ(
+      3.f, child1_layer->mask_layer()->draw_properties().ideal_contents_scale);
+  EXPECT_FLOAT_EQ(3.f,
+                  child1_layer->replica_layer()
+                      ->mask_layer()
+                      ->draw_properties()
+                      .ideal_contents_scale);
+  EXPECT_FLOAT_EQ(5.f, child2_layer->draw_properties().ideal_contents_scale);
+
+  EXPECT_FLOAT_EQ(
+      0.f, root_layer->draw_properties().maximum_animation_contents_scale);
+  EXPECT_FLOAT_EQ(
+      0.f, child1_layer->draw_properties().maximum_animation_contents_scale);
+  EXPECT_FLOAT_EQ(0.f,
+                  child1_layer->mask_layer()
+                      ->draw_properties()
+                      .maximum_animation_contents_scale);
+  EXPECT_FLOAT_EQ(0.f,
+                  child1_layer->replica_layer()
+                      ->mask_layer()
+                      ->draw_properties()
+                      .maximum_animation_contents_scale);
+  EXPECT_FLOAT_EQ(
+      8.f, child2_layer->draw_properties().maximum_animation_contents_scale);
+
+  EXPECT_FLOAT_EQ(1.f, root_layer->draw_properties().page_scale_factor);
+  EXPECT_FLOAT_EQ(1.f, child1_layer->draw_properties().page_scale_factor);
+  EXPECT_FLOAT_EQ(
+      1.f, child1_layer->mask_layer()->draw_properties().page_scale_factor);
+  EXPECT_FLOAT_EQ(1.f,
+                  child1_layer->replica_layer()
+                      ->mask_layer()
+                      ->draw_properties()
+                      .page_scale_factor);
+  EXPECT_FLOAT_EQ(1.f, child2_layer->draw_properties().page_scale_factor);
+
+  EXPECT_FLOAT_EQ(1.f, root_layer->draw_properties().device_scale_factor);
+  EXPECT_FLOAT_EQ(1.f, child1_layer->draw_properties().device_scale_factor);
+  EXPECT_FLOAT_EQ(
+      1.f, child1_layer->mask_layer()->draw_properties().device_scale_factor);
+  EXPECT_FLOAT_EQ(1.f,
+                  child1_layer->replica_layer()
+                      ->mask_layer()
+                      ->draw_properties()
+                      .device_scale_factor);
+  EXPECT_FLOAT_EQ(1.f, child2_layer->draw_properties().device_scale_factor);
+
+  // Changing page-scale would affect ideal_contents_scale and
+  // maximum_animation_contents_scale.
+
+  float page_scale_factor = 3.f;
+  float device_scale_factor = 1.0f;
+  std::vector<LayerImpl*> render_surface_layer_list;
+  gfx::Size device_viewport_size =
+      gfx::Size(root_layer->bounds().width() * device_scale_factor,
+                root_layer->bounds().height() * device_scale_factor);
+  LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
+      root_layer, device_viewport_size, &render_surface_layer_list);
+
+  inputs.page_scale_factor = page_scale_factor;
+  inputs.can_adjust_raster_scales = true;
+  inputs.page_scale_application_layer = root_layer;
+  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
+
+  EXPECT_FLOAT_EQ(1.f, root_layer->draw_properties().ideal_contents_scale);
+  EXPECT_FLOAT_EQ(9.f, child1_layer->draw_properties().ideal_contents_scale);
+  EXPECT_FLOAT_EQ(
+      9.f, child1_layer->mask_layer()->draw_properties().ideal_contents_scale);
+  EXPECT_FLOAT_EQ(9.f,
+                  child1_layer->replica_layer()
+                      ->mask_layer()
+                      ->draw_properties()
+                      .ideal_contents_scale);
+  EXPECT_FLOAT_EQ(15.f, child2_layer->draw_properties().ideal_contents_scale);
+
+  EXPECT_FLOAT_EQ(
+      0.f, root_layer->draw_properties().maximum_animation_contents_scale);
+  EXPECT_FLOAT_EQ(
+      0.f, child1_layer->draw_properties().maximum_animation_contents_scale);
+  EXPECT_FLOAT_EQ(0.f,
+                  child1_layer->mask_layer()
+                      ->draw_properties()
+                      .maximum_animation_contents_scale);
+  EXPECT_FLOAT_EQ(0.f,
+                  child1_layer->replica_layer()
+                      ->mask_layer()
+                      ->draw_properties()
+                      .maximum_animation_contents_scale);
+  EXPECT_FLOAT_EQ(
+      24.f, child2_layer->draw_properties().maximum_animation_contents_scale);
+
+  EXPECT_FLOAT_EQ(1.f, root_layer->draw_properties().page_scale_factor);
+  EXPECT_FLOAT_EQ(3.f, child1_layer->draw_properties().page_scale_factor);
+  EXPECT_FLOAT_EQ(
+      3.f, child1_layer->mask_layer()->draw_properties().page_scale_factor);
+  EXPECT_FLOAT_EQ(3.f,
+                  child1_layer->replica_layer()
+                      ->mask_layer()
+                      ->draw_properties()
+                      .page_scale_factor);
+  EXPECT_FLOAT_EQ(3.f, child2_layer->draw_properties().page_scale_factor);
+
+  EXPECT_FLOAT_EQ(1.f, root_layer->draw_properties().device_scale_factor);
+  EXPECT_FLOAT_EQ(1.f, child1_layer->draw_properties().device_scale_factor);
+  EXPECT_FLOAT_EQ(
+      1.f, child1_layer->mask_layer()->draw_properties().device_scale_factor);
+  EXPECT_FLOAT_EQ(1.f,
+                  child1_layer->replica_layer()
+                      ->mask_layer()
+                      ->draw_properties()
+                      .device_scale_factor);
+  EXPECT_FLOAT_EQ(1.f, child2_layer->draw_properties().device_scale_factor);
+
+  // Changing device-scale would affect ideal_contents_scale and
+  // maximum_animation_contents_scale.
+
+  device_scale_factor = 4.0f;
+  inputs.device_scale_factor = device_scale_factor;
+  inputs.can_adjust_raster_scales = true;
+  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
+
+  EXPECT_FLOAT_EQ(4.f, root_layer->draw_properties().ideal_contents_scale);
+  EXPECT_FLOAT_EQ(36.f, child1_layer->draw_properties().ideal_contents_scale);
+  EXPECT_FLOAT_EQ(
+      36.f, child1_layer->mask_layer()->draw_properties().ideal_contents_scale);
+  EXPECT_FLOAT_EQ(36.f,
+                  child1_layer->replica_layer()
+                      ->mask_layer()
+                      ->draw_properties()
+                      .ideal_contents_scale);
+  EXPECT_FLOAT_EQ(60.f, child2_layer->draw_properties().ideal_contents_scale);
+
+  EXPECT_FLOAT_EQ(
+      0.f, root_layer->draw_properties().maximum_animation_contents_scale);
+  EXPECT_FLOAT_EQ(
+      0.f, child1_layer->draw_properties().maximum_animation_contents_scale);
+  EXPECT_FLOAT_EQ(0.f,
+                  child1_layer->mask_layer()
+                      ->draw_properties()
+                      .maximum_animation_contents_scale);
+  EXPECT_FLOAT_EQ(0.f,
+                  child1_layer->replica_layer()
+                      ->mask_layer()
+                      ->draw_properties()
+                      .maximum_animation_contents_scale);
+  EXPECT_FLOAT_EQ(
+      96.f, child2_layer->draw_properties().maximum_animation_contents_scale);
+
+  EXPECT_FLOAT_EQ(1.f, root_layer->draw_properties().page_scale_factor);
+  EXPECT_FLOAT_EQ(3.f, child1_layer->draw_properties().page_scale_factor);
+  EXPECT_FLOAT_EQ(
+      3.f, child1_layer->mask_layer()->draw_properties().page_scale_factor);
+  EXPECT_FLOAT_EQ(3.f,
+                  child1_layer->replica_layer()
+                      ->mask_layer()
+                      ->draw_properties()
+                      .page_scale_factor);
+  EXPECT_FLOAT_EQ(3.f, child2_layer->draw_properties().page_scale_factor);
+
+  EXPECT_FLOAT_EQ(4.f, root_layer->draw_properties().device_scale_factor);
+  EXPECT_FLOAT_EQ(4.f, child1_layer->draw_properties().device_scale_factor);
+  EXPECT_FLOAT_EQ(
+      4.f, child1_layer->mask_layer()->draw_properties().device_scale_factor);
+  EXPECT_FLOAT_EQ(4.f,
+                  child1_layer->replica_layer()
+                      ->mask_layer()
+                      ->draw_properties()
+                      .device_scale_factor);
+  EXPECT_FLOAT_EQ(4.f, child2_layer->draw_properties().device_scale_factor);
+}
+
 }  // namespace
 }  // namespace cc

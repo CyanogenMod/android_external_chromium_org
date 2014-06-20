@@ -42,6 +42,7 @@ include $(LOCAL_PATH)/components/components_resources.target.linux-mips.mk
 include $(LOCAL_PATH)/components/components_strings.target.linux-mips.mk
 include $(LOCAL_PATH)/components/data_reduction_proxy_browser.target.linux-mips.mk
 include $(LOCAL_PATH)/components/data_reduction_proxy_common.target.linux-mips.mk
+include $(LOCAL_PATH)/components/keyed_service_core.target.linux-mips.mk
 include $(LOCAL_PATH)/components/navigation_interception.target.linux-mips.mk
 include $(LOCAL_PATH)/components/navigation_interception_jni_headers.target.linux-mips.mk
 include $(LOCAL_PATH)/components/os_crypt.target.linux-mips.mk
@@ -218,6 +219,7 @@ include $(LOCAL_PATH)/third_party/angle/src/translator_lib.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/ashmem/ashmem.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/brotli/brotli.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/expat/expat.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/fips181/fips181.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/freetype/ft2.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/harfbuzz-ng/harfbuzz-ng.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/iccjpeg/iccjpeg.target.linux-mips.mk
@@ -274,7 +276,6 @@ include $(LOCAL_PATH)/third_party/webrtc/common_video/common_video.target.linux-
 include $(LOCAL_PATH)/third_party/webrtc/modules/CNG.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/G711.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/G722.target.linux-mips.mk
-include $(LOCAL_PATH)/third_party/webrtc/modules/NetEq4.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/PCM16B.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/audio_coding_module.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/audio_conference_mixer.target.linux-mips.mk
@@ -286,6 +287,7 @@ include $(LOCAL_PATH)/third_party/webrtc/modules/iLBC.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/iSAC.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/iSACFix.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/media_file.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/webrtc/modules/neteq.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/paced_sender.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/remote_bitrate_estimator.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/remote_bitrate_estimator/rbe_components.target.linux-mips.mk
@@ -341,16 +343,14 @@ include $(LOCAL_PATH)/v8/tools/gyp/mksnapshot.host.linux-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8.target.linux-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_base.host.linux-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_base.target.linux-mips.mk
-include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.mipsel.host.linux-mips.mk
-include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.mipsel.target.linux-mips.mk
+include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.host.linux-mips.mk
+include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.target.linux-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_nosnapshot.host.linux-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_snapshot.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/child/overscroller_jni_headers.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/child/webkit_child.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/common/gpu/webkit_gpu.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/common/webkit_common.target.linux-mips.mk
-include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_bindings.target.linux-mips.mk
-include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_support.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/webkit_resources.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_browser.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_common.target.linux-mips.mk

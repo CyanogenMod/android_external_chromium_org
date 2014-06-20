@@ -287,10 +287,8 @@ void RenderWidgetHostViewGuest::SetIsLoading(bool is_loading) {
   platform_view_->SetIsLoading(is_loading);
 }
 
-void RenderWidgetHostViewGuest::TextInputTypeChanged(
-    ui::TextInputType type,
-    ui::TextInputMode input_mode,
-    bool can_compose_inline) {
+void RenderWidgetHostViewGuest::TextInputStateChanged(
+    const ViewHostMsg_TextInputState_Params& params) {
   if (!guest_)
     return;
 
@@ -298,7 +296,7 @@ void RenderWidgetHostViewGuest::TextInputTypeChanged(
   if (!rwhv)
     return;
   // Forward the information to embedding RWHV.
-  rwhv->TextInputTypeChanged(type, input_mode, can_compose_inline);
+  rwhv->TextInputStateChanged(params);
 }
 
 void RenderWidgetHostViewGuest::ImeCancelComposition() {
@@ -363,12 +361,6 @@ void RenderWidgetHostViewGuest::CopyFromCompositingSurface(
 
 void RenderWidgetHostViewGuest::SetBackgroundOpaque(bool opaque) {
   platform_view_->SetBackgroundOpaque(opaque);
-}
-
-void RenderWidgetHostViewGuest::SetScrollOffsetPinning(
-    bool is_pinned_to_left, bool is_pinned_to_right) {
-  platform_view_->SetScrollOffsetPinning(
-      is_pinned_to_left, is_pinned_to_right);
 }
 
 bool RenderWidgetHostViewGuest::LockMouse() {

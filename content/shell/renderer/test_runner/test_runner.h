@@ -15,6 +15,8 @@
 #include "content/shell/renderer/test_runner/web_test_runner.h"
 #include "v8/include/v8.h"
 
+class SkBitmap;
+
 namespace blink {
 class WebFrame;
 class WebNotificationPresenter;
@@ -416,6 +418,7 @@ class TestRunner : public WebTestRunner,
 
   // WebPermissionClient related.
   void SetImagesAllowed(bool allowed);
+  void SetMediaAllowed(bool allowed);
   void SetScriptsAllowed(bool allowed);
   void SetStorageAllowed(bool allowed);
   void SetPluginsAllowed(bool allowed);
@@ -530,8 +533,20 @@ class TestRunner : public WebTestRunner,
   void DisplayAsync();
   void DisplayAsyncThen(v8::Handle<v8::Function> callback);
 
+  // Similar to DisplayAsyncThen(), but pass parameters of the captured
+  // snapshot (width, height, snapshot) to the callback.
+  void CapturePixelsAsyncThen(v8::Handle<v8::Function> callback);
+
+  void SetMockPushClientSuccess(const std::string& end_point,
+                                const std::string& registration_id);
+  void SetMockPushClientError(const std::string& message);
+
   ///////////////////////////////////////////////////////////////////////////
   // Internal helpers
+
+  void CapturePixelsCallback(scoped_ptr<InvokeCallbackTask> task,
+                             const SkBitmap& snapshot);
+
   void CheckResponseMimeType();
   void CompleteNotifyDone();
 

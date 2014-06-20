@@ -53,6 +53,9 @@ enum CreateSessionFailure {
   CREATION_ERROR_MAX
 };
 
+// When a connection is idle for 30 seconds it will be closed.
+const int kIdleConnectionTimeoutSeconds = 30;
+
 // The initial receive window size for both streams and sessions.
 const int32 kInitialReceiveWindowSize = 10 * 1024 * 1024;  // 10MB
 
@@ -79,6 +82,19 @@ bool IsEcdsaSupported() {
 #endif
 
   return true;
+}
+
+QuicConfig InitializeQuicConfig(bool enable_pacing,
+                                bool enable_time_based_loss_detection) {
+  QuicConfig config;
+  config.SetDefaults();
+  config.EnablePacing(enable_pacing);
+  if (enable_time_based_loss_detection)
+    config.SetLossDetectionToSend(kTIME);
+  config.set_idle_connection_state_lifetime(
+      QuicTime::Delta::FromSeconds(kIdleConnectionTimeoutSeconds),
+      QuicTime::Delta::FromSeconds(kIdleConnectionTimeoutSeconds));
+  return config;
 }
 
 }  // namespace
@@ -453,19 +469,12 @@ QuicStreamFactory::QuicStreamFactory(
       random_generator_(random_generator),
       clock_(clock),
       max_packet_length_(max_packet_length),
+      config_(InitializeQuicConfig(enable_pacing,
+                                   enable_time_based_loss_detection)),
       supported_versions_(supported_versions),
       enable_port_selection_(enable_port_selection),
-      enable_pacing_(enable_pacing),
       port_seed_(random_generator_->RandUint64()),
       weak_factory_(this) {
-  config_.SetDefaults();
-  config_.EnablePacing(enable_pacing_);
-  if (enable_time_based_loss_detection)
-    config_.SetLossDetectionToSend(kTIME);
-  config_.set_idle_connection_state_lifetime(
-      QuicTime::Delta::FromSeconds(30),
-      QuicTime::Delta::FromSeconds(30));
-
   crypto_config_.SetDefaults();
   crypto_config_.set_user_agent_id(user_agent_id);
   crypto_config_.AddCanonicalSuffix(".c.youtube.com");
@@ -822,9 +831,10 @@ int QuicStreamFactory::CreateSession(
   InitializeCachedStateInCryptoConfig(server_id, server_info);
 
   QuicConfig config = config_;
-  config_.SetInitialCongestionWindowToSend(
+  config.SetInitialCongestionWindowToSend(
       server_id.is_https() ? kServerSecureInitialCongestionWindow
                            : kServerInecureInitialCongestionWindow);
+  config.SetInitialFlowControlWindowToSend(kInitialReceiveWindowSize);
   if (http_server_properties_) {
     const HttpServerProperties::NetworkStats* stats =
         http_server_properties_->GetServerNetworkStats(
@@ -837,7 +847,7 @@ int QuicStreamFactory::CreateSession(
   *session = new QuicClientSession(
       connection, socket.Pass(), writer.Pass(), this,
       quic_crypto_client_stream_factory_, server_info.Pass(), server_id,
-      config, kInitialReceiveWindowSize, &crypto_config_,
+      config, &crypto_config_,
       base::MessageLoop::current()->message_loop_proxy().get(),
       net_log.net_log());
   all_sessions_[*session] = server_id;  // owning pointer

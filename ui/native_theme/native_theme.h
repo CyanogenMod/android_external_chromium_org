@@ -42,6 +42,7 @@ class NATIVE_THEME_EXPORT NativeTheme {
  public:
   // The part to be painted / sized.
   enum Part {
+    kComboboxArrow,
     kCheckbox,
     kInnerSpinButton,
     kMenuList,
@@ -222,6 +223,15 @@ class NATIVE_THEME_EXPORT NativeTheme {
                      State state,
                      const gfx::Rect& rect,
                      const ExtraParams& extra) const = 0;
+
+  // Paint part during state transition, used for overlay scrollbar state
+  // transition animation.
+  virtual void PaintStateTransition(SkCanvas* canvas,
+                                    Part part,
+                                    State startState,
+                                    State endState,
+                                    double progress,
+                                    const gfx::Rect& rect) const { }
 
   // Supports theme specific colors.
   void SetScrollbarColors(unsigned inactive_color,

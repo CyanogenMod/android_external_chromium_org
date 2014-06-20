@@ -22,7 +22,7 @@ class GCDRegistrationTicketRequest : public GCDApiFlowRequest {
   explicit GCDRegistrationTicketRequest(const ResponseCallback& callback);
   virtual ~GCDRegistrationTicketRequest();
 
-  // GCDApiFlow::Request implementation.
+  // GCDApiFlowImpl::Request implementation.
   virtual void GetUploadData(std::string* upload_type,
                              std::string* upload_data) OVERRIDE;
   virtual net::URLFetcher::RequestType GetRequestType() OVERRIDE;

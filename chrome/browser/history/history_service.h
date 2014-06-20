@@ -25,11 +25,11 @@
 #include "chrome/browser/history/delete_directive_handler.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/history/typed_url_syncable_service.h"
-#include "chrome/browser/search_engines/template_url_id.h"
 #include "chrome/common/ref_counted_util.h"
 #include "components/favicon_base/favicon_callback.h"
 #include "components/history/core/browser/history_client.h"
 #include "components/keyed_service/core/keyed_service.h"
+#include "components/search_engines/template_url_id.h"
 #include "components/visitedlink/browser/visitedlink_delegate.h"
 #include "content/public/browser/download_manager_delegate.h"
 #include "content/public/browser/notification_observer.h"
@@ -127,13 +127,10 @@ class HistoryService : public CancelableRequestProvider,
   // still in memory (pending requests may be holding a reference to us).
   void Cleanup();
 
-  // RenderProcessHost pointers are used to scope page IDs (see AddPage). These
-  // objects must tell us when they are being destroyed so that we can clear
-  // out any cached data associated with that scope.
-  //
-  // The given pointer will not be dereferenced, it is only used for
-  // identification purposes, hence it is a void*.
-  void NotifyRenderProcessHostDestruction(const void* host);
+  // Context ids are used to scope page IDs (see AddPage). These contexts
+  // must tell us when they are being invalidated so that we can clear
+  // out any cached data associated with that context.
+  void ClearCachedDataForContextID(history::ContextID context_id);
 
   // Triggers the backend to load if it hasn't already, and then returns the
   // in-memory URL database. The returned pointer MAY BE NULL if the in-memory
@@ -174,14 +171,13 @@ class HistoryService : public CancelableRequestProvider,
   // Adds the given canonical URL to history with the given time as the visit
   // time. Referrer may be the empty string.
   //
-  // The supplied render process host is used to scope the given page ID. Page
-  // IDs are only unique inside a given render process, so we need that to
-  // differentiate them. This pointer should not be dereferenced by the history
-  // system.
+  // The supplied context id is used to scope the given page ID. Page IDs
+  // are only unique inside a given context, so we need that to differentiate
+  // them.
   //
-  // The scope/ids can be NULL if there is no meaningful tracking information
-  // that can be performed on the given URL. The 'page_id' should be the ID of
-  // the current session history entry in the given process.
+  // The context/page ids can be NULL if there is no meaningful tracking
+  // information that can be performed on the given URL. The 'page_id' should
+  // be the ID of the current session history entry in the given process.
   //
   // 'redirects' is an array of redirect URLs leading to this page, with the
   // page itself as the last item (so when there is no redirect, it will have
@@ -195,7 +191,7 @@ class HistoryService : public CancelableRequestProvider,
   // All "Add Page" functions will update the visited link database.
   void AddPage(const GURL& url,
                base::Time time,
-               const void* id_scope,
+               history::ContextID context_id,
                int32 page_id,
                const GURL& referrer,
                const history::RedirectList& redirects,
@@ -221,12 +217,9 @@ class HistoryService : public CancelableRequestProvider,
   void SetPageTitle(const GURL& url, const base::string16& title);
 
   // Updates the history database with a page's ending time stamp information.
-  // The page can be identified by the combination of the pointer to
-  // a RenderProcessHost, the page id and the url.
-  //
-  // The given pointer will not be dereferenced, it is only used for
-  // identification purposes, hence it is a void*.
-  void UpdateWithPageEndTime(const void* host,
+  // The page can be identified by the combination of the context id, the page
+  // id and the url.
+  void UpdateWithPageEndTime(history::ContextID context_id,
                              int32 page_id,
                              const GURL& url,
                              base::Time end_ts);
@@ -240,20 +233,20 @@ class HistoryService : public CancelableRequestProvider,
   // empty.
   //
   // If success is false, neither the row nor the vector will be valid.
-  typedef base::Callback<void(
-      Handle,
-      bool,  // Success flag, when false, nothing else is valid.
-      const history::URLRow*,
-      history::VisitVector*)> QueryURLCallback;
+  typedef base::Callback<
+      void(bool,  // Success flag, when false, nothing else is valid.
+           const history::URLRow&,
+           const history::VisitVector&)> QueryURLCallback;
 
   // Queries the basic information about the URL in the history database. If
   // the caller is interested in the visits (each time the URL is visited),
   // set |want_visits| to true. If these are not needed, the function will be
   // faster by setting this to false.
-  Handle QueryURL(const GURL& url,
-                  bool want_visits,
-                  CancelableRequestConsumerBase* consumer,
-                  const QueryURLCallback& callback);
+  base::CancelableTaskTracker::TaskId QueryURL(
+      const GURL& url,
+      bool want_visits,
+      const QueryURLCallback& callback,
+      base::CancelableTaskTracker* tracker);
 
   // Provides the result of a query. See QueryResults in history_types.h.
   // The common use will be to use QueryResults.Swap to suck the contents of
@@ -701,7 +694,7 @@ class HistoryService : public CancelableRequestProvider,
       const GURL& page_url,
       const std::vector<int>& icon_types,
       int minimum_size_in_pixels,
-      const favicon_base::FaviconRawCallback& callback,
+      const favicon_base::FaviconRawBitmapCallback& callback,
       base::CancelableTaskTracker* tracker);
 
   // Used by the FaviconService to get the favicon bitmap which most closely
@@ -780,10 +773,10 @@ class HistoryService : public CancelableRequestProvider,
   // deleting the 2x favicon bitmap if it is present in the history backend.
   // See HistoryBackend::ValidateSetFaviconsParams() for more details on the
   // criteria for |favicon_bitmap_data| to be valid.
-  void SetFavicons(
-      const GURL& page_url,
-      favicon_base::IconType icon_type,
-      const std::vector<favicon_base::FaviconBitmapData>& favicon_bitmap_data);
+  void SetFavicons(const GURL& page_url,
+                   favicon_base::IconType icon_type,
+                   const std::vector<favicon_base::FaviconRawBitmapData>&
+                       favicon_bitmap_data);
 
   // Used by the FaviconService to mark the favicon for the page as being out
   // of date.

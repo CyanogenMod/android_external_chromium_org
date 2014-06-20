@@ -5,11 +5,12 @@
 #ifndef UI_VIEWS_WIDGET_NATIVE_WIDGET_MAC_H_
 #define UI_VIEWS_WIDGET_NATIVE_WIDGET_MAC_H_
 
-#include "base/mac/scoped_nsobject.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/views/widget/native_widget_private.h"
 
 namespace views {
+
+class BridgedNativeWidget;
 
 class VIEWS_EXPORT NativeWidgetMac : public internal::NativeWidgetPrivate {
  public:
@@ -40,7 +41,7 @@ class VIEWS_EXPORT NativeWidgetMac : public internal::NativeWidgetPrivate {
   virtual void ReleaseCapture() OVERRIDE;
   virtual bool HasCapture() const OVERRIDE;
   virtual InputMethod* CreateInputMethod() OVERRIDE;
-  virtual InputMethodDelegate* GetInputMethodDelegate() OVERRIDE;
+  virtual internal::InputMethodDelegate* GetInputMethodDelegate() OVERRIDE;
   virtual ui::InputMethod* GetHostInputMethod() OVERRIDE;
   virtual void CenterWindow(const gfx::Size& size) OVERRIDE;
   virtual void GetWindowPlacement(
@@ -105,7 +106,7 @@ class VIEWS_EXPORT NativeWidgetMac : public internal::NativeWidgetPrivate {
 
  private:
   internal::NativeWidgetDelegate* delegate_;
-  base::scoped_nsobject<NSWindow> window_;
+  scoped_ptr<BridgedNativeWidget> bridge_;
 
   DISALLOW_COPY_AND_ASSIGN(NativeWidgetMac);
 };

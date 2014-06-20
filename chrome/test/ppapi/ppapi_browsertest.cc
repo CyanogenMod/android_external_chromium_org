@@ -62,10 +62,20 @@ using content::RenderViewHost;
 #if defined(DISABLE_NACL)
 
 #define TEST_PPAPI_NACL(test_name)
+#define TEST_PPAPI_NACL_NO_PNACL(test_name)
 #define TEST_PPAPI_NACL_DISALLOWED_SOCKETS(test_name)
 #define TEST_PPAPI_NACL_WITH_SSL_SERVER(test_name)
 
 #else
+
+// TODO(dmichael): Remove this macro, crbug.com/384539
+#define TEST_PPAPI_NACL_NO_PNACL(test_name) \
+    IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, test_name) { \
+      RunTestViaHTTP(STRIP_PREFIXES(test_name)); \
+    } \
+    IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(test_name)) { \
+      RunTestViaHTTP(STRIP_PREFIXES(test_name)); \
+    } \
 
 // NaCl based PPAPI tests
 #define TEST_PPAPI_NACL(test_name) \
@@ -964,9 +974,10 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, Flash) {
       LIST_TEST(WebSocket_UtilityGetProtocol) \
       LIST_TEST(WebSocket_UtilityTextSendReceive) \
       LIST_TEST(WebSocket_UtilityBinarySendReceive) \
-      LIST_TEST(WebSocket_UtilityBufferedAmount) \
   )
-
+// TODO(yhirano): List this test in SUBTESTS_2 once the close ordering
+// is implemented correctly.
+//    LIST_TEST(WebSocket_UtilityBufferedAmount)
 
 IN_PROC_BROWSER_TEST_F(PPAPITest, WebSocket1) {
   RUN_WEBSOCKET_SUBTESTS_1;
@@ -1117,8 +1128,8 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, View_PageHideShow) {
 
   // Make a new tab to cause the original one to hide, this should trigger the
   // next phase of the test.
-  chrome::NavigateParams params(browser(), GURL(content::kAboutBlankURL),
-                                content::PAGE_TRANSITION_LINK);
+  chrome::NavigateParams params(
+      browser(), GURL(url::kAboutBlankURL), content::PAGE_TRANSITION_LINK);
   params.disposition = NEW_FOREGROUND_TAB;
   ui_test_utils::NavigateToURL(&params);
 
@@ -1206,6 +1217,8 @@ TEST_PPAPI_NACL(NetworkProxy)
 
 TEST_PPAPI_NACL(TrueTypeFont)
 
+TEST_PPAPI_NACL(VideoDecoder)
+
 // VideoDestination doesn't work in content_browsertests.
 TEST_PPAPI_OUT_OF_PROCESS(VideoDestination)
 TEST_PPAPI_NACL(VideoDestination)
@@ -1216,6 +1229,10 @@ TEST_PPAPI_NACL(VideoSource)
 
 // Printing doesn't work in content_browsertests.
 TEST_PPAPI_OUT_OF_PROCESS(Printing)
+
+// TODO(dmichael): Make this work on PNaCl and remove the macro.
+//                 crbug.com/384539
+TEST_PPAPI_NACL_NO_PNACL(MessageHandler)
 
 TEST_PPAPI_NACL(MessageLoop_Basics)
 TEST_PPAPI_NACL(MessageLoop_Post)

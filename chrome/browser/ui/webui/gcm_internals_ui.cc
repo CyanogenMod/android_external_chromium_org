@@ -17,12 +17,12 @@
 #include "chrome/browser/services/gcm/gcm_profile_service.h"
 #include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
 #include "chrome/common/url_constants.h"
+#include "components/gcm_driver/gcm_client.h"
 #include "components/gcm_driver/gcm_driver.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_controller.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/browser/web_ui_message_handler.h"
-#include "google_apis/gcm/gcm_client.h"
 #include "grit/browser_resources.h"
 
 namespace {
@@ -156,7 +156,7 @@ void GcmInternalsUIMessageHandler::ReturnResults(
                           gcm::GCMProfileService::IsGCMEnabled(profile));
   if (profile_service) {
     device_info->SetString("signedInUserName",
-                           profile_service->driver()->SignedInUserName());
+                           profile_service->SignedInUserName());
     device_info->SetBoolean("gcmClientReady",
                             profile_service->driver()->IsGCMClientReady());
   }
@@ -229,7 +229,7 @@ void GcmInternalsUIMessageHandler::RequestAllInfo(
 
   if (!profile_service) {
     ReturnResults(profile, NULL, NULL);
-  } else if (profile_service->driver()->SignedInUserName().empty()) {
+  } else if (profile_service->SignedInUserName().empty()) {
     ReturnResults(profile, profile_service, NULL);
   } else {
     profile_service->driver()->GetGCMStatistics(
@@ -258,7 +258,7 @@ void GcmInternalsUIMessageHandler::SetRecording(const base::ListValue* args) {
     ReturnResults(profile, NULL, NULL);
     return;
   }
-  if (profile_service->driver()->SignedInUserName().empty()) {
+  if (profile_service->SignedInUserName().empty()) {
     ReturnResults(profile, profile_service, NULL);
     return;
   }

@@ -27,7 +27,6 @@
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/extensions/api/omnibox/omnibox_api.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
-#include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/google/google_url_tracker_factory.h"
 #include "chrome/browser/net/predictor.h"
 #include "chrome/browser/omnibox/omnibox_log.h"
@@ -42,6 +41,7 @@
 #include "chrome/browser/search_engines/template_url_prepopulate_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/omnibox/omnibox_current_page_delegate_impl.h"
@@ -54,9 +54,10 @@
 #include "chrome/browser/ui/search/search_tab_helper.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/google/core/browser/google_url_tracker.h"
+#include "components/url_fixer/url_fixer.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
@@ -332,8 +333,7 @@ bool OmniboxEditModel::UpdatePermanentText() {
 }
 
 GURL OmniboxEditModel::PermanentURL() {
-  return URLFixerUpper::FixupURL(base::UTF16ToUTF8(permanent_text_),
-                                 std::string());
+  return url_fixer::FixupURL(base::UTF16ToUTF8(permanent_text_), std::string());
 }
 
 void OmniboxEditModel::SetUserText(const base::string16& text) {
@@ -689,7 +689,8 @@ void OmniboxEditModel::AcceptInput(WindowOpenDisposition disposition,
   }
 
   const TemplateURL* template_url = match.GetTemplateURL(profile_, false);
-  if (template_url && template_url->url_ref().HasGoogleBaseURLs()) {
+  if (template_url && template_url->url_ref().HasGoogleBaseURLs(
+          UIThreadSearchTermsData(profile_))) {
     GoogleURLTracker* tracker =
         GoogleURLTrackerFactory::GetForProfile(profile_);
     if (tracker)
@@ -756,7 +757,8 @@ void OmniboxEditModel::OpenMatch(AutocompleteMatch match,
       -1,  // don't yet know tab ID; set later if appropriate
       ClassifyPage(),
       elapsed_time_since_user_first_modified_omnibox,
-      match.inline_autocompletion.length(),
+      match.allowed_to_be_default_match ? match.inline_autocompletion.length() :
+          base::string16::npos,
       elapsed_time_since_last_change_to_default_match,
       (!popup_model()->IsOpen() || !pasted_text.empty()) ?
           fake_single_entry_result : result());
@@ -808,8 +810,10 @@ void OmniboxEditModel::OpenMatch(AutocompleteMatch match,
       // in template_url.h.
     }
 
-    UMA_HISTOGRAM_ENUMERATION("Omnibox.SearchEngineType",
-        TemplateURLPrepopulateData::GetEngineType(*template_url),
+    UMA_HISTOGRAM_ENUMERATION(
+        "Omnibox.SearchEngineType",
+        TemplateURLPrepopulateData::GetEngineType(
+            *template_url, UIThreadSearchTermsData(profile_)),
         SEARCH_ENGINE_MAX);
   }
 
@@ -1438,7 +1442,7 @@ AutocompleteInput::PageClassification OmniboxEditModel::ClassifyPage() const {
   const std::string& url = gurl.spec();
   if (url == chrome::kChromeUINewTabURL)
     return AutocompleteInput::NTP;
-  if (url == content::kAboutBlankURL)
+  if (url == url::kAboutBlankURL)
     return AutocompleteInput::BLANK;
   if (url == profile()->GetPrefs()->GetString(prefs::kHomePage))
     return AutocompleteInput::HOME_PAGE;

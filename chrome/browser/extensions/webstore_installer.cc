@@ -399,12 +399,9 @@ void WebstoreInstaller::Observe(int type,
   }
 }
 
-void WebstoreInstaller::OnExtensionWillBeInstalled(
+void WebstoreInstaller::OnExtensionInstalled(
     content::BrowserContext* browser_context,
-    const Extension* extension,
-    bool is_update,
-    bool from_ephemeral,
-    const std::string& old_name) {
+    const Extension* extension) {
   CHECK(profile_->IsSameProfile(Profile::FromBrowserContext(browser_context)));
   if (pending_modules_.empty())
     return;
@@ -492,7 +489,9 @@ void WebstoreInstaller::OnDownloadStarted(
 }
 
 void WebstoreInstaller::OnDownloadUpdated(DownloadItem* download) {
-  CHECK_EQ(download_item_, download);
+  // DownloadItemImpl calls the observer for a completed item, ignore it.
+  if (download_item_ != download)
+    return;
 
   switch (download->GetState()) {
     case DownloadItem::CANCELLED:

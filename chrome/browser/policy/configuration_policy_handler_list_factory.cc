@@ -360,7 +360,7 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
     prefs::kVariationsRestrictParameter,
     base::Value::TYPE_STRING },
   { key::kSupervisedUserCreationEnabled,
-    prefs::kManagedUserCreationAllowed,
+    prefs::kSupervisedUserCreationAllowed,
     base::Value::TYPE_BOOLEAN },
   { key::kForceEphemeralProfiles,
     prefs::kForceEphemeralProfiles,
@@ -370,9 +370,11 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kFullscreenAllowed,
     prefs::kFullscreenAllowed,
     base::Value::TYPE_BOOLEAN },
+#if defined(ENABLE_EXTENSIONS)
   { key::kFullscreenAllowed,
     apps::prefs::kAppFullscreenAllowed,
     base::Value::TYPE_BOOLEAN },
+#endif  // defined(ENABLE_EXTENSIONS)
 #endif  // !defined(OS_MACOSX) && !defined(OS_IOS)
 
 #if defined(OS_CHROMEOS)
@@ -425,16 +427,16 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
     prefs::kShouldAlwaysShowAccessibilityMenu,
     base::Value::TYPE_BOOLEAN },
   { key::kLargeCursorEnabled,
-    prefs::kLargeCursorEnabled,
+    prefs::kAccessibilityLargeCursorEnabled,
     base::Value::TYPE_BOOLEAN },
   { key::kSpokenFeedbackEnabled,
-    prefs::kSpokenFeedbackEnabled,
+    prefs::kAccessibilitySpokenFeedbackEnabled,
     base::Value::TYPE_BOOLEAN },
   { key::kHighContrastEnabled,
-    prefs::kHighContrastEnabled,
+    prefs::kAccessibilityHighContrastEnabled,
     base::Value::TYPE_BOOLEAN },
   { key::kVirtualKeyboardEnabled,
-    prefs::kVirtualKeyboardEnabled,
+    prefs::kAccessibilityVirtualKeyboardEnabled,
     base::Value::TYPE_BOOLEAN },
   { key::kDeviceLoginScreenDefaultLargeCursorEnabled,
     NULL,
@@ -482,15 +484,29 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
 };
 
 #if !defined(OS_IOS)
-// Mapping from extension type names to Manifest::Type.
-StringToIntEnumListPolicyHandler::MappingEntry kExtensionAllowedTypesMap[] = {
-  { "extension", extensions::Manifest::TYPE_EXTENSION },
-  { "theme", extensions::Manifest::TYPE_THEME },
-  { "user_script", extensions::Manifest::TYPE_USER_SCRIPT },
-  { "hosted_app", extensions::Manifest::TYPE_HOSTED_APP },
-  { "legacy_packaged_app", extensions::Manifest::TYPE_LEGACY_PACKAGED_APP },
-  { "platform_app", extensions::Manifest::TYPE_PLATFORM_APP },
-};
+void GetExtensionAllowedTypesMap(
+    ScopedVector<StringMappingListPolicyHandler::MappingEntry>* result) {
+  // Mapping from extension type names to Manifest::Type.
+  result->push_back(new StringMappingListPolicyHandler::MappingEntry(
+      "extension", scoped_ptr<base::Value>(base::Value::CreateIntegerValue(
+          extensions::Manifest::TYPE_EXTENSION))));
+  result->push_back(new StringMappingListPolicyHandler::MappingEntry(
+      "theme", scoped_ptr<base::Value>(base::Value::CreateIntegerValue(
+          extensions::Manifest::TYPE_THEME))));
+  result->push_back(new StringMappingListPolicyHandler::MappingEntry(
+      "user_script", scoped_ptr<base::Value>(base::Value::CreateIntegerValue(
+          extensions::Manifest::TYPE_USER_SCRIPT))));
+  result->push_back(new StringMappingListPolicyHandler::MappingEntry(
+      "hosted_app", scoped_ptr<base::Value>(base::Value::CreateIntegerValue(
+          extensions::Manifest::TYPE_HOSTED_APP))));
+  result->push_back(new StringMappingListPolicyHandler::MappingEntry(
+      "legacy_packaged_app", scoped_ptr<base::Value>(
+          base::Value::CreateIntegerValue(
+              extensions::Manifest::TYPE_LEGACY_PACKAGED_APP))));
+  result->push_back(new StringMappingListPolicyHandler::MappingEntry(
+      "platform_app", scoped_ptr<base::Value>(base::Value::CreateIntegerValue(
+          extensions::Manifest::TYPE_PLATFORM_APP))));
+}
 #endif  // !defined(OS_IOS)
 
 }  // namespace
@@ -558,11 +574,10 @@ scoped_ptr<ConfigurationPolicyHandlerList> BuildHandlerList(
           key::kExtensionInstallSources,
           extensions::pref_names::kAllowedInstallSites)));
   handlers->AddHandler(make_scoped_ptr<ConfigurationPolicyHandler>(
-      new StringToIntEnumListPolicyHandler(
+      new StringMappingListPolicyHandler(
           key::kExtensionAllowedTypes,
           extensions::pref_names::kAllowedTypes,
-          kExtensionAllowedTypesMap,
-          kExtensionAllowedTypesMap + arraysize(kExtensionAllowedTypesMap))));
+          base::Bind(GetExtensionAllowedTypesMap))));
 #endif  // !defined(OS_IOS)
 
 #if !defined(OS_CHROMEOS) && !defined(OS_ANDROID) && !defined(OS_IOS)
@@ -584,6 +599,15 @@ scoped_ptr<ConfigurationPolicyHandlerList> BuildHandlerList(
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
   handlers->AddHandler(make_scoped_ptr<ConfigurationPolicyHandler>(
       new DownloadDirPolicyHandler));
+
+  handlers->AddHandler(make_scoped_ptr<ConfigurationPolicyHandler>(
+      new SimpleSchemaValidatingPolicyHandler(
+          key::kRegisteredProtocolHandlers,
+          prefs::kPolicyRegisteredProtocolHandlers,
+          chrome_schema,
+          SCHEMA_STRICT,
+          SimpleSchemaValidatingPolicyHandler::RECOMMENDED_ALLOWED,
+          SimpleSchemaValidatingPolicyHandler::MANDATORY_PROHIBITED)));
 #endif
 
 #if defined(OS_CHROMEOS)

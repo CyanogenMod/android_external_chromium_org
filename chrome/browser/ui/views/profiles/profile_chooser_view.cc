@@ -166,6 +166,22 @@ void BackgroundColorHoverButton::OnPaint(gfx::Canvas* canvas) {
   LabelButton::OnPaint(canvas);
 }
 
+// SizedContainer -------------------------------------------------
+
+// A simple container view that takes an explicit preferred size.
+class SizedContainer : public views::View {
+ public:
+  explicit SizedContainer(const gfx::Size& preferred_size)
+      : preferred_size_(preferred_size) {}
+
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
+    return preferred_size_;
+  }
+
+ private:
+  gfx::Size preferred_size_;
+};
+
 }  // namespace
 
 
@@ -186,9 +202,8 @@ class EditableProfilePhoto : public views::ImageView {
     SetBoundsRect(bounds);
 
     // Calculate the circular mask that will be used to display the photo.
-    gfx::Point center = bounds.CenterPoint();
-    circular_mask_.addCircle(SkIntToScalar(center.x()),
-                             SkIntToScalar(center.y()),
+    circular_mask_.addCircle(SkIntToScalar(bounds.width() / 2),
+                             SkIntToScalar(bounds.height() / 2),
                              SkIntToScalar(bounds.width() / 2));
 
     if (!is_editing_allowed)
@@ -208,7 +223,7 @@ class EditableProfilePhoto : public views::ImageView {
         *ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
             IDR_ICON_PROFILES_EDIT_CAMERA));
 
-    change_photo_button_->SetBoundsRect(bounds);
+    change_photo_button_->SetSize(bounds.size());
     change_photo_button_->SetVisible(false);
     AddChildView(change_photo_button_);
   }
@@ -220,7 +235,7 @@ class EditableProfilePhoto : public views::ImageView {
   }
 
   virtual void PaintChildren(gfx::Canvas* canvas,
-                     const views::CullSet& cull_set) OVERRIDE {
+                             const views::CullSet& cull_set) OVERRIDE {
     // Display any children (the "change photo" overlay) as a circle.
     canvas->ClipPath(circular_mask_, true);
     View::PaintChildren(canvas, cull_set);
@@ -434,13 +449,12 @@ void ProfileChooserView::ShowBubble(
     views::View* anchor_view,
     views::BubbleBorder::Arrow arrow,
     views::BubbleBorder::BubbleAlignment border_alignment,
-    const gfx::Rect& anchor_rect,
     Browser* browser) {
   if (IsShowing())
     return;
 
-  profile_bubble_ = new ProfileChooserView(anchor_view, arrow, anchor_rect,
-                                           browser, view_mode, service_type);
+  profile_bubble_ = new ProfileChooserView(anchor_view, arrow, browser,
+                                           view_mode, service_type);
   views::BubbleDelegateView::CreateBubble(profile_bubble_);
   profile_bubble_->set_close_on_deactivate(close_on_deactivate_for_testing_);
   profile_bubble_->SetAlignment(border_alignment);
@@ -461,7 +475,6 @@ void ProfileChooserView::Hide() {
 
 ProfileChooserView::ProfileChooserView(views::View* anchor_view,
                                        views::BubbleBorder::Arrow arrow,
-                                       const gfx::Rect& anchor_rect,
                                        Browser* browser,
                                        profiles::BubbleViewMode view_mode,
                                        signin::GAIAServiceType service_type)
@@ -640,7 +653,7 @@ void ProfileChooserView::ButtonPressed(views::Button* sender,
   } else if (sender == tutorial_enable_new_profile_management_button_) {
     ProfileMetrics::LogProfileUpgradeEnrollment(
         ProfileMetrics::PROFILE_ENROLLMENT_ACCEPT_NEW_PROFILE_MGMT);
-    profiles::EnableNewProfileManagementPreview();
+    profiles::EnableNewProfileManagementPreview(browser_->profile());
   } else if (sender == remove_account_button_) {
     RemoveAccount();
   } else if (sender == account_removal_cancel_button_) {
@@ -664,7 +677,7 @@ void ProfileChooserView::ButtonPressed(views::Button* sender,
   } else if (sender == end_preview_and_relaunch_button_) {
     ProfileMetrics::LogProfileUpgradeEnrollment(
         ProfileMetrics::PROFILE_ENROLLMENT_DISABLE_NEW_PROFILE_MGMT);
-    profiles::DisableNewProfileManagementPreview();
+    profiles::DisableNewProfileManagementPreview(browser_->profile());
   } else if (sender == end_preview_cancel_button_) {
     tutorial_mode_ = profiles::TUTORIAL_MODE_SEND_FEEDBACK;
     ShowView(profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER, avatar_menu_.get());
@@ -774,7 +787,7 @@ bool ProfileChooserView::HandleKeyEvent(views::Textfield* sender,
         active_item.profile_path);
     DCHECK(profile);
 
-    if (profile->IsManaged())
+    if (profile->IsSupervised())
       return true;
 
     profiles::UpdateProfileName(profile, new_profile_name);
@@ -849,7 +862,15 @@ views::View* ProfileChooserView::CreateProfileChooserView(
   layout->StartRow(1, 0);
   layout->AddView(current_profile_view);
 
-  if (browser_->profile()->IsManaged()) {
+  if (view_mode_ != profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER) {
+    DCHECK(current_profile_accounts);
+    layout->StartRow(0, 0);
+    layout->AddView(new views::Separator(views::Separator::HORIZONTAL));
+    layout->StartRow(1, 0);
+    layout->AddView(current_profile_accounts);
+  }
+
+  if (browser_->profile()->IsSupervised()) {
     layout->StartRow(0, 0);
     layout->AddView(new views::Separator(views::Separator::HORIZONTAL));
     layout->StartRow(1, 0);
@@ -860,12 +881,6 @@ views::View* ProfileChooserView::CreateProfileChooserView(
     layout->StartRow(1, 0);
     if (switches::IsFastUserSwitching())
       layout->AddView(CreateOtherProfilesView(other_profiles));
-  } else {
-    DCHECK(current_profile_accounts);
-    layout->StartRow(0, 0);
-    layout->AddView(new views::Separator(views::Separator::HORIZONTAL));
-    layout->StartRow(1, 0);
-    layout->AddView(current_profile_accounts);
   }
 
   layout->StartRow(0, 0);
@@ -1029,10 +1044,13 @@ views::View* ProfileChooserView::CreateCurrentProfileView(
                     views::kButtonHEdgeMarginNew);
 
   // Profile icon, centered.
-  float x_offset = (column_width - kLargeImageSide) / 2;
+  int x_offset = (column_width - kLargeImageSide) / 2;
   current_profile_photo_ = new EditableProfilePhoto(
       this, avatar_item.icon, !is_guest,
       gfx::Rect(x_offset, 0, kLargeImageSide, kLargeImageSide));
+  SizedContainer* profile_icon_container =
+      new SizedContainer(gfx::Size(column_width, kLargeImageSide));
+  profile_icon_container->AddChildView(current_profile_photo_);
 
   if (switches::IsNewProfileManagementPreviewEnabled()) {
     question_mark_button_ = new views::ImageButton(this);
@@ -1048,10 +1066,10 @@ views::View* ProfileChooserView::CreateCurrentProfileView(
     gfx::Size preferred_size = question_mark_button_->GetPreferredSize();
     question_mark_button_->SetBounds(
         0, 0, preferred_size.width(), preferred_size.height());
-    current_profile_photo_->AddChildView(question_mark_button_);
+    profile_icon_container->AddChildView(question_mark_button_);
   }
 
-  if (browser_->profile()->IsManaged()) {
+  if (browser_->profile()->IsSupervised()) {
     views::ImageView* supervised_icon = new views::ImageView();
     ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
     supervised_icon->SetImage(
@@ -1063,14 +1081,14 @@ views::View* ProfileChooserView::CreateCurrentProfileView(
         parent_bounds.bottom() - preferred_size.height(),
         preferred_size.width(),
         preferred_size.height());
-    current_profile_photo_->AddChildView(supervised_icon);
+    profile_icon_container->AddChildView(supervised_icon);
   }
 
   layout->StartRow(1, 0);
-  layout->AddView(current_profile_photo_);
+  layout->AddView(profile_icon_container);
 
   // Profile name, centered.
-  bool editing_allowed = !is_guest && !browser_->profile()->IsManaged();
+  bool editing_allowed = !is_guest && !browser_->profile()->IsSupervised();
   current_profile_name_ = new EditableProfileName(
       this, profiles::GetAvatarNameForProfile(browser_->profile()),
                                               editing_allowed);
@@ -1221,7 +1239,7 @@ views::View* ProfileChooserView::CreateSupervisedUserDisclaimerView() {
                     views::kRelatedControlVerticalSpacing,
                     views::kButtonHEdgeMarginNew);
   views::Label* disclaimer = new views::Label(
-      avatar_menu_->GetManagedUserInformation());
+      avatar_menu_->GetSupervisedUserInformation());
   disclaimer->SetMultiLine(true);
   disclaimer->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();

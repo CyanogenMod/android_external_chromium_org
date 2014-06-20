@@ -143,6 +143,8 @@
         'public/cpp/bindings/tests/string_unittest.cc',
         'public/cpp/bindings/tests/struct_unittest.cc',
         'public/cpp/bindings/tests/type_conversion_unittest.cc',
+        'public/cpp/bindings/tests/validation_test_input_parser.cc',
+        'public/cpp/bindings/tests/validation_test_input_parser.h',
         'public/cpp/bindings/tests/validation_unittest.cc',
       ],
     },
@@ -159,6 +161,7 @@
       ],
       'sources': [
         'public/cpp/environment/tests/async_waiter_unittest.cc',
+        'public/cpp/environment/tests/logger_unittest.cc',
       ],
     },
     {
@@ -220,6 +223,7 @@
       ],
     },
     {
+      # GN version: //mojo/public/cpp/bindings
       'target_name': 'mojo_cpp_bindings',
       'type': 'static_library',
       'include_dirs': [
@@ -278,6 +282,7 @@
       ],
     },
     {
+      # GN version: //mojo/public/js/bindings
       'target_name': 'mojo_js_bindings',
       'type': 'static_library',
       'include_dirs': [
@@ -299,6 +304,7 @@
         'public/interfaces/bindings/tests/sample_interfaces.mojom',
         'public/interfaces/bindings/tests/sample_service.mojom',
         'public/interfaces/bindings/tests/test_structs.mojom',
+        'public/interfaces/bindings/tests/validation_test_interfaces.mojom',
       ],
       'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'export_dependent_settings': [
@@ -312,9 +318,13 @@
       'target_name': 'mojo_environment_standalone',
       'type': 'static_library',
       'sources': [
+        'public/c/environment/async_waiter.h',
+        'public/c/environment/logger.h',
         'public/cpp/environment/default_async_waiter.h',
+        'public/cpp/environment/default_logger.h',
         'public/cpp/environment/environment.h',
         'public/cpp/environment/lib/default_async_waiter.cc',
+        'public/cpp/environment/lib/default_logger.cc',
         'public/cpp/environment/lib/environment.cc',
       ],
       'include_dirs': [
@@ -352,6 +362,22 @@
       ],
     },
     {
+      # GN version: //mojo/public/interfaces/interface_provider:interface_provider
+      'target_name': 'mojo_interface_provider_bindings',
+      'type': 'static_library',
+      'sources': [
+        'public/interfaces/interface_provider/interface_provider.mojom',
+      ],
+      'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
+      'dependencies': [
+        'mojo_cpp_bindings',
+      ],
+      'export_dependent_settings': [
+        'mojo_cpp_bindings',
+      ],
+    },
+    {
+      # GN version: //mojo/public/interfaces/service_provider:service_provider
       'target_name': 'mojo_service_provider_bindings',
       'type': 'static_library',
       'sources': [
@@ -374,6 +400,8 @@
         'public/cpp/application/lib/application.cc',
         'public/cpp/application/lib/service_connector.cc',
         'public/cpp/application/lib/service_connector.h',
+        'public/cpp/application/lib/service_registry.cc',
+        'public/cpp/application/lib/service_registry.h',
       ],
       'dependencies': [
         'mojo_service_provider_bindings',

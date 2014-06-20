@@ -141,11 +141,12 @@ class Plugin : public pp::Instance {
   void HistogramTimeSmall(const std::string& name, int64_t ms);
 
   // Load a nacl module from the file specified in file_handle.
-  // Only to be used from a background (non-main) thread.
-  // This will fully initialize the |subprocess| if the load was successful.
-  bool LoadNaClModuleFromBackgroundThread(PP_FileHandle file_handle,
-                                          NaClSubprocess* subprocess,
-                                          const SelLdrStartParams& params);
+  // Only to be used from a background (non-main) thread for the PNaCl
+  // translator. This will fully initialize the |subprocess| if the load was
+  // successful.
+  bool LoadHelperNaClModule(PP_FileHandle file_handle,
+                            NaClSubprocess* subprocess,
+                            const SelLdrStartParams& params);
 
   // Start sel_ldr from the main thread, given the start params.
   // |pp_error| is set by CallOnMainThread (should be PP_OK).
@@ -166,10 +167,11 @@ class Plugin : public pp::Instance {
                          bool* started,
                          ServiceRuntime* service_runtime);
 
+  // This is invoked on the main thread.
   void LoadNexeAndStart(int32_t pp_error,
-                        PP_NaClFileInfo file_info,
                         ServiceRuntime* service_runtime,
-                        const pp::CompletionCallback& crash_cb);
+                        PP_NaClFileInfo file_info,
+                        const pp::CompletionCallback& callback);
 
   // Callback used when getting the URL for the .nexe file.  If the URL loading
   // is successful, the file descriptor is opened and can be passed to sel_ldr

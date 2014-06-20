@@ -50,12 +50,14 @@ class DownloadItem;
 class GeolocationDispatcherHost;
 class InterstitialPageImpl;
 class JavaScriptDialogManager;
+class MidiDispatcherHost;
 class PowerSaveBlocker;
 class RenderViewHost;
 class RenderViewHostDelegateView;
 class RenderViewHostImpl;
 class RenderWidgetHostImpl;
 class SavePackage;
+class ScreenOrientationDispatcherHost;
 class SiteInstance;
 class TestWebContents;
 class WebContentsDelegate;
@@ -506,6 +508,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual bool HandleGestureEvent(
       const blink::WebGestureEvent& event) OVERRIDE;
   virtual void DidSendScreenRects(RenderWidgetHostImpl* rwh) OVERRIDE;
+  virtual void OnTouchEmulationEnabled(bool enabled) OVERRIDE;
 #if defined(OS_WIN)
   virtual gfx::NativeViewAccessible GetParentNativeViewAccessible() OVERRIDE;
 #endif
@@ -672,8 +675,8 @@ class CONTENT_EXPORT WebContentsImpl
   void RemoveDestructionObserver(WebContentsImpl* web_contents);
 
   // Traverses all the RenderFrameHosts in the FrameTree and creates a set
-  // all the unique RenderWidgetHosts.
-  std::set<RenderWidgetHostImpl*> GetRenderWidgetHostsInTree();
+  // all the unique RenderWidgetHostViews.
+  std::set<RenderWidgetHostView*> GetRenderWidgetHostViewsInTree();
 
   // Callback function when showing JavaScript dialogs.  Takes in a routing ID
   // pair to identify the RenderFrameHost that opened the dialog, because it's
@@ -1122,10 +1125,18 @@ class CONTENT_EXPORT WebContentsImpl
   // different process from its parent page.
   bool is_subframe_;
 
+  // Whether touch emulation is enabled in RenderWidgetHost.
+  bool touch_emulation_enabled_;
+
   // Whether the last JavaScript dialog shown was suppressed. Used for testing.
   bool last_dialog_suppressed_;
 
   scoped_ptr<GeolocationDispatcherHost> geolocation_dispatcher_host_;
+
+  scoped_ptr<MidiDispatcherHost> midi_dispatcher_host_;
+
+  scoped_ptr<ScreenOrientationDispatcherHost>
+      screen_orientation_dispatcher_host_;
 
   DISALLOW_COPY_AND_ASSIGN(WebContentsImpl);
 };

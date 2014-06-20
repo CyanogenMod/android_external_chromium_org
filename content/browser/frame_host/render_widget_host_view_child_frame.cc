@@ -145,11 +145,8 @@ void RenderWidgetHostViewChildFrame::SetIsLoading(bool is_loading) {
   NOTREACHED();
 }
 
-void RenderWidgetHostViewChildFrame::TextInputTypeChanged(
-    ui::TextInputType type,
-    ui::TextInputMode input_mode,
-    bool can_compose_inline) {
-  NOTREACHED();
+void RenderWidgetHostViewChildFrame::TextInputStateChanged(
+    const ViewHostMsg_TextInputState_Params& params) {
 }
 
 void RenderWidgetHostViewChildFrame::RenderProcessGone(
@@ -322,10 +319,6 @@ bool RenderWidgetHostViewChildFrame::HasAcceleratedSurface(
 
 gfx::GLSurfaceHandle RenderWidgetHostViewChildFrame::GetCompositingSurface() {
   return gfx::GLSurfaceHandle(gfx::kNullPluginWindow, gfx::TEXTURE_TRANSPORT);
-}
-
-void RenderWidgetHostViewChildFrame::SetScrollOffsetPinning(
-    bool is_pinned_to_left, bool is_pinned_to_right) {
 }
 
 #if defined(OS_WIN)

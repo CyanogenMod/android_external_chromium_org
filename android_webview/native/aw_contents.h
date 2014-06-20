@@ -10,6 +10,7 @@
 #include <string>
 #include <utility>
 
+#include "android_webview/browser/aw_browser_permission_request_delegate.h"
 #include "android_webview/browser/browser_view_renderer.h"
 #include "android_webview/browser/browser_view_renderer_client.h"
 #include "android_webview/browser/find_helper.h"
@@ -37,7 +38,7 @@ class AwContentsContainer;
 class AwContentsClientBridge;
 class AwPdfExporter;
 class AwWebContentsDelegate;
-class HardwareRendererInterface;
+class HardwareRenderer;
 class PermissionRequestHandler;
 
 // Native side of java-class of same name.
@@ -57,7 +58,8 @@ class AwContents : public FindHelper::Listener,
                    public IconHelper::Listener,
                    public AwRenderViewHostExtClient,
                    public BrowserViewRendererClient,
-                   public PermissionRequestHandlerClient {
+                   public PermissionRequestHandlerClient,
+                   public AwBrowserPermissionRequestDelegate {
  public:
   // Returns the AwContents instance associated with |web_contents|, or NULL.
   static AwContents* FromWebContents(content::WebContents* web_contents);
@@ -154,6 +156,13 @@ class AwContents : public FindHelper::Listener,
                               jstring origin,
                               jlong resources);
 
+  // AwBrowserPermissionRequestDelegate implementation.
+  virtual void RequestProtectedMediaIdentifierPermission(
+      const GURL& origin,
+      const base::Callback<void(bool)>& callback) OVERRIDE;
+  virtual void CancelProtectedMediaIdentifierPermissionRequests(
+      const GURL& origin) OVERRIDE;
+
   // Find-in-page API and related methods.
   void FindAllAsync(JNIEnv* env, jobject obj, jstring search_string);
   void FindNext(JNIEnv* env, jobject obj, jboolean forward);
@@ -208,8 +217,8 @@ class AwContents : public FindHelper::Listener,
                           jint height_dip);
   void SetSaveFormData(bool enabled);
 
-  // Sets the java delegate
-  void SetAwAutofillManagerDelegate(jobject delegate);
+  // Sets the java client
+  void SetAwAutofillClient(jobject client);
 
   void SetJsOnlineProperty(JNIEnv* env, jobject obj, jboolean network_up);
   void TrimMemory(JNIEnv* env, jobject obj, jint level, jboolean visible);
@@ -230,7 +239,7 @@ class AwContents : public FindHelper::Listener,
   scoped_ptr<AwContents> pending_contents_;
   SharedRendererState shared_renderer_state_;
   BrowserViewRenderer browser_view_renderer_;
-  scoped_ptr<HardwareRendererInterface> hardware_renderer_;
+  scoped_ptr<HardwareRenderer> hardware_renderer_;
   scoped_ptr<AwPdfExporter> pdf_exporter_;
   scoped_ptr<PermissionRequestHandler> permission_request_handler_;
 

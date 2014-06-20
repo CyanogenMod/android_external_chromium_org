@@ -6,6 +6,7 @@
 
 #include "athena/main/athena_launcher.h"
 #include "athena/test/sample_activity_factory.h"
+#include "athena/test/test_app_model_builder.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "ui/aura/client/aura_constants.h"
@@ -22,7 +23,6 @@
 #include "ui/wm/core/input_method_event_filter.h"
 
 #if defined(USE_X11)
-#include "ui/aura/window_tree_host_x11.h"
 #include "ui/base/x/x11_util.h"
 #endif
 
@@ -36,9 +36,6 @@ AthenaTestHelper::AthenaTestHelper(base::MessageLoopForUI* message_loop)
   // Disable animations during tests.
   zero_duration_mode_.reset(new ui::ScopedAnimationDurationScaleMode(
       ui::ScopedAnimationDurationScaleMode::ZERO_DURATION));
-#if defined(USE_X11)
-  aura::test::SetUseOverrideRedirectWindowByDefault(true);
-#endif
 }
 
 AthenaTestHelper::~AthenaTestHelper() {
@@ -78,7 +75,9 @@ void AthenaTestHelper::SetUp(ui::ContextFactory* context_factory) {
   // Ensure width != height so tests won't confuse them.
   host()->SetBounds(gfx::Rect(800, 600));
 
-  athena::StartAthena(root_window(), new SampleActivityFactory());
+  athena::StartAthena(root_window(),
+                      new SampleActivityFactory(),
+                      new TestAppModelBuilder());
 }
 
 void AthenaTestHelper::TearDown() {

@@ -4,7 +4,7 @@
 import sys
 
 from measurements import smooth_gesture_util
-from telemetry.core.timeline.model import TimelineModel
+from telemetry.timeline.model import TimelineModel
 from telemetry.page import page_measurement
 from telemetry.page.actions import action_runner
 from telemetry.web_perf import timeline_interaction_record as tir_module
@@ -51,7 +51,8 @@ class SmoothnessController(object):
     # the time ranges of gestures, if there is at least one, else the the time
     # ranges from the first action to the last action.
 
-    renderer_thread = self._timeline_model.GetRendererThreadFromTab(tab)
+    renderer_thread = self._timeline_model.GetRendererThreadFromTabId(
+        tab.id)
     run_smooth_actions_record = None
     smooth_records = []
     for event in renderer_thread.async_slices:

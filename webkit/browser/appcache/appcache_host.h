@@ -48,7 +48,7 @@ class AppCache;
 class AppCacheFrontend;
 class AppCacheRequestHandler;
 
-typedef base::Callback<void(Status, void*)> GetStatusCallback;
+typedef base::Callback<void(AppCacheStatus, void*)> GetStatusCallback;
 typedef base::Callback<void(bool, void*)> StartUpdateCallback;
 typedef base::Callback<void(bool, void*)> SwapCacheCallback;
 
@@ -167,7 +167,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheHost
   AppCache* associated_cache() const { return associated_cache_.get(); }
 
   bool is_selection_pending() const {
-    return pending_selected_cache_id_ != kNoCacheId ||
+    return pending_selected_cache_id_ != kAppCacheNoCacheId ||
            !pending_selected_manifest_url_.is_empty();
   }
 
@@ -183,7 +183,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheHost
   friend class content::AppCacheRequestHandlerTest;
   friend class content::AppCacheUpdateJobTest;
 
-  Status GetStatus();
+  AppCacheStatus GetStatus();
   void LoadSelectedCache(int64 cache_id);
   void LoadOrCreateGroup(const GURL& manifest_url);
 
@@ -210,7 +210,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheHost
 
   // Returns true if this host is for a dedicated worker context.
   bool is_for_dedicated_worker() const {
-    return parent_host_id_ != kNoHostId;
+    return parent_host_id_ != kAppCacheNoHostId;
   }
 
   // Returns the parent context's host instance. This is only valid

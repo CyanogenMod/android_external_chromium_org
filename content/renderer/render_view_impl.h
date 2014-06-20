@@ -133,7 +133,6 @@ class FaviconHelper;
 class HistoryController;
 class HistoryEntry;
 class ImageResourceFetcher;
-class MidiDispatcher;
 class MediaStreamDispatcher;
 class MouseLockDispatcher;
 class NavigationState;
@@ -200,6 +199,8 @@ class CONTENT_EXPORT RenderViewImpl
 
   // Returns the RenderViewImpl for the given routing ID.
   static RenderViewImpl* FromRoutingID(int routing_id);
+
+  static size_t GetRenderViewCount();
 
   // May return NULL when the view is closing.
   blink::WebView* webview() const;
@@ -274,9 +275,6 @@ class CONTENT_EXPORT RenderViewImpl
 
   void FrameDidStartLoading(blink::WebFrame* frame);
   void FrameDidStopLoading(blink::WebFrame* frame);
-
-  void FrameDidCommitProvisionalLoad(blink::WebLocalFrame* frame,
-                                     bool is_new_navigation);
 
   // Plugin-related functions --------------------------------------------------
 
@@ -458,7 +456,6 @@ class CONTENT_EXPORT RenderViewImpl
                                        const blink::WebURL& url,
                                        const blink::WebString& title);
   virtual blink::WebPageVisibilityState visibilityState() const;
-  virtual blink::WebMIDIClient* webMIDIClient();
   virtual blink::WebPushClient* webPushClient();
   virtual void draggableRegionsChanged();
 
@@ -497,7 +494,6 @@ class CONTENT_EXPORT RenderViewImpl
   virtual bool ShouldDisplayScrollbars(int width, int height) const OVERRIDE;
   virtual int GetEnabledBindings() const OVERRIDE;
   virtual bool GetContentStateImmediately() const OVERRIDE;
-  virtual float GetFilteredTimePerFrame() const OVERRIDE;
   virtual blink::WebPageVisibilityState GetVisibilityState() const OVERRIDE;
   virtual void DidStartLoading() OVERRIDE;
   virtual void DidStopLoading() OVERRIDE;
@@ -512,6 +508,7 @@ class CONTENT_EXPORT RenderViewImpl
                                       TopControlsState current,
                                       bool animate) OVERRIDE;
 #endif
+  bool uses_temporary_zoom_level() const { return uses_temporary_zoom_level_; }
 
   // Please do not add your stuff randomly to the end here. If there is an
   // appropriate section, add it there. If not, there are some random functions
@@ -542,7 +539,6 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void OnWasHidden() OVERRIDE;
   virtual void OnWasShown(bool needs_repainting) OVERRIDE;
   virtual GURL GetURLForGraphicsContext3D() OVERRIDE;
-  virtual bool ForceCompositingModeEnabled() OVERRIDE;
   virtual void OnImeSetComposition(
       const base::string16& text,
       const std::vector<blink::WebCompositionUnderline>& underlines,
@@ -552,6 +548,8 @@ class CONTENT_EXPORT RenderViewImpl
                                        const gfx::Range& replacement_range,
                                        bool keep_selection) OVERRIDE;
   virtual void SetDeviceScaleFactor(float device_scale_factor) OVERRIDE;
+  virtual bool SetDeviceColorProfile(
+      const std::vector<char>& color_profile) OVERRIDE;
   virtual void OnOrientationChange() OVERRIDE;
   virtual ui::TextInputType GetTextInputType() OVERRIDE;
   virtual void GetSelectionBounds(gfx::Rect* start, gfx::Rect* end) OVERRIDE;
@@ -743,6 +741,7 @@ class CONTENT_EXPORT RenderViewImpl
   void OnSetRendererPrefs(const RendererPreferences& renderer_prefs);
   void OnSetWebUIProperty(const std::string& name, const std::string& value);
   void OnSetZoomLevelForLoadingURL(const GURL& url, double zoom_level);
+  void OnSetZoomLevelForView(bool uses_temporary_zoom_level, double level);
   void OnStop();
   void OnStopFinding(StopFindAction action);
   void OnSuppressDialogsUntilSwapOut();
@@ -796,9 +795,6 @@ class CONTENT_EXPORT RenderViewImpl
   // doesn't have a frame at the specified size, the first is returned.
   bool DownloadFavicon(int id, const GURL& image_url, int image_size);
 
-  // Returns the URL being loaded by the given frame's request.
-  GURL GetLoadingUrl(blink::WebFrame* frame) const;
-
   // Called to get the WebPlugin to handle find requests in the document.
   // Returns NULL if there is no such WebPlugin.
   blink::WebPlugin* GetWebPluginForFind();
@@ -807,10 +803,6 @@ class CONTENT_EXPORT RenderViewImpl
   // cropped due to a recent navigation the browser did not know about.
   bool IsBackForwardToStaleEntry(const FrameMsg_Navigate_Params& params,
                                  bool is_reload);
-
-  // TODO(nasko): Remove this method when code is migrated to use
-  // RenderFrameObserver.
-  void OnNavigate(const FrameMsg_Navigate_Params& params);
 
   // Make the given |frame| show an empty, unscriptable page.
   // TODO(creis): Move this to RenderFrame.
@@ -1018,6 +1010,9 @@ class CONTENT_EXPORT RenderViewImpl
   // The next target URL we want to send to the browser.
   GURL pending_target_url_;
 
+  // Indicates whether this view overrides url-based zoom settings.
+  bool uses_temporary_zoom_level_;
+
 #if defined(OS_ANDROID)
   // Cache the old top controls state constraints. Used when updating
   // current value only without altering the constraints.
@@ -1033,11 +1028,6 @@ class CONTENT_EXPORT RenderViewImpl
   // Used to delay determining the preferred size (to avoid intermediate
   // states for the sizes).
   base::OneShotTimer<RenderViewImpl> check_preferred_size_timer_;
-
-  // These store the "is main frame is scrolled all the way to the left
-  // or right" state that was last sent to the browser.
-  bool cached_is_main_frame_pinned_to_left_;
-  bool cached_is_main_frame_pinned_to_right_;
 
   // Bookkeeping to suppress redundant scroll and focus requests for an already
   // scrolled and focused editable node.
@@ -1064,9 +1054,6 @@ class CONTENT_EXPORT RenderViewImpl
 
   // BrowserPluginManager attached to this view; lazily initialized.
   scoped_refptr<BrowserPluginManager> browser_plugin_manager_;
-
-  // MidiClient attached to this view; lazily initialized.
-  MidiDispatcher* midi_dispatcher_;
 
   DevToolsAgent* devtools_agent_;
 

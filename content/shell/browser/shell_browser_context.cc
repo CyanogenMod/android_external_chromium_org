@@ -179,44 +179,6 @@ net::URLRequestContextGetter*
   return GetRequestContext();
 }
 
-void ShellBrowserContext::RequestMidiSysExPermission(
-      int render_process_id,
-      int render_view_id,
-      int bridge_id,
-      const GURL& requesting_frame,
-      bool user_gesture,
-      const MidiSysExPermissionCallback& callback) {
-  // Always reject requests for LayoutTests for now.
-  // TODO(toyoshim): Make it programmable to improve test coverage.
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDumpRenderTree)) {
-    callback.Run(false);
-    return;
-  }
-  callback.Run(true);
-}
-
-void ShellBrowserContext::CancelMidiSysExPermissionRequest(
-    int render_process_id,
-    int render_view_id,
-    int bridge_id,
-    const GURL& requesting_frame) {
-}
-
-void ShellBrowserContext::RequestProtectedMediaIdentifierPermission(
-    int render_process_id,
-    int render_view_id,
-    const GURL& origin,
-    const ProtectedMediaIdentifierPermissionCallback& callback) {
-  callback.Run(true);
-}
-
-void ShellBrowserContext::CancelProtectedMediaIdentifierPermissionRequests(
-    int render_process_id,
-    int render_view_id,
-    const GURL& origin) {
-}
-
 net::URLRequestContextGetter*
 ShellBrowserContext::CreateRequestContextForStoragePartition(
     const base::FilePath& partition_path,
@@ -230,16 +192,15 @@ ResourceContext* ShellBrowserContext::GetResourceContext()  {
   return resource_context_.get();
 }
 
-GeolocationPermissionContext*
-    ShellBrowserContext::GetGeolocationPermissionContext()  {
-  return NULL;
-}
-
 BrowserPluginGuestManager* ShellBrowserContext::GetGuestManager() {
   return guest_manager_;
 }
 
 quota::SpecialStoragePolicy* ShellBrowserContext::GetSpecialStoragePolicy() {
+  return NULL;
+}
+
+PushMessagingService* ShellBrowserContext::GetPushMessagingService() {
   return NULL;
 }
 

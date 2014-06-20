@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "mojo/public/cpp/bindings/array.h"
-#include "mojo/services/public/cpp/view_manager/view_manager_types.h"
+#include "mojo/services/public/cpp/view_manager/types.h"
 #include "mojo/services/public/interfaces/view_manager/view_manager.mojom.h"
 #include "ui/gfx/rect.h"
 
@@ -23,39 +23,43 @@ enum ChangeType {
   CHANGE_TYPE_SERVER_CHANGE_ID_ADVANCED,
   CHANGE_TYPE_NODE_BOUNDS_CHANGED,
   CHANGE_TYPE_NODE_HIERARCHY_CHANGED,
+  CHANGE_TYPE_NODE_REORDERED,
   CHANGE_TYPE_NODE_DELETED,
   CHANGE_TYPE_VIEW_DELETED,
   CHANGE_TYPE_VIEW_REPLACED,
   CHANGE_TYPE_INPUT_EVENT,
 };
 
+// TODO(sky): consider nuking and converting directly to NodeData.
 struct TestNode {
   // Returns a string description of this.
   std::string ToString() const;
 
-  TransportNodeId parent_id;
-  TransportNodeId node_id;
-  TransportNodeId view_id;
+  Id parent_id;
+  Id node_id;
+  Id view_id;
 };
 
-// Tracks a call to IViewManagerClient. See the individual functions for the
+// Tracks a call to ViewManagerClient. See the individual functions for the
 // fields that are used.
 struct Change {
   Change();
   ~Change();
 
   ChangeType type;
-  TransportConnectionId connection_id;
-  TransportChangeId change_id;
+  ConnectionSpecificId connection_id;
+  Id change_id;
   std::vector<TestNode> nodes;
-  TransportNodeId node_id;
-  TransportNodeId node_id2;
-  TransportNodeId node_id3;
-  TransportViewId view_id;
-  TransportViewId view_id2;
+  Id node_id;
+  Id node_id2;
+  Id node_id3;
+  Id view_id;
+  Id view_id2;
   gfx::Rect bounds;
   gfx::Rect bounds2;
   int32 event_action;
+  String creator_url;
+  OrderDirection direction;
 };
 
 // Converts Changes to string descriptions.
@@ -66,16 +70,16 @@ std::vector<std::string> ChangesToDescription1(
 // if change.size() != 1.
 std::string ChangeNodeDescription(const std::vector<Change>& changes);
 
-// Converts INodes to TestNodes.
-void INodesToTestNodes(const Array<INodePtr>& data,
-                       std::vector<TestNode>* test_nodes);
+// Converts NodeDatas to TestNodes.
+void NodeDatasToTestNodes(const Array<NodeDataPtr>& data,
+                          std::vector<TestNode>* test_nodes);
 
-// TestChangeTracker is used to record IViewManagerClient functions. It notifies
+// TestChangeTracker is used to record ViewManagerClient functions. It notifies
 // a delegate any time a change is added.
 class TestChangeTracker {
  public:
   // Used to notify the delegate when a change is added. A change corresponds to
-  // a single IViewManagerClient function.
+  // a single ViewManagerClient function.
   class Delegate {
    public:
     virtual void OnChangeAdded() = 0;
@@ -92,28 +96,27 @@ class TestChangeTracker {
   std::vector<Change>* changes() { return &changes_; }
 
   // Each of these functions generate a Change. There is one per
-  // IViewManagerClient function.
-  void OnViewManagerConnectionEstablished(
-      TransportConnectionId connection_id,
-      TransportChangeId next_server_change_id,
-      Array<INodePtr> nodes);
-  void OnRootsAdded(Array<INodePtr> nodes);
-  void OnServerChangeIdAdvanced(TransportChangeId change_id);
-  void OnNodeBoundsChanged(TransportNodeId node_id,
-                           RectPtr old_bounds,
-                           RectPtr new_bounds);
-  void OnNodeHierarchyChanged(TransportNodeId node_id,
-                              TransportNodeId new_parent_id,
-                              TransportNodeId old_parent_id,
-                              TransportChangeId server_change_id,
-                              Array<INodePtr> nodes);
-  void OnNodeDeleted(TransportNodeId node_id,
-                     TransportChangeId server_change_id);
-  void OnViewDeleted(TransportViewId view_id);
-  void OnNodeViewReplaced(TransportNodeId node_id,
-                          TransportViewId new_view_id,
-                          TransportViewId old_view_id);
-  void OnViewInputEvent(TransportViewId view_id, EventPtr event);
+  // ViewManagerClient function.
+  void OnViewManagerConnectionEstablished(ConnectionSpecificId connection_id,
+                                          const String& creator_url,
+                                          Id next_server_change_id,
+                                          Array<NodeDataPtr> nodes);
+  void OnRootsAdded(Array<NodeDataPtr> nodes);
+  void OnServerChangeIdAdvanced(Id change_id);
+  void OnNodeBoundsChanged(Id node_id, RectPtr old_bounds, RectPtr new_bounds);
+  void OnNodeHierarchyChanged(Id node_id,
+                              Id new_parent_id,
+                              Id old_parent_id,
+                              Id server_change_id,
+                              Array<NodeDataPtr> nodes);
+  void OnNodeReordered(Id node_id,
+                       Id relative_node_id,
+                       OrderDirection direction,
+                       Id server_change_id);
+  void OnNodeDeleted(Id node_id, Id server_change_id);
+  void OnViewDeleted(Id view_id);
+  void OnNodeViewReplaced(Id node_id, Id new_view_id, Id old_view_id);
+  void OnViewInputEvent(Id view_id, EventPtr event);
 
  private:
   void AddChange(const Change& change);

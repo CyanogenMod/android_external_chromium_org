@@ -5,38 +5,47 @@
 #include "chrome/browser/devtools/devtools_network_controller.h"
 
 #include "chrome/browser/devtools/devtools_network_conditions.h"
+#include "chrome/browser/devtools/devtools_network_interceptor.h"
 #include "chrome/browser/devtools/devtools_network_transaction.h"
-#include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_io_data.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/resource_context.h"
+#include "net/base/load_flags.h"
+#include "net/http/http_request_info.h"
 
 using content::BrowserThread;
 
-namespace {
-
-const char kDevToolsRequestInitiator[] = "X-DevTools-Request-Initiator";
-
-}  // namespace
-
 DevToolsNetworkController::DevToolsNetworkController()
-    : weak_ptr_factory_(this) {
+    : default_interceptor_(new DevToolsNetworkInterceptor()),
+      appcache_interceptor_(new DevToolsNetworkInterceptor()),
+      weak_ptr_factory_(this) {
 }
 
 DevToolsNetworkController::~DevToolsNetworkController() {
 }
 
-void DevToolsNetworkController::AddTransaction(
+base::WeakPtr<DevToolsNetworkInterceptor>
+DevToolsNetworkController::GetInterceptor(
     DevToolsNetworkTransaction* transaction) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  transactions_.insert(transaction);
-}
+  DCHECK(transaction->request());
 
-void DevToolsNetworkController::RemoveTransaction(
-    DevToolsNetworkTransaction* transaction) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  DCHECK(transactions_.find(transaction) != transactions_.end());
-  transactions_.erase(transaction);
+  if (!interceptors_.size())
+    return default_interceptor_->GetWeakPtr();
+
+  if (transaction->request()->load_flags & net::LOAD_DISABLE_INTERCEPT)
+    return appcache_interceptor_->GetWeakPtr();
+
+  transaction->ProcessRequest();
+
+  const std::string& client_id = transaction->client_id();
+  if (client_id.empty())
+    return default_interceptor_->GetWeakPtr();
+
+  DevToolsNetworkInterceptor* interceptor = interceptors_.get(client_id);
+  DCHECK(interceptor);
+  if (!interceptor)
+    return default_interceptor_->GetWeakPtr();
+
+  return interceptor->GetWeakPtr();
 }
 
 void DevToolsNetworkController::SetNetworkState(
@@ -57,39 +66,39 @@ void DevToolsNetworkController::SetNetworkStateOnIO(
     const std::string& client_id,
     const scoped_refptr<DevToolsNetworkConditions> conditions) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (!conditions) {
-    if (client_id == active_client_id_) {
-      conditions_ = NULL;
-      active_client_id_ = std::string();
+
+  DevToolsNetworkInterceptor* interceptor = interceptors_.get(client_id);
+  if (!interceptor) {
+    DCHECK(conditions);
+    if (!conditions)
+      return;
+    Interceptor new_interceptor = Interceptor(new DevToolsNetworkInterceptor());
+    new_interceptor->UpdateConditions(conditions);
+    interceptors_.set(client_id, new_interceptor.Pass());
+  } else {
+    if (!conditions) {
+      scoped_refptr<DevToolsNetworkConditions> online_conditions(
+          new DevToolsNetworkConditions());
+      interceptor->UpdateConditions(online_conditions);
+      interceptors_.erase(client_id);
+    } else {
+      interceptor->UpdateConditions(conditions);
     }
-    return;
   }
-  conditions_ = conditions;
-  active_client_id_ = client_id;
 
-  // Iterate over a copy of set, because failing of transaction could result in
-  // creating a new one, or (theoretically) destroying one.
-  Transactions old_transactions(transactions_);
-  for (Transactions::iterator it = old_transactions.begin();
-       it != old_transactions.end(); ++it) {
-    if (transactions_.find(*it) == transactions_.end())
-      continue;
-    if (!(*it)->request() || (*it)->failed())
-      continue;
-    if (ShouldFail((*it)->request()))
-      (*it)->Fail();
+  bool has_offline_interceptors = false;
+  Interceptors::iterator it = interceptors_.begin();
+  for (; it != interceptors_.end(); ++it) {
+    if (it->second->conditions()->offline()) {
+      has_offline_interceptors = true;
+      break;
+    }
   }
-}
 
-bool DevToolsNetworkController::ShouldFail(
-    const net::HttpRequestInfo* request) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  DCHECK(request);
-  if (!conditions_ || !conditions_->IsOffline())
-    return false;
-
-  if (!conditions_->HasMatchingDomain(request->url))
-    return false;
-
-  return !request->extra_headers.HasHeader(kDevToolsRequestInitiator);
+  bool is_appcache_offline = appcache_interceptor_->conditions()->offline();
+  if (is_appcache_offline != has_offline_interceptors) {
+    scoped_refptr<DevToolsNetworkConditions> appcache_conditions(
+        new DevToolsNetworkConditions(has_offline_interceptors));
+    appcache_interceptor_->UpdateConditions(appcache_conditions);
+  }
 }

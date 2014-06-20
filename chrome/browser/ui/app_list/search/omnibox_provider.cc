@@ -11,7 +11,6 @@
 #include "chrome/browser/autocomplete/search_provider.h"
 #include "chrome/browser/ui/app_list/search/chrome_search_result.h"
 #include "chrome/browser/ui/browser_navigator.h"
-#include "components/metrics/proto/omnibox_event.pb.h"
 #include "grit/theme_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -167,8 +166,7 @@ void OmniboxProvider::PopulateFromACResult(const AutocompleteResult& result) {
     if (!it->destination_url.is_valid())
       continue;
 
-    Add(scoped_ptr<ChromeSearchResult>(
-        new OmniboxResult(profile_, *it)).Pass());
+    Add(scoped_ptr<SearchResult>(new OmniboxResult(profile_, *it)));
   }
 }
 

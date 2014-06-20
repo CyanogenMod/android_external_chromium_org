@@ -141,12 +141,6 @@ void ConvertRealLoadTimesToBlockingTimes(
 
 }  // namespace
 
-URLRequest::ProtocolFactory*
-URLRequest::Deprecated::RegisterProtocolFactory(const std::string& scheme,
-                                                ProtocolFactory* factory) {
-  return URLRequest::RegisterProtocolFactory(scheme, factory);
-}
-
 void URLRequest::Deprecated::RegisterRequestInterceptor(
     Interceptor* interceptor) {
   URLRequest::RegisterRequestInterceptor(interceptor);
@@ -242,13 +236,6 @@ URLRequest::~URLRequest() {
   if (status_.status() == URLRequestStatus::FAILED)
     net_error = status_.error();
   net_log_.EndEventWithNetErrorCode(NetLog::TYPE_REQUEST_ALIVE, net_error);
-}
-
-// static
-URLRequest::ProtocolFactory* URLRequest::RegisterProtocolFactory(
-    const string& scheme, ProtocolFactory* factory) {
-  return URLRequestJobManager::GetInstance()->RegisterProtocolFactory(scheme,
-                                                                      factory);
 }
 
 // static
@@ -562,7 +549,7 @@ void URLRequest::SetDefaultCookiePolicyToBlock() {
 
 // static
 bool URLRequest::IsHandledProtocol(const std::string& scheme) {
-  return URLRequestJobManager::GetInstance()->SupportsScheme(scheme);
+  return URLRequestJobManager::SupportsScheme(scheme);
 }
 
 // static
@@ -627,6 +614,9 @@ void URLRequest::set_delegate(Delegate* delegate) {
 }
 
 void URLRequest::Start() {
+  // Some values can be NULL, but the job factory must not be.
+  DCHECK(context_->job_factory());
+
   DCHECK_EQ(network_delegate_, context_->network_delegate());
   // Anything that sets |blocked_by_| before start should have cleaned up after
   // itself.

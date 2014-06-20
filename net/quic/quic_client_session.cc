@@ -140,12 +140,10 @@ QuicClientSession::QuicClientSession(
     scoped_ptr<QuicServerInfo> server_info,
     const QuicServerId& server_id,
     const QuicConfig& config,
-    uint32 max_flow_control_receive_window_bytes,
     QuicCryptoClientConfig* crypto_config,
     base::TaskRunner* task_runner,
     NetLog* net_log)
     : QuicClientSessionBase(connection,
-                            max_flow_control_receive_window_bytes,
                             config),
       require_confirmation_(false),
       stream_factory_(stream_factory),
@@ -435,6 +433,7 @@ bool QuicClientSession::GetSSLInfo(SSLInfo* ssl_info) const {
 int QuicClientSession::CryptoConnect(bool require_confirmation,
                                      const CompletionCallback& callback) {
   require_confirmation_ = require_confirmation;
+  handshake_start_ = base::TimeTicks::Now();
   RecordHandshakeState(STATE_STARTED);
   if (!crypto_stream_->CryptoConnect()) {
     // TODO(wtc): change crypto_stream_.CryptoConnect() to return a
@@ -544,6 +543,8 @@ void QuicClientSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
     base::ResetAndReturn(&callback_).Run(OK);
   }
   if (event == HANDSHAKE_CONFIRMED) {
+    UMA_HISTOGRAM_TIMES("Net.QuicSession.HandshakeConfirmedTime",
+                        base::TimeTicks::Now() - handshake_start_);
     ObserverSet::iterator it = observers_.begin();
     while (it != observers_.end()) {
       Observer* observer = *it;
@@ -581,8 +582,9 @@ void QuicClientSession::OnConnectionClosed(QuicErrorCode error,
         "Net.QuicSession.ConnectionClose.NumOpenStreams.TimedOut",
         GetNumOpenStreams());
     if (!IsCryptoHandshakeConfirmed()) {
-      // If there have been any streams created, they were 0-RTT speculative
-      // requests that have not be serviced.
+      UMA_HISTOGRAM_COUNTS(
+          "Net.QuicSession.ConnectionClose.NumOpenStreams.HandshakeTimedOut",
+          GetNumOpenStreams());
       UMA_HISTOGRAM_COUNTS(
           "Net.QuicSession.ConnectionClose.NumTotalStreams.HandshakeTimedOut",
           num_total_streams_);
@@ -670,8 +672,8 @@ void QuicClientSession::StartReading() {
   if (++num_packets_read_ > 32) {
     num_packets_read_ = 0;
     // Data was read, process it.
-    // Schedule the work through the message loop to avoid recursive
-    // callbacks.
+    // Schedule the work through the message loop to 1) prevent infinite
+    // recursion and 2) avoid blocking the thread for too long.
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(&QuicClientSession::OnReadComplete,
@@ -776,9 +778,7 @@ void QuicClientSession::OnReadComplete(int result) {
     return;
   }
 
-  scoped_refptr<IOBufferWithSize> buffer(read_buffer_);
-  read_buffer_ = new IOBufferWithSize(kMaxPacketSize);
-  QuicEncryptedPacket packet(buffer->data(), result);
+  QuicEncryptedPacket packet(read_buffer_->data(), result);
   IPEndPoint local_address;
   IPEndPoint peer_address;
   socket_->GetLocalAddress(&local_address);

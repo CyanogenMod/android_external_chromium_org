@@ -32,6 +32,7 @@
 #include "cc/layers/layer_impl.h"
 #include "cc/layers/layer_iterator.h"
 #include "cc/layers/painted_scrollbar_layer_impl.h"
+#include "cc/layers/quad_sink.h"
 #include "cc/layers/render_surface_impl.h"
 #include "cc/layers/scrollbar_layer_impl_base.h"
 #include "cc/output/compositor_frame_metadata.h"
@@ -60,7 +61,6 @@
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/occlusion_tracker.h"
-#include "cc/trees/quad_culler.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "cc/trees/tree_synchronizer.h"
 #include "gpu/GLES2/gl2extchromium.h"
@@ -154,17 +154,17 @@ class LayerTreeHostImplTimeSourceAdapter : public TimeSourceClient {
           new DebugScopedSetImplThread(layer_tree_host_impl_->proxy()));
     }
 
-    // TODO(enne): This should probably happen post-animate.
-    if (layer_tree_host_impl_->pending_tree()) {
-      layer_tree_host_impl_->pending_tree()->UpdateDrawProperties();
-      layer_tree_host_impl_->ManageTiles();
-    }
-
     layer_tree_host_impl_->Animate(
         layer_tree_host_impl_->CurrentFrameTimeTicks());
     layer_tree_host_impl_->UpdateBackgroundAnimateTicking(true);
     bool start_ready_animations = true;
     layer_tree_host_impl_->UpdateAnimationState(start_ready_animations);
+
+    if (layer_tree_host_impl_->pending_tree()) {
+      layer_tree_host_impl_->pending_tree()->UpdateDrawProperties();
+      layer_tree_host_impl_->ManageTiles();
+    }
+
     layer_tree_host_impl_->ResetCurrentFrameTimeForNextFrame();
   }
 
@@ -315,7 +315,12 @@ void LayerTreeHostImpl::BeginMainFrameAborted(bool did_handle) {
   }
 }
 
-void LayerTreeHostImpl::BeginCommit() {}
+void LayerTreeHostImpl::BeginCommit() {
+  TRACE_EVENT0("cc", "LayerTreeHostImpl::BeginCommit");
+
+  if (settings_.impl_side_painting)
+    CreatePendingTree();
+}
 
 void LayerTreeHostImpl::CommitComplete() {
   TRACE_EVENT0("cc", "LayerTreeHostImpl::CommitComplete");
@@ -333,6 +338,13 @@ void LayerTreeHostImpl::CommitComplete() {
     else
       ManageTiles();
   } else {
+    // If we're not in impl-side painting, the tree is immediately considered
+    // active.
+    active_tree_->ProcessUIResourceRequestQueue();
+    active_tree_->DidBecomeActive();
+
+    ActivateAnimations();
+
     active_tree_->set_needs_update_draw_properties();
     if (time_source_client_adapter_ && time_source_client_adapter_->Active())
       DCHECK(active_tree_->root_layer());
@@ -474,9 +486,6 @@ bool LayerTreeHostImpl::IsCurrentlyScrollingLayerAt(
   if (!CurrentlyScrollingLayer())
     return false;
 
-  if (!EnsureRenderSurfaceLayerList())
-    return false;
-
   gfx::PointF device_viewport_point =
       gfx::ScalePoint(viewport_point, device_scale_factor_);
 
@@ -493,8 +502,6 @@ bool LayerTreeHostImpl::HaveTouchEventHandlersAt(
     const gfx::Point& viewport_point) {
   if (!settings_.touch_hit_testing)
     return true;
-  if (!EnsureRenderSurfaceLayerList())
-    return false;
 
   gfx::PointF device_viewport_point =
       gfx::ScalePoint(viewport_point, device_scale_factor_);
@@ -582,7 +589,7 @@ static void AppendQuadsForLayer(
     LayerImpl* layer,
     const OcclusionTracker<LayerImpl>& occlusion_tracker,
     AppendQuadsData* append_quads_data) {
-  QuadCuller quad_culler(target_render_pass, layer, occlusion_tracker);
+  QuadSink quad_culler(target_render_pass, &occlusion_tracker);
   layer->AppendQuads(&quad_culler, append_quads_data);
 }
 
@@ -592,7 +599,7 @@ static void AppendQuadsForRenderSurfaceLayer(
     const RenderPass* contributing_render_pass,
     const OcclusionTracker<LayerImpl>& occlusion_tracker,
     AppendQuadsData* append_quads_data) {
-  QuadCuller quad_culler(target_render_pass, layer, occlusion_tracker);
+  QuadSink quad_culler(target_render_pass, &occlusion_tracker);
 
   bool is_replica = false;
   layer->render_surface()->AppendQuads(&quad_culler,
@@ -635,7 +642,7 @@ static void AppendQuadsToFillScreen(
     screen_background_color_region.Intersect(root_scroll_layer_rect);
   }
 
-  QuadCuller quad_culler(target_render_pass, root_layer, occlusion_tracker);
+  QuadSink quad_culler(target_render_pass, &occlusion_tracker);
 
   // Manually create the quad state for the gutter quads, as the root layer
   // doesn't have any bounds and so can't generate this itself.
@@ -1094,7 +1101,8 @@ DrawResult LayerTreeHostImpl::PrepareToDraw(FrameData* frame) {
   }
   need_to_update_visible_tiles_before_draw_ = true;
 
-  active_tree_->UpdateDrawProperties();
+  bool ok = active_tree_->UpdateDrawProperties();
+  DCHECK(ok) << "UpdateDrawProperties failed during draw";
 
   frame->render_surface_layer_list = &active_tree_->RenderSurfaceLayerList();
   frame->render_passes.clear();
@@ -1234,6 +1242,10 @@ void LayerTreeHostImpl::DidModifyTilePriorities() {
 void LayerTreeHostImpl::DidInitializeVisibleTile() {
   if (client_ && !client_->IsInsideDraw())
     client_->DidInitializeVisibleTileOnImplThread();
+}
+
+const std::vector<PictureLayerImpl*>& LayerTreeHostImpl::GetPictureLayers() {
+  return picture_layers_;
 }
 
 void LayerTreeHostImpl::NotifyReadyToActivate() {
@@ -1448,8 +1460,9 @@ void LayerTreeHostImpl::DrawLayers(FrameData* frame,
   }
 
   TRACE_EVENT_OBJECT_SNAPSHOT_WITH_ID(
-      TRACE_DISABLED_BY_DEFAULT("cc.debug") "," TRACE_DISABLED_BY_DEFAULT(
-          "cc.debug.quads"),
+      TRACE_DISABLED_BY_DEFAULT("cc.debug") ","
+      TRACE_DISABLED_BY_DEFAULT("cc.debug.quads") ","
+      TRACE_DISABLED_BY_DEFAULT("devtools.timeline.layers"),
       "cc::LayerTreeHostImpl",
       id_,
       TracedValue::FromValue(AsValueWithFrame(frame).release()));
@@ -1686,6 +1699,13 @@ void LayerTreeHostImpl::CreatePendingTree() {
     recycle_tree_.swap(pending_tree_);
   else
     pending_tree_ = LayerTreeImpl::create(this);
+
+  // Update the delta from the active tree, which may have
+  // adjusted its delta prior to the pending tree being created.
+  DCHECK_EQ(1.f, pending_tree_->sent_page_scale_delta());
+  pending_tree_->SetPageScaleDelta(active_tree_->page_scale_delta() /
+                                   active_tree_->sent_page_scale_delta());
+
   client_->OnCanDrawStateChanged(CanDraw());
   TRACE_EVENT_ASYNC_BEGIN0("cc", "PendingTree:waiting", pending_tree_.get());
 }
@@ -1750,8 +1770,6 @@ void LayerTreeHostImpl::ActivatePendingTree() {
 
   if (time_source_client_adapter_ && time_source_client_adapter_->Active())
     DCHECK(active_tree_->root_layer());
-  devtools_instrumentation::DidActivateLayerTree(
-      id_, active_tree_->source_frame_number());
 }
 
 void LayerTreeHostImpl::SetVisible(bool visible) {
@@ -2005,8 +2023,9 @@ bool LayerTreeHostImpl::InitializeRenderer(
 
   // TODO(brianderson): Don't use a hard-coded parent draw time.
   base::TimeDelta parent_draw_time =
-      output_surface_->capabilities().adjust_deadline_for_parent
-          ? BeginFrameArgs::DefaultDeadlineAdjustment()
+      (!settings_.begin_frame_scheduling_enabled &&
+       output_surface_->capabilities().adjust_deadline_for_parent)
+          ? BeginFrameArgs::DefaultEstimatedParentDrawTime()
           : base::TimeDelta();
   client_->SetEstimatedParentDrawTime(parent_draw_time);
 
@@ -2031,12 +2050,14 @@ void LayerTreeHostImpl::DeferredInitialize() {
 
   ReleaseTreeResources();
   renderer_.reset();
+  DestroyTileManager();
 
   resource_provider_->InitializeGL();
 
   CreateAndSetRenderer();
-
   EnforceZeroBudget(false);
+  CreateAndSetTileManager();
+
   client_->SetNeedsCommitOnImplThread();
 }
 
@@ -2048,11 +2069,11 @@ void LayerTreeHostImpl::ReleaseGL() {
   ReleaseTreeResources();
   renderer_.reset();
   DestroyTileManager();
+
   resource_provider_->InitializeSoftware();
-
   output_surface_->ReleaseContextProvider();
-  CreateAndSetRenderer();
 
+  CreateAndSetRenderer();
   EnforceZeroBudget(true);
   CreateAndSetTileManager();
 
@@ -2128,11 +2149,6 @@ void LayerTreeHostImpl::DidChangeTopControlsPosition() {
   SetFullRootLayerDamage();
 }
 
-bool LayerTreeHostImpl::EnsureRenderSurfaceLayerList() {
-  active_tree_->UpdateDrawProperties();
-  return !active_tree_->RenderSurfaceLayerList().empty();
-}
-
 void LayerTreeHostImpl::BindToClient(InputHandlerClient* client) {
   DCHECK(input_handler_client_ == NULL);
   input_handler_client_ = client;
@@ -2153,7 +2169,7 @@ LayerImpl* LayerTreeHostImpl::FindScrollLayerForDeviceViewportPoint(
   DCHECK(scroll_on_main_thread);
 
   // Walk up the hierarchy and look for a scrollable layer.
-  LayerImpl* potentially_scrolling_layer_impl = 0;
+  LayerImpl* potentially_scrolling_layer_impl = NULL;
   for (; layer_impl; layer_impl = NextScrollLayer(layer_impl)) {
     // The content layer can also block attempts to scroll outside the main
     // thread.
@@ -2214,9 +2230,6 @@ InputHandler::ScrollStatus LayerTreeHostImpl::ScrollBegin(
 
   DCHECK(!CurrentlyScrollingLayer());
   ClearCurrentlyScrollingLayer();
-
-  if (!EnsureRenderSurfaceLayerList())
-    return ScrollIgnored;
 
   gfx::PointF device_viewport_point = gfx::ScalePoint(viewport_point,
                                                       device_scale_factor_);
@@ -2527,6 +2540,7 @@ void LayerTreeHostImpl::SetRootLayerScrollOffsetDelegate(
 void LayerTreeHostImpl::OnRootLayerDelegatedScrollOffsetChanged() {
   DCHECK(root_layer_scroll_offset_delegate_ != NULL);
   client_->SetNeedsCommitOnImplThread();
+  active_tree_->set_needs_update_draw_properties();
 }
 
 void LayerTreeHostImpl::ClearCurrentlyScrollingLayer() {
@@ -2581,9 +2595,6 @@ float LayerTreeHostImpl::DeviceSpaceDistanceToLayer(
 }
 
 void LayerTreeHostImpl::MouseMoveAt(const gfx::Point& viewport_point) {
-  if (!EnsureRenderSurfaceLayerList())
-    return;
-
   gfx::PointF device_viewport_point = gfx::ScalePoint(viewport_point,
                                                       device_scale_factor_);
   LayerImpl* layer_impl =
@@ -3133,6 +3144,19 @@ void LayerTreeHostImpl::NotifySwapPromiseMonitorsOfSetNeedsRedraw() {
   std::set<SwapPromiseMonitor*>::iterator it = swap_promise_monitor_.begin();
   for (; it != swap_promise_monitor_.end(); it++)
     (*it)->OnSetNeedsRedrawOnImpl();
+}
+
+void LayerTreeHostImpl::RegisterPictureLayerImpl(PictureLayerImpl* layer) {
+  DCHECK(std::find(picture_layers_.begin(), picture_layers_.end(), layer) ==
+         picture_layers_.end());
+  picture_layers_.push_back(layer);
+}
+
+void LayerTreeHostImpl::UnregisterPictureLayerImpl(PictureLayerImpl* layer) {
+  std::vector<PictureLayerImpl*>::iterator it =
+      std::find(picture_layers_.begin(), picture_layers_.end(), layer);
+  DCHECK(it != picture_layers_.end());
+  picture_layers_.erase(it);
 }
 
 }  // namespace cc

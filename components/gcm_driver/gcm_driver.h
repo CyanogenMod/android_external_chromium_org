@@ -13,7 +13,7 @@
 #include "base/macros.h"
 #include "base/threading/thread_checker.h"
 #include "components/gcm_driver/default_gcm_app_handler.h"
-#include "google_apis/gcm/gcm_client.h"
+#include "components/gcm_driver/gcm_client.h"
 
 namespace gcm {
 
@@ -67,11 +67,22 @@ class GCMDriver {
   // been called, no other GCMDriver methods may be used.
   virtual void Shutdown();
 
+  // Call this method when the user signs in to a GAIA account.
+  // TODO(jianli): To be removed when sign-in enforcement is dropped.
+  virtual void OnSignedIn() = 0;
+
+  // Removes all the cached and persisted GCM data. If the GCM service is
+  // restarted after the purge, a new Android ID will be obtained.
+  virtual void Purge() = 0;
+
   // Adds a handler for a given app.
   virtual void AddAppHandler(const std::string& app_id, GCMAppHandler* handler);
 
   // Remove the handler for a given app.
   virtual void RemoveAppHandler(const std::string& app_id);
+
+  // Returns the handler for the given app.
+  GCMAppHandler* GetAppHandler(const std::string& app_id);
 
   // Enables/disables GCM service.
   virtual void Enable() = 0;
@@ -86,6 +97,9 @@ class GCMDriver {
   // Returns true if the gcm client is ready.
   virtual bool IsGCMClientReady() const = 0;
 
+  // Returns true if the gcm client has an open and active connection.
+  virtual bool IsConnected() const = 0;
+
   // Get GCM client internal states and statistics.
   // If clear_logs is true then activity logs will be cleared before the stats
   // are returned.
@@ -95,9 +109,6 @@ class GCMDriver {
   // Enables/disables GCM activity recording, and then returns the stats.
   virtual void SetGCMRecording(const GetGCMStatisticsCallback& callback,
                                bool recording) = 0;
-
-  // Returns the user name if the profile is signed in. Empty string otherwise.
-  virtual std::string SignedInUserName() const = 0;
 
  protected:
   // Ensures that the GCM service starts (if necessary conditions are met).
@@ -132,9 +143,6 @@ class GCMDriver {
   bool HasRegisterCallback(const std::string& app_id);
 
   void ClearCallbacks();
-
-  // Returns the handler for the given app.
-  GCMAppHandler* GetAppHandler(const std::string& app_id);
 
  private:
   // Should be called when an app with |app_id| is trying to un/register.

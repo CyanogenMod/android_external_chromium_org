@@ -42,6 +42,7 @@ include $(LOCAL_PATH)/components/components_resources.target.linux-arm.mk
 include $(LOCAL_PATH)/components/components_strings.target.linux-arm.mk
 include $(LOCAL_PATH)/components/data_reduction_proxy_browser.target.linux-arm.mk
 include $(LOCAL_PATH)/components/data_reduction_proxy_common.target.linux-arm.mk
+include $(LOCAL_PATH)/components/keyed_service_core.target.linux-arm.mk
 include $(LOCAL_PATH)/components/navigation_interception.target.linux-arm.mk
 include $(LOCAL_PATH)/components/navigation_interception_jni_headers.target.linux-arm.mk
 include $(LOCAL_PATH)/components/os_crypt.target.linux-arm.mk
@@ -223,6 +224,7 @@ include $(LOCAL_PATH)/third_party/angle/src/translator_lib.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/ashmem/ashmem.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/brotli/brotli.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/expat/expat.target.linux-arm.mk
+include $(LOCAL_PATH)/third_party/fips181/fips181.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/freetype/ft2.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/harfbuzz-ng/harfbuzz-ng.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/iccjpeg/iccjpeg.target.linux-arm.mk
@@ -289,7 +291,6 @@ include $(LOCAL_PATH)/third_party/webrtc/common_video/common_video.target.linux-
 include $(LOCAL_PATH)/third_party/webrtc/modules/CNG.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/G711.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/G722.target.linux-arm.mk
-include $(LOCAL_PATH)/third_party/webrtc/modules/NetEq4.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/PCM16B.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/audio_coding_module.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/audio_conference_mixer.target.linux-arm.mk
@@ -306,6 +307,7 @@ include $(LOCAL_PATH)/third_party/webrtc/modules/iSAC.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/iSACFix.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/isac_neon.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/media_file.target.linux-arm.mk
+include $(LOCAL_PATH)/third_party/webrtc/modules/neteq.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/paced_sender.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/remote_bitrate_estimator.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/webrtc/modules/remote_bitrate_estimator/rbe_components.target.linux-arm.mk
@@ -361,16 +363,14 @@ include $(LOCAL_PATH)/v8/tools/gyp/mksnapshot.host.linux-arm.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8.target.linux-arm.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_base.host.linux-arm.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_base.target.linux-arm.mk
-include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.arm.host.linux-arm.mk
-include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.arm.target.linux-arm.mk
+include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.host.linux-arm.mk
+include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.target.linux-arm.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_nosnapshot.host.linux-arm.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_snapshot.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/child/overscroller_jni_headers.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/child/webkit_child.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/common/gpu/webkit_gpu.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/common/webkit_common.target.linux-arm.mk
-include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_bindings.target.linux-arm.mk
-include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_support.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/webkit_resources.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_browser.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_common.target.linux-arm.mk

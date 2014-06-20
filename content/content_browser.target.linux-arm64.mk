@@ -120,6 +120,7 @@ LOCAL_SRC_FILES := \
 	content/browser/android/surface_texture_peer_browser_impl.cc \
 	content/browser/android/tracing_controller_android.cc \
 	content/browser/android/web_contents_observer_android.cc \
+	content/browser/android/ui_resource_provider_impl.cc \
 	content/browser/appcache/appcache_dispatcher_host.cc \
 	content/browser/appcache/appcache_frontend_proxy.cc \
 	content/browser/appcache/appcache_interceptor.cc \
@@ -264,6 +265,7 @@ LOCAL_SRC_FILES := \
 	content/browser/indexed_db/indexed_db_backing_store.cc \
 	content/browser/indexed_db/indexed_db_blob_info.cc \
 	content/browser/indexed_db/indexed_db_callbacks.cc \
+	content/browser/indexed_db/indexed_db_class_factory.cc \
 	content/browser/indexed_db/indexed_db_connection.cc \
 	content/browser/indexed_db/indexed_db_context_impl.cc \
 	content/browser/indexed_db/indexed_db_cursor.cc \
@@ -309,7 +311,6 @@ LOCAL_SRC_FILES := \
 	content/browser/media/android/browser_media_player_manager.cc \
 	content/browser/media/android/media_drm_credential_manager.cc \
 	content/browser/media/android/media_resource_getter_impl.cc \
-	content/browser/media/android/media_web_contents_observer.cc \
 	content/browser/media/capture/audio_mirroring_manager.cc \
 	content/browser/media/capture/content_video_capture_device_core.cc \
 	content/browser/media/capture/video_capture_oracle.cc \
@@ -321,6 +322,8 @@ LOCAL_SRC_FILES := \
 	content/browser/media/media_internals_handler.cc \
 	content/browser/media/media_internals_proxy.cc \
 	content/browser/media/media_internals_ui.cc \
+	content/browser/media/midi_dispatcher_host.cc \
+	content/browser/media/midi_host.cc \
 	content/browser/media/webrtc_identity_store.cc \
 	content/browser/media/webrtc_identity_store_backend.cc \
 	content/browser/message_port_message_filter.cc \
@@ -373,13 +376,6 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/input/web_input_event_builders_android.cc \
 	content/browser/renderer_host/input/web_input_event_util.cc \
 	content/browser/renderer_host/input/web_input_event_util_posix.cc \
-	content/browser/renderer_host/java/java_bound_object.cc \
-	content/browser/renderer_host/java/java_bridge_channel_host.cc \
-	content/browser/renderer_host/java/java_bridge_dispatcher_host.cc \
-	content/browser/renderer_host/java/java_bridge_dispatcher_host_manager.cc \
-	content/browser/renderer_host/java/java_method.cc \
-	content/browser/renderer_host/java/java_type.cc \
-	content/browser/renderer_host/java/jni_helper.cc \
 	content/browser/renderer_host/media/audio_input_device_manager.cc \
 	content/browser/renderer_host/media/audio_input_renderer_host.cc \
 	content/browser/renderer_host/media/audio_input_sync_writer.cc \
@@ -391,8 +387,6 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/media/media_stream_manager.cc \
 	content/browser/renderer_host/media/media_stream_track_metrics_host.cc \
 	content/browser/renderer_host/media/media_stream_ui_proxy.cc \
-	content/browser/renderer_host/media/midi_dispatcher_host.cc \
-	content/browser/renderer_host/media/midi_host.cc \
 	content/browser/renderer_host/media/video_capture_buffer_pool.cc \
 	content/browser/renderer_host/media/video_capture_controller.cc \
 	content/browser/renderer_host/media/video_capture_controller_event_handler.cc \
@@ -433,6 +427,7 @@ LOCAL_SRC_FILES := \
 	content/browser/service_worker/service_worker_dispatcher_host.cc \
 	content/browser/service_worker/service_worker_fetch_dispatcher.cc \
 	content/browser/service_worker/service_worker_handle.cc \
+	content/browser/service_worker/service_worker_histograms.cc \
 	content/browser/service_worker/service_worker_info.cc \
 	content/browser/service_worker/service_worker_internals_ui.cc \
 	content/browser/service_worker/service_worker_job_coordinator.cc \
@@ -514,7 +509,18 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/p2p/socket_host_tcp_server.cc \
 	content/browser/renderer_host/p2p/socket_host_throttler.cc \
 	content/browser/renderer_host/p2p/socket_host_udp.cc \
-	content/browser/renderer_host/p2p/socket_dispatcher_host.cc
+	content/browser/renderer_host/p2p/socket_dispatcher_host.cc \
+	content/browser/renderer_host/java/gin_java_method_invocation_helper.cc \
+	content/browser/renderer_host/java/gin_java_script_to_java_types_coercion.cc \
+	content/browser/renderer_host/java/java_bound_object.cc \
+	content/browser/renderer_host/java/java_bridge_channel_host.cc \
+	content/browser/renderer_host/java/java_bridge_dispatcher_host.cc \
+	content/browser/renderer_host/java/java_bridge_dispatcher_host_manager.cc \
+	content/browser/renderer_host/java/java_method.cc \
+	content/browser/renderer_host/java/java_type.cc \
+	content/browser/renderer_host/java/jni_helper.cc \
+	content/browser/media/cdm/browser_cdm_manager.cc \
+	content/browser/media/media_web_contents_observer.cc
 
 
 # Flags passed to both C and C++ files.
@@ -559,6 +565,7 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_BROWSER_CDMS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
@@ -581,11 +588,11 @@ MY_DEFS_Debug := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_SETCONFIG_INFO' \
+	'-DSK_SUPPORT_LEGACY_BITMAP_CONFIG' \
+	'-DSK_SUPPORT_LEGACY_DEVICE_VIRTUAL_ISOPAQUE' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
+	'-DSK_SUPPORT_LEGACY_SETCONFIG' \
 	'-DSK_IGNORE_ETC1_SUPPORT' \
-	'-DSK_SUPPORT_LEGACY_INSTALLPIXELSPARAMS' \
-	'-DSK_SUPPORT_LEGACY_DRAWPICTURE_API' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
@@ -626,6 +633,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
+	$(gyp_shared_intermediate_dir) \
 	$(LOCAL_PATH) \
 	$(gyp_intermediate_dir) \
 	$(LOCAL_PATH)/third_party/khronos \
@@ -647,7 +655,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/re2 \
 	$(LOCAL_PATH)/third_party/zlib \
 	$(LOCAL_PATH)/third_party/WebKit \
-	$(gyp_shared_intermediate_dir) \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources \
@@ -734,6 +741,7 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_BROWSER_CDMS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
@@ -756,11 +764,11 @@ MY_DEFS_Release := \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_SETCONFIG_INFO' \
+	'-DSK_SUPPORT_LEGACY_BITMAP_CONFIG' \
+	'-DSK_SUPPORT_LEGACY_DEVICE_VIRTUAL_ISOPAQUE' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
+	'-DSK_SUPPORT_LEGACY_SETCONFIG' \
 	'-DSK_IGNORE_ETC1_SUPPORT' \
-	'-DSK_SUPPORT_LEGACY_INSTALLPIXELSPARAMS' \
-	'-DSK_SUPPORT_LEGACY_DRAWPICTURE_API' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
@@ -802,6 +810,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
+	$(gyp_shared_intermediate_dir) \
 	$(LOCAL_PATH) \
 	$(gyp_intermediate_dir) \
 	$(LOCAL_PATH)/third_party/khronos \
@@ -823,7 +832,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/re2 \
 	$(LOCAL_PATH)/third_party/zlib \
 	$(LOCAL_PATH)/third_party/WebKit \
-	$(gyp_shared_intermediate_dir) \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources \

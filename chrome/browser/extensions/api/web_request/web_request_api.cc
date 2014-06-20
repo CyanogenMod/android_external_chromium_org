@@ -413,14 +413,26 @@ void SendOnMessageEventOnUI(
   extensions::EventRouter* event_router = extensions::EventRouter::Get(profile);
 
   extensions::EventFilteringInfo event_filtering_info;
+
+  std::string event_name;
+#if defined(ENABLE_EXTENSIONS)
   // The instance ID uniquely identifies a <webview> instance within an embedder
   // process. We use a filter here so that only event listeners for a particular
   // <webview> will fire.
-  if (is_web_view_guest)
+  if (is_web_view_guest) {
     event_filtering_info.SetInstanceID(web_view_info.instance_id);
+    event_name = webview::kEventMessage;
+  } else {
+    event_name = declarative_keys::kOnMessage;
+  }
+#else
+  // TODO(thestig) Remove this once the WebRequestAPI code is disabled.
+  // http://crbug.com/305852
+  NOTREACHED();
+#endif
 
   scoped_ptr<extensions::Event> event(new extensions::Event(
-      is_web_view_guest ? webview::kEventMessage : declarative_keys::kOnMessage,
+      event_name,
       event_args.Pass(), profile, GURL(),
       extensions::EventRouter::USER_GESTURE_UNKNOWN,
       event_filtering_info));
@@ -2458,25 +2470,16 @@ void SendExtensionWebRequestStatusToHost(content::RenderProcessHost* host) {
   if (!profile)
     return;
 
-  bool adblock = false;
-  bool adblock_plus = false;
-  bool other = false;
+  bool webrequest_used = false;
   const extensions::ExtensionSet& extensions =
       extensions::ExtensionRegistry::Get(profile)->enabled_extensions();
   extensions::RuntimeData* runtime_data =
       extensions::ExtensionSystem::Get(profile)->runtime_data();
   for (extensions::ExtensionSet::const_iterator it = extensions.begin();
-       it != extensions.end(); ++it) {
-    if (runtime_data->HasUsedWebRequest(it->get())) {
-      if ((*it)->name().find("Adblock Plus") != std::string::npos) {
-        adblock_plus = true;
-      } else if ((*it)->name().find("AdBlock") != std::string::npos) {
-        adblock = true;
-      } else {
-        other = true;
-      }
-    }
+       !webrequest_used && it != extensions.end();
+       ++it) {
+    webrequest_used |= runtime_data->HasUsedWebRequest(it->get());
   }
 
-  host->Send(new ExtensionMsg_UsingWebRequestAPI(adblock, adblock_plus, other));
+  host->Send(new ExtensionMsg_UsingWebRequestAPI(webrequest_used));
 }

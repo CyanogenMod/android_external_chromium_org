@@ -219,8 +219,7 @@ QuicConnection::QuicConnection(QuicConnectionId connection_id,
       timeout_alarm_(helper->CreateAlarm(new TimeoutAlarm(this))),
       ping_alarm_(helper->CreateAlarm(new PingAlarm(this))),
       debug_visitor_(NULL),
-      packet_creator_(connection_id_, &framer_, random_generator_, is_server),
-      packet_generator_(this, NULL, &packet_creator_),
+      packet_generator_(connection_id_, &framer_, random_generator_, this),
       idle_network_timeout_(
           QuicTime::Delta::FromSeconds(kDefaultInitialTimeoutSecs)),
       overall_connection_timeout_(QuicTime::Delta::Infinite()),
@@ -478,7 +477,7 @@ bool QuicConnection::OnPacketHeader(const QuicPacketHeader& header) {
       DCHECK(!header.public_header.version_flag);
       // If the client gets a packet without the version flag from the server
       // it should stop sending version since the version negotiation is done.
-      packet_creator_.StopSendingVersion();
+      packet_generator_.StopSendingVersion();
       version_negotiation_state_ = NEGOTIATED_VERSION;
       visitor_->OnSuccessfulVersionNegotiation(version());
     }
@@ -616,10 +615,10 @@ bool QuicConnection::OnPingFrame(const QuicPingFrame& frame) {
 
 bool QuicConnection::ValidateAckFrame(const QuicAckFrame& incoming_ack) {
   if (incoming_ack.received_info.largest_observed >
-      packet_creator_.sequence_number()) {
+      packet_generator_.sequence_number()) {
     DLOG(ERROR) << ENDPOINT << "Peer's observed unsent packet:"
                 << incoming_ack.received_info.largest_observed << " vs "
-                << packet_creator_.sequence_number();
+                << packet_generator_.sequence_number();
     // We got an error for data we have not sent.  Error out.
     return false;
   }
@@ -740,6 +739,9 @@ bool QuicConnection::OnConnectionCloseFrame(
 
 bool QuicConnection::OnGoAwayFrame(const QuicGoAwayFrame& frame) {
   DCHECK(connected_);
+  if (debug_visitor_) {
+    debug_visitor_->OnGoAwayFrame(frame);
+  }
   DVLOG(1) << ENDPOINT << "Go away received with error "
            << QuicUtils::ErrorToString(frame.error_code)
            << " and reason:" << frame.reason_phrase;
@@ -749,6 +751,9 @@ bool QuicConnection::OnGoAwayFrame(const QuicGoAwayFrame& frame) {
 
 bool QuicConnection::OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame) {
   DCHECK(connected_);
+  if (debug_visitor_) {
+    debug_visitor_->OnWindowUpdateFrame(frame);
+  }
   DVLOG(1) << ENDPOINT << "WindowUpdate received for stream: "
            << frame.stream_id << " with byte offset: " << frame.byte_offset;
   last_window_update_frames_.push_back(frame);
@@ -757,6 +762,9 @@ bool QuicConnection::OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame) {
 
 bool QuicConnection::OnBlockedFrame(const QuicBlockedFrame& frame) {
   DCHECK(connected_);
+  if (debug_visitor_) {
+    debug_visitor_->OnBlockedFrame(frame);
+  }
   DVLOG(1) << ENDPOINT << "Blocked frame received for stream: "
            << frame.stream_id;
   last_blocked_frames_.push_back(frame);
@@ -938,7 +946,7 @@ void QuicConnection::UpdateStopWaitingCount() {
 QuicPacketSequenceNumber QuicConnection::GetLeastUnacked() const {
   return sent_packet_manager_.HasUnackedPackets() ?
       sent_packet_manager_.GetLeastUnackedSentPacket() :
-      packet_creator_.sequence_number() + 1;
+      packet_generator_.sequence_number() + 1;
 }
 
 void QuicConnection::MaybeSendInResponseToPacket() {
@@ -962,7 +970,7 @@ void QuicConnection::SendVersionNegotiationPacket() {
     return;
   }
   scoped_ptr<QuicEncryptedPacket> version_packet(
-      packet_creator_.SerializeVersionNegotiationPacket(
+      packet_generator_.SerializeVersionNegotiationPacket(
           framer_.supported_versions()));
   WriteResult result = writer_->WritePacket(
       version_packet->data(), version_packet->length(),
@@ -989,6 +997,7 @@ QuicConsumedData QuicConnection::SendStreamData(
     const IOVector& data,
     QuicStreamOffset offset,
     bool fin,
+    FecProtection fec_protection,
     QuicAckNotifier::DelegateInterface* delegate) {
   if (!fin && data.Empty()) {
     LOG(DFATAL) << "Attempt to send empty stream frame";
@@ -1016,7 +1025,8 @@ QuicConsumedData QuicConnection::SendStreamData(
   // processing left that may cause received_info_ to change.
   ScopedPacketBundler ack_bundler(this, BUNDLE_PENDING_ACK);
   QuicConsumedData consumed_data =
-      packet_generator_.ConsumeData(id, data, offset, fin, notifier);
+      packet_generator_.ConsumeData(id, data, offset, fin, fec_protection,
+                                    notifier);
 
   if (notifier &&
       (consumed_data.bytes_consumed == 0 && !consumed_data.fin_consumed)) {
@@ -1059,7 +1069,7 @@ const QuicConnectionStats& QuicConnection::GetStats() {
   stats_.estimated_bandwidth =
       sent_packet_manager_.BandwidthEstimate().ToBytesPerSecond();
   stats_.congestion_window = sent_packet_manager_.GetCongestionWindow();
-  stats_.max_packet_size = packet_creator_.max_packet_length();
+  stats_.max_packet_size = packet_generator_.max_packet_length();
   return stats_;
 }
 
@@ -1189,8 +1199,8 @@ bool QuicConnection::ProcessValidatedPacket() {
            << time_of_last_received_packet_.ToDebuggingValue();
 
   if (is_server_ && encryption_level_ == ENCRYPTION_NONE &&
-      last_size_ > packet_creator_.max_packet_length()) {
-    packet_creator_.set_max_packet_length(last_size_);
+      last_size_ > packet_generator_.max_packet_length()) {
+    packet_generator_.set_max_packet_length(last_size_);
   }
   return true;
 }
@@ -1235,7 +1245,7 @@ void QuicConnection::WritePendingRetransmissions() {
     // TODO(ianswett): Implement ReserializeAllFrames as a separate path that
     // does not require the creator to be flushed.
     Flush();
-    SerializedPacket serialized_packet = packet_creator_.ReserializeAllFrames(
+    SerializedPacket serialized_packet = packet_generator_.ReserializeAllFrames(
         pending.retransmittable_frames.frames(),
         pending.sequence_number_length);
 
@@ -1359,9 +1369,9 @@ bool QuicConnection::WritePacket(QueuedPacket packet) {
   }
 
   LOG_IF(DFATAL, encrypted->length() >
-                 packet_creator_.max_packet_length())
+         packet_generator_.max_packet_length())
       << "Writing an encrypted packet larger than max_packet_length:"
-      << packet_creator_.max_packet_length() << " encrypted length: "
+      << packet_generator_.max_packet_length() << " encrypted length: "
       << encrypted->length();
   DVLOG(1) << ENDPOINT << "Sending packet " << sequence_number
            << " : " << (packet.packet->is_fec_packet() ? "FEC " :
@@ -1489,7 +1499,7 @@ bool QuicConnection::OnPacketSent(WriteResult result) {
 
   // TODO(ianswett): Change the sequence number length and other packet creator
   // options by a more explicit API than setting a struct value directly.
-  packet_creator_.UpdateSequenceNumberLength(
+  packet_generator_.UpdateSequenceNumberLength(
       received_packet_manager_.least_packet_awaited_by_peer(),
       sent_packet_manager_.GetCongestionWindow());
 
@@ -1570,7 +1580,8 @@ void QuicConnection::SendPing() {
     char c_data[] = "C";
     data.Append(c_data, 1);
     QuicConsumedData consumed_data =
-        packet_generator_.ConsumeData(kCryptoStreamId, data, 0, false, NULL);
+        packet_generator_.ConsumeData(kCryptoStreamId, data, 0, false,
+                                      MAY_FEC_PROTECT, NULL);
     if (consumed_data.bytes_consumed == 0) {
       DLOG(ERROR) << "Unable to send ping!?";
     }
@@ -1603,10 +1614,16 @@ void QuicConnection::OnRetransmissionTimeout() {
   }
 
   sent_packet_manager_.OnRetransmissionTimeout();
-
   WriteIfNotBlocked();
+  // In the TLP case, the SentPacketManager gives the connection the opportunity
+  // to send new data before retransmitting.
+  if (sent_packet_manager_.MaybeRetransmitTailLossProbe()) {
+    // Send the pending retransmission now that it's been queued.
+    WriteIfNotBlocked();
+  }
 
-  // Ensure the retransmission alarm is always set if there are unacked packets.
+  // Ensure the retransmission alarm is always set if there are unacked packets
+  // and nothing waiting to be sent.
   if (!HasQueuedData() && !retransmission_alarm_->IsSet()) {
     QuicTime rto_timeout = sent_packet_manager_.GetRetransmissionTime();
     if (rto_timeout != QuicTime::Zero()) {
@@ -1626,7 +1643,7 @@ const QuicEncrypter* QuicConnection::encrypter(EncryptionLevel level) const {
 
 void QuicConnection::SetDefaultEncryptionLevel(EncryptionLevel level) {
   encryption_level_ = level;
-  packet_creator_.set_encryption_level(level);
+  packet_generator_.set_encryption_level(level);
 }
 
 void QuicConnection::SetDecrypter(QuicDecrypter* decrypter,
@@ -1815,6 +1832,14 @@ void QuicConnection::CloseFecGroupsBefore(
     delete fec_group;
     it = next;
   }
+}
+
+size_t QuicConnection::max_packet_length() const {
+  return packet_generator_.max_packet_length();
+}
+
+void QuicConnection::set_max_packet_length(size_t length) {
+  return packet_generator_.set_max_packet_length(length);
 }
 
 void QuicConnection::Flush() {

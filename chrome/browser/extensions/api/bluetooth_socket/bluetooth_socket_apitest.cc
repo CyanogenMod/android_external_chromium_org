@@ -144,10 +144,9 @@ IN_PROC_BROWSER_TEST_F(BluetoothSocketApiTest, Listen) {
       = new testing::StrictMock<MockBluetoothSocket>();
   EXPECT_CALL(*mock_adapter_,
               CreateRfcommService(service_uuid,
-                                  BluetoothAdapter::kPsmAuto,
-                                  false,
+                                  BluetoothAdapter::kChannelAuto,
                                   testing::_, testing::_))
-      .WillOnce(InvokeCallbackArgument<3>(mock_server_socket));
+      .WillOnce(InvokeCallbackArgument<2>(mock_server_socket));
 
   // Since the socket is unpaused, expect a call to Accept() from the socket
   // dispatcher. We'll immediately send back another mock socket to represent
@@ -188,5 +187,18 @@ IN_PROC_BROWSER_TEST_F(BluetoothSocketApiTest, Listen) {
 
   EXPECT_TRUE(listener.WaitUntilSatisfied());
   listener.Reply("go");
+  EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
+}
+
+IN_PROC_BROWSER_TEST_F(BluetoothSocketApiTest, PermissionDenied) {
+  ResultCatcher catcher;
+  catcher.RestrictToProfile(browser()->profile());
+
+  // Run the test.
+  scoped_refptr<const Extension> extension(
+      LoadExtension(test_data_dir_.AppendASCII(
+          "bluetooth_socket/permission_denied")));
+  ASSERT_TRUE(extension.get());
+
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }

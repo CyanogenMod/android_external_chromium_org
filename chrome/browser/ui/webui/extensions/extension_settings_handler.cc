@@ -42,9 +42,9 @@
 #include "chrome/browser/extensions/install_verifier.h"
 #include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/google/google_util.h"
-#include "chrome/browser/managed_mode/managed_user_service.h"
-#include "chrome/browser/managed_mode/managed_user_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/supervised_user/supervised_user_service.h"
+#include "chrome/browser/supervised_user/supervised_user_service_factory.h"
 #include "chrome/browser/tab_contents/background_contents.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
@@ -165,6 +165,7 @@ ExtensionSettingsHandler::ExtensionSettingsHandler()
       warning_service_observer_(this),
       error_console_observer_(this),
       extension_prefs_observer_(this),
+      extension_registry_observer_(this),
       should_do_verification_check_(false) {
 }
 
@@ -183,6 +184,7 @@ ExtensionSettingsHandler::ExtensionSettingsHandler(ExtensionService* service,
       warning_service_observer_(this),
       error_console_observer_(this),
       extension_prefs_observer_(this),
+      extension_registry_observer_(this),
       should_do_verification_check_(false) {
 }
 
@@ -424,15 +426,21 @@ void ExtensionSettingsHandler::GetLocalizedValues(
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_DEVELOPER_MODE_LINK));
   source->AddString("extensionSettingsNoExtensions",
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_NONE_INSTALLED));
-  source->AddString("extensionSettingsSuggestGallery",
-      l10n_util::GetStringFUTF16(IDS_EXTENSIONS_NONE_INSTALLED_SUGGEST_GALLERY,
-          base::ASCIIToUTF16(google_util::AppendGoogleLocaleParam(
-              GURL(extension_urls::GetExtensionGalleryURL())).spec())));
+  source->AddString(
+      "extensionSettingsSuggestGallery",
+      l10n_util::GetStringFUTF16(
+          IDS_EXTENSIONS_NONE_INSTALLED_SUGGEST_GALLERY,
+          base::ASCIIToUTF16(
+              google_util::AppendGoogleLocaleParam(
+                  GURL(extension_urls::GetExtensionGalleryURL()),
+                  g_browser_process->GetApplicationLocale()).spec())));
   source->AddString("extensionSettingsGetMoreExtensions",
       l10n_util::GetStringUTF16(IDS_GET_MORE_EXTENSIONS));
   source->AddString("extensionSettingsGetMoreExtensionsUrl",
-      base::ASCIIToUTF16(google_util::AppendGoogleLocaleParam(
-          GURL(extension_urls::GetExtensionGalleryURL())).spec()));
+                    base::ASCIIToUTF16(
+                        google_util::AppendGoogleLocaleParam(
+                            GURL(extension_urls::GetExtensionGalleryURL()),
+                            g_browser_process->GetApplicationLocale()).spec()));
   source->AddString("extensionSettingsExtensionId",
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_ID));
   source->AddString("extensionSettingsExtensionPath",
@@ -491,11 +499,15 @@ void ExtensionSettingsHandler::GetLocalizedValues(
   source->AddString("extensionSettingsLearnMore",
       l10n_util::GetStringUTF16(IDS_LEARN_MORE));
   source->AddString("extensionSettingsCorruptInstallHelpUrl",
-      base::ASCIIToUTF16(google_util::AppendGoogleLocaleParam(
-          GURL(chrome::kCorruptExtensionURL)).spec()));
+                    base::ASCIIToUTF16(
+                        google_util::AppendGoogleLocaleParam(
+                            GURL(chrome::kCorruptExtensionURL),
+                            g_browser_process->GetApplicationLocale()).spec()));
   source->AddString("extensionSettingsSuspiciousInstallHelpUrl",
-      base::ASCIIToUTF16(google_util::AppendGoogleLocaleParam(
-          GURL(chrome::kRemoveNonCWSExtensionURL)).spec()));
+                    base::ASCIIToUTF16(
+                        google_util::AppendGoogleLocaleParam(
+                            GURL(chrome::kRemoveNonCWSExtensionURL),
+                            g_browser_process->GetApplicationLocale()).spec()));
   source->AddString("extensionSettingsShowButton",
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_SHOW_BUTTON));
   source->AddString("extensionSettingsLoadUnpackedButton",
@@ -510,9 +522,11 @@ void ExtensionSettingsHandler::GetLocalizedValues(
       "extensionSettingsAppsDevToolsPromoHTML",
       l10n_util::GetStringFUTF16(
           IDS_EXTENSIONS_APPS_DEV_TOOLS_PROMO_HTML,
-          base::ASCIIToUTF16(google_util::AppendGoogleLocaleParam(
-              GURL(extension_urls::GetWebstoreItemDetailURLPrefix() +
-                       kAppsDeveloperToolsExtensionId)).spec())));
+          base::ASCIIToUTF16(
+              google_util::AppendGoogleLocaleParam(
+                  GURL(extension_urls::GetWebstoreItemDetailURLPrefix() +
+                       kAppsDeveloperToolsExtensionId),
+                  g_browser_process->GetApplicationLocale()).spec())));
   source->AddString(
       "extensionSettingsAppDevToolsPromoClose",
       l10n_util::GetStringUTF16(IDS_CLOSE));
@@ -651,9 +665,6 @@ void ExtensionSettingsHandler::Observe(
       MaybeUpdateAfterNotification();
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED:
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED:
-    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED:
     case chrome::NOTIFICATION_EXTENSION_UPDATE_DISABLED:
     case chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED:
       MaybeUpdateAfterNotification();
@@ -670,6 +681,25 @@ void ExtensionSettingsHandler::Observe(
     default:
       NOTREACHED();
   }
+}
+
+void ExtensionSettingsHandler::OnExtensionLoaded(
+    content::BrowserContext* browser_context,
+    const Extension* extension) {
+  MaybeUpdateAfterNotification();
+}
+
+void ExtensionSettingsHandler::OnExtensionUnloaded(
+    content::BrowserContext* browser_context,
+    const Extension* extension,
+    UnloadedExtensionInfo::Reason reason) {
+  MaybeUpdateAfterNotification();
+}
+
+void ExtensionSettingsHandler::OnExtensionUninstalled(
+    content::BrowserContext* browser_context,
+    const Extension* extension) {
+  MaybeUpdateAfterNotification();
 }
 
 void ExtensionSettingsHandler::OnExtensionDisableReasonsChanged(
@@ -792,11 +822,11 @@ void ExtensionSettingsHandler::HandleRequestExtensionsData(
   }
   results.Set("extensions", extensions_list);
 
-  bool is_managed = profile->IsManaged();
+  bool is_supervised = profile->IsSupervised();
   bool developer_mode =
-      !is_managed &&
+      !is_supervised &&
       profile->GetPrefs()->GetBoolean(prefs::kExtensionsUIDeveloperMode);
-  results.SetBoolean("profileIsManaged", is_managed);
+  results.SetBoolean("profileIsManaged", is_supervised);
   results.SetBoolean("developerMode", developer_mode);
 
   // Promote the Chrome Apps & Extensions Developer Tools if they are not
@@ -831,7 +861,7 @@ void ExtensionSettingsHandler::HandleRequestExtensionsData(
 void ExtensionSettingsHandler::HandleToggleDeveloperMode(
     const base::ListValue* args) {
   Profile* profile = Profile::FromWebUI(web_ui());
-  if (profile->IsManaged())
+  if (profile->IsSupervised())
     return;
 
   bool developer_mode =
@@ -1136,14 +1166,6 @@ void ExtensionSettingsHandler::MaybeRegisterForNotifications() {
   Profile* profile = Profile::FromWebUI(web_ui());
 
   // Register for notifications that we need to reload the page.
-  registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
-                 content::Source<Profile>(profile));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
-                 content::Source<Profile>(profile));
-  registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
-                 content::Source<Profile>(profile));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UPDATE_DISABLED,
                  content::Source<Profile>(profile));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_HOST_CREATED,
@@ -1161,10 +1183,11 @@ void ExtensionSettingsHandler::MaybeRegisterForNotifications() {
   registrar_.Add(this,
                  chrome::NOTIFICATION_EXTENSION_HOST_DESTROYED,
                  content::NotificationService::AllBrowserContextsAndSources());
-
   registrar_.Add(this,
                  content::NOTIFICATION_RENDER_WIDGET_HOST_DESTROYED,
                  content::NotificationService::AllBrowserContextsAndSources());
+
+  extension_registry_observer_.Add(ExtensionRegistry::Get(profile));
 
   content::WebContentsObserver::Observe(web_ui()->GetWebContents());
 

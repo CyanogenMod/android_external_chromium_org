@@ -100,9 +100,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   virtual float GetOverdrawBottomHeight() const OVERRIDE;
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
-  virtual void TextInputTypeChanged(ui::TextInputType type,
-                                    ui::TextInputMode input_mode,
-                                    bool can_compose_inline) OVERRIDE;
+  virtual void TextInputStateChanged(
+      const ViewHostMsg_TextInputState_Params& params) OVERRIDE;
   virtual void ImeCancelComposition() OVERRIDE;
   virtual void FocusedNodeChanged(bool is_editable_node) OVERRIDE;
   virtual void RenderProcessGone(base::TerminationStatus status,
@@ -142,8 +141,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
   virtual void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                                       InputEventAckState ack_result) OVERRIDE;
-  virtual void SetScrollOffsetPinning(
-      bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE;
   virtual InputEventAckState FilterInputEvent(
       const blink::WebInputEvent& input_event) OVERRIDE;
   virtual void OnSetNeedsFlushInput() OVERRIDE;
@@ -163,6 +160,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
       OVERRIDE;
   virtual void LockCompositingSurface() OVERRIDE;
   virtual void UnlockCompositingSurface() OVERRIDE;
+  virtual void OnTextSurroundingSelectionResponse(const base::string16& content,
+                                                  size_t start_offset,
+                                                  size_t end_offset) OVERRIDE;
 
   // cc::DelegatedFrameResourceCollectionClient implementation.
   virtual void UnusedResourcesAreAvailable() OVERRIDE;
@@ -195,7 +195,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void SendMouseWheelEvent(const blink::WebMouseWheelEvent& event);
   void SendGestureEvent(const blink::WebGestureEvent& event);
 
-  void OnTextInputStateChanged(const ViewHostMsg_TextInputState_Params& params);
   void OnDidChangeBodyBackgroundColor(SkColor color);
   void OnStartContentIntent(const GURL& content_url);
   void OnSetNeedsBeginFrame(bool enabled);
@@ -310,6 +309,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   // The most recent content size that was pushed to the texture layer.
   gfx::Size content_size_in_layer_;
+
+  // The device scale of the last received frame.
+  float device_scale_factor_;
 
   // The output surface id of the last received frame.
   uint32_t last_output_surface_id_;

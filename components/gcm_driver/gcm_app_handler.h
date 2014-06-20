@@ -8,7 +8,7 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "google_apis/gcm/gcm_client.h"
+#include "components/gcm_driver/gcm_client.h"
 
 namespace gcm {
 
@@ -16,8 +16,8 @@ namespace gcm {
 // app.
 class GCMAppHandler {
  public:
-  GCMAppHandler() {}
-  virtual ~GCMAppHandler() {}
+  GCMAppHandler();
+  virtual ~GCMAppHandler();
 
   // Called to do all the cleanup when GCM is shutting down.
   // In the case that multiple apps share the same app handler, it should be
@@ -35,6 +35,21 @@ class GCMAppHandler {
   virtual void OnSendError(
       const std::string& app_id,
       const GCMClient::SendErrorDetails& send_error_details) = 0;
+
+  // Called when a new connection is established and a successful handshake
+  // has been performed. Note that |ip_endpoint| is only set if available for
+  // the current platform.
+  // Default implementation does nothing.
+  virtual void OnConnected(const net::IPEndPoint& ip_endpoint);
+
+  // Called when the connection is interrupted.
+  // Default implementation does nothing.
+  virtual void OnDisconnected();
+
+  // If no app handler has been added with the exact app_id of an incoming
+  // event, all handlers will be asked (in arbitrary order) whether they can
+  // handle the app_id, and the first to return true will receive the event.
+  virtual bool CanHandle(const std::string& app_id) const;
 };
 
 }  // namespace gcm

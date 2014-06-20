@@ -4,7 +4,9 @@
 
 #include "athena/content/public/content_activity_factory.h"
 
+#include "athena/content/app_activity.h"
 #include "athena/content/web_activity.h"
+#include "base/logging.h"
 
 namespace athena {
 
@@ -17,6 +19,11 @@ Activity* ContentActivityFactory::CreateWebActivity(
     content::BrowserContext* browser_context,
     const GURL& url) {
   return new WebActivity(browser_context, url);
+}
+
+Activity* ContentActivityFactory::CreateAppActivity(
+    apps::ShellAppWindow* app_window) {
+  return new AppActivity(app_window);
 }
 
 }  // namespace athena

@@ -61,11 +61,14 @@ void Scheduler::SyntheticBeginFrameSource::OnTimerTick() {
   scheduler_->BeginFrame(begin_frame_args);
 }
 
+scoped_ptr<base::Value> Scheduler::SyntheticBeginFrameSource::AsValue() const {
+  return time_source_->AsValue();
+}
+
 BeginFrameArgs
 Scheduler::SyntheticBeginFrameSource::CreateSyntheticBeginFrameArgs(
     base::TimeTicks frame_time) {
-  base::TimeTicks deadline =
-      time_source_->NextTickTime() - scheduler_->EstimatedParentDrawTime();
+  base::TimeTicks deadline = time_source_->NextTickTime();
   return BeginFrameArgs::Create(
       frame_time, deadline, scheduler_->VSyncInterval());
 }
@@ -137,6 +140,7 @@ void Scheduler::CommitVSyncParameters(base::TimeTicks timebase,
 }
 
 void Scheduler::SetEstimatedParentDrawTime(base::TimeDelta draw_time) {
+  DCHECK_GE(draw_time.ToInternalValue(), 0);
   estimated_parent_draw_time_ = draw_time;
 }
 
@@ -398,6 +402,9 @@ void Scheduler::BeginFrame(const BeginFrameArgs& args) {
   TRACE_EVENT1("cc", "Scheduler::BeginFrame", "args", ToTrace(args));
   DCHECK(settings_.throttle_frame_production);
 
+  BeginFrameArgs adjusted_args(args);
+  adjusted_args.deadline -= EstimatedParentDrawTime();
+
   bool should_defer_begin_frame;
   if (settings_.using_synchronous_renderer_compositor) {
     should_defer_begin_frame = false;
@@ -410,13 +417,13 @@ void Scheduler::BeginFrame(const BeginFrameArgs& args) {
   }
 
   if (should_defer_begin_frame) {
-    begin_retro_frame_args_.push_back(args);
+    begin_retro_frame_args_.push_back(adjusted_args);
     TRACE_EVENT_INSTANT0(
         "cc", "Scheduler::BeginFrame deferred", TRACE_EVENT_SCOPE_THREAD);
     return;
   }
 
-  BeginImplFrame(args);
+  BeginImplFrame(adjusted_args);
 }
 
 // BeginRetroFrame is called for BeginFrames that we've deferred because
@@ -676,6 +683,9 @@ bool Scheduler::WillDrawIfNeeded() const {
 scoped_ptr<base::Value> Scheduler::AsValue() const {
   scoped_ptr<base::DictionaryValue> state(new base::DictionaryValue);
   state->Set("state_machine", state_machine_.AsValue().release());
+  if (synthetic_begin_frame_source_)
+    state->Set("synthetic_begin_frame_source_",
+               synthetic_begin_frame_source_->AsValue().release());
 
   scoped_ptr<base::DictionaryValue> scheduler_state(new base::DictionaryValue);
   scheduler_state->SetDouble(

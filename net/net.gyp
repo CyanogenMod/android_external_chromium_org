@@ -541,6 +541,7 @@
         '../testing/gtest.gyp:gtest',
         '../third_party/zlib/zlib.gyp:zlib',
         '../url/url.gyp:url_lib',
+        'balsa',
         'http_server',
         'net',
         'net_derived_sources',
@@ -552,7 +553,6 @@
       'conditions': [
         ['os_posix == 1 and OS != "mac" and OS != "ios" and OS != "android"', {
           'dependencies': [
-            'balsa',
             'epoll_server',
             'flip_in_mem_edsm_server_base',
             'quic_base',
@@ -1061,6 +1061,34 @@
       'msvs_disabled_warnings': [4267, ],
     },
     {
+      'target_name': 'balsa',
+      'type': 'static_library',
+      'dependencies': [
+        '../base/base.gyp:base',
+        'net',
+      ],
+      'sources': [
+        'tools/balsa/balsa_enums.h',
+        'tools/balsa/balsa_frame.cc',
+        'tools/balsa/balsa_frame.h',
+        'tools/balsa/balsa_headers.cc',
+        'tools/balsa/balsa_headers.h',
+        'tools/balsa/balsa_headers_token_utils.cc',
+        'tools/balsa/balsa_headers_token_utils.h',
+        'tools/balsa/balsa_visitor_interface.h',
+        'tools/balsa/http_message_constants.cc',
+        'tools/balsa/http_message_constants.h',
+        'tools/balsa/noop_balsa_visitor.h',
+        'tools/balsa/simple_buffer.cc',
+        'tools/balsa/simple_buffer.h',
+        'tools/balsa/split.cc',
+        'tools/balsa/split.h',
+        'tools/balsa/string_piece_utils.h',
+        'tools/quic/spdy_utils.cc',
+        'tools/quic/spdy_utils.h',
+      ],
+    },
+    {
       'target_name': 'dump_cache',
       'type': 'executable',
       'dependencies': [
@@ -1294,32 +1322,6 @@
     ['os_posix == 1 and OS != "mac" and OS != "ios" and OS != "android"', {
       'targets': [
         {
-          'target_name': 'balsa',
-          'type': 'static_library',
-          'dependencies': [
-            '../base/base.gyp:base',
-            'net',
-          ],
-          'sources': [
-            'tools/balsa/balsa_enums.h',
-            'tools/balsa/balsa_frame.cc',
-            'tools/balsa/balsa_frame.h',
-            'tools/balsa/balsa_headers.cc',
-            'tools/balsa/balsa_headers.h',
-            'tools/balsa/balsa_headers_token_utils.cc',
-            'tools/balsa/balsa_headers_token_utils.h',
-            'tools/balsa/balsa_visitor_interface.h',
-            'tools/balsa/http_message_constants.cc',
-            'tools/balsa/http_message_constants.h',
-            'tools/balsa/noop_balsa_visitor.h',
-            'tools/balsa/simple_buffer.cc',
-            'tools/balsa/simple_buffer.h',
-            'tools/balsa/split.cc',
-            'tools/balsa/split.h',
-            'tools/balsa/string_piece_utils.h',
-          ],
-        },
-        {
           'target_name': 'epoll_server',
           'type': 'static_library',
           'dependencies': [
@@ -1453,8 +1455,6 @@
             'tools/quic/quic_spdy_server_stream.h',
             'tools/quic/quic_time_wait_list_manager.h',
             'tools/quic/quic_time_wait_list_manager.cc',
-            'tools/quic/spdy_utils.cc',
-            'tools/quic/spdy_utils.h',
           ],
         },
         {

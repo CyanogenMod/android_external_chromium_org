@@ -63,7 +63,16 @@ class WebViewGuest : public GuestView<WebViewGuest>,
   // Returns guestview::kInstanceIDNone if |contents| does not correspond to a
   // WebViewGuest.
   static int GetViewInstanceId(content::WebContents* contents);
+  // Parses partition related parameters from |extra_params|.
+  // |storage_partition_id| is the parsed partition ID and |persist_storage|
+  // specifies whether or not the partition is in memory.
+  static void ParsePartitionParam(const base::DictionaryValue* extra_params,
+                                  std::string* storage_partition_id,
+                                  bool* persist_storage);
   static const char Type[];
+
+  // Request navigating the guest to the provided |src| URL.
+  void NavigateGuest(const std::string& src);
 
   typedef std::vector<linked_ptr<webview_api::ContextMenuItem> > MenuItemVector;
   // Shows the context menu for the guest.
@@ -142,14 +151,13 @@ class WebViewGuest : public GuestView<WebViewGuest>,
                                   content::WebContents* new_contents) OVERRIDE;
 
   // BrowserPluginGuestDelegate implementation.
-  virtual void DidAttach() OVERRIDE;
+  virtual void DidAttach(const base::DictionaryValue& extra_params) OVERRIDE;
   virtual void SizeChanged(const gfx::Size& old_size, const gfx::Size& new_size)
       OVERRIDE;
   virtual void RequestPointerLockPermission(
       bool user_gesture,
       bool last_unlocked_by_target,
       const base::Callback<void(bool)>& callback) OVERRIDE;
-  virtual void NavigateGuest(const std::string& src) OVERRIDE;
 
   // NotificationObserver implementation.
   virtual void Observe(int type,
@@ -188,35 +196,11 @@ class WebViewGuest : public GuestView<WebViewGuest>,
                                     const GURL& requesting_frame,
                                     bool user_gesture,
                                     const base::Callback<void(bool)>& callback);
-
-  void OnWebViewGeolocationPermissionResponse(
-      int bridge_id,
-      bool user_gesture,
-      const base::Callback<void(bool)>& callback,
-      bool allow,
-      const std::string& user_input);
-
   void CancelGeolocationPermissionRequest(int bridge_id);
 
-  void OnWebViewMediaPermissionResponse(
-      const content::MediaStreamRequest& request,
-      const content::MediaResponseCallback& callback,
-      bool allow,
-      const std::string& user_input);
-
-  void OnWebViewDownloadPermissionResponse(
-      const base::Callback<void(bool)>& callback,
-      bool allow,
-      const std::string& user_input);
-
-  void OnWebViewPointerLockPermissionResponse(
-      const base::Callback<void(bool)>& callback,
-      bool allow,
-      const std::string& user_input);
-
-  void OnWebViewNewWindowResponse(int new_window_instance_id,
-                                  bool allow,
-                                  const std::string& user_input);
+  void RequestFileSystemPermission(const GURL& url,
+                                   bool allowed_by_default,
+                                   const base::Callback<void(bool)>& callback);
 
   enum PermissionResponseAction {
     DENY,
@@ -259,6 +243,39 @@ class WebViewGuest : public GuestView<WebViewGuest>,
     return script_executor_.get();
   }
 
+  // Called when file system access is requested by the guest content using the
+  // asynchronous HTML5 file system API. The request is plumbed through the
+  // <webview> permission request API. The request will be:
+  // - Allowed if the embedder explicitly allowed it.
+  // - Denied if the embedder explicitly denied.
+  // - Determined by the guest's content settings if the embedder does not
+  // perform an explicit action.
+  // If access was blocked due to the page's content settings,
+  // |blocked_by_policy| should be true, and this function should invoke
+  // OnContentBlocked.
+  static void FileSystemAccessedAsync(int render_process_id,
+                                      int render_frame_id,
+                                      int request_id,
+                                      const GURL& url,
+                                      bool blocked_by_policy);
+
+  // Called when file system access is requested by the guest content using the
+  // synchronous HTML5 file system API in a worker thread or shared worker. The
+  // request is plumbed through the <webview> permission request API. The
+  // request will be:
+  // - Allowed if the embedder explicitly allowed it.
+  // - Denied if the embedder explicitly denied.
+  // - Determined by the guest's content settings if the embedder does not
+  // perform an explicit action.
+  // If access was blocked due to the page's content settings,
+  // |blocked_by_policy| should be true, and this function should invoke
+  // OnContentBlocked.
+  static void FileSystemAccessedSync(int render_process_id,
+                                     int render_frame_id,
+                                     const GURL& url,
+                                     bool blocked_by_policy,
+                                     IPC::Message* reply_msg);
+
  private:
   virtual ~WebViewGuest();
 
@@ -280,6 +297,50 @@ class WebViewGuest : public GuestView<WebViewGuest>,
   // Returns the top level items (ignoring submenus) as Value.
   static scoped_ptr<base::ListValue> MenuModelToValue(
       const ui::SimpleMenuModel& menu_model);
+
+  void OnWebViewGeolocationPermissionResponse(
+      int bridge_id,
+      bool user_gesture,
+      const base::Callback<void(bool)>& callback,
+      bool allow,
+      const std::string& user_input);
+
+  void OnWebViewFileSystemPermissionResponse(
+      const base::Callback<void(bool)>& callback,
+      bool allow,
+      const std::string& user_input);
+
+  void OnWebViewMediaPermissionResponse(
+      const content::MediaStreamRequest& request,
+      const content::MediaResponseCallback& callback,
+      bool allow,
+      const std::string& user_input);
+
+  void OnWebViewDownloadPermissionResponse(
+      const base::Callback<void(bool)>& callback,
+      bool allow,
+      const std::string& user_input);
+
+  void OnWebViewPointerLockPermissionResponse(
+      const base::Callback<void(bool)>& callback,
+      bool allow,
+      const std::string& user_input);
+
+  void OnWebViewNewWindowResponse(int new_window_instance_id,
+                                  bool allow,
+                                  const std::string& user_input);
+
+  static void FileSystemAccessedAsyncResponse(int render_process_id,
+                                              int render_frame_id,
+                                              int request_id,
+                                              const GURL& url,
+                                              bool allowed);
+
+  static void FileSystemAccessedSyncResponse(int render_process_id,
+                                             int render_frame_id,
+                                             const GURL& url,
+                                             IPC::Message* reply_msg,
+                                             bool allowed);
 
   // WebContentsObserver implementation.
   virtual void DidCommitProvisionalLoadForFrame(

@@ -84,8 +84,8 @@ class VideoSender : public RtcpSenderFeedback,
   void ScheduleNextResendCheck();
   void ResendCheck();
 
-  // Asks |transport_sender_| to resend all the packets for a particular frame.
-  void ResendFrame(uint32 resend_frame_id);
+  // Resend certain packets of an unacked frame to kick start re-transmission.
+  void ResendForKickstart();
 
   // Returns true if there are too many frames in flight, as defined by the
   // configured target playout delay plus simple logic.  When this is true,
@@ -96,8 +96,6 @@ class VideoSender : public RtcpSenderFeedback,
   // Called by the |video_encoder_| with the next EncodeFrame to send.
   void SendEncodedVideoFrame(int requested_bitrate_before_encode,
                              scoped_ptr<transport::EncodedFrame> encoded_frame);
-
-  void UpdateBitrate(int32 new_bitrate);
 
   const scoped_refptr<CastEnvironment> cast_environment_;
 
@@ -160,10 +158,6 @@ class VideoSender : public RtcpSenderFeedback,
   // receiver hasn't yet received the first packet of the next frame.  In this
   // case, VideoSender will trigger a re-send of the next frame.
   int duplicate_ack_counter_;
-
-  // Desired encoder bitrate (in bits per second).  This is updated by querying
-  // |congestion_control_| as each ACK is received.
-  int current_requested_bitrate_;
 
   // When we get close to the max number of un-acked frames, we set lower
   // the bitrate drastically to ensure that we catch up. Without this we

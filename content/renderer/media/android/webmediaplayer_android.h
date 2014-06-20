@@ -49,14 +49,11 @@ namespace media {
 class MediaLog;
 }
 
-namespace webkit {
-class WebLayerImpl;
-}
-
 namespace content {
 class RendererCdmManager;
 class RendererMediaPlayerManager;
 class WebContentDecryptionModuleImpl;
+class WebLayerImpl;
 class WebMediaPlayerDelegate;
 
 // This class implements blink::WebMediaPlayer by keeping the android
@@ -192,9 +189,6 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
 
   // RenderFrameObserver implementation.
   virtual void OnDestruct() OVERRIDE;
-
-  // Detach the player from its manager.
-  void Detach();
 
 #if defined(VIDEO_HOLE)
   // Calculate the boundary rectangle of the media player (i.e. location and
@@ -395,7 +389,7 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   // not NULL while the compositor is actively using this webmediaplayer.
   cc::VideoFrameProvider::Client* video_frame_provider_client_;
 
-  scoped_ptr<webkit::WebLayerImpl> video_weblayer_;
+  scoped_ptr<WebLayerImpl> video_weblayer_;
 
 #if defined(VIDEO_HOLE)
   // A rectangle represents the geometry of video frame, when computed last

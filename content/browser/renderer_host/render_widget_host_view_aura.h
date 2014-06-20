@@ -35,6 +35,8 @@
 #include "ui/wm/public/activation_change_observer.h"
 #include "ui/wm/public/activation_delegate.h"
 
+struct ViewHostMsg_TextInputState_Params;
+
 namespace aura {
 class WindowTracker;
 namespace client {
@@ -129,7 +131,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   explicit RenderWidgetHostViewAura(RenderWidgetHost* host);
 
   // RenderWidgetHostView implementation.
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
   virtual void InitAsChild(gfx::NativeView parent_view) OVERRIDE;
   virtual RenderWidgetHost* GetRenderWidgetHost() const OVERRIDE;
   virtual void SetSize(const gfx::Size& size) OVERRIDE;
@@ -161,9 +162,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void Blur() OVERRIDE;
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
-  virtual void TextInputTypeChanged(ui::TextInputType type,
-                                    ui::TextInputMode input_mode,
-                                    bool can_compose_inline) OVERRIDE;
+  virtual void TextInputStateChanged(
+      const ViewHostMsg_TextInputState_Params& params) OVERRIDE;
   virtual void ImeCancelComposition() OVERRIDE;
   virtual void ImeCompositionRangeChanged(
       const gfx::Range& range,
@@ -215,8 +215,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
       InputEventAckState ack_result) OVERRIDE;
   virtual scoped_ptr<SyntheticGestureTarget> CreateSyntheticGestureTarget()
       OVERRIDE;
-  virtual void SetScrollOffsetPinning(
-      bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE;
   virtual InputEventAckState FilterInputEvent(
       const blink::WebInputEvent& input_event) OVERRIDE;
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
@@ -317,8 +315,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void OnHostMoved(const aura::WindowTreeHost* host,
                            const gfx::Point& new_origin) OVERRIDE;
 
-  void OnTextInputStateChanged(const ViewHostMsg_TextInputState_Params& params);
-
 #if defined(OS_WIN)
   // Sets the cutout rects from constrained windows. These are rectangles that
   // windowed NPAPI plugins shouldn't paint in. Overwrites any previous cutout
@@ -352,6 +348,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
  private:
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, SetCompositionText);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, TouchEventState);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
+                           TouchEventPositionsArentRounded);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, TouchEventSyncAsync);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, SwapNotifiesWindow);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
@@ -424,8 +422,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual RenderWidgetHostImpl* GetHost() OVERRIDE;
   virtual void SchedulePaintInRect(
       const gfx::Rect& damage_rect_in_dip) OVERRIDE;
-  virtual void DelegatedCompositorDidSwapBuffers() OVERRIDE {}
-  virtual void DelegatedCompositorAbortedSwapBuffers() OVERRIDE {}
   virtual bool IsVisible() OVERRIDE;
   virtual scoped_ptr<ResizeLock> CreateResizeLock(
       bool defer_compositor_lock) OVERRIDE;

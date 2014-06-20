@@ -4,6 +4,9 @@
 
 #include "chrome/browser/chromeos/display/display_preferences.h"
 
+#include <string>
+#include <vector>
+
 #include "ash/display/display_controller.h"
 #include "ash/display/display_layout_store.h"
 #include "ash/display/display_manager.h"
@@ -438,8 +441,9 @@ TEST_F(DisplayPreferencesTest, PreventStore) {
   message_center::MessageCenter::Get()->ClickOnNotificationButton(
       ResolutionNotificationController::kNotificationId, 1);
   RunAllPendingInMessageLoop();
-  EXPECT_FALSE(message_center::MessageCenter::Get()->HasNotification(
-      ResolutionNotificationController::kNotificationId));
+  EXPECT_FALSE(
+      message_center::MessageCenter::Get()->FindVisibleNotificationById(
+          ResolutionNotificationController::kNotificationId));
 
   // Once the notification is removed, the specified resolution will be stored
   // by SetDisplayResolution.
@@ -641,7 +645,7 @@ TEST_F(DisplayPreferencesTest, DontSaveMaximizeModeControllerRotations) {
   // Open up 270 degrees to trigger maximize mode
   controller->OnAccelerometerUpdated(gfx::Vector3dF(0.0f, 0.0f, -1.0f),
                                      gfx::Vector3dF(-1.0f, 0.0f, 0.0f));
-  EXPECT_TRUE(shell->IsMaximizeModeWindowManagerEnabled());
+  EXPECT_TRUE(controller->IsMaximizeModeWindowManagerEnabled());
 
   // Trigger 90 degree rotation
   controller->OnAccelerometerUpdated(gfx::Vector3dF(0.0f, 1.0f, 0.0f),

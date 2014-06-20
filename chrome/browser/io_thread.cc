@@ -48,7 +48,6 @@
 #include "content/public/browser/cookie_store_factory.h"
 #include "net/base/host_mapping_rules.h"
 #include "net/base/net_util.h"
-#include "net/base/sdch_manager.h"
 #include "net/cert/cert_verifier.h"
 #include "net/cert/cert_verify_proc.h"
 #include "net/cert/ct_known_logs.h"
@@ -101,6 +100,7 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/net/cert_verify_proc_chromeos.h"
+#include "chromeos/network/host_resolver_impl_chromeos.h"
 #endif
 
 using content::BrowserThread;
@@ -185,8 +185,15 @@ scoped_ptr<net::HostResolver> CreateGlobalHostResolver(net::NetLog* net_log) {
     }
   }
 
-  scoped_ptr<net::HostResolver> global_host_resolver(
-      net::HostResolver::CreateSystemResolver(options, net_log));
+  scoped_ptr<net::HostResolver> global_host_resolver;
+#if defined OS_CHROMEOS
+  global_host_resolver =
+      chromeos::HostResolverImplChromeOS::CreateSystemResolver(options,
+                                                               net_log);
+#else
+  global_host_resolver =
+      net::HostResolver::CreateSystemResolver(options, net_log);
+#endif
 
   // Determine if we should disable IPv6 support.
   if (command_line.HasSwitch(switches::kEnableIPv6)) {
@@ -259,6 +266,7 @@ ConstructSystemRequestContext(IOThread::Globals* globals,
   context->set_proxy_service(globals->system_proxy_service.get());
   context->set_http_transaction_factory(
       globals->system_http_transaction_factory.get());
+  context->set_job_factory(globals->system_url_request_job_factory.get());
   context->set_cookie_store(globals->system_cookie_store.get());
   context->set_server_bound_cert_service(
       globals->system_server_bound_cert_service.get());
@@ -412,7 +420,6 @@ IOThread::IOThread(
     : net_log_(net_log),
       extension_event_router_forwarder_(extension_event_router_forwarder),
       globals_(NULL),
-      sdch_manager_(NULL),
       is_spdy_disabled_by_policy_(false),
       weak_factory_(this),
       creation_time_(base::TimeTicks::Now()) {
@@ -606,6 +613,8 @@ void IOThread::InitAsync() {
     drp_flags |= DataReductionProxyParams::kPromoAllowed;
   globals_->data_reduction_proxy_params.reset(
       new DataReductionProxyParams(drp_flags));
+  network_delegate->set_data_reduction_proxy_params(
+      globals_->data_reduction_proxy_params.get());
 #endif  // defined(SPDY_PROXY_AUTH_ORIGIN)
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
   globals_->http_auth_handler_factory.reset(CreateDefaultAuthHandlerFactory(
@@ -690,8 +699,6 @@ void IOThread::InitAsync() {
   globals_->proxy_script_fetcher_context.reset(
       ConstructProxyScriptFetcherContext(globals_, net_log_));
 
-  sdch_manager_ = new net::SdchManager();
-
 #if defined(OS_MACOSX) && !defined(OS_IOS)
   // Start observing Keychain events. This needs to be done on the UI thread,
   // as Keychain services requires a CFRunLoop.
@@ -718,9 +725,6 @@ void IOThread::InitAsync() {
 
 void IOThread::CleanUp() {
   base::debug::LeakTracker<SafeBrowsingURLRequestContext>::CheckForLeaks();
-
-  delete sdch_manager_;
-  sdch_manager_ = NULL;
 
 #if defined(USE_NSS) || defined(OS_IOS)
   net::ShutdownNSSHttpIO();
@@ -1045,11 +1049,10 @@ void IOThread::InitSystemRequestContextOnIOThread() {
   globals_->system_http_transaction_factory.reset(
       new net::HttpNetworkLayer(
           new net::HttpNetworkSession(system_params)));
+  globals_->system_url_request_job_factory.reset(
+      new net::URLRequestJobFactoryImpl());
   globals_->system_request_context.reset(
       ConstructSystemRequestContext(globals_, net_log_));
-
-  sdch_manager_->set_sdch_fetcher(
-      new SdchDictionaryFetcher(system_url_request_context_getter_.get()));
 }
 
 void IOThread::UpdateDnsClientEnabled() {

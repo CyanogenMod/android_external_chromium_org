@@ -93,15 +93,15 @@ const char* kFieldsFromPage[] =
       "cc-csc",
       "billing name",
       "billing address-line1",
-      "billing locality",
-      "billing region",
+      "billing address-level2",
+      "billing address-level1",
       "billing postal-code",
       "billing country",
       "billing tel",
       "shipping name",
       "shipping address-line1",
-      "shipping locality",
-      "shipping region",
+      "shipping address-level2",
+      "shipping address-level1",
       "shipping postal-code",
       "shipping country",
       "shipping tel",
@@ -255,7 +255,7 @@ class TestAutofillDialogController
       const FormData& form_structure,
       const GURL& source_url,
       const AutofillMetrics& metric_logger,
-      const AutofillManagerDelegate::ResultCallback& callback,
+      const AutofillClient::ResultCallback& callback,
       MockNewCreditCardBubbleController* mock_new_card_bubble_controller)
       : AutofillDialogControllerImpl(contents,
                                      form_structure,
@@ -263,8 +263,10 @@ class TestAutofillDialogController
                                      callback),
         metric_logger_(metric_logger),
         mock_wallet_client_(
-            Profile::FromBrowserContext(contents->GetBrowserContext())->
-                GetRequestContext(), this, source_url),
+            Profile::FromBrowserContext(contents->GetBrowserContext())
+                ->GetRequestContext(),
+            this,
+            source_url),
         mock_new_card_bubble_controller_(mock_new_card_bubble_controller),
         submit_button_delay_count_(0) {}
 
@@ -445,7 +447,7 @@ class AutofillDialogControllerTest : public ChromeRenderViewHostTestHarness {
     if (controller_)
       controller_->ViewClosed();
 
-    AutofillManagerDelegate::ResultCallback callback =
+    AutofillClient::ResultCallback callback =
         base::Bind(&AutofillDialogControllerTest::FinishedCallback,
                    base::Unretained(this));
     controller_ = (new testing::NiceMock<TestAutofillDialogController>(
@@ -644,10 +646,9 @@ class AutofillDialogControllerTest : public ChromeRenderViewHostTestHarness {
   }
 
  private:
-  void FinishedCallback(
-      AutofillManagerDelegate::RequestAutocompleteResult result,
-      const base::string16& debug_message,
-      const FormStructure* form_structure) {
+  void FinishedCallback(AutofillClient::RequestAutocompleteResult result,
+                        const base::string16& debug_message,
+                        const FormStructure* form_structure) {
     form_structure_ = form_structure;
   }
 
@@ -2415,7 +2416,7 @@ TEST_F(AutofillDialogControllerTest, ShippingSectionCanBeHidden) {
   FormFieldData cc_field;
   cc_field.autocomplete_attribute = "cc-number";
   FormFieldData billing_field;
-  billing_field.autocomplete_attribute = "billing region";
+  billing_field.autocomplete_attribute = "billing address-level1";
 
   FormData form_data;
   form_data.fields.push_back(email_field);
@@ -2441,7 +2442,7 @@ TEST_F(AutofillDialogControllerTest, ShippingSectionCanBeHiddenForWallet) {
   FormFieldData cc_field;
   cc_field.autocomplete_attribute = "cc-number";
   FormFieldData billing_field;
-  billing_field.autocomplete_attribute = "billing region";
+  billing_field.autocomplete_attribute = "billing address-level1";
 
   FormData form_data;
   form_data.fields.push_back(email_field);
@@ -3150,22 +3151,6 @@ TEST_F(AutofillDialogControllerTest, IconReservedForCreditCardField) {
   }
 }
 
-TEST_F(AutofillDialogControllerTest, NoPartiallySupportedCountriesSuggested) {
-  SwitchToAutofill();
-
-  std::string partially_supported_country = "KR";
-  ASSERT_FALSE(i18ninput::CountryIsFullySupported(partially_supported_country));
-  ASSERT_FALSE(controller()->MenuModelForSection(SECTION_BILLING));
-
-  AutofillProfile verified_profile(test::GetVerifiedProfile());
-  verified_profile.SetRawInfo(ADDRESS_HOME_COUNTRY,
-                              ASCIIToUTF16(partially_supported_country));
-  controller()->GetTestingManager()->AddTestingProfile(&verified_profile);
-
-  EXPECT_FALSE(
-      controller()->SuggestionStateForSection(SECTION_BILLING).visible);
-}
-
 TEST_F(AutofillDialogControllerTest, CountryChangeUpdatesSection) {
   TestAutofillDialogView* view = controller()->GetView();
   view->ClearSectionUpdates();
@@ -3450,58 +3435,6 @@ TEST_F(AutofillDialogControllerTest, LimitedCcChoices) {
   ValidateCCNumber(SECTION_CC_BILLING, kTestCCNumberDiscover, true);
 }
 
-TEST_F(AutofillDialogControllerTest, CountriesWithDependentLocalityHidden) {
-  ui::ComboboxModel* model =
-      controller()->ComboboxModelForAutofillType(ADDRESS_BILLING_COUNTRY);
-  for (int i = 0; i < model->GetItemCount(); ++i) {
-    EXPECT_NE(base::ASCIIToUTF16("China"), model->GetItemAt(i));
-    EXPECT_NE(base::ASCIIToUTF16("South Korea"), model->GetItemAt(i));
-  }
-
-  model = controller()->ComboboxModelForAutofillType(ADDRESS_HOME_COUNTRY);
-  for (int i = 0; i < model->GetItemCount(); ++i) {
-    EXPECT_NE(base::ASCIIToUTF16("China"), model->GetItemAt(i));
-    EXPECT_NE(base::ASCIIToUTF16("South Korea"), model->GetItemAt(i));
-  }
-}
-
-TEST_F(AutofillDialogControllerTest, DontSuggestHiddenCountries) {
-  SwitchToAutofill();
-
-  FieldValueMap outputs;
-  outputs[ADDRESS_HOME_COUNTRY] = ASCIIToUTF16("US");
-  controller()->GetView()->SetUserInput(SECTION_SHIPPING, outputs);
-
-  AutofillProfile cn_profile(test::GetVerifiedProfile());
-  cn_profile.SetRawInfo(NAME_FULL, ASCIIToUTF16("Chinese User"));
-  cn_profile.SetRawInfo(ADDRESS_HOME_COUNTRY, ASCIIToUTF16("CN"));
-  controller()->GetTestingManager()->AddTestingProfile(&cn_profile);
-
-  controller()->UserEditedOrActivatedInput(
-      SECTION_SHIPPING,
-      NAME_FULL,
-      gfx::NativeView(),
-      gfx::Rect(),
-      cn_profile.GetRawInfo(NAME_FULL).substr(0, 1),
-      true);
-  EXPECT_EQ(UNKNOWN_TYPE, controller()->popup_input_type());
-
-  AutofillProfile us_profile(test::GetVerifiedProfile());
-  us_profile.SetRawInfo(NAME_FULL, ASCIIToUTF16("American User"));
-  ASSERT_NE(cn_profile.GetRawInfo(NAME_FULL)[0],
-            us_profile.GetRawInfo(NAME_FULL)[0]);
-  controller()->GetTestingManager()->AddTestingProfile(&us_profile);
-
-  controller()->UserEditedOrActivatedInput(
-      SECTION_SHIPPING,
-      NAME_FULL,
-      gfx::NativeView(),
-      gfx::Rect(),
-      us_profile.GetRawInfo(NAME_FULL).substr(0, 1),
-      true);
-  EXPECT_EQ(NAME_FULL, controller()->popup_input_type());
-}
-
 TEST_F(AutofillDialogControllerTest, SuggestCountrylessProfiles) {
   SwitchToAutofill();
 
@@ -3532,6 +3465,44 @@ TEST_F(AutofillDialogControllerTest, SwitchFromWalletWithFirstName) {
   controller()->GetView()->SetUserInput(SECTION_CC_BILLING, outputs);
 
   ASSERT_NO_FATAL_FAILURE(SwitchToAutofill());
+}
+
+// Regression test for http://crbug.com/382777
+TEST_F(AutofillDialogControllerTest, WalletBillingCountry) {
+  FormFieldData cc_field;
+  cc_field.autocomplete_attribute = "cc-number";
+  FormFieldData billing_country, billing_country_name, shipping_country,
+      shipping_country_name;
+  billing_country.autocomplete_attribute = "billing country";
+  billing_country_name.autocomplete_attribute = "billing country-name";
+  shipping_country.autocomplete_attribute = "shipping country";
+  shipping_country_name.autocomplete_attribute = "shipping country-name";
+
+  FormData form_data;
+  form_data.fields.push_back(cc_field);
+  form_data.fields.push_back(billing_country);
+  form_data.fields.push_back(billing_country_name);
+  form_data.fields.push_back(shipping_country);
+  form_data.fields.push_back(shipping_country_name);
+
+  SetUpControllerWithFormData(form_data);
+  AcceptAndLoadFakeFingerprint();
+  controller()->OnDidGetFullWallet(wallet::GetTestFullWallet());
+  controller()->ForceFinishSubmit();
+
+  ASSERT_EQ(5U, form_structure()->field_count());
+  EXPECT_EQ(ADDRESS_HOME_COUNTRY,
+            form_structure()->field(1)->Type().GetStorableType());
+  EXPECT_EQ(ASCIIToUTF16("US"), form_structure()->field(1)->value);
+  EXPECT_EQ(ADDRESS_HOME_COUNTRY,
+            form_structure()->field(2)->Type().GetStorableType());
+  EXPECT_EQ(ASCIIToUTF16("United States"), form_structure()->field(2)->value);
+  EXPECT_EQ(ADDRESS_HOME_COUNTRY,
+            form_structure()->field(3)->Type().GetStorableType());
+  EXPECT_EQ(ASCIIToUTF16("US"), form_structure()->field(3)->value);
+  EXPECT_EQ(ADDRESS_HOME_COUNTRY,
+            form_structure()->field(4)->Type().GetStorableType());
+  EXPECT_EQ(ASCIIToUTF16("United States"), form_structure()->field(4)->value);
 }
 
 }  // namespace autofill

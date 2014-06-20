@@ -13,9 +13,9 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/search_engines/search_terms_data.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "libxml/parser.h"
 #include "libxml/xmlwriter.h"
 #include "ui/gfx/favicon_size.h"
@@ -303,14 +303,13 @@ TemplateURL* TemplateURLParsingContext::GetTemplateURL(
   data_.show_in_default_list = show_in_default_list;
 
   // Bail if the search URL is empty or if either TemplateURLRef is invalid.
-  scoped_ptr<TemplateURL> template_url(new TemplateURL(profile, data_));
+  scoped_ptr<TemplateURL> template_url(new TemplateURL(data_));
   scoped_ptr<SearchTermsData> search_terms_data(profile ?
       new UIThreadSearchTermsData(profile) : new SearchTermsData());
   if (template_url->url().empty() ||
-      !template_url->url_ref().IsValidUsingTermsData(*search_terms_data) ||
+      !template_url->url_ref().IsValid(*search_terms_data) ||
       (!template_url->suggestions_url().empty() &&
-       !template_url->suggestions_url_ref().
-           IsValidUsingTermsData(*search_terms_data))) {
+       !template_url->suggestions_url_ref().IsValid(*search_terms_data))) {
     return NULL;
   }
 

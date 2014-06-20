@@ -11,7 +11,6 @@
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
-#include "third_party/WebKit/public/web/WebIconURL.h"
 
 class GURL;
 
@@ -29,6 +28,7 @@ class WebGestureEvent;
 class WebLocalFrame;
 class WebMouseEvent;
 class WebNode;
+class WebString;
 class WebTouchEvent;
 class WebURL;
 struct WebURLError;
@@ -108,6 +108,12 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
  protected:
   explicit RenderViewObserver(RenderView* render_view);
   virtual ~RenderViewObserver();
+
+  // Sets |render_view_| to track.
+  // Removes itself of previous (if any) |render_view_| observer list and adds
+  // to the new |render_view|. Since it assumes that observer outlives
+  // render_view, OnDestruct should be overridden.
+  void Observe(RenderView* render_view);
 
  private:
   friend class RenderViewImpl;

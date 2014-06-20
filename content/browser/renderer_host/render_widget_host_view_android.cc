@@ -35,7 +35,7 @@
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/gpu/gpu_process_host_ui_shim.h"
 #include "content/browser/gpu/gpu_surface_tracker.h"
-#include "content/browser/media/android/media_web_contents_observer.h"
+#include "content/browser/media/media_web_contents_observer.h"
 #include "content/browser/renderer_host/compositor_impl_android.h"
 #include "content/browser/renderer_host/dip_util.h"
 #include "content/browser/renderer_host/image_transport_factory_android.h"
@@ -218,8 +218,6 @@ bool RenderWidgetHostViewAndroid::OnMessageReceived(
                         OnDidChangeBodyBackgroundColor)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SetNeedsBeginFrame,
                         OnSetNeedsBeginFrame)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_TextInputStateChanged,
-                        OnTextInputStateChanged)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SmartClipDataExtracted,
                         OnSmartClipDataExtracted)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -435,6 +433,12 @@ void RenderWidgetHostViewAndroid::UnlockCompositingSurface() {
   }
 }
 
+void RenderWidgetHostViewAndroid::OnTextSurroundingSelectionResponse(
+    const base::string16& content,
+    size_t start_offset,
+    size_t end_offset) {
+}
+
 void RenderWidgetHostViewAndroid::ReleaseLocksOnSurface() {
   if (!frame_evictor_->HasFrame()) {
     DCHECK_EQ(locks_on_frame_count_, 0u);
@@ -476,18 +480,11 @@ void RenderWidgetHostViewAndroid::SetIsLoading(bool is_loading) {
   // is TabContentsDelegate.
 }
 
-void RenderWidgetHostViewAndroid::TextInputTypeChanged(
-    ui::TextInputType type,
-    ui::TextInputMode input_mode,
-    bool can_compose_inline) {
-  // Unused on Android, which uses OnTextInputChanged instead.
-}
-
 long RenderWidgetHostViewAndroid::GetNativeImeAdapter() {
   return reinterpret_cast<intptr_t>(&ime_adapter_android_);
 }
 
-void RenderWidgetHostViewAndroid::OnTextInputStateChanged(
+void RenderWidgetHostViewAndroid::TextInputStateChanged(
     const ViewHostMsg_TextInputState_Params& params) {
   // If the change is not originated from IME (e.g. Javascript, autofill),
   // send back the renderer an acknowledgement, regardless of how we exit from
@@ -688,7 +685,6 @@ void RenderWidgetHostViewAndroid::CopyFromCompositingSurface(
   DCHECK(frame_provider_);
   scoped_refptr<cc::DelegatedRendererLayer> delegated_layer =
       cc::DelegatedRendererLayer::Create(frame_provider_);
-  delegated_layer->SetDisplaySize(texture_size_in_layer_);
   delegated_layer->SetBounds(content_size_in_layer_);
   delegated_layer->SetHideLayerAndSubtree(true);
   delegated_layer->SetIsDrawable(true);
@@ -792,6 +788,14 @@ void RenderWidgetHostViewAndroid::SwapDelegatedFrame(
     last_output_surface_id_ = output_surface_id;
   }
 
+  // DelegatedRendererLayerImpl applies the inverse device_scale_factor of the
+  // renderer frame, assuming that the browser compositor will scale
+  // it back up to device scale.  But on Android we put our browser layers in
+  // physical pixels and set our browser CC device_scale_factor to 1, so this
+  // suppresses the transform.  This line may need to be removed when fixing
+  // http://crbug.com/384134 or http://crbug.com/310763
+  frame_data->device_scale_factor = 1.0f;
+
   if (!has_content) {
     DestroyDelegatedContent();
   } else {
@@ -812,7 +816,6 @@ void RenderWidgetHostViewAndroid::SwapDelegatedFrame(
   }
 
   if (layer_.get()) {
-    layer_->SetDisplaySize(texture_size_in_layer_);
     layer_->SetIsDrawable(true);
     layer_->SetContentsOpaque(true);
     layer_->SetBounds(content_size_in_layer_);
@@ -859,10 +862,6 @@ void RenderWidgetHostViewAndroid::InternalSwapCompositorFrame(
     return;
   }
 
-  // Always let ContentViewCore know about the new frame first, so it can decide
-  // to schedule a Draw immediately when it sees the texture layer invalidation.
-  OnFrameMetadataUpdated(frame->metadata);
-
   if (layer_ && layer_->layer_tree_host()) {
     for (size_t i = 0; i < frame->metadata.latency_info.size(); i++) {
       scoped_ptr<cc::SwapPromise> swap_promise(
@@ -880,6 +879,8 @@ void RenderWidgetHostViewAndroid::InternalSwapCompositorFrame(
 
   SwapDelegatedFrame(output_surface_id, frame->delegated_frame_data.Pass());
   frame_evictor_->SwappedFrame(!host_->is_hidden());
+
+  OnFrameMetadataUpdated(frame->metadata);
 }
 
 void RenderWidgetHostViewAndroid::OnSwapCompositorFrame(
@@ -1087,11 +1088,6 @@ void RenderWidgetHostViewAndroid::ProcessAckedTouchEvent(
     const TouchEventWithLatencyInfo& touch, InputEventAckState ack_result) {
   const bool event_consumed = ack_result == INPUT_EVENT_ACK_STATE_CONSUMED;
   gesture_provider_.OnTouchEventAck(event_consumed);
-}
-
-void RenderWidgetHostViewAndroid::SetScrollOffsetPinning(
-    bool is_pinned_to_left, bool is_pinned_to_right) {
-  // intentionally empty, like RenderWidgetHostViewViews
 }
 
 void RenderWidgetHostViewAndroid::GestureEventAck(

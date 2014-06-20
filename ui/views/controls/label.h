@@ -13,35 +13,15 @@
 #include "base/strings/string16.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/font_list.h"
+#include "ui/gfx/shadow_value.h"
 #include "ui/gfx/text_constants.h"
 #include "ui/views/view.h"
 
 namespace views {
 
-/////////////////////////////////////////////////////////////////////////////
-//
-// Label class
-//
-// A label is a view subclass that can display a string.
-//
-/////////////////////////////////////////////////////////////////////////////
+// A view subclass that can display a string.
 class VIEWS_EXPORT Label : public View {
  public:
-  // The following enum is used to indicate whether using the Chrome UI's
-  // directionality as the label's directionality, or auto-detecting the label's
-  // directionality.
-  //
-  // If the label text originates from the Chrome UI, we should use the Chrome
-  // UI's directionality as the label's directionality.
-  //
-  // If the text originates from a web page, its directionality is determined
-  // based on its first character with strong directionality, disregarding what
-  // directionality the Chrome UI is.
-  enum DirectionalityMode {
-    USE_UI_DIRECTIONALITY = 0,
-    AUTO_DETECT_DIRECTIONALITY
-  };
-
   // Internal class name.
   static const char kViewClassName[];
 
@@ -79,43 +59,23 @@ class VIEWS_EXPORT Label : public View {
   void SetBackgroundColor(SkColor color);
   SkColor background_color() const { return background_color_; }
 
-  // Enables a drop shadow underneath the text.
-  void SetShadowColors(SkColor enabled_color, SkColor disabled_color);
-
-  // Sets the drop shadow's offset from the text.
-  void SetShadowOffset(int x, int y);
-
-  // Sets the shadow blur. Default is zero.
-  void set_shadow_blur(double shadow_blur) { shadow_blur_ = shadow_blur; }
-
-  // Disables shadows.
-  void ClearEmbellishing();
+  // Set drop shadows underneath the text.
+  void set_shadows(const gfx::ShadowValues& shadows) { shadows_ = shadows; }
 
   // Set the color of a halo on the painted text (use transparent for none).
   void set_halo_color(SkColor halo_color) { halo_color_ = halo_color; }
 
-  // Sets horizontal alignment. If the locale is RTL, and the directionality
-  // mode is USE_UI_DIRECTIONALITY, the alignment is flipped around.
-  //
-  // Caveat: for labels originating from a web page, the directionality mode
-  // should be reset to AUTO_DETECT_DIRECTIONALITY before the horizontal
-  // alignment is set. Otherwise, the label's alignment specified as a parameter
-  // will be flipped in RTL locales.
+  // Sets the horizontal alignment; the argument value is mirrored in RTL UI.
   void SetHorizontalAlignment(gfx::HorizontalAlignment alignment);
+  gfx::HorizontalAlignment GetHorizontalAlignment() const;
 
-  gfx::HorizontalAlignment horizontal_alignment() const {
-    return horizontal_alignment_;
-  }
-
-  // Sets the directionality mode. The directionality mode is initialized to
-  // USE_UI_DIRECTIONALITY when the label is constructed. USE_UI_DIRECTIONALITY
-  // applies to every label that originates from the Chrome UI. However, if the
-  // label originates from a web page, its directionality is auto-detected.
-  void set_directionality_mode(DirectionalityMode mode) {
+  // Sets the directionality mode. The default value is DIRECTIONALITY_FROM_UI,
+  // which should be suitable for most text originating from UI string assets.
+  // Most text originating from web content should use DIRECTIONALITY_FROM_TEXT.
+  void set_directionality_mode(gfx::DirectionalityMode mode) {
     directionality_mode_ = mode;
   }
-
-  DirectionalityMode directionality_mode() const {
+  gfx::DirectionalityMode directionality_mode() const {
     return directionality_mode_;
   }
 
@@ -212,9 +172,7 @@ class VIEWS_EXPORT Label : public View {
   FRIEND_TEST_ALL_PREFIXES(LabelTest, DrawMultiLineString);
   FRIEND_TEST_ALL_PREFIXES(LabelTest, DrawSingleLineStringInRTL);
   FRIEND_TEST_ALL_PREFIXES(LabelTest, DrawMultiLineStringInRTL);
-  FRIEND_TEST_ALL_PREFIXES(LabelTest, AutoDetectDirectionality);
-
-  // Calls ComputeDrawStringFlags().
+  FRIEND_TEST_ALL_PREFIXES(LabelTest, DirectionalityFromText);
   FRIEND_TEST_ALL_PREFIXES(LabelTest, DisableSubpixelRendering);
 
   // Sets both |text_| and |layout_text_| to appropriate values, taking
@@ -272,23 +230,10 @@ class VIEWS_EXPORT Label : public View {
   base::string16 tooltip_text_;
   // Whether to collapse the label when it's not visible.
   bool collapse_when_hidden_;
-  // The following member variable is used to control whether the
-  // directionality is auto-detected based on first strong directionality
-  // character or is determined by chrome UI's locale.
-  DirectionalityMode directionality_mode_;
-
-  // Colors for shadow.
-  SkColor enabled_shadow_color_;
-  SkColor disabled_shadow_color_;
-
-  // Space between text and shadow.
-  gfx::Point shadow_offset_;
-
-  // Should a shadow be drawn behind the text?
-  bool has_shadow_;
-
-  // Indicates the level of shadow blurring. Default is zero.
-  double shadow_blur_;
+  // Controls whether the directionality is auto-detected based on first strong
+  // directionality character or is determined by the application UI's locale.
+  gfx::DirectionalityMode directionality_mode_;
+  gfx::ShadowValues shadows_;
 
   // The halo color drawn around the text if it is not transparent.
   SkColor halo_color_;

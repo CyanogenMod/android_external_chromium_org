@@ -117,10 +117,12 @@ enum SpdyProtocolErrorDetails {
   // Next free value.
   NUM_SPDY_PROTOCOL_ERROR_DETAILS = 35,
 };
-SpdyProtocolErrorDetails NET_EXPORT_PRIVATE MapFramerErrorToProtocolError(
-    SpdyFramer::SpdyError);
-SpdyProtocolErrorDetails NET_EXPORT_PRIVATE MapRstStreamStatusToProtocolError(
-    SpdyRstStreamStatus);
+SpdyProtocolErrorDetails NET_EXPORT_PRIVATE
+    MapFramerErrorToProtocolError(SpdyFramer::SpdyError error);
+Error NET_EXPORT_PRIVATE MapFramerErrorToNetError(SpdyFramer::SpdyError error);
+SpdyProtocolErrorDetails NET_EXPORT_PRIVATE
+    MapRstStreamStatusToProtocolError(SpdyRstStreamStatus status);
+SpdyGoAwayStatus NET_EXPORT_PRIVATE MapNetErrorToGoAwayStatus(Error err);
 
 // If these compile asserts fail then SpdyProtocolErrorDetails needs
 // to be updated with new values, as do the mapping functions above.
@@ -128,6 +130,14 @@ COMPILE_ASSERT(12 == SpdyFramer::LAST_ERROR,
                SpdyProtocolErrorDetails_SpdyErrors_mismatch);
 COMPILE_ASSERT(15 == RST_STREAM_NUM_STATUS_CODES,
                SpdyProtocolErrorDetails_RstStreamStatus_mismatch);
+
+// Splits pushed |headers| into request and response parts. Request headers are
+// the headers specifying resource URL.
+void NET_EXPORT_PRIVATE
+    SplitPushedHeadersToRequestAndResponse(const SpdyHeaderBlock& headers,
+                                           SpdyMajorVersion protocol_version,
+                                           SpdyHeaderBlock* request_headers,
+                                           SpdyHeaderBlock* response_headers);
 
 // A helper class used to manage a request to create a stream.
 class NET_EXPORT_PRIVATE SpdyStreamRequest {
@@ -515,6 +525,7 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   FRIEND_TEST_ALL_PREFIXES(SpdySessionTest, SessionFlowControlEndToEnd);
   FRIEND_TEST_ALL_PREFIXES(SpdySessionTest, StreamIdSpaceExhausted);
   FRIEND_TEST_ALL_PREFIXES(SpdySessionTest, UnstallRacesWithStreamCreation);
+  FRIEND_TEST_ALL_PREFIXES(SpdySessionTest, GoAwayOnSessionFlowControlError);
 
   typedef std::deque<base::WeakPtr<SpdyStreamRequest> >
       PendingStreamRequestQueue;

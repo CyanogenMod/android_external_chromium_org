@@ -117,20 +117,19 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher :
                        scoped_ptr<RawSharedBufferMapping>* mapping);
 
   // Adds a waiter to this dispatcher. The waiter will be woken up when this
-  // object changes state to satisfy |flags| with result |wake_result| (which
-  // must be >= 0, i.e., a success status). It will also be woken up when it
-  // becomes impossible for the object to ever satisfy |flags| with a suitable
-  // error status.
+  // object changes state to satisfy |signals| with context |context|. It will
+  // also be woken up when it becomes impossible for the object to ever satisfy
+  // |signals| with a suitable error status.
   //
   // Returns:
   //  - |MOJO_RESULT_OK| if the waiter was added;
-  //  - |MOJO_RESULT_ALREADY_EXISTS| if |flags| is already satisfied;
+  //  - |MOJO_RESULT_ALREADY_EXISTS| if |signals| is already satisfied;
   //  - |MOJO_RESULT_INVALID_ARGUMENT| if the dispatcher has been closed; and
   //  - |MOJO_RESULT_FAILED_PRECONDITION| if it is not (or no longer) possible
-  //    that |flags| will ever be satisfied.
+  //    that |signals| will ever be satisfied.
   MojoResult AddWaiter(Waiter* waiter,
-                       MojoWaitFlags flags,
-                       MojoResult wake_result);
+                       MojoHandleSignals signals,
+                       uint32_t context);
   void RemoveWaiter(Waiter* waiter);
 
   // A dispatcher must be put into a special state in order to be sent across a
@@ -245,8 +244,8 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher :
       MojoMapBufferFlags flags,
       scoped_ptr<RawSharedBufferMapping>* mapping);
   virtual MojoResult AddWaiterImplNoLock(Waiter* waiter,
-                                         MojoWaitFlags flags,
-                                         MojoResult wake_result);
+                                         MojoHandleSignals signals,
+                                         uint32_t context);
   virtual void RemoveWaiterImplNoLock(Waiter* waiter);
 
   // These implement the API used to serialize dispatchers to a |Channel|

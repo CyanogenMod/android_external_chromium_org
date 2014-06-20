@@ -125,6 +125,11 @@ Status Status::ErrorImportAesKeyLength() {
                 "AES key data must be 128, 192 or 256 bits");
 }
 
+Status Status::ErrorAes192BitUnsupported() {
+  return Status(blink::WebCryptoErrorTypeNotSupported,
+                "192-bit AES keys are not supported");
+}
+
 Status Status::ErrorUnexpectedKeyType() {
   return Status(blink::WebCryptoErrorTypeInvalidAccess,
                 "The key is not of the expected type");
@@ -170,7 +175,7 @@ Status Status::ErrorInvalidAesKwDataLength() {
 
 Status Status::ErrorGenerateKeyPublicExponent() {
   return Status(blink::WebCryptoErrorTypeData,
-                "The \"publicExponent\" is either empty, zero, or too large");
+                "The \"publicExponent\" must be either 3 or 65537");
 }
 
 Status Status::ErrorImportRsaEmptyModulus() {

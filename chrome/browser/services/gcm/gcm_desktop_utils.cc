@@ -8,11 +8,11 @@
 #include "base/sequenced_task_runner.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/common/chrome_version_info.h"
+#include "components/gcm_driver/gcm_client.h"
 #include "components/gcm_driver/gcm_client_factory.h"
 #include "components/gcm_driver/gcm_driver.h"
 #include "components/gcm_driver/gcm_driver_desktop.h"
 #include "content/public/browser/browser_thread.h"
-#include "google_apis/gcm/gcm_client.h"
 
 namespace gcm {
 
@@ -73,7 +73,6 @@ GCMClient::ChromeBuildInfo GetChromeBuildInfo() {
 
 scoped_ptr<GCMDriver> CreateGCMDriverDesktop(
     scoped_ptr<GCMClientFactory> gcm_client_factory,
-    scoped_ptr<IdentityProvider> identity_provider,
     const base::FilePath& store_path,
     const scoped_refptr<net::URLRequestContextGetter>& request_context) {
   scoped_refptr<base::SequencedWorkerPool> worker_pool(
@@ -84,7 +83,6 @@ scoped_ptr<GCMDriver> CreateGCMDriverDesktop(
           base::SequencedWorkerPool::SKIP_ON_SHUTDOWN));
   return scoped_ptr<GCMDriver>(new GCMDriverDesktop(
       gcm_client_factory.Pass(),
-      identity_provider.Pass(),
       GetChromeBuildInfo(),
       store_path,
       request_context,

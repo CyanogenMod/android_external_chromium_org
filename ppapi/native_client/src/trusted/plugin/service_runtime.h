@@ -45,14 +45,12 @@ struct SelLdrStartParams {
   SelLdrStartParams(const nacl::string& url,
                     bool uses_irt,
                     bool uses_ppapi,
-                    bool uses_nonsfi_mode,
                     bool enable_dyncode_syscalls,
                     bool enable_exception_handling,
                     bool enable_crash_throttling)
       : url(url),
         uses_irt(uses_irt),
         uses_ppapi(uses_ppapi),
-        uses_nonsfi_mode(uses_nonsfi_mode),
         enable_dyncode_syscalls(enable_dyncode_syscalls),
         enable_exception_handling(enable_exception_handling),
         enable_crash_throttling(enable_crash_throttling) {
@@ -60,7 +58,6 @@ struct SelLdrStartParams {
   nacl::string url;
   bool uses_irt;
   bool uses_ppapi;
-  bool uses_nonsfi_mode;
   bool enable_dev_interfaces;
   bool enable_dyncode_syscalls;
   bool enable_exception_handling;
@@ -193,9 +190,10 @@ class ServiceRuntime {
 
   // Establish an SrpcClient to the sel_ldr instance and load the nexe.
   // The nexe to be started is passed through |file_info|.
+  // Upon completion |callback| is invoked with status code.
+  // This function must be called on the main thread.
   void LoadNexeAndStart(PP_NaClFileInfo file_info,
-                        const pp::CompletionCallback& started_cb,
-                        const pp::CompletionCallback& crash_cb);
+                        const pp::CompletionCallback& callback);
 
   // Starts the application channel to the nexe.
   SrpcClient* SetupAppChannel();
@@ -217,9 +215,16 @@ class ServiceRuntime {
 
  private:
   NACL_DISALLOW_COPY_AND_ASSIGN(ServiceRuntime);
+  struct LoadNexeAndStartData;
+  void LoadNexeAndStartAfterLoadModule(
+      LoadNexeAndStartData* data, int32_t pp_error);
+  void DidLoadNexeAndStart(LoadNexeAndStartData* data, int32_t pp_error);
+
   bool SetupCommandChannel();
-  bool LoadModule(PP_NaClFileInfo file_info);
   bool InitReverseService();
+  void LoadModule(PP_NaClFileInfo file_info,
+                  pp::CompletionCallback callback);
+  void DidLoadModule(pp::CompletionCallback callback, int32_t pp_error);
   bool StartModule();
 
   NaClSrpcChannel command_channel_;

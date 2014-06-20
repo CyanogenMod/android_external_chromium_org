@@ -8,6 +8,7 @@ namespace extensions {
 
 namespace manifest_keys {
 
+const char kAboutPage[] = "about_page";
 const char kAllFrames[] = "all_frames";
 const char kAltKey[] = "altKey";
 const char kApp[] = "app";
@@ -43,7 +44,6 @@ const char kExternallyConnectable[] = "externally_connectable";
 const char kFileAccessList[] = "file_access";
 const char kFileFilters[] = "file_filters";
 const char kFileBrowserHandlers[] = "file_browser_handlers";
-const char kMediaGalleriesHandlers[] = "media_galleries_handlers";
 const char kFileHandlers[] = "file_handlers";
 const char kFileHandlerExtensions[] = "extensions";
 const char kFileHandlerTitle[] = "title";
@@ -269,6 +269,9 @@ const char kExperimentalFlagRequired[] =
     "Loading extensions with 'experimental' permission is turned off by "
     "default. You can enable 'Experimental Extension APIs' "
     "by visiting chrome://flags.";
+const char kInvalidAboutPage[] = "Invalid value for 'about_page'.";
+const char kInvalidAboutPageExpectRelativePath[] =
+    "Invalid value for 'about_page'. Value must be a relative path.";
 const char kInvalidAllFrames[] =
     "Invalid value for 'content_scripts[*].all_frames'.";
 const char kInvalidBackground[] =
@@ -343,8 +346,6 @@ const char kInvalidFileAccessValue[] =
     "Invalid value for 'file_access[*]'.";
 const char kInvalidFileBrowserHandler[] =
     "Invalid value for 'file_browser_handlers'.";
-const char kInvalidMediaGalleriesHandler[] =
-    "Invalid value for 'media_galleries_handlers'.";
 const char kInvalidFileFiltersList[] =
     "Invalid value for 'file_filters'.";
 const char kInvalidFileFilterValue[] =

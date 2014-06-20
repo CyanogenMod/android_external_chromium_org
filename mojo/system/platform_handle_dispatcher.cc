@@ -114,12 +114,9 @@ bool PlatformHandleDispatcher::EndSerializeAndCloseImplNoLock(
   return true;
 }
 
-MojoWaitFlags PlatformHandleDispatcher::SatisfiedFlagsNoLock() const {
-  return MOJO_WAIT_FLAG_NONE;
-}
-
-MojoWaitFlags PlatformHandleDispatcher::SatisfiableFlagsNoLock() const {
-  return MOJO_WAIT_FLAG_NONE;
+HandleSignalsState
+    PlatformHandleDispatcher::GetHandleSignalsStateNoLock() const {
+  return HandleSignalsState();
 }
 
 }  // namespace system

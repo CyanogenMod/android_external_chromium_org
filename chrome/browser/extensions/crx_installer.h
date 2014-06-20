@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_EXTENSIONS_CRX_INSTALLER_H_
 
 #include <string>
+#include <vector>
 
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
@@ -15,9 +16,11 @@
 #include "chrome/browser/extensions/blacklist.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_installer.h"
+#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/sandboxed_unpacker.h"
 #include "chrome/browser/extensions/webstore_installer.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "extensions/browser/install_flag.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest.h"
 #include "sync/api/string_ordinal.h"
@@ -180,12 +183,25 @@ class CrxInstaller
     error_on_unsupported_requirements_ = val;
   }
 
-  void set_install_wait_for_idle(bool val) {
-    install_wait_for_idle_ = val;
+  void set_install_immediately(bool val) {
+    if (val)
+      install_flags_ |= kInstallFlagInstallImmediately;
+    else
+      install_flags_ &= ~kInstallFlagInstallImmediately;
   }
 
   void set_is_ephemeral(bool val) {
-    is_ephemeral_ = val;
+    if (val)
+      install_flags_ |= kInstallFlagIsEphemeral;
+    else
+      install_flags_ &= ~kInstallFlagIsEphemeral;
+  }
+
+  void set_install_flag(int flag, bool val) {
+    if (val)
+      install_flags_ |= flag;
+    else
+      install_flags_ &= ~flag;
   }
 
   bool did_handle_successfully() const { return did_handle_successfully_; }
@@ -391,12 +407,6 @@ class CrxInstaller
   // will continue but the extension will be distabled.
   bool error_on_unsupported_requirements_;
 
-  bool has_requirement_errors_;
-
-  extensions::BlacklistState blacklist_state_;
-
-  bool install_wait_for_idle_;
-
   // Sequenced task runner where file I/O operations will be performed.
   scoped_refptr<base::SequencedTaskRunner> installer_task_runner_;
 
@@ -407,8 +417,8 @@ class CrxInstaller
   // page.
   bool update_from_settings_page_;
 
-  // True if an ephemeral app is being installed.
-  bool is_ephemeral_;
+  // The flags for ExtensionService::OnExtensionInstalled.
+  int install_flags_;
 
   // Gives access to common methods and data of an extension installer.
   ExtensionInstaller installer_;

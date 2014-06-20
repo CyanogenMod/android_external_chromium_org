@@ -12,7 +12,8 @@
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/extensions/extension_assets_manager_chromeos.h"
 #include "chrome/browser/extensions/extension_garbage_collector_chromeos.h"
-#include "chrome/browser/extensions/extension_service_unittest.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_service_test_base.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/test/base/testing_browser_process.h"
@@ -20,6 +21,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/plugin_service.h"
 #include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/install_flag.h"
 #include "extensions/common/manifest_constants.h"
 
 namespace {
@@ -170,8 +172,7 @@ TEST_F(ExtensionGarbageCollectorChromeOSUnitTest, SharedExtensions) {
   GetExtensionPrefs()->SetDelayedInstallInfo(
       extension2.get(),
       Extension::ENABLED,
-      false,
-      false,
+      kInstallFlagNone,
       ExtensionPrefs::DELAY_REASON_WAIT_FOR_IDLE,
       syncer::StringOrdinal(),
       std::string());

@@ -16,6 +16,7 @@
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine.h"
+#include "chrome/browser/sync_file_system/drive_backend/sync_engine_context.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_worker.h"
 #include "chrome/browser/sync_file_system/local/canned_syncable_file_system.h"
 #include "chrome/browser/sync_file_system/local/local_file_sync_context.h"
@@ -86,6 +87,10 @@ class DriveBackendSyncTest : public testing::Test,
             base::SequencedWorkerPool::SKIP_ON_SHUTDOWN);
     file_task_runner_ = content::BrowserThread::GetMessageLoopProxyForThread(
         content::BrowserThread::FILE);
+    scoped_refptr<base::SequencedTaskRunner> drive_task_runner =
+        worker_pool->GetSequencedTaskRunnerWithShutdownBehavior(
+            worker_pool->GetSequenceToken(),
+            base::SequencedWorkerPool::SKIP_ON_SHUTDOWN);
 
     RegisterSyncableFileSystem();
     local_sync_service_ = LocalFileSyncService::CreateForTesting(
@@ -106,15 +111,23 @@ class DriveBackendSyncTest : public testing::Test,
         kSyncRootFolderTitle));
 
     remote_sync_service_.reset(new SyncEngine(
+        base::MessageLoopProxy::current(),  // ui_task_runner
+        worker_task_runner_,
+        file_task_runner_,
+        drive_task_runner,
+        base_dir_.path(),
+        NULL,  // task_logger
+        NULL,  // notification_manager
+        NULL,  // extension_service
+        NULL,  // signin_manager
+        NULL,  // token_service
+        NULL,  // request_context
+        in_memory_env_.get()));
+    remote_sync_service_->AddServiceObserver(this);
+    remote_sync_service_->InitializeForTesting(
         drive_service.PassAs<drive::DriveServiceInterface>(),
         uploader.Pass(),
-        file_task_runner_.get(),
-        NULL, NULL, NULL));
-    remote_sync_service_->AddServiceObserver(this);
-    remote_sync_service_->Initialize(base_dir_.path(),
-                                     NULL,
-                                     worker_task_runner_.get(),
-                                     in_memory_env_.get());
+        scoped_ptr<SyncWorkerInterface>());
     remote_sync_service_->SetSyncEnabled(true);
 
     local_sync_service_->SetLocalChangeProcessor(remote_sync_service_.get());
@@ -560,7 +573,7 @@ class DriveBackendSyncTest : public testing::Test,
 
   drive::FakeDriveService* fake_drive_service() {
     return static_cast<drive::FakeDriveService*>(
-        remote_sync_service_->GetDriveService());
+        remote_sync_service_->drive_service_.get());
   }
 
   FakeDriveServiceHelper* fake_drive_service_helper() {
@@ -568,10 +581,12 @@ class DriveBackendSyncTest : public testing::Test,
   }
 
  private:
-  // NOTE: Member functions of MetadataDatabase class must not be called
-  // directly through this method.  Call them via PostTask.
+  // MetadataDatabase is normally used on the worker thread.
+  // Use this only when there is no task running on the worker.
   MetadataDatabase* metadata_database() {
-    return remote_sync_service_->sync_worker_->GetMetadataDatabase();
+    SyncWorker* worker = static_cast<SyncWorker*>(
+        remote_sync_service_->sync_worker_.get());
+    return worker->context_->metadata_database_.get();
   }
 
   content::TestBrowserThreadBundle thread_bundle_;

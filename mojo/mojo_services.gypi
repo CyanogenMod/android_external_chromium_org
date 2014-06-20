@@ -124,7 +124,7 @@
       'target_name': 'mojo_native_viewport_bindings',
       'type': 'static_library',
       'sources': [
-        'services/native_viewport/native_viewport.mojom',
+        'services/public/interfaces/native_viewport/native_viewport.mojom',
       ],
       'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'export_dependent_settings': [
@@ -183,6 +183,20 @@
       ],
     },
     {
+      'target_name': 'mojo_navigation_bindings',
+      'type': 'static_library',
+      'sources': [
+        'services/navigation/navigation.mojom',
+      ],
+      'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
+      'export_dependent_settings': [
+        'mojo_cpp_bindings',
+      ],
+      'dependencies': [
+        'mojo_cpp_bindings',
+      ],
+    },
+    {
       'target_name': 'mojo_network_bindings',
       'type': 'static_library',
       'sources': [
@@ -228,7 +242,40 @@
       'target_name': 'mojo_view_manager_common',
       'type': 'static_library',
       'sources': [
-        'services/public/cpp/view_manager/view_manager_types.h',
+        'services/public/cpp/view_manager/types.h',
+      ],
+    },
+    {
+      'target_name': 'mojo_launcher_bindings',
+      'type': 'static_library',
+      'sources': [
+        'services/public/interfaces/launcher/launcher.mojom',
+      ],
+      'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
+      'export_dependent_settings': [
+        'mojo_cpp_bindings',
+      ],
+      'dependencies': [
+        'mojo_cpp_bindings',
+        'mojo_network_bindings',
+      ],
+    },
+    {
+      'target_name': 'mojo_launcher',
+      'type': 'shared_library',
+      'dependencies': [
+        '../base/base.gyp:base',
+        'mojo_application',
+        'mojo_cpp_bindings',
+        'mojo_environment_chromium',
+        'mojo_launcher_bindings',
+        'mojo_network_bindings',
+        'mojo_system_impl',
+        'mojo_utility',
+      ],
+      'sources': [
+        'services/launcher/launcher.cc',
+        'public/cpp/application/lib/mojo_main_chromium.cc',
       ],
     },
     {
@@ -236,6 +283,7 @@
       'type': 'static_library',
       'sources': [
         'services/public/interfaces/view_manager/view_manager.mojom',
+        'services/public/interfaces/view_manager/view_manager_constants.mojom',
       ],
       'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'export_dependent_settings': [
@@ -263,26 +311,21 @@
         'mojo_view_manager_common',
       ],
       'sources': [
+        'services/public/cpp/view_manager/lib/node.cc',
+        'services/public/cpp/view_manager/lib/node_observer.cc',
+        'services/public/cpp/view_manager/lib/node_private.cc',
+        'services/public/cpp/view_manager/lib/node_private.h',
         'services/public/cpp/view_manager/lib/view.cc',
         'services/public/cpp/view_manager/lib/view_private.cc',
         'services/public/cpp/view_manager/lib/view_private.h',
-        'services/public/cpp/view_manager/lib/view_manager.cc',
-        'services/public/cpp/view_manager/lib/view_manager_private.cc',
-        'services/public/cpp/view_manager/lib/view_manager_private.h',
-        'services/public/cpp/view_manager/lib/view_manager_synchronizer.cc',
-        'services/public/cpp/view_manager/lib/view_manager_synchronizer.h',
-        'services/public/cpp/view_manager/lib/view_tree_host.cc',
-        'services/public/cpp/view_manager/lib/view_tree_node.cc',
-        'services/public/cpp/view_manager/lib/view_tree_node_observer.cc',
-        'services/public/cpp/view_manager/lib/view_tree_node_private.cc',
-        'services/public/cpp/view_manager/lib/view_tree_node_private.h',
+        'services/public/cpp/view_manager/lib/view_manager_client_impl.cc',
+        'services/public/cpp/view_manager/lib/view_manager_client_impl.h',
+        'services/public/cpp/view_manager/node.h',
+        'services/public/cpp/view_manager/node_observer.h',
         'services/public/cpp/view_manager/view.h',
         'services/public/cpp/view_manager/view_manager.h',
-        'services/public/cpp/view_manager/view_manager_types.h',
+        'services/public/cpp/view_manager/view_manager_delegate.h',
         'services/public/cpp/view_manager/view_observer.h',
-        'services/public/cpp/view_manager/view_tree_host.h',
-        'services/public/cpp/view_manager/view_tree_node.h',
-        'services/public/cpp/view_manager/view_tree_node_observer.h',
       ],
     },
     {
@@ -300,10 +343,9 @@
         'mojo_view_manager_lib',
       ],
       'sources': [
+        'services/public/cpp/view_manager/tests/node_unittest.cc',
         'services/public/cpp/view_manager/tests/view_unittest.cc',
         'services/public/cpp/view_manager/tests/view_manager_unittest.cc',
-        'services/public/cpp/view_manager/tests/view_tree_host_unittest.cc',
-        'services/public/cpp/view_manager/tests/view_tree_node_unittest.cc',
       ],
       'conditions': [
         ['use_aura==1', {
@@ -315,6 +357,56 @@
             'mojo_run_all_unittests',
           ],
         }]
+      ],
+    },
+    {
+      'target_name': 'mojo_surfaces_bindings',
+      'type': 'static_library',
+      'sources': [
+        'services/public/interfaces/surfaces/surfaces.mojom',
+        'services/public/interfaces/surfaces/surface_id.mojom',
+        'services/public/interfaces/surfaces/quads.mojom',
+      ],
+      'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
+      'export_dependent_settings': [
+        'mojo_cpp_bindings',
+      ],
+      'dependencies': [
+        'mojo_cpp_bindings',
+        'mojo_geometry_bindings',
+      ],
+    },
+    {
+      'target_name': 'mojo_test_service_bindings',
+      'type': 'static_library',
+      'sources': [
+        'services/test_service/test_service.mojom',
+      ],
+      'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
+      'export_dependent_settings': [
+        'mojo_cpp_bindings',
+      ],
+      'dependencies': [
+        'mojo_cpp_bindings',
+      ],
+    },
+    {
+      'target_name': 'mojo_test_service',
+      'type': 'shared_library',
+      'dependencies': [
+        '../base/base.gyp:base',
+        'mojo_application',
+        'mojo_environment_standalone',
+        'mojo_test_service_bindings',
+        'mojo_system',
+        'mojo_utility',
+      ],
+      'sources': [
+        'public/cpp/application/lib/mojo_main_standalone.cc',
+        'services/test_service/test_service_application.cc',
+        'services/test_service/test_service_application.h',
+        'services/test_service/test_service_impl.cc',
+        'services/test_service/test_service_impl.h',
       ],
     },
   ],
@@ -365,11 +457,11 @@
             'services/view_manager/root_view_manager_delegate.h',
             'services/view_manager/view.cc',
             'services/view_manager/view.h',
-            'services/view_manager/view_manager_connection.cc',
-            'services/view_manager/view_manager_connection.h',
-            'services/view_manager/view_manager_init_connection.cc',
-            'services/view_manager/view_manager_init_connection.h',
             'services/view_manager/view_manager_export.h',
+            'services/view_manager/view_manager_init_service_impl.cc',
+            'services/view_manager/view_manager_init_service_impl.h',
+            'services/view_manager/view_manager_service_impl.cc',
+            'services/view_manager/view_manager_service_impl.h',
             'services/view_manager/context_factory_impl.cc',
             'services/view_manager/context_factory_impl.h',
             'services/view_manager/window_tree_host_impl.cc',
@@ -420,7 +512,7 @@
           'sources': [
             'services/view_manager/test_change_tracker.cc',
             'services/view_manager/test_change_tracker.h',
-            'services/view_manager/view_manager_connection_unittest.cc',
+            'services/view_manager/view_manager_unittest.cc',
           ],
         },
         {

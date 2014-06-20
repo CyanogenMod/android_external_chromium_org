@@ -8,6 +8,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
 #include "chrome/browser/extensions/api/webview/webview_api.h"
 #include "chrome/browser/extensions/chrome_extension_web_contents_observer.h"
@@ -15,17 +16,19 @@
 #include "chrome/browser/extensions/menu_manager.h"
 #include "chrome/browser/extensions/script_executor.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
+#include "chrome/browser/geolocation/geolocation_permission_context.h"
+#include "chrome/browser/geolocation/geolocation_permission_context_factory.h"
 #include "chrome/browser/guest_view/guest_view_constants.h"
 #include "chrome/browser/guest_view/guest_view_manager.h"
 #include "chrome/browser/guest_view/web_view/web_view_constants.h"
 #include "chrome/browser/guest_view/web_view/web_view_permission_types.h"
 #include "chrome/browser/renderer_context_menu/context_menu_delegate.h"
 #include "chrome/browser/renderer_context_menu/render_view_context_menu.h"
+#include "chrome/browser/ui/pdf/pdf_tab_helper.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/render_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_security_policy.h"
-#include "content/public/browser/geolocation_permission_context.h"
 #include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/navigation_entry.h"
@@ -124,6 +127,8 @@ static std::string PermissionTypeToString(WebViewPermissionType type) {
   switch (type) {
     case WEB_VIEW_PERMISSION_TYPE_DOWNLOAD:
       return webview::kPermissionTypeDownload;
+    case WEB_VIEW_PERMISSION_TYPE_FILESYSTEM:
+      return webview::kPermissionTypeFileSystem;
     case WEB_VIEW_PERMISSION_TYPE_GEOLOCATION:
       return webview::kPermissionTypeGeolocation;
     case WEB_VIEW_PERMISSION_TYPE_JAVASCRIPT_DIALOG:
@@ -140,6 +145,12 @@ static std::string PermissionTypeToString(WebViewPermissionType type) {
       NOTREACHED();
       return std::string();
   }
+}
+
+std::string GetStoragePartitionIdFromSiteURL(const GURL& site_url) {
+  const std::string& partition_id = site_url.query();
+  bool persist_storage = site_url.path().find("persist") != std::string::npos;
+  return (persist_storage ? webview::kPersistPrefix : "") + partition_id;
 }
 
 void RemoveWebViewEventListenersOnIOThread(
@@ -170,6 +181,7 @@ void AttachWebViewHelpers(WebContents* contents) {
   printing::PrintViewManagerBasic::CreateForWebContents(contents);
 #endif  // defined(ENABLE_FULL_PRINTING)
 #endif  // defined(ENABLE_PRINTING)
+  PDFTabHelper::CreateForWebContents(contents);
 }
 
 }  // namespace
@@ -246,6 +258,37 @@ int WebViewGuest::GetViewInstanceId(WebContents* contents) {
 }
 
 // static
+void WebViewGuest::ParsePartitionParam(
+    const base::DictionaryValue* extra_params,
+    std::string* storage_partition_id,
+    bool* persist_storage) {
+  std::string partition_str;
+  if (!extra_params->GetString(webview::kStoragePartitionId, &partition_str)) {
+    return;
+  }
+
+  // Since the "persist:" prefix is in ASCII, StartsWith will work fine on
+  // UTF-8 encoded |partition_id|. If the prefix is a match, we can safely
+  // remove the prefix without splicing in the middle of a multi-byte codepoint.
+  // We can use the rest of the string as UTF-8 encoded one.
+  if (StartsWithASCII(partition_str, "persist:", true)) {
+    size_t index = partition_str.find(":");
+    CHECK(index != std::string::npos);
+    // It is safe to do index + 1, since we tested for the full prefix above.
+    *storage_partition_id = partition_str.substr(index + 1);
+
+    if (storage_partition_id->empty()) {
+      // TODO(lazyboy): Better way to deal with this error.
+      return;
+    }
+    *persist_storage = true;
+  } else {
+    *storage_partition_id = partition_str;
+    *persist_storage = false;
+  }
+}
+
+// static
 void WebViewGuest::RecordUserInitiatedUMA(const PermissionResponseInfo& info,
                                           bool allow) {
   if (allow) {
@@ -257,6 +300,10 @@ void WebViewGuest::RecordUserInitiatedUMA(const PermissionResponseInfo& info,
       case WEB_VIEW_PERMISSION_TYPE_DOWNLOAD:
         content::RecordAction(
             UserMetricsAction("WebView.PermissionAllow.Download"));
+        break;
+      case WEB_VIEW_PERMISSION_TYPE_FILESYSTEM:
+        content::RecordAction(
+            UserMetricsAction("WebView.PermissionAllow.FileSystem"));
         break;
       case WEB_VIEW_PERMISSION_TYPE_GEOLOCATION:
         content::RecordAction(
@@ -289,6 +336,10 @@ void WebViewGuest::RecordUserInitiatedUMA(const PermissionResponseInfo& info,
       case WEB_VIEW_PERMISSION_TYPE_DOWNLOAD:
         content::RecordAction(
             UserMetricsAction("WebView.PermissionDeny.Download"));
+        break;
+      case WEB_VIEW_PERMISSION_TYPE_FILESYSTEM:
+        content::RecordAction(
+            UserMetricsAction("WebView.PermissionDeny.FileSystem"));
         break;
       case WEB_VIEW_PERMISSION_TYPE_GEOLOCATION:
         content::RecordAction(
@@ -424,7 +475,11 @@ void WebViewGuest::CloseContents(WebContents* source) {
   DispatchEvent(new GuestViewBase::Event(webview::kEventClose, args.Pass()));
 }
 
-void WebViewGuest::DidAttach() {
+void WebViewGuest::DidAttach(const base::DictionaryValue& extra_params) {
+  std::string src;
+  if (extra_params.GetString("src", &src) && !src.empty())
+    NavigateGuest(src);
+
   if (GetOpener()) {
     // We need to do a navigation here if the target URL has changed between
     // the time the WebContents was created and the time it was attached.
@@ -541,16 +596,14 @@ WebViewGuest* WebViewGuest::CreateNewGuestWindow(
   // We pull the partition information from the site's URL, which is of the
   // form guest://site/{persist}?{partition_name}.
   const GURL& site_url = guest_web_contents()->GetSiteInstance()->GetSiteURL();
-
   scoped_ptr<base::DictionaryValue> create_params(extra_params()->DeepCopy());
-  const std::string& storage_partition_id = site_url.query();
-  bool persist_storage =
-      site_url.path().find("persist") != std::string::npos;
+  const std::string storage_partition_id =
+      GetStoragePartitionIdFromSiteURL(site_url);
+  create_params->SetString(webview::kStoragePartitionId, storage_partition_id);
+
   WebContents* new_guest_web_contents =
       guest_manager->CreateGuest(guest_web_contents()->GetSiteInstance(),
                                  instance_id,
-                                 storage_partition_id,
-                                 persist_storage,
                                  create_params.Pass());
   WebViewGuest* new_guest =
       WebViewGuest::FromWebContents(new_guest_web_contents);
@@ -642,6 +695,28 @@ void WebViewGuest::Reload() {
   guest_web_contents()->GetController().Reload(false);
 }
 
+void WebViewGuest::RequestFileSystemPermission(
+    const GURL& url,
+    bool allowed_by_default,
+    const base::Callback<void(bool)>& callback) {
+  base::DictionaryValue request_info;
+  request_info.Set(guestview::kUrl, base::Value::CreateStringValue(url.spec()));
+  RequestPermission(
+      WEB_VIEW_PERMISSION_TYPE_FILESYSTEM,
+      request_info,
+      base::Bind(&WebViewGuest::OnWebViewFileSystemPermissionResponse,
+                 base::Unretained(this),
+                 callback),
+      allowed_by_default);
+}
+
+void WebViewGuest::OnWebViewFileSystemPermissionResponse(
+    const base::Callback<void(bool)>& callback,
+    bool allow,
+    const std::string& user_input) {
+  callback.Run(allow && attached());
+}
+
 void WebViewGuest::RequestGeolocationPermission(
     int bridge_id,
     const GURL& requesting_frame,
@@ -684,20 +759,19 @@ void WebViewGuest::OnWebViewGeolocationPermissionResponse(
     return;
   }
 
-  content::GeolocationPermissionContext* geolocation_context =
-      browser_context()->GetGeolocationPermissionContext();
-
-  DCHECK(geolocation_context);
-  geolocation_context->RequestGeolocationPermission(
-      embedder_web_contents(),
-      // The geolocation permission request here is not initiated
-      // through WebGeolocationPermissionRequest. We are only interested
-      // in the fact whether the embedder/app has geolocation
-      // permission. Therefore we use an invalid |bridge_id|.
-      -1 /* bridge_id */,
-      embedder_web_contents()->GetLastCommittedURL(),
-      user_gesture,
-      callback);
+  Profile* profile = Profile::FromBrowserContext(browser_context());
+  GeolocationPermissionContextFactory::GetForProfile(profile)->
+      RequestGeolocationPermission(
+          embedder_web_contents(),
+          // The geolocation permission request here is not initiated
+          // through WebGeolocationPermissionRequest. We are only interested
+          // in the fact whether the embedder/app has geolocation
+          // permission. Therefore we use an invalid |bridge_id|.
+          -1,
+          embedder_web_contents()->GetLastCommittedURL(),
+          user_gesture,
+          callback,
+          NULL);
 }
 
 void WebViewGuest::CancelGeolocationPermissionRequest(int bridge_id) {
@@ -811,6 +885,78 @@ bool WebViewGuest::ClearData(const base::Time remove_since,
       base::Time::Now(),
       callback);
   return true;
+}
+
+// static
+void WebViewGuest::FileSystemAccessedAsync(int render_process_id,
+                                           int render_frame_id,
+                                           int request_id,
+                                           const GURL& url,
+                                           bool blocked_by_policy) {
+  WebViewGuest* guest =
+      WebViewGuest::FromFrameID(render_process_id, render_frame_id);
+  DCHECK(guest);
+  guest->RequestFileSystemPermission(
+      url,
+      !blocked_by_policy,
+      base::Bind(&WebViewGuest::FileSystemAccessedAsyncResponse,
+                 render_process_id,
+                 render_frame_id,
+                 request_id,
+                 url));
+}
+
+// static
+void WebViewGuest::FileSystemAccessedAsyncResponse(int render_process_id,
+                                                   int render_frame_id,
+                                                   int request_id,
+                                                   const GURL& url,
+                                                   bool allowed) {
+  TabSpecificContentSettings::FileSystemAccessed(
+      render_process_id, render_frame_id, url, !allowed);
+  content::RenderFrameHost* render_frame_host =
+      content::RenderFrameHost::FromID(render_process_id, render_frame_id);
+  if (!render_frame_host)
+    return;
+  render_frame_host->Send(
+      new ChromeViewMsg_RequestFileSystemAccessAsyncResponse(
+          render_frame_id, request_id, allowed));
+}
+
+// static
+void WebViewGuest::FileSystemAccessedSync(int render_process_id,
+                                          int render_frame_id,
+                                          const GURL& url,
+                                          bool blocked_by_policy,
+                                          IPC::Message* reply_msg) {
+  WebViewGuest* guest =
+      WebViewGuest::FromFrameID(render_process_id, render_frame_id);
+  DCHECK(guest);
+  guest->RequestFileSystemPermission(
+      url,
+      !blocked_by_policy,
+      base::Bind(&WebViewGuest::FileSystemAccessedSyncResponse,
+                 render_process_id,
+                 render_frame_id,
+                 url,
+                 reply_msg));
+}
+
+// static
+void WebViewGuest::FileSystemAccessedSyncResponse(int render_process_id,
+                                                  int render_frame_id,
+                                                  const GURL& url,
+                                                  IPC::Message* reply_msg,
+                                                  bool allowed) {
+  TabSpecificContentSettings::FileSystemAccessed(
+      render_process_id, render_frame_id, url, !allowed);
+  ChromeViewHostMsg_RequestFileSystemAccessSync::WriteReplyParams(reply_msg,
+                                                                  allowed);
+  content::RenderFrameHost* render_frame_host =
+      content::RenderFrameHost::FromID(render_process_id, render_frame_id);
+  if (!render_frame_id)
+    return;
+  render_frame_host->Send(reply_msg);
 }
 
 WebViewGuest::~WebViewGuest() {
@@ -1091,8 +1237,8 @@ void WebViewGuest::NavigateGuest(const std::string& src) {
   // chrome://settings.
   bool scheme_is_blocked =
       (!content::ChildProcessSecurityPolicy::GetInstance()->IsWebSafeScheme(
-          url.scheme()) &&
-      !url.SchemeIs(content::kAboutScheme)) ||
+           url.scheme()) &&
+       !url.SchemeIs(url::kAboutScheme)) ||
       url.SchemeIs(url::kJavaScriptScheme);
   if (scheme_is_blocked || !url.is_valid()) {
     std::string error_type(net::ErrorToString(net::ERR_ABORTED));
@@ -1382,6 +1528,10 @@ void WebViewGuest::RequestNewWindowPermission(
     return;
   const NewWindowInfo& new_window_info = it->second;
 
+  // Retrieve the opener partition info if we have it.
+  const GURL& site_url = new_contents->GetSiteInstance()->GetSiteURL();
+  std::string storage_partition_id = GetStoragePartitionIdFromSiteURL(site_url);
+
   base::DictionaryValue request_info;
   request_info.Set(webview::kInitialHeight,
                    base::Value::CreateIntegerValue(initial_bounds.height()));
@@ -1393,6 +1543,10 @@ void WebViewGuest::RequestNewWindowPermission(
                    base::Value::CreateStringValue(new_window_info.name));
   request_info.Set(webview::kWindowID,
                    base::Value::CreateIntegerValue(guest->guest_instance_id()));
+  // We pass in partition info so that window-s created through newwindow
+  // API can use it to set their partition attribute.
+  request_info.Set(webview::kStoragePartitionId,
+                   base::Value::CreateStringValue(storage_partition_id));
   request_info.Set(webview::kWindowOpenDisposition,
                    base::Value::CreateStringValue(
                        WindowOpenDispositionToString(disposition)));

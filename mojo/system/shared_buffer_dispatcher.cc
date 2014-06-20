@@ -27,17 +27,20 @@ struct SerializedSharedBufferDispatcher {
 }  // namespace
 
 // static
+const MojoCreateSharedBufferOptions
+    SharedBufferDispatcher::kDefaultCreateOptions = {
+  static_cast<uint32_t>(sizeof(MojoCreateSharedBufferOptions)),
+  MOJO_CREATE_SHARED_BUFFER_OPTIONS_FLAG_NONE
+};
+
+// static
 MojoResult SharedBufferDispatcher::ValidateCreateOptions(
     const MojoCreateSharedBufferOptions* in_options,
     MojoCreateSharedBufferOptions* out_options) {
   const MojoCreateSharedBufferOptionsFlags kKnownFlags =
       MOJO_CREATE_SHARED_BUFFER_OPTIONS_FLAG_NONE;
-  static const MojoCreateSharedBufferOptions kDefaultOptions = {
-    static_cast<uint32_t>(sizeof(MojoCreateSharedBufferOptions)),
-    MOJO_CREATE_SHARED_BUFFER_OPTIONS_FLAG_NONE
-  };
 
-  *out_options = kDefaultOptions;
+  *out_options = kDefaultCreateOptions;
   if (!in_options)
     return MOJO_RESULT_OK;
 
@@ -260,14 +263,9 @@ bool SharedBufferDispatcher::EndSerializeAndCloseImplNoLock(
   return true;
 }
 
-MojoWaitFlags SharedBufferDispatcher::SatisfiedFlagsNoLock() const {
+HandleSignalsState SharedBufferDispatcher::GetHandleSignalsStateNoLock() const {
   // TODO(vtl): Add transferrable flag.
-  return MOJO_WAIT_FLAG_NONE;
-}
-
-MojoWaitFlags SharedBufferDispatcher::SatisfiableFlagsNoLock() const {
-  // TODO(vtl): Add transferrable flag.
-  return MOJO_WAIT_FLAG_NONE;
+  return HandleSignalsState();
 }
 
 }  // namespace system

@@ -124,6 +124,9 @@ class CONTENT_EXPORT Status {
   // AES.
   static Status ErrorImportAesKeyLength();
 
+  // 192-bit AES keys are valid, however unsupported.
+  static Status ErrorAes192BitUnsupported();
+
   // The wrong key was used for the operation. For instance, a public key was
   // used to verify a RsaSsaPkcs1v1_5 signature, or tried exporting a private
   // key using spki format.
@@ -161,9 +164,8 @@ class CONTENT_EXPORT Status {
   // multiple of 8 bytes, as required by RFC 3394.
   static Status ErrorInvalidAesKwDataLength();
 
-  // The "publicExponent" used to generate a key was invalid: either no bytes
-  // were specified, or the number was too large to fit into an "unsigned long"
-  // (implemention limitation), or the exponent was zero.
+  // The "publicExponent" used to generate a key was invalid or unsupported.
+  // Only values of 3 and 65537 are allowed.
   static Status ErrorGenerateKeyPublicExponent();
 
   // The modulus bytes were empty when importing an RSA public key.

@@ -16,6 +16,7 @@
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/common/autocomplete_match_type.h"
+#include "components/metrics/proto/omnibox_input_type.pb.h"
 
 namespace {
 
@@ -254,9 +255,10 @@ void AutocompleteResult::SortAndCull(const AutocompleteInput& input,
       // We shouldn't get query matches for URL inputs, or non-query matches
       // for query inputs.
       if (AutocompleteMatch::IsSearchType(default_match_->type)) {
-        DCHECK_NE(AutocompleteInput::URL, input.type()) << debug_info;
+        DCHECK_NE(metrics::OmniboxInputType::URL, input.type()) << debug_info;
       } else {
-        DCHECK_NE(AutocompleteInput::FORCED_QUERY, input.type()) << debug_info;
+        DCHECK_NE(metrics::OmniboxInputType::FORCED_QUERY, input.type())
+            << debug_info;
       }
     }
   }
@@ -354,7 +356,7 @@ void AutocompleteResult::Validate() const {
 GURL AutocompleteResult::ComputeAlternateNavUrl(
     const AutocompleteInput& input,
     const AutocompleteMatch& match) {
-  return ((input.type() == AutocompleteInput::UNKNOWN) &&
+  return ((input.type() == metrics::OmniboxInputType::UNKNOWN) &&
           (AutocompleteMatch::IsSearchType(match.type)) &&
           (match.transition != content::PAGE_TRANSITION_KEYWORD) &&
           (input.canonicalized_url() != match.destination_url)) ?
@@ -404,23 +406,6 @@ void AutocompleteResult::CopyFrom(const AutocompleteResult& rhs) {
   alternate_nav_url_ = rhs.alternate_nav_url_;
 }
 
-void AutocompleteResult::AddMatch(
-    AutocompleteInput::PageClassification page_classification,
-    const AutocompleteMatch& match) {
-  DCHECK(default_match_ != end());
-  DCHECK_EQ(AutocompleteMatch::SanitizeString(match.contents), match.contents);
-  DCHECK_EQ(AutocompleteMatch::SanitizeString(match.description),
-            match.description);
-  CompareWithDemoteByType comparing_object(page_classification);
-  ACMatches::iterator insertion_point =
-      std::upper_bound(begin(), end(), match, comparing_object);
-  matches_difference_type default_offset = default_match_ - begin();
-  if ((insertion_point - begin()) <= default_offset)
-    ++default_offset;
-  matches_.insert(insertion_point, match);
-  default_match_ = begin() + default_offset;
-}
-
 void AutocompleteResult::BuildProviderToMatches(
     ProviderToMatches* provider_to_matches) const {
   for (ACMatches::const_iterator i(begin()); i != end(); ++i)
@@ -459,7 +444,7 @@ void AutocompleteResult::MergeMatchesByProvider(
       AutocompleteMatch match = *i;
       match.relevance = std::min(max_relevance, match.relevance);
       match.from_previous = true;
-      AddMatch(page_classification, match);
+      matches_.push_back(match);
       delta--;
     }
   }

@@ -585,11 +585,10 @@ void SystemTrayDelegateChromeOS::ShowEnterpriseInfo() {
         new chromeos::HelpAppLauncher(GetNativeWindow()));
     help_app->ShowHelpTopic(chromeos::HelpAppLauncher::HELP_ENTERPRISE);
   } else {
-    GURL url(google_util::StringAppendGoogleLocaleParam(
-        chrome::kLearnMoreEnterpriseURL));
     chrome::ScopedTabbedBrowserDisplayer displayer(
         ProfileManager::GetActiveUserProfile(), chrome::HOST_DESKTOP_TYPE_ASH);
-    chrome::ShowSingletonTab(displayer.browser(), url);
+    chrome::ShowSingletonTab(displayer.browser(),
+                             GURL(chrome::kLearnMoreEnterpriseURL));
   }
 }
 
@@ -967,12 +966,12 @@ void SystemTrayDelegateChromeOS::SetProfile(Profile* profile) {
       base::Bind(&SystemTrayDelegateChromeOS::UpdateLogoutDialogDuration,
                  base::Unretained(this)));
   user_pref_registrar_->Add(
-      prefs::kLargeCursorEnabled,
+      prefs::kAccessibilityLargeCursorEnabled,
       base::Bind(&SystemTrayDelegateChromeOS::OnAccessibilityModeChanged,
                  base::Unretained(this),
                  ash::A11Y_NOTIFICATION_NONE));
   user_pref_registrar_->Add(
-      prefs::kAutoclickEnabled,
+      prefs::kAccessibilityAutoclickEnabled,
       base::Bind(&SystemTrayDelegateChromeOS::OnAccessibilityModeChanged,
                  base::Unretained(this),
                  ash::A11Y_NOTIFICATION_NONE));

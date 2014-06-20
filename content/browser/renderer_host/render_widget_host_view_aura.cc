@@ -306,7 +306,16 @@ void GetScreenInfoForWindow(WebScreenInfo* results, aura::Window* window) {
   results->depth = 24;
   results->depthPerComponent = 8;
   results->deviceScaleFactor = display.device_scale_factor();
+
+  // The Display rotation and the WebScreenInfo orientation are not the same
+  // angle. The former is the physical display rotation while the later is the
+  // rotation required by the content to be shown properly on the screen, in
+  // other words, relative to the physical display.
   results->orientationAngle = display.RotationAsDegree();
+  if (results->orientationAngle == 90)
+    results->orientationAngle = 270;
+  else if (results->orientationAngle == 270)
+    results->orientationAngle = 90;
 }
 
 bool PointerEventActivates(const ui::Event& event) {
@@ -448,20 +457,6 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(RenderWidgetHost* host)
 
 ////////////////////////////////////////////////////////////////////////////////
 // RenderWidgetHostViewAura, RenderWidgetHostView implementation:
-
-bool RenderWidgetHostViewAura::OnMessageReceived(
-    const IPC::Message& message) {
-  bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP(RenderWidgetHostViewAura, message)
-    // TODO(kevers): Move to RenderWidgetHostViewImpl and consolidate IPC
-    // messages for TextInput<State|Type>Changed. Corresponding code in
-    // RenderWidgetHostViewAndroid should also be moved at the same time.
-    IPC_MESSAGE_HANDLER(ViewHostMsg_TextInputStateChanged,
-                        OnTextInputStateChanged)
-    IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP()
-  return handled;
-}
 
 void RenderWidgetHostViewAura::InitAsChild(
     gfx::NativeView parent_view) {
@@ -623,7 +618,6 @@ void RenderWidgetHostViewAura::SetBounds(const gfx::Rect& rect) {
     }
   }
 
-  SnapToPhysicalPixelBoundary();
   InternalSetBounds(gfx::Rect(relative_origin, rect.size()));
 }
 
@@ -814,25 +808,19 @@ void RenderWidgetHostViewAura::SetIsLoading(bool is_loading) {
   UpdateCursorIfOverSelf();
 }
 
-void RenderWidgetHostViewAura::TextInputTypeChanged(
-    ui::TextInputType type,
-    ui::TextInputMode input_mode,
-    bool can_compose_inline) {
-  if (text_input_type_ != type ||
-      text_input_mode_ != input_mode ||
-      can_compose_inline_ != can_compose_inline) {
-    text_input_type_ = type;
-    text_input_mode_ = input_mode;
-    can_compose_inline_ = can_compose_inline;
+void RenderWidgetHostViewAura::TextInputStateChanged(
+    const ViewHostMsg_TextInputState_Params& params) {
+  if (text_input_type_ != params.type ||
+      text_input_mode_ != params.mode ||
+      can_compose_inline_ != params.can_compose_inline) {
+    text_input_type_ = params.type;
+    text_input_mode_ = params.mode;
+    can_compose_inline_ = params.can_compose_inline;
     if (GetInputMethod())
       GetInputMethod()->OnTextInputTypeChanged(this);
     if (touch_editing_client_)
       touch_editing_client_->OnTextInputTypeChanged(text_input_type_);
   }
-}
-
-void RenderWidgetHostViewAura::OnTextInputStateChanged(
-    const ViewHostMsg_TextInputState_Params& params) {
   if (params.show_ime_if_needed && params.type != ui::TEXT_INPUT_TYPE_NONE) {
     if (GetInputMethod())
       GetInputMethod()->ShowImeIfNeeded();
@@ -987,15 +975,14 @@ void RenderWidgetHostViewAura::SnapToPhysicalPixelBoundary() {
 
   gfx::Vector2dF fudge = view_offset_snapped - view_offset;
   fudge.Scale(1.0 / current_device_scale_factor_);
-  gfx::Transform fudge_transform;
-  fudge_transform.Translate(fudge.x(), fudge.y());
-  GetLayer()->cc_layer()->SetTransform(fudge_transform);
+  GetLayer()->SetSubpixelPositionOffset(fudge);
 }
 
 void RenderWidgetHostViewAura::InternalSetBounds(const gfx::Rect& rect) {
   if (HasDisplayPropertyChanged(window_))
     host_->InvalidateScreenInfo();
 
+  SnapToPhysicalPixelBoundary();
   // Don't recursively call SetBounds if this bounds update is the result of
   // a Window::SetBoundsInternal call.
   if (!in_bounds_changed_)
@@ -1021,6 +1008,11 @@ void RenderWidgetHostViewAura::InternalSetBounds(const gfx::Rect& rect) {
     if (!legacy_render_widget_host_HWND_) {
       legacy_render_widget_host_HWND_ = LegacyRenderWidgetHostHWND::Create(
           reinterpret_cast<HWND>(GetNativeViewId()));
+      BrowserAccessibilityManagerWin* manager =
+          static_cast<BrowserAccessibilityManagerWin*>(
+              GetBrowserAccessibilityManager());
+      if (manager)
+        manager->SetAccessibleHWND(legacy_render_widget_host_HWND_.get());
     }
     if (legacy_render_widget_host_HWND_) {
       legacy_render_widget_host_HWND_->SetBounds(
@@ -1224,11 +1216,6 @@ RenderWidgetHostViewAura::CreateSyntheticGestureTarget() {
       new SyntheticGestureTargetAura(host_));
 }
 
-void RenderWidgetHostViewAura::SetScrollOffsetPinning(
-    bool is_pinned_to_left, bool is_pinned_to_right) {
-  // Not needed. Mac-only.
-}
-
 InputEventAckState RenderWidgetHostViewAura::FilterInputEvent(
     const blink::WebInputEvent& input_event) {
   bool consumed = false;
@@ -1253,33 +1240,23 @@ InputEventAckState RenderWidgetHostViewAura::FilterInputEvent(
 }
 
 void RenderWidgetHostViewAura::CreateBrowserAccessibilityManagerIfNeeded() {
-  if (GetBrowserAccessibilityManager())
-    return;
-
-  BrowserAccessibilityManager* manager = NULL;
 #if defined(OS_WIN)
-  aura::WindowTreeHost* host = window_->GetHost();
-  if (!host)
-    return;
-  HWND hwnd = host->GetAcceleratedWidget();
-
-  // The accessible_parent may be NULL at this point. The WebContents will pass
-  // it down to this instance (by way of the RenderViewHost and
-  // RenderWidgetHost) when it is known. This instance will then set it on its
-  // BrowserAccessibilityManager.
-  gfx::NativeViewAccessible accessible_parent =
-      host_->GetParentNativeViewAccessible();
-
-  if (legacy_render_widget_host_HWND_) {
-    manager = new BrowserAccessibilityManagerWin(
+  if (!GetBrowserAccessibilityManager()) {
+    gfx::NativeViewAccessible accessible_parent =
+        host_->GetParentNativeViewAccessible();
+    LegacyRenderWidgetHostHWND* parent_hwnd =
+        legacy_render_widget_host_HWND_.get();
+    SetBrowserAccessibilityManager(new BrowserAccessibilityManagerWin(
         legacy_render_widget_host_HWND_.get(), accessible_parent,
-        BrowserAccessibilityManagerWin::GetEmptyDocument(), host_);
+        BrowserAccessibilityManagerWin::GetEmptyDocument(), host_));
   }
 #else
-  manager = BrowserAccessibilityManager::Create(
-      BrowserAccessibilityManager::GetEmptyDocument(), host_);
+  if (!GetBrowserAccessibilityManager()) {
+    SetBrowserAccessibilityManager(
+        BrowserAccessibilityManager::Create(
+            BrowserAccessibilityManager::GetEmptyDocument(), host_));
+  }
 #endif
-  SetBrowserAccessibilityManager(manager);
 }
 
 gfx::GLSurfaceHandle RenderWidgetHostViewAura::GetCompositingSurface() {

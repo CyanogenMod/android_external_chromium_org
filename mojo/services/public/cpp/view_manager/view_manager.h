@@ -5,67 +5,37 @@
 #ifndef MOJO_SERVICES_PUBLIC_CPP_VIEW_MANAGER_VIEW_MANAGER_H_
 #define MOJO_SERVICES_PUBLIC_CPP_VIEW_MANAGER_VIEW_MANAGER_H_
 
-#include <map>
+#include <string>
+#include <vector>
 
-#include "base/basictypes.h"
-#include "base/callback.h"
-#include "base/memory/scoped_ptr.h"
-#include "mojo/public/cpp/bindings/callback.h"
-#include "mojo/services/public/cpp/view_manager/view_tree_node.h"
+#include "mojo/services/public/cpp/view_manager/types.h"
 
 namespace mojo {
 class Application;
 namespace view_manager {
 
+class Node;
 class View;
-class ViewManagerSynchronizer;
-class ViewTreeNode;
+class ViewManagerDelegate;
 
-// Approximately encapsulates the View Manager service.
-// Has a synchronizer that keeps a client model in sync with the service.
-// Owned by the connection.
-//
-// TODO: displays
 class ViewManager {
  public:
-  typedef base::Callback<void(ViewManager*, ViewTreeNode*)> RootCallback;
+  // Delegate is owned by the caller.
+  static void Create(Application* application, ViewManagerDelegate* delegate);
 
-  ~ViewManager();
+  // Returns the URL of the application that embedded this application.
+  virtual const std::string& GetEmbedderURL() const = 0;
 
-  // |ready_callback| is run when the ViewManager connection is established
-  // and ready to use.
-  static void Create(
-      Application* application,
-      const RootCallback& root_added_callback,
-      const RootCallback& root_removed_callback);
-  // Blocks until ViewManager is ready to use.
-  static ViewManager* CreateBlocking(Application* application);
+  // Returns all root nodes known to this connection.
+  virtual const std::vector<Node*>& GetRoots() const = 0;
 
-  const std::vector<ViewTreeNode*>& roots() { return roots_; }
+  // Returns a Node or View known to this connection.
+  virtual Node* GetNodeById(Id id) = 0;
+  virtual View* GetViewById(Id id) = 0;
 
-  ViewTreeNode* GetNodeById(TransportNodeId id);
-  View* GetViewById(TransportViewId id);
+ protected:
+  virtual ~ViewManager() {}
 
- private:
-  friend class ViewManagerPrivate;
-  typedef std::map<TransportNodeId, ViewTreeNode*> IdToNodeMap;
-  typedef std::map<TransportViewId, View*> IdToViewMap;
-
-  ViewManager(Application* application,
-              const RootCallback& root_added_callback,
-              const RootCallback& root_removed_callback);
-
-  RootCallback root_added_callback_;
-  RootCallback root_removed_callback_;
-
-  ViewManagerSynchronizer* synchronizer_;
-
-  std::vector<ViewTreeNode*> roots_;
-
-  IdToNodeMap nodes_;
-  IdToViewMap views_;
-
-  DISALLOW_COPY_AND_ASSIGN(ViewManager);
 };
 
 }  // namespace view_manager

@@ -303,9 +303,9 @@ public class ContentViewCore
     // because the OSK was just brought up.
     private final Rect mFocusPreOSKViewportRect = new Rect();
 
-    // On single tap this will store the x, y coordinates of the touch.
-    private int mSingleTapX;
-    private int mSingleTapY;
+    // On tap this will store the x, y coordinates of the touch.
+    private int mLastTapX;
+    private int mLastTapY;
 
     // Whether a touch scroll sequence is active, used to hide text selection
     // handles. Note that a scroll sequence will *always* bound a pinch
@@ -1108,7 +1108,8 @@ public class ContentViewCore
                     pointerCount > 1 ? event.getX(1) : 0,
                     pointerCount > 1 ? event.getY(1) : 0,
                     event.getPointerId(0), pointerCount > 1 ? event.getPointerId(1) : -1,
-                    event.getTouchMajor(), pointerCount > 1 ? event.getTouchMajor(1) : 0);
+                    event.getTouchMajor(), pointerCount > 1 ? event.getTouchMajor(1) : 0,
+                    event.getRawX(), event.getRawY());
 
             if (offset != null) offset.recycle();
             return consumed;
@@ -1829,33 +1830,30 @@ public class ContentViewCore
 
         if (!mPopupZoomer.isShowing()) mPopupZoomer.setLastTouch(xPix, yPix);
 
+        mLastTapX = (int) xPix;
+        mLastTapY = (int) yPix;
+
         if (type == GestureEventType.LONG_PRESS
                 || type == GestureEventType.LONG_TAP) {
             getInsertionHandleController().allowAutomaticShowing();
             getSelectionHandleController().allowAutomaticShowing();
         } else {
-            setClickXAndY((int) xPix, (int) yPix);
             if (mSelectionEditable) getInsertionHandleController().allowAutomaticShowing();
         }
     }
 
-    private void setClickXAndY(int x, int y) {
-        mSingleTapX = x;
-        mSingleTapY = y;
+    /**
+     * @return The x coordinate for the last point that a tap or press gesture was initiated from.
+     */
+    public int getLastTapX()  {
+        return mLastTapX;
     }
 
     /**
-     * @return The x coordinate for the last point that a singleTap gesture was initiated from.
+     * @return The y coordinate for the last point that a tap or press gesture was initiated from.
      */
-    public int getSingleTapX()  {
-        return mSingleTapX;
-    }
-
-    /**
-     * @return The y coordinate for the last point that a singleTap gesture was initiated from.
-     */
-    public int getSingleTapY()  {
-        return mSingleTapY;
+    public int getLastTapY()  {
+        return mLastTapY;
     }
 
     public void setZoomControlsDelegate(ZoomControlsDelegate zoomControlsDelegate) {
@@ -1919,8 +1917,9 @@ public class ContentViewCore
 
                 @Override
                 public void showHandles(int startDir, int endDir) {
+                    final boolean wasShowing = isShowing();
                     super.showHandles(startDir, endDir);
-                    showSelectActionBar();
+                    if (!wasShowing || mActionMode == null) showSelectActionBar();
                 }
 
             };
@@ -2314,8 +2313,6 @@ public class ContentViewCore
         TraceEvent.begin();
         mSelectionEditable = (textInputType != ImeAdapter.getTextInputTypeNone());
 
-        if (mActionMode != null) mActionMode.invalidate();
-
         mImeAdapter.updateKeyboardVisibility(
                 nativeImeAdapterAndroid, textInputType, showImeIfNeeded);
 
@@ -2323,6 +2320,8 @@ public class ContentViewCore
             mInputConnection.updateState(text, selectionStart, selectionEnd, compositionStart,
                     compositionEnd, isNonImeChange);
         }
+
+        if (mActionMode != null) mActionMode.invalidate();
         TraceEvent.end();
     }
 
@@ -3126,7 +3125,8 @@ public class ContentViewCore
             long timeMs, int action, int pointerCount, int historySize, int actionIndex,
             float x0, float y0, float x1, float y1,
             int pointerId0, int pointerId1,
-            float touchMajor0, float touchMajor1);
+            float touchMajor0, float touchMajor1,
+            float rawX, float rawY);
 
     private native int nativeSendMouseMoveEvent(
             long nativeContentViewCoreImpl, long timeMs, float x, float y);

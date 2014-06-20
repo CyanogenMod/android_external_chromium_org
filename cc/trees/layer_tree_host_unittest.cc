@@ -574,15 +574,13 @@ class LayerTreeHostTestUndrawnLayersDamageLater : public LayerTreeHostTest {
     // and each damage should be the bounding box of it and its child. If this
     // was working improperly, the damage might not include its childs bounding
     // box.
-    // TODO(enne): This compositor thread function is asking for the
-    // frame number from the layer tree host on the main thread.  :(
-    switch (layer_tree_host()->source_frame_number()) {
-      case 1:
+    switch (host_impl->active_tree()->source_frame_number()) {
+      case 0:
         EXPECT_RECT_EQ(gfx::Rect(root_layer_->bounds()), root_damage_rect);
         break;
+      case 1:
       case 2:
       case 3:
-      case 4:
         EXPECT_RECT_EQ(gfx::Rect(child_layer_->bounds()), root_damage_rect);
         break;
       default:
@@ -623,8 +621,7 @@ class LayerTreeHostTestUndrawnLayersDamageLater : public LayerTreeHostTest {
   scoped_refptr<FakeContentLayer> child_layer_;
 };
 
-// TODO(enne): http://crbug.com/380895
-// SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestUndrawnLayersDamageLater);
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestUndrawnLayersDamageLater);
 
 // Tests that if a layer is not drawn because of some reason in the parent,
 // causing its content bounds to not be computed, then when it is later drawn,
@@ -2213,7 +2210,11 @@ class LayerTreeHostTestLCDNotification : public LayerTreeHostTest {
   };
 
   virtual void SetupTree() OVERRIDE {
-    scoped_refptr<ContentLayer> root_layer = ContentLayer::Create(&client_);
+    scoped_refptr<Layer> root_layer;
+    if (layer_tree_host()->settings().impl_side_painting)
+      root_layer = PictureLayer::Create(&client_);
+    else
+      root_layer = ContentLayer::Create(&client_);
     root_layer->SetIsDrawable(true);
     root_layer->SetBounds(gfx::Size(1, 1));
 
@@ -2234,7 +2235,7 @@ class LayerTreeHostTestLCDNotification : public LayerTreeHostTest {
   virtual void DidCommit() OVERRIDE {
     switch (layer_tree_host()->source_frame_number()) {
       case 1:
-        // The first update consists one LCD notification and one paint.
+        // The first update consists of one LCD notification and one paint.
         EXPECT_EQ(1, client_.lcd_notification_count());
         EXPECT_EQ(1, client_.paint_count());
         // LCD text must have been enabled on the layer.
@@ -2253,7 +2254,7 @@ class LayerTreeHostTestLCDNotification : public LayerTreeHostTest {
         // No need to request a commit - setting opacity will do it.
         break;
       default:
-        // Verify that there is not extra commit due to layer invalidation.
+        // Verify that there is no extra commit due to layer invalidation.
         EXPECT_EQ(3, layer_tree_host()->source_frame_number());
         // LCD notification count should have incremented due to
         // change in layer opacity.
@@ -2271,7 +2272,7 @@ class LayerTreeHostTestLCDNotification : public LayerTreeHostTest {
   NotificationClient client_;
 };
 
-SINGLE_THREAD_TEST_F(LayerTreeHostTestLCDNotification);
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestLCDNotification);
 
 // Verify that the BeginFrame notification is used to initiate rendering.
 class LayerTreeHostTestBeginFrameNotification : public LayerTreeHostTest {
@@ -4202,7 +4203,7 @@ class LayerTreeHostTestMaxTransferBufferUsageBytes : public LayerTreeHostTest {
 
     // Expect that the transfer buffer memory used is equal to the
     // MaxTransferBufferUsageBytes value set in CreateOutputSurface.
-    EXPECT_EQ(1024 * 1024u, context->GetTransferBufferMemoryUsedBytes());
+    EXPECT_EQ(1024 * 1024u, context->max_used_transfer_buffer_usage_bytes());
     EndTest();
   }
 
@@ -4213,10 +4214,7 @@ class LayerTreeHostTestMaxTransferBufferUsageBytes : public LayerTreeHostTest {
 };
 
 // Impl-side painting is a multi-threaded compositor feature.
-// Disabled for flakiness: http://crbug.com/380662
-#if 0
 MULTI_THREAD_TEST_F(LayerTreeHostTestMaxTransferBufferUsageBytes);
-#endif
 
 // Test ensuring that memory limits are sent to the prioritized resource
 // manager.
@@ -4633,7 +4631,8 @@ class LayerTreeHostTestHighResRequiredAfterEvictingUIResources
   scoped_ptr<FakeScopedUIResource> ui_resource_;
 };
 
-MULTI_THREAD_TEST_F(LayerTreeHostTestHighResRequiredAfterEvictingUIResources);
+// This test is flaky, see http://crbug.com/386199
+//MULTI_THREAD_TEST_F(LayerTreeHostTestHighResRequiredAfterEvictingUIResources);
 
 class LayerTreeHostTestGpuRasterizationDefault : public LayerTreeHostTest {
  protected:

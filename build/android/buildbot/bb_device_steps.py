@@ -181,9 +181,10 @@ def InstallApk(options, test, print_step=False):
   if print_step:
     bb_annotations.PrintNamedStep('install_%s' % test.name.lower())
 
-  args = ['--apk', test.apk, '--apk_package', test.apk_package]
+  args = ['--apk_package', test.apk_package]
   if options.target == 'Release':
     args.append('--release')
+  args.append(test.apk)
 
   RunCmd(['build/android/adb_install_apk.py'] + args, halt_on_failure=True)
 
@@ -411,6 +412,8 @@ def ProvisionDevices(options):
   provision_cmd = ['build/android/provision_devices.py', '-t', options.target]
   if options.auto_reconnect:
     provision_cmd.append('--auto-reconnect')
+  if options.skip_wipe:
+    provision_cmd.append('--skip-wipe')
   RunCmd(provision_cmd)
 
 
@@ -646,6 +649,8 @@ def GetDeviceStepsOptParser():
   parser.add_option(
       '--auto-reconnect', action='store_true',
       help='Push script to device which restarts adbd on disconnections.')
+  parser.add_option('--skip-wipe', action='store_true',
+                    help='Do not wipe devices during provisioning.')
   parser.add_option(
       '--logcat-dump-output',
       help='The logcat dump output will be "tee"-ed into this file')

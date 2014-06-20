@@ -137,6 +137,9 @@ scoped_ptr<PasswordForm> FormFromAttributes(GnomeKeyringAttributeList* attrs) {
   form->type = static_cast<PasswordForm::Type>(uint_attr_map["type"]);
   form->times_used = uint_attr_map["times_used"];
   form->scheme = static_cast<PasswordForm::Scheme>(uint_attr_map["scheme"]);
+  int64 date_synced = 0;
+  base::StringToInt64(string_attr_map["date_synced"], &date_synced);
+  form->date_synced = base::Time::FromInternalValue(date_synced);
 
   return form.Pass();
 }
@@ -218,6 +221,7 @@ const GnomeKeyringPasswordSchema kGnomeSchema = {
     { "scheme", GNOME_KEYRING_ATTRIBUTE_TYPE_UINT32 },
     { "type", GNOME_KEYRING_ATTRIBUTE_TYPE_UINT32 },
     { "times_used", GNOME_KEYRING_ATTRIBUTE_TYPE_UINT32 },
+    { "date_synced", GNOME_KEYRING_ATTRIBUTE_TYPE_STRING },
     // This field is always "chrome" so that we can search for it.
     { "application", GNOME_KEYRING_ATTRIBUTE_TYPE_STRING },
     { NULL }
@@ -312,6 +316,7 @@ void GKRMethod::AddLogin(const PasswordForm& form, const char* app_string) {
   // We don't want to actually save passwords as though on January 1, 1970.
   if (!date_created)
     date_created = time(NULL);
+  int64 date_synced = form.date_synced.ToInternalValue();
   gnome_keyring_store_password(
       &kGnomeSchema,
       NULL,  // Default keyring.
@@ -334,6 +339,7 @@ void GKRMethod::AddLogin(const PasswordForm& form, const char* app_string) {
       "type", form.type,
       "times_used", form.times_used,
       "scheme", form.scheme,
+      "date_synced", base::Int64ToString(date_synced).c_str(),
       "application", app_string,
       NULL);
 }
@@ -636,26 +642,17 @@ bool NativeBackendGnome::RemoveLogin(const PasswordForm& form) {
   return true;
 }
 
-bool NativeBackendGnome::RemoveLoginsCreatedBetween(
-    const base::Time& delete_begin,
-    const base::Time& delete_end) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
-  bool ok = true;
-  // We could walk the list and delete items as we find them, but it is much
-  // easier to build the list and use RemoveLogin() to delete them.
-  PasswordFormList forms;
-  if (!GetAllLogins(&forms))
-    return false;
+bool NativeBackendGnome::RemoveLoginsCreatedBetween(base::Time delete_begin,
+                                                    base::Time delete_end) {
+  return RemoveLoginsBetween(
+      delete_begin, delete_end, CREATION_TIMESTAMP, NULL);
+}
 
-  for (size_t i = 0; i < forms.size(); ++i) {
-    if (delete_begin <= forms[i]->date_created &&
-        (delete_end.is_null() || forms[i]->date_created < delete_end)) {
-      if (!RemoveLogin(*forms[i]))
-        ok = false;
-    }
-    delete forms[i];
-  }
-  return ok;
+bool NativeBackendGnome::RemoveLoginsSyncedBetween(
+    base::Time delete_begin,
+    base::Time delete_end,
+    password_manager::PasswordStoreChangeList* changes) {
+  return RemoveLoginsBetween(delete_begin, delete_end, SYNC_TIMESTAMP, changes);
 }
 
 bool NativeBackendGnome::GetLogins(const PasswordForm& form,
@@ -677,27 +674,10 @@ bool NativeBackendGnome::GetLogins(const PasswordForm& form,
   return true;
 }
 
-bool NativeBackendGnome::GetLoginsCreatedBetween(const base::Time& get_begin,
-                                                 const base::Time& get_end,
+bool NativeBackendGnome::GetLoginsCreatedBetween(base::Time get_begin,
+                                                 base::Time get_end,
                                                  PasswordFormList* forms) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
-  // We could walk the list and add items as we find them, but it is much
-  // easier to build the list and then filter the results.
-  PasswordFormList all_forms;
-  if (!GetAllLogins(&all_forms))
-    return false;
-
-  forms->reserve(forms->size() + all_forms.size());
-  for (size_t i = 0; i < all_forms.size(); ++i) {
-    if (get_begin <= all_forms[i]->date_created &&
-        (get_end.is_null() || all_forms[i]->date_created < get_end)) {
-      forms->push_back(all_forms[i]);
-    } else {
-      delete all_forms[i];
-    }
-  }
-
-  return true;
+  return GetLoginsBetween(get_begin, get_end, CREATION_TIMESTAMP, forms);
 }
 
 bool NativeBackendGnome::GetAutofillableLogins(PasswordFormList* forms) {
@@ -745,6 +725,61 @@ bool NativeBackendGnome::GetAllLogins(PasswordFormList* forms) {
     return false;
   }
   return true;
+}
+
+bool NativeBackendGnome::GetLoginsBetween(base::Time get_begin,
+                                          base::Time get_end,
+                                          TimestampToCompare date_to_compare,
+                                          PasswordFormList* forms) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
+  // We could walk the list and add items as we find them, but it is much
+  // easier to build the list and then filter the results.
+  PasswordFormList all_forms;
+  if (!GetAllLogins(&all_forms))
+    return false;
+
+  base::Time autofill::PasswordForm::*date_member =
+      date_to_compare == CREATION_TIMESTAMP
+          ? &autofill::PasswordForm::date_created
+          : &autofill::PasswordForm::date_synced;
+  for (size_t i = 0; i < all_forms.size(); ++i) {
+    if (get_begin <= all_forms[i]->*date_member &&
+        (get_end.is_null() || all_forms[i]->*date_member < get_end)) {
+      forms->push_back(all_forms[i]);
+    } else {
+      delete all_forms[i];
+    }
+  }
+
+  return true;
+}
+
+bool NativeBackendGnome::RemoveLoginsBetween(
+    base::Time get_begin,
+    base::Time get_end,
+    TimestampToCompare date_to_compare,
+    password_manager::PasswordStoreChangeList* changes) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
+  if (changes)
+    changes->clear();
+  // We could walk the list and delete items as we find them, but it is much
+  // easier to build the list and use RemoveLogin() to delete them.
+  ScopedVector<autofill::PasswordForm> forms;
+  if (!GetLoginsBetween(get_begin, get_end, date_to_compare, &forms.get()))
+    return false;
+
+  bool ok = true;
+  for (size_t i = 0; i < forms.size(); ++i) {
+    if (RemoveLogin(*forms[i])) {
+      if (changes) {
+        changes->push_back(password_manager::PasswordStoreChange(
+            password_manager::PasswordStoreChange::REMOVE, *forms[i]));
+      }
+    } else {
+      ok = false;
+    }
+  }
+  return ok;
 }
 
 std::string NativeBackendGnome::GetProfileSpecificAppString() const {

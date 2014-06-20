@@ -556,18 +556,19 @@ void DownloadItemView::ButtonPressed(views::Button* sender,
   if (model_.ShouldAllowDownloadFeedback() &&
       !shelf_->browser()->profile()->IsOffTheRecord()) {
     if (!shelf_->browser()->profile()->GetPrefs()->HasPrefPath(
-        prefs::kSafeBrowsingDownloadFeedbackEnabled)) {
+        prefs::kSafeBrowsingExtendedReportingEnabled)) {
       // Show dialog, because the dialog hasn't been shown before.
       DownloadFeedbackDialogView::Show(
           shelf_->get_parent()->GetNativeWindow(),
           shelf_->browser()->profile(),
+          shelf_->GetNavigator(),
           base::Bind(
               &DownloadItemView::PossiblySubmitDownloadToFeedbackService,
               weak_ptr_factory_.GetWeakPtr()));
     } else {
       PossiblySubmitDownloadToFeedbackService(
           shelf_->browser()->profile()->GetPrefs()->GetBoolean(
-               prefs::kSafeBrowsingDownloadFeedbackEnabled));
+               prefs::kSafeBrowsingExtendedReportingEnabled));
     }
     return;
   }

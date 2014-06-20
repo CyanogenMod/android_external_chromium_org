@@ -4,6 +4,7 @@
 
 import("//build/config/linux/pkg_config.gni")
 import("//build/config/sysroot.gni")
+import("//build/config/ui.gni")
 
 config("sdk") {
   if (sysroot != "") {
@@ -48,8 +49,20 @@ pkg_config("udev") {
   packages = [ "libudev" ]
 }
 
+# Note: if your target also depends on //dbus, you don't need to add this
+# config (it will get added automatically if you depend on //dbus).
 pkg_config("dbus") {
   packages = [ "dbus-1" ]
+}
+
+if (use_evdev_gestures) {
+  pkg_config("libevdev-cros") {
+    packages = [ "libevdev-cros" ]
+  }
+
+  pkg_config("libgestures") {
+    packages = [ "libgestures" ]
+  }
 }
 
 config("x11") {
@@ -75,6 +88,10 @@ config("xcomposite") {
 
 config("xext") {
   libs = [ "Xext" ]
+}
+
+config("xrandr") {
+  libs = [ "xrandr" ]
 }
 
 config("libcap") {
@@ -142,8 +159,7 @@ generate_library_loader("gio") {
   name = "LibGioLoader"
   output_h = "libgio.h"
   output_cc = "libgio_loader.cc"
-  # TODO(brettw) convert ti "<gio/gio.h>" once GN doesn't mangle <>.
-  header = "\"gio/gio.h\""
+  header = "<gio/gio.h>"
   config = ":gio_config"
 
   functions = [
@@ -170,8 +186,7 @@ generate_library_loader("libpci") {
   name = "LibPciLoader"
   output_h = "libpci.h"
   output_cc = "libpci_loader.cc"
-  # TODO(brettw) convert to "<pci/pci.h>" once GN doesn't mangle <>.
-  header = "\"pci/pci.h\""
+  header = "<pci/pci.h>"
   config = ":libpci_config"
 
   functions = [

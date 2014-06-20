@@ -623,8 +623,17 @@ bool SourceState::OnNewConfigs(
         success &= false;
         MEDIA_LOG(log_cb_) << "New text track config does not match old one.";
       } else {
-        text_stream_map_.clear();
-        text_stream_map_[config_itr->first] = text_stream;
+        StreamParser::TrackId old_id = stream_itr->first;
+        StreamParser::TrackId new_id = config_itr->first;
+        if (new_id != old_id) {
+          if (frame_processor_->UpdateTrack(old_id, new_id)) {
+            text_stream_map_.clear();
+            text_stream_map_[config_itr->first] = text_stream;
+          } else {
+            success &= false;
+            MEDIA_LOG(log_cb_) << "Error remapping single text track number";
+          }
+        }
       }
     } else {
       for (TextConfigItr config_itr = text_configs.begin();
@@ -652,6 +661,8 @@ bool SourceState::OnNewConfigs(
       }
     }
   }
+
+  frame_processor_->SetAllTrackBuffersNeedRandomAccessPoint();
 
   DVLOG(1) << "OnNewConfigs() : " << (success ? "success" : "failed");
   return success;
@@ -1089,10 +1100,6 @@ DemuxerStream* ChunkDemuxer::GetStream(DemuxerStream::Type type) {
     return audio_.get();
 
   return NULL;
-}
-
-TimeDelta ChunkDemuxer::GetStartTime() const {
-  return TimeDelta();
 }
 
 base::Time ChunkDemuxer::GetTimelineOffset() const {
@@ -1596,7 +1603,7 @@ void ChunkDemuxer::OnSourceInitDone(
     return;
   }
 
-  SeekAllSources(GetStartTime());
+  SeekAllSources(base::TimeDelta());
   StartReturningData();
 
   if (duration_ == kNoTimestamp())

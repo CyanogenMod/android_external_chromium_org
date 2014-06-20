@@ -13,10 +13,7 @@
 
 #include "apps/app_window.h"
 #include "apps/app_window_registry.h"
-#include "ash/session/session_state_delegate.h"
-#include "ash/shell.h"
 #include "base/bind.h"
-#include "base/callback.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/json/json_reader.h"
@@ -24,10 +21,8 @@
 #include "base/json/json_writer.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_piece.h"
-#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
@@ -43,13 +38,11 @@
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_util.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
-#include "content/public/browser/browser_context.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_utils.h"
 #include "extensions/browser/api/test/test_api.h"
@@ -79,6 +72,7 @@ enum SharedOption {
 enum GuestMode {
   NOT_IN_GUEST_MODE,
   IN_GUEST_MODE,
+  IN_INCOGNITO
 };
 
 // This global operator is used from Google Test to format error messages.
@@ -189,7 +183,6 @@ struct AddEntriesMessage {
   static void RegisterJSONConverter(
       base::JSONValueConverter<AddEntriesMessage>* converter);
 };
-
 
 // static
 void AddEntriesMessage::RegisterJSONConverter(
@@ -594,7 +587,7 @@ void FileManagerBrowserTestBase::SetUpOnMainThread() {
     ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
     const GURL share_url_base(embedded_test_server()->GetURL(
         "/chromeos/file_manager/share_dialog_mock/index.html"));
-    drive_volume_ = drive_volumes_[profile()];
+    drive_volume_ = drive_volumes_[profile()->GetOriginalProfile()];
     drive_volume_->ConfigureShareUrlBase(share_url_base);
     test_util::WaitUntilDriveMountPointIsAdded(profile());
   }
@@ -604,6 +597,9 @@ void FileManagerBrowserTestBase::SetUpCommandLine(CommandLine* command_line) {
   if (GetGuestModeParam() == IN_GUEST_MODE) {
     command_line->AppendSwitch(chromeos::switches::kGuestSession);
     command_line->AppendSwitchNative(chromeos::switches::kLoginUser, "");
+    command_line->AppendSwitch(switches::kIncognito);
+  }
+  if (GetGuestModeParam() == IN_INCOGNITO) {
     command_line->AppendSwitch(switches::kIncognito);
   }
   ExtensionApiTest::SetUpCommandLine(command_line);
@@ -668,7 +664,7 @@ std::string FileManagerBrowserTestBase::OnMessage(const std::string& name,
     return jsonString;
   } else if (name == "isInGuestMode") {
     // Obtain whether the test is in guest mode or not.
-    return GetGuestModeParam() ? "true" : "false";
+    return GetGuestModeParam() != NOT_IN_GUEST_MODE ? "true" : "false";
   } else if (name == "getCwsWidgetContainerMockUrl") {
     // Obtain whether the test is in guest mode or not.
     const GURL url = embedded_test_server()->GetURL(
@@ -730,8 +726,9 @@ std::string FileManagerBrowserTestBase::OnMessage(const std::string& name,
 
 drive::DriveIntegrationService*
 FileManagerBrowserTestBase::CreateDriveIntegrationService(Profile* profile) {
-  drive_volumes_[profile].reset(new DriveTestVolume());
-  return drive_volumes_[profile]->CreateDriveIntegrationService(profile);
+  drive_volumes_[profile->GetOriginalProfile()].reset(new DriveTestVolume());
+  return drive_volumes_[profile->GetOriginalProfile()]->
+      CreateDriveIntegrationService(profile);
 }
 
 // Parameter of FileManagerBrowserTest.
@@ -856,9 +853,14 @@ WRAPPED_INSTANTIATE_TEST_CASE_P(
                       TestParameter(NOT_IN_GUEST_MODE, "renameFileDownloads"),
                       TestParameter(NOT_IN_GUEST_MODE, "renameFileDrive")));
 
-// Disabled due to frequent timeouts; http://crbug.com/370980.
-INSTANTIATE_TEST_CASE_P(
-    DISABLED_DriveSpecific,
+// Slow tests are disabled on debug build. http://crbug.com/327719
+#if !defined(NDEBUG)
+#define MAYBE_DriveSpecific DISABLED_DriveSpecific
+#else
+#define MAYBE_DriveSpecific DriveSpecific
+#endif
+WRAPPED_INSTANTIATE_TEST_CASE_P(
+    MAYBE_DriveSpecific,
     FileManagerBrowserTest,
     ::testing::Values(TestParameter(NOT_IN_GUEST_MODE, "openSidebarRecent"),
                       TestParameter(NOT_IN_GUEST_MODE, "openSidebarOffline"),
@@ -961,11 +963,31 @@ WRAPPED_INSTANTIATE_TEST_CASE_P(
         TestParameter(NOT_IN_GUEST_MODE, "executeDefaultTaskOnDownloads"),
         TestParameter(IN_GUEST_MODE, "executeDefaultTaskOnDownloads")));
 
+// Slow tests are disabled on debug build. http://crbug.com/327719
+#if !defined(NDEBUG)
+#define MAYBE_ExecuteDefaultTaskOnDrive DISABLED_ExecuteDefaultTaskOnDrive
+#else
+#define MAYBE_ExecuteDefaultTaskOnDrive ExecuteDefaultTaskOnDrive
+#endif
 INSTANTIATE_TEST_CASE_P(
-    ExecuteDefaultTaskOnDrive,
+    MAYBE_ExecuteDefaultTaskOnDrive,
     FileManagerBrowserTest,
     ::testing::Values(
         TestParameter(NOT_IN_GUEST_MODE, "executeDefaultTaskOnDrive")));
+
+// Slow tests are disabled on debug build. http://crbug.com/327719
+#if !defined(NDEBUG)
+#define MAYBE_DefaultActionDialog DISABLED_DefaultActionDialog
+#else
+#define MAYBE_DefaultActionDialog DefaultActionDialog
+#endif
+WRAPPED_INSTANTIATE_TEST_CASE_P(
+    MAYBE_DefaultActionDialog,
+    FileManagerBrowserTest,
+    ::testing::Values(
+        TestParameter(NOT_IN_GUEST_MODE, "defaultActionDialogOnDownloads"),
+        TestParameter(IN_GUEST_MODE, "defaultActionDialogOnDownloads"),
+        TestParameter(NOT_IN_GUEST_MODE, "defaultActionDialogOnDrive")));
 
 // Slow tests are disabled on debug build. http://crbug.com/327719
 #if !defined(NDEBUG)
@@ -1009,11 +1031,33 @@ WRAPPED_INSTANTIATE_TEST_CASE_P(
     ::testing::Values(TestParameter(NOT_IN_GUEST_MODE, "thumbnailsDownloads"),
                       TestParameter(IN_GUEST_MODE, "thumbnailsDownloads")));
 
-// Test/4 has been failing every 3rd or 4th pass on the waterfall for
-// "Linux ChromiumOS Tests (dbg)".
-// http://crbug.com/380339
-INSTANTIATE_TEST_CASE_P(
-    DISABLED_CopyBetweenWindows,
+#if !defined(NDEBUG)
+#define MAYBE_OpenFileDialog DISABLED_OpenFileDialog
+#else
+#define MAYBE_OpenFileDialog OpenFileDialog
+#endif
+WRAPPED_INSTANTIATE_TEST_CASE_P(
+    MAYBE_OpenFileDialog,
+    FileManagerBrowserTest,
+    ::testing::Values(TestParameter(NOT_IN_GUEST_MODE,
+                                    "openFileDialogOnDownloads"),
+                      TestParameter(IN_GUEST_MODE,
+                                    "openFileDialogOnDownloads"),
+                      TestParameter(NOT_IN_GUEST_MODE,
+                                    "openFileDialogOnDrive"),
+                      TestParameter(IN_INCOGNITO,
+                                    "openFileDialogOnDownloads"),
+                      TestParameter(IN_INCOGNITO,
+                                    "openFileDialogOnDrive")));
+
+// Slow tests are disabled on debug build. http://crbug.com/327719
+#if !defined(NDEBUG)
+#define MAYBE_CopyBetweenWindows DISABLED_CopyBetweenWindows
+#else
+#define MAYBE_CopyBetweenWindows CopyBetweenWindows
+#endif
+WRAPPED_INSTANTIATE_TEST_CASE_P(
+    MAYBE_CopyBetweenWindows,
     FileManagerBrowserTest,
     ::testing::Values(
         TestParameter(NOT_IN_GUEST_MODE, "copyBetweenWindowsLocalToDrive"),
@@ -1022,6 +1066,19 @@ INSTANTIATE_TEST_CASE_P(
         TestParameter(NOT_IN_GUEST_MODE, "copyBetweenWindowsDriveToLocal"),
         TestParameter(NOT_IN_GUEST_MODE, "copyBetweenWindowsDriveToUsb"),
         TestParameter(NOT_IN_GUEST_MODE, "copyBetweenWindowsUsbToLocal")));
+
+// Slow tests are disabled on debug build. http://crbug.com/327719
+#if !defined(NDEBUG)
+#define MAYBE_ShowGridView DISABLED_ShowGridView
+#else
+#define MAYBE_ShowGridView ShowGridView
+#endif
+WRAPPED_INSTANTIATE_TEST_CASE_P(
+    MAYBE_ShowGridView,
+    FileManagerBrowserTest,
+    ::testing::Values(TestParameter(NOT_IN_GUEST_MODE, "showGridViewDownloads"),
+                      TestParameter(IN_GUEST_MODE, "showGridViewDownloads"),
+                      TestParameter(NOT_IN_GUEST_MODE, "showGridViewDrive")));
 
 // Structure to describe an account info.
 struct TestAccountInfo {
@@ -1220,6 +1277,11 @@ class GalleryBrowserTestBase : public FileManagerBrowserTestBase {
   }
 
  protected:
+  virtual void SetUp() OVERRIDE {
+    AddScript("gallery/test_util.js");
+    FileManagerBrowserTestBase::SetUp();
+  }
+
   virtual std::string OnMessage(const std::string& name,
                                 const base::Value* value) OVERRIDE;
 
@@ -1271,6 +1333,120 @@ IN_PROC_BROWSER_TEST_F(GalleryBrowserTestInGuestMode,
 IN_PROC_BROWSER_TEST_F(GalleryBrowserTest, OpenSingleImageOnDrive) {
   AddScript("gallery/open_image_files.js");
   set_test_case_name("openSingleImageOnDrive");
+  StartTest();
+}
+
+IN_PROC_BROWSER_TEST_F(GalleryBrowserTest, OpenMultipleImagesOnDownloads) {
+  AddScript("gallery/open_image_files.js");
+  set_test_case_name("openMultipleImagesOnDownloads");
+  StartTest();
+}
+
+IN_PROC_BROWSER_TEST_F(GalleryBrowserTestInGuestMode,
+                       OpenMultipleImagesOnDownloads) {
+  AddScript("gallery/open_image_files.js");
+  set_test_case_name("openMultipleImagesOnDownloads");
+  StartTest();
+}
+
+IN_PROC_BROWSER_TEST_F(GalleryBrowserTest, OpenMultipleImagesOnDrive) {
+  AddScript("gallery/open_image_files.js");
+  set_test_case_name("openMultipleImagesOnDrive");
+  StartTest();
+}
+
+IN_PROC_BROWSER_TEST_F(GalleryBrowserTest, TraverseSlideImagesOnDownloads) {
+  AddScript("gallery/slide_mode.js");
+  set_test_case_name("traverseSlideImagesOnDownloads");
+  StartTest();
+}
+
+IN_PROC_BROWSER_TEST_F(GalleryBrowserTestInGuestMode,
+                       TraverseSlideImagesOnDownloads) {
+  AddScript("gallery/slide_mode.js");
+  set_test_case_name("traverseSlideImagesOnDownloads");
+  StartTest();
+}
+
+IN_PROC_BROWSER_TEST_F(GalleryBrowserTest, TraverseSlideImagesOnDrive) {
+  AddScript("gallery/slide_mode.js");
+  set_test_case_name("traverseSlideImagesOnDrive");
+  StartTest();
+}
+
+IN_PROC_BROWSER_TEST_F(GalleryBrowserTest, RenameImageOnDownloads) {
+  AddScript("gallery/slide_mode.js");
+  set_test_case_name("renameImageOnDownloads");
+  StartTest();
+}
+
+IN_PROC_BROWSER_TEST_F(GalleryBrowserTestInGuestMode,
+                       RenameImageOnDownloads) {
+  AddScript("gallery/slide_mode.js");
+  set_test_case_name("renameImageOnDownloads");
+  StartTest();
+}
+
+IN_PROC_BROWSER_TEST_F(GalleryBrowserTest, RenameImageOnDrive) {
+  AddScript("gallery/slide_mode.js");
+  set_test_case_name("renameImageOnDrive");
+  StartTest();
+}
+
+IN_PROC_BROWSER_TEST_F(GalleryBrowserTest, DeleteImageOnDownloads) {
+  AddScript("gallery/slide_mode.js");
+  set_test_case_name("deleteImageOnDownloads");
+  StartTest();
+}
+
+IN_PROC_BROWSER_TEST_F(GalleryBrowserTestInGuestMode,
+                       DeleteImageOnDownloads) {
+  AddScript("gallery/slide_mode.js");
+  set_test_case_name("deleteImageOnDownloads");
+  StartTest();
+}
+
+IN_PROC_BROWSER_TEST_F(GalleryBrowserTest, DeleteImageOnDrive) {
+  AddScript("gallery/slide_mode.js");
+  set_test_case_name("deleteImageOnDrive");
+  StartTest();
+}
+
+IN_PROC_BROWSER_TEST_F(GalleryBrowserTest, RotateImageOnDownloads) {
+  AddScript("gallery/photo_editor.js");
+  set_test_case_name("rotateImageOnDownloads");
+  StartTest();
+}
+
+IN_PROC_BROWSER_TEST_F(GalleryBrowserTestInGuestMode,
+                       RotateImageOnDownloads) {
+  AddScript("gallery/photo_editor.js");
+  set_test_case_name("rotateImageOnDownloads");
+  StartTest();
+}
+
+IN_PROC_BROWSER_TEST_F(GalleryBrowserTest, RotateImageOnDrive) {
+  AddScript("gallery/photo_editor.js");
+  set_test_case_name("rotateImageOnDrive");
+  StartTest();
+}
+
+IN_PROC_BROWSER_TEST_F(GalleryBrowserTest, CropImageOnDownloads) {
+  AddScript("gallery/photo_editor.js");
+  set_test_case_name("cropImageOnDownloads");
+  StartTest();
+}
+
+IN_PROC_BROWSER_TEST_F(GalleryBrowserTestInGuestMode,
+                       CropImageOnDownloads) {
+  AddScript("gallery/photo_editor.js");
+  set_test_case_name("cropImageOnDownloads");
+  StartTest();
+}
+
+IN_PROC_BROWSER_TEST_F(GalleryBrowserTest, CropImageOnDrive) {
+  AddScript("gallery/photo_editor.js");
+  set_test_case_name("cropImageOnDrive");
   StartTest();
 }
 

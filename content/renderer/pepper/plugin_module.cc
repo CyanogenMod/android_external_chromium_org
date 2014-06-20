@@ -29,7 +29,6 @@
 #include "content/renderer/pepper/ppb_video_decoder_impl.h"
 #include "content/renderer/pepper/renderer_ppapi_host_impl.h"
 #include "content/renderer/render_view_impl.h"
-#include "ppapi/c/dev/ppb_alarms_dev.h"
 #include "ppapi/c/dev/ppb_audio_input_dev.h"
 #include "ppapi/c/dev/ppb_buffer_dev.h"
 #include "ppapi/c/dev/ppb_char_set_dev.h"
@@ -649,7 +648,9 @@ bool PluginModule::InitializeModule(
   DCHECK(entry_points.initialize_module != NULL);
   int retval = entry_points.initialize_module(pp_module(), &GetInterface);
   if (retval != 0) {
+#if !defined(DISABLE_NACL)
     LOG(WARNING) << "PPP_InitializeModule returned failure " << retval;
+#endif  // !defined(DISABLE_NACL)
     return false;
   }
   return true;

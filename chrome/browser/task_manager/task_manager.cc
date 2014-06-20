@@ -200,8 +200,6 @@ TaskManagerModel::PerResourceValues::PerResourceValues()
       is_goats_teleported_valid(false),
       goats_teleported(0),
       is_webcore_stats_valid(false),
-      is_fps_valid(false),
-      fps(0),
       is_sqlite_memory_bytes_valid(false),
       sqlite_memory_bytes(0),
       is_v8_memory_valid(false),
@@ -376,9 +374,6 @@ base::string16 TaskManagerModel::GetResourceById(int index, int col_id) const {
     case IDS_TASK_MANAGER_WEBCORE_CSS_CACHE_COLUMN:
       return GetResourceWebCoreCSSCacheSize(index);
 
-    case IDS_TASK_MANAGER_FPS_COLUMN:
-      return GetResourceFPS(index);
-
     case IDS_TASK_MANAGER_VIDEO_MEMORY_COLUMN:
       return GetResourceVideoMemory(index);
 
@@ -519,14 +514,6 @@ base::string16 TaskManagerModel::GetResourceVideoMemory(int index) const {
     return GetMemCellText(video_memory) + base::ASCIIToUTF16("*");
   }
   return GetMemCellText(video_memory);
-}
-
-base::string16 TaskManagerModel::GetResourceFPS(
-    int index) const {
-  float fps = 0;
-  if (!GetFPS(index, &fps))
-    return l10n_util::GetStringUTF16(IDS_TASK_MANAGER_NA_CELL_TEXT);
-  return base::UTF8ToUTF16(base::StringPrintf("%.0f", fps));
 }
 
 base::string16 TaskManagerModel::GetResourceSqliteMemoryUsed(int index) const {
@@ -679,19 +666,6 @@ bool TaskManagerModel::GetVideoMemory(int index,
   return true;
 }
 
-bool TaskManagerModel::GetFPS(int index, float* result) const {
-  *result = 0;
-  PerResourceValues& values(GetPerResourceValues(index));
-  if (!values.is_fps_valid) {
-    if (!GetResource(index)->ReportsFPS())
-      return false;
-    values.is_fps_valid = true;
-    values.fps = GetResource(index)->GetFPS();
-  }
-  *result = values.fps;
-  return true;
-}
-
 bool TaskManagerModel::GetSqliteMemoryUsedBytes(
     int index,
     size_t* result) const {
@@ -768,8 +742,9 @@ gfx::ImageSkia TaskManagerModel::GetResourceIcon(int index) const {
   if (!icon.isNull())
     return icon;
 
-  static gfx::ImageSkia* default_icon = ResourceBundle::GetSharedInstance().
-      GetImageSkiaNamed(IDR_DEFAULT_FAVICON);
+  static const gfx::ImageSkia* default_icon =
+      ResourceBundle::GetSharedInstance().
+      GetNativeImageNamed(IDR_DEFAULT_FAVICON).ToImageSkia();
   return *default_icon;
 }
 
@@ -930,10 +905,6 @@ int TaskManagerModel::CompareValues(int row1, int row2, int col_id) const {
       return OrderUnavailableValue(row1_stats_valid, row2_stats_valid);
     }
 
-    case IDS_TASK_MANAGER_FPS_COLUMN:
-      return ValueCompareMember(
-          this, &TaskManagerModel::GetFPS, row1, row2);
-
     case IDS_TASK_MANAGER_VIDEO_MEMORY_COLUMN: {
       size_t value1;
       size_t value2;
@@ -1023,6 +994,8 @@ void TaskManagerModel::RemoveResource(Resource* resource) {
   // Find the associated group.
   GroupMap::iterator group_iter = group_map_.find(process);
   DCHECK(group_iter != group_map_.end());
+  if (group_iter == group_map_.end())
+    return;
   ResourceList& group_entries = group_iter->second;
 
   // Remove the entry from the group map.
@@ -1030,7 +1003,8 @@ void TaskManagerModel::RemoveResource(Resource* resource) {
                                           group_entries.end(),
                                           resource);
   DCHECK(iter != group_entries.end());
-  group_entries.erase(iter);
+  if (iter != group_entries.end())
+    group_entries.erase(iter);
 
   // If there are no more entries for that process, do the clean-up.
   if (group_entries.empty()) {
@@ -1045,27 +1019,26 @@ void TaskManagerModel::RemoveResource(Resource* resource) {
     }
   }
 
-  // Prepare to remove the entry from the model list.
+  // Remove the entry from the model list.
   iter = std::find(resources_.begin(), resources_.end(), resource);
   DCHECK(iter != resources_.end());
-  int index = static_cast<int>(iter - resources_.begin());
-
-  // Notify the observers that the contents will change.
-  FOR_EACH_OBSERVER(TaskManagerModelObserver, observer_list_,
-                    OnItemsToBeRemoved(index, 1));
-
-  // Now actually remove the entry from the model list.
-  resources_.erase(iter);
+  if (iter != resources_.end()) {
+    int index = static_cast<int>(iter - resources_.begin());
+    // Notify the observers that the contents will change.
+    FOR_EACH_OBSERVER(TaskManagerModelObserver, observer_list_,
+                      OnItemsToBeRemoved(index, 1));
+    // Now actually remove the entry from the model list.
+    resources_.erase(iter);
+    // Notify the table that the contents have changed.
+    FOR_EACH_OBSERVER(TaskManagerModelObserver, observer_list_,
+                      OnItemsRemoved(index, 1));
+  }
 
   // Remove the entry from the network maps.
   ResourceValueMap::iterator net_iter =
       current_byte_count_map_.find(resource);
   if (net_iter != current_byte_count_map_.end())
     current_byte_count_map_.erase(net_iter);
-
-  // Notify the table that the contents have changed.
-  FOR_EACH_OBSERVER(TaskManagerModelObserver, observer_list_,
-                    OnItemsRemoved(index, 1));
 }
 
 void TaskManagerModel::StartUpdating() {
@@ -1257,18 +1230,6 @@ void TaskManagerModel::NotifyResourceTypeStats(
        it != resources_.end(); ++it) {
     if (base::GetProcId((*it)->GetProcess()) == renderer_id) {
       (*it)->NotifyResourceTypeStats(stats);
-    }
-  }
-}
-
-void TaskManagerModel::NotifyFPS(base::ProcessId renderer_id,
-                                 int routing_id,
-                                 float fps) {
-  for (ResourceList::iterator it = resources_.begin();
-       it != resources_.end(); ++it) {
-    if (base::GetProcId((*it)->GetProcess()) == renderer_id &&
-        (*it)->GetRoutingID() == routing_id) {
-      (*it)->NotifyFPS(fps);
     }
   }
 }

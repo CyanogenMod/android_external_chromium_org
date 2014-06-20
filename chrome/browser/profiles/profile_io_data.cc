@@ -47,11 +47,11 @@
 #include "chrome/browser/signin/signin_names_io_thread.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/startup_metric_utils/startup_metric_utils.h"
 #include "components/sync_driver/pref_names.h"
+#include "components/url_fixer/url_fixer.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/notification_service.h"
@@ -89,9 +89,9 @@
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_mode_url_filter.h"
-#include "chrome/browser/managed_mode/managed_user_service.h"
-#include "chrome/browser/managed_mode/managed_user_service_factory.h"
+#include "chrome/browser/supervised_user/supervised_user_service.h"
+#include "chrome/browser/supervised_user/supervised_user_service_factory.h"
+#include "chrome/browser/supervised_user/supervised_user_url_filter.h"
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -343,10 +343,10 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
       .reset(ProxyServiceFactory::CreateProxyConfigService(
            profile->GetProxyConfigTracker()));
 #if defined(ENABLE_MANAGED_USERS)
-  ManagedUserService* managed_user_service =
-      ManagedUserServiceFactory::GetForProfile(profile);
-  params->managed_mode_url_filter =
-      managed_user_service->GetURLFilterForIOThread();
+  SupervisedUserService* supervised_user_service =
+      SupervisedUserServiceFactory::GetForProfile(profile);
+  params->supervised_user_url_filter =
+      supervised_user_service->GetURLFilterForIOThread();
 #endif
 #if defined(OS_CHROMEOS)
   chromeos::UserManager* user_manager = chromeos::UserManager::Get();
@@ -441,7 +441,7 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
 #if defined(ENABLE_CONFIGURATION_POLICY)
   policy::URLBlacklist::SegmentURLCallback callback =
       static_cast<policy::URLBlacklist::SegmentURLCallback>(
-          URLFixerUpper::SegmentURL);
+          url_fixer::SegmentURL);
   base::SequencedWorkerPool* pool = BrowserThread::GetBlockingPool();
   scoped_refptr<base::SequencedTaskRunner> background_task_runner =
       pool->GetSequencedTaskRunner(pool->GetSequenceToken());
@@ -626,7 +626,7 @@ bool ProfileIOData::IsHandledProtocol(const std::string& scheme) {
 #if defined(OS_CHROMEOS)
     chrome::kDriveScheme,
 #endif  // defined(OS_CHROMEOS)
-    content::kAboutScheme,
+    url::kAboutScheme,
 #if !defined(DISABLE_FTP_SUPPORT)
     url::kFtpScheme,
 #endif  // !defined(DISABLE_FTP_SUPPORT)
@@ -940,6 +940,8 @@ void ProfileIOData::Init(
       new ChromeNetworkDelegate(
           io_thread_globals->extension_event_router_forwarder.get(),
           &enable_referrers_);
+  network_delegate->set_data_reduction_proxy_params(
+      io_thread_globals->data_reduction_proxy_params.get());
   if (command_line.HasSwitch(switches::kEnableClientHints))
     network_delegate->SetEnableClientHints();
   network_delegate->set_extension_info_map(
@@ -987,7 +989,7 @@ void ProfileIOData::Init(
   resource_context_->request_context_ = main_request_context_.get();
 
 #if defined(ENABLE_MANAGED_USERS)
-  managed_mode_url_filter_ = profile_params_->managed_mode_url_filter;
+  supervised_user_url_filter_ = profile_params_->supervised_user_url_filter;
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -1066,7 +1068,7 @@ scoped_ptr<net::URLRequestJobFactory> ProfileIOData::SetUpJobFactoryDefaults(
 #endif  // defined(OS_CHROMEOS)
 
   job_factory->SetProtocolHandler(
-      content::kAboutScheme, new chrome_browser_net::AboutProtocolHandler());
+      url::kAboutScheme, new chrome_browser_net::AboutProtocolHandler());
 #if !defined(DISABLE_FTP_SUPPORT)
   DCHECK(ftp_transaction_factory);
   job_factory->SetProtocolHandler(
@@ -1116,6 +1118,7 @@ void ProfileIOData::ShutdownOnUIThread() {
   enable_metrics_.Destroy();
 #endif
   safe_browsing_enabled_.Destroy();
+  data_reduction_proxy_enabled_.Destroy();
   printing_enabled_.Destroy();
   sync_disabled_.Destroy();
   signin_allowed_.Destroy();

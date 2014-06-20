@@ -271,6 +271,12 @@
       # on compile-only bots).
       'fastbuild%': 0,
 
+      # Set to 1 to not store any build metadata (this isn't working yet but
+      # this flag will help us to get there). See http://crbug.com/314403.
+      # TODO(sebmarchand): Update this comment once this flag guarantee that
+      #     there's no build metadata in the build artifacts.
+      'dont_embed_build_metadata%': 0,
+
       # Set to 1 to force Visual C++ to use legacy debug information format /Z7.
       # This is useful for parallel compilation tools which can't support /Zi.
       # Only used on Windows.
@@ -291,7 +297,6 @@
 
       # Detect NEON support at run-time.
       'arm_neon_optional%': 0,
-
 
       # Use libjpeg-turbo as the JPEG codec used by Chromium.
       'use_libjpeg_turbo%': 1,
@@ -1021,6 +1026,7 @@
     'use_xi2_mt%':'<(use_xi2_mt)',
     'image_loader_extension%': '<(image_loader_extension)',
     'fastbuild%': '<(fastbuild)',
+    'dont_embed_build_metadata%': '<(dont_embed_build_metadata)',
     'win_z7%': '<(win_z7)',
     'dcheck_always_on%': '<(dcheck_always_on)',
     'tracing_like_official_build%': '<(tracing_like_official_build)',
@@ -1871,6 +1877,12 @@
         'enable_pepper_cdms%': 0,
       }],
 
+      ['OS=="android"', {
+        'enable_browser_cdms%': 1,
+      }, {
+        'enable_browser_cdms%': 0,
+      }],
+
       # Native Client glibc toolchain is enabled
       # by default except on arm and mips.
       ['target_arch=="arm" or target_arch=="mipsel"', {
@@ -2030,7 +2042,7 @@
         ],
       }],
 
-      ['asan==1', {
+      ['asan==1 or msan==1 or lsan==1 or tsan==1', {
         'clang%': 1,
         'use_allocator%': 'none',
       }],
@@ -2042,15 +2054,18 @@
         # runtime is fully adopted. See http://crbug.com/242503.
         'mac_strip_release': 0,
       }],
-      ['lsan==1', {
-        'clang%': 1,
-      }],
       ['tsan==1', {
-        'clang%': 1,
         'use_custom_libcxx%': 1,
       }],
       ['msan==1', {
-        'clang%': 1,
+        # Use a just-built, MSan-instrumented libc++ instead of the system-wide
+        # libstdc++. This is required to avoid false positive reports whenever
+        # the C++ standard library is used.
+        'use_custom_libcxx%': 1,
+        # Running the V8-generated code on an ARM simulator is a powerful hack
+        # that allows the tool to see the memory accesses from JITted code.
+        # Without this flag, JS code causes false positive reports from MSan.
+        'v8_target_arch': 'arm64',
       }],
 
       ['OS=="linux" and clang_type_profiler==1', {
@@ -2349,6 +2364,9 @@
       # Temporary suppression until Blink code can be removed.
       'BLINK_SCALE_FILTERS_AT_RECORD_TIME',
     ],
+    'include_dirs': [
+      '<(SHARED_INTERMEDIATE_DIR)',
+    ],
     'conditions': [
       ['(OS=="mac" or OS=="ios") and asan==1', {
         'dependencies': [
@@ -2441,9 +2459,6 @@
       ['enable_one_click_signin==1', {
         'defines': ['ENABLE_ONE_CLICK_SIGNIN'],
       }],
-      ['chromeos==1', {
-        'defines': ['OS_CHROMEOS=1'],
-      }],
       ['use_xi2_mt!=0 and use_x11==1', {
         'defines': ['USE_XI2_MT=<(use_xi2_mt)'],
       }],
@@ -2467,6 +2482,9 @@
       }],
       ['enable_pepper_cdms==1', {
         'defines': ['ENABLE_PEPPER_CDMS'],
+      }],
+      ['enable_browser_cdms==1', {
+        'defines': ['ENABLE_BROWSER_CDMS'],
       }],
       ['configuration_policy==1', {
         'defines': ['ENABLE_CONFIGURATION_POLICY'],
@@ -2561,6 +2579,11 @@
           }], # clang!=1
         ],
       }],  # fastbuild!=0
+      ['dont_embed_build_metadata==1', {
+        'defines': [
+          'DONT_EMBED_BUILD_METADATA',
+        ],
+      }],  # dont_embed_build_metadata==1
       ['dcheck_always_on!=0', {
         'defines': ['DCHECK_ALWAYS_ON=1'],
       }],  # dcheck_always_on!=0
@@ -2775,6 +2798,9 @@
       }],
       ['<(use_nss)==1 and >(nacl_untrusted_build)==0', {
         'defines': ['USE_NSS=1'],
+      }],
+      ['<(chromeos)==1 and >(nacl_untrusted_build)==0', {
+        'defines': ['OS_CHROMEOS=1'],
       }],
       ['enable_wexit_time_destructors==1', {
         'conditions': [
@@ -3366,7 +3392,6 @@
               # linux_use_debug_fission, so it can be used here alone.
               ['linux_use_debug_fission==1 and linux_use_gold_flags==1 and (clang==1 or gcc_version>=48) and binutils_version>=223', {
                 'cflags': ['-gsplit-dwarf'],
-                'ldflags': ['-Wl,--gdb-index'],
               }],
             ],
           },
@@ -3386,7 +3411,7 @@
               'release_valgrind_build%': 0,
             },
             'cflags': [
-              '-O<(release_optimize)',
+              '-O>(release_optimize)',
               # Don't emit the GCC version ident directives, they just end up
               # in the .comment section taking up binary size.
               '-fno-ident',
@@ -4397,6 +4422,9 @@
                 ],
               }],
               ['_type=="shared_library" or _type=="loadable_module"', {
+                'ldflags!': [
+                  '-Wl,--exclude-libs=ALL',
+                ],
                 'ldflags': [
                   '-Wl,-shared,-Bsymbolic',
                 ],
@@ -4967,6 +4995,14 @@
                   },
                 ],
                 ['optimize=="max"', {
+                    # Disable Warning 4702 ("Unreachable code") for the WPO/PGO
+                    # builds. Probably anything that this would catch that
+                    # wouldn't be caught in a normal build isn't going to
+                    # actually be a bug, so the incremental value of C4702 for
+                    # PGO builds is likely very small.
+                    'msvs_disabled_warnings': [
+                      4702
+                    ],
                     'msvs_settings': {
                       'VCCLCompilerTool': {
                         # 2, optimizeMaxSpeed, Maximize Speed (/O2)

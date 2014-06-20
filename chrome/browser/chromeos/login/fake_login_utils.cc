@@ -55,7 +55,6 @@ void FakeLoginUtils::DoBrowserLaunch(Profile* profile,
 }
 
 void FakeLoginUtils::PrepareProfile(const UserContext& user_context,
-                                    const std::string& display_email,
                                     bool has_cookies,
                                     bool has_active_session,
                                     LoginUtils::Delegate* delegate) {
@@ -67,16 +66,18 @@ void FakeLoginUtils::PrepareProfile(const UserContext& user_context,
   // Make sure that we get the real Profile instead of the login Profile.
   user->set_profile_is_created();
   Profile* profile = UserManager::Get()->GetProfileByUser(user);
+  profile->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
+                                 user_context.GetUserID());
 
   if (UserManager::Get()->IsLoggedInAsLocallyManagedUser()) {
     User* active_user = UserManager::Get()->GetActiveUser();
-    std::string managed_user_sync_id =
+    std::string supervised_user_sync_id =
         UserManager::Get()->GetSupervisedUserManager()->
             GetUserSyncId(active_user->email());
-    if (managed_user_sync_id.empty())
-      managed_user_sync_id = "DUMMY ID";
-    profile->GetPrefs()->SetString(prefs::kManagedUserId,
-                                   managed_user_sync_id);
+    if (supervised_user_sync_id.empty())
+      supervised_user_sync_id = "DUMMY ID";
+    profile->GetPrefs()->SetString(prefs::kSupervisedUserId,
+                                   supervised_user_sync_id);
   }
 
   content::NotificationService::current()->Notify(
@@ -95,22 +96,10 @@ void FakeLoginUtils::CompleteOffTheRecordLogin(const GURL& start_url) {
   NOTREACHED() << "Method not implemented.";
 }
 
-void FakeLoginUtils::SetFirstLoginPrefs(PrefService* prefs) {
-  NOTREACHED() << "Method not implemented.";
-}
-
 scoped_refptr<Authenticator> FakeLoginUtils::CreateAuthenticator(
     LoginStatusConsumer* consumer) {
   authenticator_ = new MockAuthenticator(consumer, expected_user_context_);
   return authenticator_;
-}
-
-void FakeLoginUtils::RestoreAuthenticationSession(Profile* profile) {
-  NOTREACHED() << "Method not implemented.";
-}
-
-void FakeLoginUtils::InitRlzDelayed(Profile* user_profile) {
-  NOTREACHED() << "Method not implemented.";
 }
 
 void FakeLoginUtils::SetExpectedCredentials(const UserContext& user_context) {

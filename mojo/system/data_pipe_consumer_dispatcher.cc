@@ -110,10 +110,10 @@ MojoResult DataPipeConsumerDispatcher::EndReadDataImplNoLock(
 
 MojoResult DataPipeConsumerDispatcher::AddWaiterImplNoLock(
     Waiter* waiter,
-    MojoWaitFlags flags,
-    MojoResult wake_result) {
+    MojoHandleSignals signals,
+    uint32_t context) {
   lock().AssertAcquired();
-  return data_pipe_->ConsumerAddWaiter(waiter, flags, wake_result);
+  return data_pipe_->ConsumerAddWaiter(waiter, signals, context);
 }
 
 void DataPipeConsumerDispatcher::RemoveWaiterImplNoLock(Waiter* waiter) {

@@ -11,6 +11,7 @@
 #include "content/browser/accessibility/browser_accessibility_win.h"
 #include "content/browser/renderer_host/legacy_render_widget_host_win.h"
 #include "content/common/accessibility_messages.h"
+#include "ui/base/win/atl_module.h"
 
 namespace content {
 
@@ -36,11 +37,15 @@ BrowserAccessibilityManagerWin::BrowserAccessibilityManagerWin(
     BrowserAccessibilityDelegate* delegate,
     BrowserAccessibilityFactory* factory)
     : BrowserAccessibilityManager(initial_tree, delegate, factory),
-      parent_hwnd_(accessible_hwnd->GetParent()),
+      parent_hwnd_(NULL),
       parent_iaccessible_(parent_iaccessible),
       tracked_scroll_object_(NULL),
       accessible_hwnd_(accessible_hwnd) {
-  accessible_hwnd_->set_browser_accessibility_manager(this);
+  ui::win::CreateATLModuleIfNeeded();
+  if (accessible_hwnd_) {
+    accessible_hwnd_->set_browser_accessibility_manager(this);
+    parent_hwnd_ = accessible_hwnd_->GetParent();
+  }
 }
 
 BrowserAccessibilityManagerWin::~BrowserAccessibilityManagerWin() {
@@ -67,10 +72,19 @@ ui::AXTreeUpdate BrowserAccessibilityManagerWin::GetEmptyDocument() {
   return update;
 }
 
+void BrowserAccessibilityManagerWin::SetAccessibleHWND(
+    LegacyRenderWidgetHostHWND* accessible_hwnd) {
+  accessible_hwnd_ = accessible_hwnd;
+  if (accessible_hwnd_) {
+    accessible_hwnd_->set_browser_accessibility_manager(this);
+    parent_hwnd_ = accessible_hwnd_->GetParent();
+  }
+}
+
 void BrowserAccessibilityManagerWin::MaybeCallNotifyWinEvent(DWORD event,
                                                              LONG child_id) {
   // Don't fire events if this view isn't hooked up to its parent.
-  if (!parent_iaccessible())
+  if (!parent_iaccessible() || !parent_hwnd())
     return;
 
   // If on Win 7 and complete accessibility is enabled, use the fake child HWND
@@ -124,6 +138,15 @@ void BrowserAccessibilityManagerWin::NotifyAccessibilityEvent(
     BrowserAccessibility* node) {
   if (node->GetRole() == ui::AX_ROLE_INLINE_TEXT_BOX)
     return;
+
+  // NVDA gets confused if we focus the main document element when it hasn't
+  // finished loading and it has no children at all, so suppress that event.
+  if (event_type == ui::AX_EVENT_FOCUS &&
+      node == GetRoot() &&
+      node->PlatformChildCount() == 0 &&
+      !node->GetBoolAttribute(ui::AX_ATTR_DOC_LOADED)) {
+    return;
+  }
 
   LONG event_id = EVENT_MIN;
   switch (event_type) {
@@ -212,6 +235,10 @@ void BrowserAccessibilityManagerWin::NotifyAccessibilityEvent(
     // object and pass it that same id, which we can use to retrieve the
     // IAccessible for this node.
     LONG child_id = node->ToBrowserAccessibilityWin()->unique_id_win();
+
+    // Always send a focus before a load complete.
+    if (event_type == ui::AX_EVENT_LOAD_COMPLETE)
+      MaybeCallNotifyWinEvent(EVENT_OBJECT_FOCUS, child_id);
     MaybeCallNotifyWinEvent(event_id, child_id);
   }
 

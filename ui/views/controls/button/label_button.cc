@@ -100,6 +100,10 @@ void LabelButton::SetTextColor(ButtonState for_state, SkColor color) {
   explicitly_set_colors_[for_state] = true;
 }
 
+void LabelButton::SetHaloColor(SkColor color) {
+  label_->set_halo_color(color);
+}
+
 bool LabelButton::GetTextMultiLine() const {
   return label_->is_multi_line();
 }
@@ -128,7 +132,7 @@ void LabelButton::SetElideBehavior(gfx::ElideBehavior elide_behavior) {
 }
 
 gfx::HorizontalAlignment LabelButton::GetHorizontalAlignment() const {
-  return label_->horizontal_alignment();
+  return label_->GetHorizontalAlignment();
 }
 
 void LabelButton::SetHorizontalAlignment(gfx::HorizontalAlignment alignment) {
@@ -222,7 +226,7 @@ void LabelButton::Layout() {
     adjusted_alignment = (adjusted_alignment == gfx::ALIGN_LEFT) ?
         gfx::ALIGN_RIGHT : gfx::ALIGN_LEFT;
 
-  gfx::Rect child_area(GetLocalBounds());
+  gfx::Rect child_area(GetChildAreaBounds());
   child_area.Inset(GetInsets());
 
   gfx::Size image_size(image_->GetPreferredSize());
@@ -275,6 +279,10 @@ void LabelButton::SetBorder(scoped_ptr<Border> border) {
   View::SetBorder(border.Pass());
 }
 
+gfx::Rect LabelButton::GetChildAreaBounds() {
+  return GetLocalBounds();
+}
+
 void LabelButton::OnPaint(gfx::Canvas* canvas) {
   View::OnPaint(canvas);
   Painter::PaintFocusPainter(this, canvas, focus_painter_.get());
@@ -320,7 +328,7 @@ void LabelButton::ResetColorsFromNativeTheme() {
     label_->SetBackgroundColor(SK_ColorBLACK);
     label_->set_background(Background::CreateSolidBackground(SK_ColorBLACK));
     label_->SetAutoColorReadabilityEnabled(true);
-    label_->ClearEmbellishing();
+    label_->set_shadows(gfx::ShadowValues());
   } else if (style() == STYLE_BUTTON) {
     // TODO(erg): This is disabled on desktop linux because of the binary asset
     // confusion. These details should either be pushed into ui::NativeThemeWin
@@ -332,8 +340,8 @@ void LabelButton::ResetColorsFromNativeTheme() {
     label_->SetBackgroundColor(theme->GetSystemColor(
         ui::NativeTheme::kColorId_ButtonBackgroundColor));
     label_->SetAutoColorReadabilityEnabled(false);
-    label_->SetShadowColors(kStyleButtonShadowColor, kStyleButtonShadowColor);
-    label_->SetShadowOffset(0, 1);
+    label_->set_shadows(gfx::ShadowValues(1,
+        gfx::ShadowValue(gfx::Point(0, 1), 0, kStyleButtonShadowColor)));
 #endif
     label_->set_background(NULL);
   } else {
@@ -366,7 +374,7 @@ void LabelButton::UpdateThemedBorder() {
   views::LinuxUI* linux_ui = views::LinuxUI::instance();
   if (linux_ui) {
     SetBorder(linux_ui->CreateNativeBorder(
-        this, label_button_border.PassAs<Border>()));
+        this, label_button_border.Pass()));
   } else
 #endif
   {

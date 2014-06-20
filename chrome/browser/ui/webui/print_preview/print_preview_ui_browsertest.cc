@@ -21,6 +21,7 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
+#include "url/url_constants.h"
 
 #if defined(OS_WIN)
 #include "ui/aura/window.h"
@@ -97,7 +98,8 @@ IN_PROC_BROWSER_TEST_F(PrintPreviewTest, MAYBE_TaskManagerNewPrintPreview) {
   ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchAboutBlankTab()));
   ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchAnyTab()));
   ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchAnyPrint()));
-  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchPrint("about:blank")));
+  ASSERT_NO_FATAL_FAILURE(
+      WaitForTaskManagerRows(1, MatchPrint(url::kAboutBlankURL)));
 }
 
 // Disable the test for mac as it started being flaky, see http://crbug/367665.
@@ -116,11 +118,11 @@ IN_PROC_BROWSER_TEST_F(PrintPreviewTest,
   ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchAboutBlankTab()));
   ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchAnyTab()));
   ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchAnyPrint()));
-  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchPrint("about:blank")));
+  ASSERT_NO_FATAL_FAILURE(
+      WaitForTaskManagerRows(1, MatchPrint(url::kAboutBlankURL)));
 }
 
 #if defined(OS_WIN)
-
 BOOL CALLBACK EnumerateChildren(HWND hwnd, LPARAM l_param) {
   HWND* child = reinterpret_cast<HWND*>(l_param);
   *child = hwnd;
@@ -196,6 +198,6 @@ IN_PROC_BROWSER_TEST_F(PrintPreviewTest, NoCrashOnCloseWithOtherTabs) {
 
   browser()->tab_strip_model()->ActivateTabAt(1, true);
 }
-#endif
+#endif  // defined(OS_WIN)
 
 }  // namespace

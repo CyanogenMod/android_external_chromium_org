@@ -59,7 +59,6 @@ class ChromeRenderMessageFilter : public content::BrowserMessageFilter {
   void OnPreconnect(const GURL& url);
   void OnResourceTypeStats(const blink::WebCache::ResourceTypeStats& stats);
   void OnUpdatedCacheStats(const blink::WebCache::UsageStats& stats);
-  void OnFPS(int routing_id, float fps);
   void OnV8HeapStats(int v8_memory_allocated, int v8_memory_used);
 
   void OnAllowDatabase(int render_frame_id,
@@ -76,7 +75,7 @@ class ChromeRenderMessageFilter : public content::BrowserMessageFilter {
   void OnRequestFileSystemAccessSync(int render_frame_id,
                                      const GURL& origin_url,
                                      const GURL& top_origin_url,
-                                     bool* allowed);
+                                     IPC::Message* message);
   void OnRequestFileSystemAccessAsync(int render_frame_id,
                                       int request_id,
                                       const GURL& origin_url,

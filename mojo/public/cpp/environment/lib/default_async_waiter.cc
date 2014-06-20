@@ -58,9 +58,8 @@ class RunLoopHandlerImpl : public RunLoopHandler {
   MOJO_DISALLOW_COPY_AND_ASSIGN(RunLoopHandlerImpl);
 };
 
-MojoAsyncWaitID AsyncWait(MojoAsyncWaiter* waiter,
-                          MojoHandle handle,
-                          MojoWaitFlags flags,
+MojoAsyncWaitID AsyncWait(MojoHandle handle,
+                          MojoHandleSignals signals,
                           MojoDeadline deadline,
                           MojoAsyncWaitCallback callback,
                           void* closure) {
@@ -71,23 +70,23 @@ MojoAsyncWaitID AsyncWait(MojoAsyncWaiter* waiter,
   // CancelWait is invoked.
   RunLoopHandlerImpl* run_loop_handler =
       new RunLoopHandlerImpl(Handle(handle), callback, closure);
-  run_loop->AddHandler(run_loop_handler, Handle(handle), flags, deadline);
+  run_loop->AddHandler(run_loop_handler, Handle(handle), signals, deadline);
   return reinterpret_cast<MojoAsyncWaitID>(run_loop_handler);
 }
 
-void CancelWait(MojoAsyncWaiter* waiter, MojoAsyncWaitID wait_id) {
+void CancelWait(MojoAsyncWaitID wait_id) {
   delete reinterpret_cast<RunLoopHandlerImpl*>(wait_id);
 }
 
-MojoAsyncWaiter s_default_async_waiter = {
+const MojoAsyncWaiter kDefaultAsyncWaiter = {
   AsyncWait,
   CancelWait
 };
 
 }  // namespace
 
-MojoAsyncWaiter* GetDefaultAsyncWaiter() {
-  return &s_default_async_waiter;
+const MojoAsyncWaiter* GetDefaultAsyncWaiter() {
+  return &kDefaultAsyncWaiter;
 }
 
 }  // namespace mojo

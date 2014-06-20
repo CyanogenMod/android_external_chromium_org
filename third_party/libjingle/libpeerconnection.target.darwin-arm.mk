@@ -101,6 +101,7 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_BROWSER_CDMS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
@@ -146,6 +147,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/libyuv/include \
 	$(LOCAL_PATH)/third_party/usrsctp \
 	$(LOCAL_PATH)/third_party/webrtc \
+	$(gyp_shared_intermediate_dir) \
 	$(PWD)/external/expat/lib \
 	$(LOCAL_PATH)/third_party/openssl/openssl/include \
 	$(LOCAL_PATH)/third_party/webrtc/overrides \
@@ -238,6 +240,7 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_BROWSER_CDMS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
@@ -283,6 +286,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/libyuv/include \
 	$(LOCAL_PATH)/third_party/usrsctp \
 	$(LOCAL_PATH)/third_party/webrtc \
+	$(gyp_shared_intermediate_dir) \
 	$(PWD)/external/expat/lib \
 	$(LOCAL_PATH)/third_party/openssl/openssl/include \
 	$(LOCAL_PATH)/third_party/webrtc/overrides \

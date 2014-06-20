@@ -32,30 +32,6 @@ TEST(NinjaActionTargetWriter, WriteOutputFilesForBuildLine) {
   EXPECT_EQ(" gen/a$ bbar.h gen/bar.cc", out.str());
 }
 
-TEST(NinjaActionTargetWriter, WriteOutputFilesForBuildLineWithDepfile) {
-  TestWithScope setup;
-  setup.build_settings()->SetBuildDir(SourceDir("//out/Debug/"));
-  Target target(setup.settings(), Label(SourceDir("//foo/"), "bar"));
-
-  target.action_values().set_depfile(
-      SourceFile("//out/Debug/gen/{{source_name_part}}.d"));
-  target.action_values().outputs().push_back(
-      SourceFile("//out/Debug/gen/{{source_name_part}}.h"));
-  target.action_values().outputs().push_back(
-      SourceFile("//out/Debug/gen/{{source_name_part}}.cc"));
-
-  std::ostringstream out;
-  NinjaActionTargetWriter writer(&target, setup.toolchain(), out);
-
-  FileTemplate output_template = writer.GetOutputTemplate();
-
-  SourceFile source("//foo/bar.in");
-  std::vector<OutputFile> output_files;
-  writer.WriteOutputFilesForBuildLine(output_template, source, &output_files);
-
-  EXPECT_EQ(" gen/bar.d gen/bar.h gen/bar.cc", out.str());
-}
-
 TEST(NinjaActionTargetWriter, WriteArgsSubstitutions) {
   TestWithScope setup;
   setup.build_settings()->SetBuildDir(SourceDir("//out/Debug/"));
@@ -83,8 +59,7 @@ TEST(NinjaActionTargetWriter, WriteArgsSubstitutions) {
 }
 
 // Makes sure that we write sources as input dependencies for actions with
-// both sources and source_prereqs (ACTION_FOREACH treats the sources
-// differently).
+// both sources and inputs (ACTION_FOREACH treats the sources differently).
 TEST(NinjaActionTargetWriter, ActionWithSources) {
   TestWithScope setup;
   setup.build_settings()->SetBuildDir(SourceDir("//out/Debug/"));
@@ -94,7 +69,7 @@ TEST(NinjaActionTargetWriter, ActionWithSources) {
   target.action_values().set_script(SourceFile("//foo/script.py"));
 
   target.sources().push_back(SourceFile("//foo/source.txt"));
-  target.source_prereqs().push_back(SourceFile("//foo/included.txt"));
+  target.inputs().push_back(SourceFile("//foo/included.txt"));
 
   target.action_values().outputs().push_back(
       SourceFile("//out/Debug/foo.out"));
@@ -183,7 +158,7 @@ TEST(NinjaActionTargetWriter, ForEach) {
   target.action_values().outputs().push_back(
       SourceFile("//out/Debug/{{source_name_part}}.out"));
 
-  target.source_prereqs().push_back(SourceFile("//foo/included.txt"));
+  target.inputs().push_back(SourceFile("//foo/included.txt"));
 
   // Posix.
   {
@@ -292,7 +267,7 @@ TEST(NinjaActionTargetWriter, ForEachWithDepfile) {
   target.action_values().outputs().push_back(
       SourceFile("//out/Debug/{{source_name_part}}.out"));
 
-  target.source_prereqs().push_back(SourceFile("//foo/included.txt"));
+  target.inputs().push_back(SourceFile("//foo/included.txt"));
 
   // Posix.
   {
@@ -317,12 +292,12 @@ TEST(NinjaActionTargetWriter, ForEachWithDepfile) {
         "build obj/foo/bar.inputdeps.stamp: stamp ../../foo/script.py "
             "../../foo/included.txt\n"
         "\n"
-        "build gen/input1.d input1.out: __foo_bar___rule ../../foo/input1.txt"
+        "build input1.out: __foo_bar___rule ../../foo/input1.txt"
             " | obj/foo/bar.inputdeps.stamp\n"
         "  source = ../../foo/input1.txt\n"
         "  source_name_part = input1\n"
         "  depfile = gen/input1.d\n"
-        "build gen/input2.d input2.out: __foo_bar___rule ../../foo/input2.txt"
+        "build input2.out: __foo_bar___rule ../../foo/input2.txt"
             " | obj/foo/bar.inputdeps.stamp\n"
         "  source = ../../foo/input2.txt\n"
         "  source_name_part = input2\n"
@@ -358,13 +333,13 @@ TEST(NinjaActionTargetWriter, ForEachWithDepfile) {
         "build obj/foo/bar.inputdeps.stamp: stamp ../../foo/script.py "
             "../../foo/included.txt\n"
         "\n"
-        "build gen/input1.d input1.out: __foo_bar___rule ../../foo/input1.txt"
+        "build input1.out: __foo_bar___rule ../../foo/input1.txt"
             " | obj/foo/bar.inputdeps.stamp\n"
         "  unique_name = 0\n"
         "  source = ../../foo/input1.txt\n"
         "  source_name_part = input1\n"
         "  depfile = gen/input1.d\n"
-        "build gen/input2.d input2.out: __foo_bar___rule ../../foo/input2.txt"
+        "build input2.out: __foo_bar___rule ../../foo/input2.txt"
             " | obj/foo/bar.inputdeps.stamp\n"
         "  unique_name = 1\n"
         "  source = ../../foo/input2.txt\n"

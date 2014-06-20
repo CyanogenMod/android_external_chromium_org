@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/renderer/render_view.h"
@@ -58,8 +59,8 @@ void ScriptContext::Invalidate() {
   v8_context_.reset();
 }
 
-std::string ScriptContext::GetExtensionID() const {
-  return extension_.get() ? extension_->id() : std::string();
+const std::string& ScriptContext::GetExtensionID() const {
+  return extension_.get() ? extension_->id() : base::EmptyString();
 }
 
 content::RenderView* ScriptContext::GetRenderView() const {
@@ -172,7 +173,7 @@ GURL ScriptContext::GetEffectiveDocumentURL(const blink::WebFrame* frame,
   // Common scenario. If |match_about_blank| is false (as is the case in most
   // extensions), or if the frame is not an about:-page, just return
   // |document_url| (supposedly the URL of the frame).
-  if (!match_about_blank || !document_url.SchemeIs(content::kAboutScheme))
+  if (!match_about_blank || !document_url.SchemeIs(url::kAboutScheme))
     return document_url;
 
   // Non-sandboxed about:blank and about:srcdoc pages inherit their security
@@ -182,7 +183,7 @@ GURL ScriptContext::GetEffectiveDocumentURL(const blink::WebFrame* frame,
   do {
     parent = parent->parent() ? parent->parent() : parent->opener();
   } while (parent != NULL &&
-           GURL(parent->document().url()).SchemeIs(content::kAboutScheme));
+           GURL(parent->document().url()).SchemeIs(url::kAboutScheme));
 
   if (parent) {
     // Only return the parent URL if the frame can access it.

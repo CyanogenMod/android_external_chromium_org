@@ -17,6 +17,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "cc/layers/content_layer_client.h"
+#include "cc/layers/layer.h"
 #include "cc/layers/texture_layer_client.h"
 #include "content/common/content_export.h"
 #include "content/public/renderer/pepper_plugin_instance.h"
@@ -102,6 +103,7 @@ namespace content {
 class ContentDecryptorDelegate;
 class FullscreenContainer;
 class MessageChannel;
+class PepperCompositorHost;
 class PepperGraphics2DHost;
 class PluginModule;
 class PluginObject;
@@ -301,6 +303,12 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // Send the message on to the plugin.
   void HandleMessage(ppapi::ScopedPPVar message);
 
+  // Send the message synchronously to the plugin, and get a result. Returns
+  // true if the plugin handled the message, false if it didn't. The plugin
+  // won't handle the message if it has not registered a PPP_MessageHandler.
+  bool HandleBlockingMessage(ppapi::ScopedPPVar message,
+                             ppapi::ScopedPPVar* result);
+
   // Returns true if the plugin is processing a user gesture.
   bool IsProcessingUserGesture();
 
@@ -452,20 +460,29 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
       OVERRIDE;
 
   // PPB_ContentDecryptor_Private implementation.
-  virtual void SessionCreated(PP_Instance instance,
-                              uint32_t session_id,
-                              PP_Var web_session_id_var) OVERRIDE;
+  virtual void PromiseResolved(PP_Instance instance,
+                               uint32 promise_id) OVERRIDE;
+  virtual void PromiseResolvedWithSession(PP_Instance instance,
+                                          uint32 promise_id,
+                                          PP_Var web_session_id_var) OVERRIDE;
+  virtual void PromiseRejected(PP_Instance instance,
+                               uint32 promise_id,
+                               PP_CdmExceptionCode exception_code,
+                               uint32 system_code,
+                               PP_Var error_description_var) OVERRIDE;
   virtual void SessionMessage(PP_Instance instance,
-                              uint32_t session_id,
-                              PP_Var message,
-                              PP_Var destination_url) OVERRIDE;
-  virtual void SessionReady(PP_Instance instance, uint32_t session_id) OVERRIDE;
+                              PP_Var web_session_id_var,
+                              PP_Var message_var,
+                              PP_Var destination_url_var) OVERRIDE;
+  virtual void SessionReady(PP_Instance instance,
+                            PP_Var web_session_id_var) OVERRIDE;
   virtual void SessionClosed(PP_Instance instance,
-                             uint32_t session_id) OVERRIDE;
+                             PP_Var web_session_id_var) OVERRIDE;
   virtual void SessionError(PP_Instance instance,
-                            uint32_t session_id,
-                            int32_t media_error,
-                            uint32_t system_code) OVERRIDE;
+                            PP_Var web_session_id_var,
+                            PP_CdmExceptionCode exception_code,
+                            uint32 system_code,
+                            PP_Var error_description_var) OVERRIDE;
   virtual void DeliverBlock(PP_Instance instance,
                             PP_Resource decrypted_block,
                             const PP_DecryptedBlockInfo* block_info) OVERRIDE;
@@ -678,6 +695,7 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
 
   // NULL until we have been initialized.
   blink::WebPluginContainer* container_;
+  scoped_refptr<cc::Layer> compositor_layer_;
   scoped_refptr<cc::TextureLayer> texture_layer_;
   scoped_ptr<blink::WebLayer> web_layer_;
   bool layer_bound_to_fullscreen_;
@@ -701,9 +719,10 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // same as the default values.
   bool sent_initial_did_change_view_;
 
-  // The current device context for painting in 2D and 3D.
+  // The current device context for painting in 2D, 3D or compositor.
   scoped_refptr<PPB_Graphics3D_Impl> bound_graphics_3d_;
   PepperGraphics2DHost* bound_graphics_2d_platform_;
+  PepperCompositorHost* bound_compositor_;
 
   // We track two types of focus, one from WebKit, which is the focus among
   // all elements of the page, one one from the browser, which is whether the

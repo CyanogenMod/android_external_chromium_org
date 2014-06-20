@@ -24,15 +24,16 @@
 #include "chrome/browser/autocomplete/autocomplete_result.h"
 #include "chrome/browser/autocomplete/history_provider.h"
 #include "chrome/browser/autocomplete/shortcuts_backend_factory.h"
-#include "chrome/browser/autocomplete/url_prefix.h"
 #include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/autocomplete/url_prefix.h"
+#include "components/metrics/proto/omnibox_input_type.pb.h"
+#include "components/url_fixer/url_fixer.h"
 #include "url/url_parse.h"
 
 namespace {
@@ -70,8 +71,8 @@ void ShortcutsProvider::Start(const AutocompleteInput& input,
                               bool minimal_changes) {
   matches_.clear();
 
-  if ((input.type() == AutocompleteInput::INVALID) ||
-      (input.type() == AutocompleteInput::FORCED_QUERY))
+  if ((input.type() == metrics::OmniboxInputType::INVALID) ||
+      (input.type() == metrics::OmniboxInputType::FORCED_QUERY))
     return;
 
   if (input.text().empty())
@@ -139,8 +140,8 @@ void ShortcutsProvider::GetMatches(const AutocompleteInput& input) {
   base::string16 term_string(base::i18n::ToLower(input.text()));
   DCHECK(!term_string.empty());
 
-  const GURL& input_as_gurl = URLFixerUpper::FixupURL(
-      base::UTF16ToUTF8(input.text()), std::string());
+  const GURL& input_as_gurl =
+      url_fixer::FixupURL(base::UTF16ToUTF8(input.text()), std::string());
   const base::string16 fixed_up_input(FixupUserInput(input).second);
 
   int max_relevance;
@@ -244,9 +245,10 @@ AutocompleteMatch ShortcutsProvider::ShortcutToACMatch(
       // Also allow a user's input to be marked as default if it would be fixed
       // up to the same thing as the fill_into_edit.  This handles cases like
       // the user input containing a trailing slash absent in fill_into_edit.
-      match.allowed_to_be_default_match = (input_as_gurl ==
-          URLFixerUpper::FixupURL(base::UTF16ToUTF8(match.fill_into_edit),
-                                  std::string()));
+      match.allowed_to_be_default_match =
+          (input_as_gurl ==
+           url_fixer::FixupURL(base::UTF16ToUTF8(match.fill_into_edit),
+                               std::string()));
     }
   }
 

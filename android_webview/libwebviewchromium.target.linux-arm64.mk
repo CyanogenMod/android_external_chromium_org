@@ -146,7 +146,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_qcms_qcms_gyp,,,$(GYP_VAR_PREFIX))/third_party_qcms_qcms_gyp.a \
 	$(call intermediates-dir-for,GYP,v8_tools_gyp_v8_gyp,,,$(GYP_VAR_PREFIX))/v8.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,v8_tools_gyp_v8_base_gyp,,,$(GYP_VAR_PREFIX))/v8_tools_gyp_v8_base_gyp.a \
-	$(call intermediates-dir-for,GYP,v8_tools_gyp_v8_libbase_arm64_gyp,,,$(GYP_VAR_PREFIX))/v8_libbase.arm64.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,v8_tools_gyp_v8_libbase_gyp,,,$(GYP_VAR_PREFIX))/v8_tools_gyp_v8_libbase_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,v8_tools_gyp_v8_snapshot_gyp,,,$(GYP_VAR_PREFIX))/v8_tools_gyp_v8_snapshot_gyp.a \
 	$(call intermediates-dir-for,GYP,v8_tools_gyp_js2c_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp,true,,$(GYP_HOST_VAR_PREFIX))/js2c.stamp \
 	$(call intermediates-dir-for,GYP,v8_tools_gyp_generate_trig_table_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp,true,,$(GYP_HOST_VAR_PREFIX))/generate_trig_table.stamp \
@@ -272,10 +272,12 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,components_autofill_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/autofill_jni_headers.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_autofill_content_risk_proto_gyp,,,$(GYP_VAR_PREFIX))/components_autofill_content_risk_proto_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_autofill_core_browser_gyp,,,$(GYP_VAR_PREFIX))/components_autofill_core_browser_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_fips181_fips181_gyp,,,$(GYP_VAR_PREFIX))/third_party_fips181_fips181_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libaddressinput_libaddressinput_util_gyp,,,$(GYP_VAR_PREFIX))/third_party_libaddressinput_libaddressinput_util_gyp.a \
 	$(call intermediates-dir-for,GYP,components_autofill_regexes_gyp,,,$(GYP_VAR_PREFIX))/autofill_regexes.stamp \
 	$(call intermediates-dir-for,GYP,components_components_resources_gyp,,,$(GYP_VAR_PREFIX))/components_resources.stamp \
 	$(call intermediates-dir-for,GYP,components_components_strings_gyp,,,$(GYP_VAR_PREFIX))/components_strings.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,components_keyed_service_core_gyp,,,$(GYP_VAR_PREFIX))/components_keyed_service_core_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_os_crypt_gyp,,,$(GYP_VAR_PREFIX))/components_os_crypt_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_pref_registry_gyp,,,$(GYP_VAR_PREFIX))/components_pref_registry_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_webdata_common_gyp,,,$(GYP_VAR_PREFIX))/components_webdata_common_gyp.a \
@@ -289,8 +291,6 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_autofill_content_renderer_gyp,,,$(GYP_VAR_PREFIX))/components_autofill_content_renderer_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_renderer_gyp,,,$(GYP_VAR_PREFIX))/content_content_renderer_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_js_bindings_lib_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_js_bindings_lib_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_renderer_compositor_bindings_webkit_compositor_bindings_gyp,,,$(GYP_VAR_PREFIX))/webkit_renderer_compositor_bindings_webkit_compositor_bindings_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_renderer_compositor_bindings_webkit_compositor_support_gyp,,,$(GYP_VAR_PREFIX))/webkit_renderer_compositor_bindings_webkit_compositor_support_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libjingle_libjingle_webrtc_gyp,,,$(GYP_VAR_PREFIX))/third_party_libjingle_libjingle_webrtc_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libjingle_libjingle_webrtc_common_gyp,,,$(GYP_VAR_PREFIX))/third_party_libjingle_libjingle_webrtc_common_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libsrtp_libsrtp_gyp,,,$(GYP_VAR_PREFIX))/third_party_libsrtp_libsrtp_gyp.a \
@@ -310,7 +310,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_iSACFix_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_modules_iSACFix_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_PCM16B_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_modules_PCM16B_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_webrtc_opus_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_modules_webrtc_opus_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_NetEq4_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_modules_NetEq4_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_neteq_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_modules_neteq_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_webrtc_video_coding_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_modules_webrtc_video_coding_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_webrtc_i420_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_modules_webrtc_i420_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_common_video_common_video_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_common_video_common_video_gyp.a \
@@ -405,6 +405,7 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_BROWSER_CDMS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
@@ -438,6 +439,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
+	$(gyp_shared_intermediate_dir) \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
@@ -499,6 +501,7 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DENABLE_WEBRTC=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_BROWSER_CDMS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
@@ -533,6 +536,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
+	$(gyp_shared_intermediate_dir) \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
@@ -567,7 +571,6 @@ LOCAL_LDFLAGS_Debug := \
 	-Wl,--no-fatal-warnings \
 	-nostdlib \
 	-Wl,--no-undefined \
-	-Wl,--exclude-libs=ALL \
 	-Wl,-shared,-Bsymbolic \
 	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
@@ -582,7 +585,6 @@ LOCAL_LDFLAGS_Release := \
 	-Wl,--no-fatal-warnings \
 	-nostdlib \
 	-Wl,--no-undefined \
-	-Wl,--exclude-libs=ALL \
 	-Wl,-shared,-Bsymbolic \
 	-Wl,-O1 \
 	-Wl,--as-needed \
@@ -678,6 +680,7 @@ LOCAL_STATIC_LIBRARIES := \
 	third_party_brotli_brotli_gyp \
 	third_party_qcms_qcms_gyp \
 	v8_tools_gyp_v8_base_gyp \
+	v8_tools_gyp_v8_libbase_gyp \
 	v8_tools_gyp_v8_snapshot_gyp \
 	third_party_iccjpeg_iccjpeg_gyp \
 	third_party_WebKit_Source_web_blink_web_gyp \
@@ -728,7 +731,9 @@ LOCAL_STATIC_LIBRARIES := \
 	components_autofill_core_common_gyp \
 	components_autofill_content_risk_proto_gyp \
 	components_autofill_core_browser_gyp \
+	third_party_fips181_fips181_gyp \
 	third_party_libaddressinput_libaddressinput_util_gyp \
+	components_keyed_service_core_gyp \
 	components_os_crypt_gyp \
 	components_pref_registry_gyp \
 	components_webdata_common_gyp \
@@ -738,8 +743,6 @@ LOCAL_STATIC_LIBRARIES := \
 	components_autofill_content_renderer_gyp \
 	content_content_renderer_gyp \
 	mojo_mojo_js_bindings_lib_gyp \
-	webkit_renderer_compositor_bindings_webkit_compositor_bindings_gyp \
-	webkit_renderer_compositor_bindings_webkit_compositor_support_gyp \
 	third_party_libjingle_libjingle_webrtc_gyp \
 	third_party_libjingle_libjingle_webrtc_common_gyp \
 	third_party_libsrtp_libsrtp_gyp \
@@ -759,7 +762,7 @@ LOCAL_STATIC_LIBRARIES := \
 	third_party_webrtc_modules_iSACFix_gyp \
 	third_party_webrtc_modules_PCM16B_gyp \
 	third_party_webrtc_modules_webrtc_opus_gyp \
-	third_party_webrtc_modules_NetEq4_gyp \
+	third_party_webrtc_modules_neteq_gyp \
 	third_party_webrtc_modules_webrtc_video_coding_gyp \
 	third_party_webrtc_modules_webrtc_i420_gyp \
 	third_party_webrtc_common_video_common_video_gyp \

@@ -56,7 +56,6 @@ class NetworkDelegate;
 class ServerBoundCertService;
 class ProxyConfigService;
 class ProxyService;
-class SdchManager;
 class SSLConfigService;
 class TransportSecurityState;
 class URLRequestContext;
@@ -143,6 +142,7 @@ class IOThread : public content::BrowserThreadDelegate {
     scoped_ptr<net::URLRequestContext> proxy_script_fetcher_context;
     scoped_ptr<net::ProxyService> system_proxy_service;
     scoped_ptr<net::HttpTransactionFactory> system_http_transaction_factory;
+    scoped_ptr<net::URLRequestJobFactory> system_url_request_job_factory;
     scoped_ptr<net::URLRequestContext> system_request_context;
     SystemRequestContextLeakChecker system_request_context_leak_checker;
     // |system_cookie_store| and |system_server_bound_cert_service| are shared
@@ -366,8 +366,6 @@ class IOThread : public content::BrowserThreadDelegate {
 
   scoped_refptr<net::URLRequestContextGetter>
       system_url_request_context_getter_;
-
-  net::SdchManager* sdch_manager_;
 
   // True if SPDY is disabled by policy.
   bool is_spdy_disabled_by_policy_;

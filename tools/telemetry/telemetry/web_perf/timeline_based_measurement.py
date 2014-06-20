@@ -7,7 +7,7 @@ import os
 
 from telemetry.core import util
 from telemetry.core.backends.chrome import tracing_backend
-from telemetry.core.timeline import model as model_module
+from telemetry.timeline import model as model_module
 from telemetry.web_perf import timeline_interaction_record as tir_module
 from telemetry.web_perf.metrics import smoothness
 from telemetry.web_perf.metrics import responsiveness_metric
@@ -151,7 +151,7 @@ class TimelineBasedMeasurement(page_measurement.PageMeasurement):
         logging.error('Cannot open %s. %s' % (trace_file_path, e))
 
     model = model_module.TimelineModel(trace_result)
-    renderer_thread = model.GetRendererThreadFromTab(tab)
+    renderer_thread = model.GetRendererThreadFromTabId(tab.id)
     meta_metrics = _TimelineBasedMetrics(
       model, renderer_thread, self.CreateMetricsForTimelineInteractionRecord)
     meta_metrics.AddResults(results)

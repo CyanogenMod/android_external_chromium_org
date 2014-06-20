@@ -103,10 +103,13 @@
         'browser/api/shell/shell_api.h',
         'browser/default_shell_browser_main_delegate.cc',
         'browser/default_shell_browser_main_delegate.h',
+        'browser/default_shell_app_window_controller.cc',
+        'browser/default_shell_app_window_controller.h',
         'browser/shell_app_sorting.cc',
         'browser/shell_app_sorting.h',
         'browser/shell_app_window.cc',
         'browser/shell_app_window.h',
+        'browser/shell_app_window_controller.h',
         'browser/shell_browser_context.cc',
         'browser/shell_browser_context.h',
         'browser/shell_browser_main_delegate.h',
@@ -143,6 +146,7 @@
         'renderer/shell_dispatcher_delegate.h',
         'renderer/shell_extensions_renderer_client.cc',
         'renderer/shell_extensions_renderer_client.h',
+        'renderer/shell_renderer_main_delegate.h',
       ],
       'conditions': [
         ['chromeos==1', {

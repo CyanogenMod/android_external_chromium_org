@@ -28,11 +28,13 @@ MediaSourcePlayer::MediaSourcePlayer(
     MediaPlayerManager* manager,
     const RequestMediaResourcesCB& request_media_resources_cb,
     const ReleaseMediaResourcesCB& release_media_resources_cb,
-    scoped_ptr<DemuxerAndroid> demuxer)
+    scoped_ptr<DemuxerAndroid> demuxer,
+    const GURL& frame_url)
     : MediaPlayerAndroid(player_id,
                          manager,
                          request_media_resources_cb,
-                         release_media_resources_cb),
+                         release_media_resources_cb,
+                         frame_url),
       demuxer_(demuxer.Pass()),
       pending_event_(NO_EVENT_PENDING),
       playing_(false),
@@ -744,11 +746,15 @@ void MediaSourcePlayer::OnKeyAdded() {
 
 void MediaSourcePlayer::OnCdmUnset() {
   DVLOG(1) << __FUNCTION__;
-  DCHECK(drm_bridge_);
   // TODO(xhwang): Support detachment of CDM. This will be needed when we start
-  // to support setMediaKeys(0), or when we release MediaDrm when the video is
-  // paused, or when the device goes to sleep. See http://crbug.com/272421
-  DVLOG(1) << "CDM detachment not supported.";
+  // to support setMediaKeys(0) (see http://crbug.com/330324), or when we
+  // release MediaDrm when the video is paused, or when the device goes to
+  // sleep (see http://crbug.com/272421).
+  NOTREACHED() << "CDM detachment not supported.";
+  DCHECK(drm_bridge_);
+  audio_decoder_job_->SetDrmBridge(NULL);
+  video_decoder_job_->SetDrmBridge(NULL);
+  drm_bridge_ = NULL;
 }
 
 }  // namespace media

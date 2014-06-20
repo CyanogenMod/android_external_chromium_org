@@ -86,6 +86,12 @@ cr.define('options', function() {
 
       if (loadTimeData.getBoolean('allowAdvancedSettings')) {
         $('advanced-settings-expander').onclick = function() {
+          var showAdvanced =
+              BrowserOptions.shouldShowSection_($('advanced-settings'));
+          if (showAdvanced) {
+            chrome.send('coreOptionsUserMetricsAction',
+                        ['Options_ShowAdvancedSettings']);
+          }
           self.toggleSectionWithAnimation_(
               $('advanced-settings'),
               $('advanced-settings-container'));
@@ -94,7 +100,7 @@ cr.define('options', function() {
           // and it was used to show the section (rather than hiding it), focus
           // the first element in the container.
           if (document.activeElement === $('advanced-settings-expander') &&
-                  $('advanced-settings').style.height === '') {
+              showAdvanced) {
             var focusElement = $('advanced-settings-container').querySelector(
                 'button, input, list, select, a[href]');
             if (focusElement)
@@ -123,7 +129,7 @@ cr.define('options', function() {
           if (self.signoutAllowed_)
             SyncSetupOverlay.showStopSyncingUI();
           else
-            ManageProfileOverlay.showDisconnectManagedProfileDialog();
+            chrome.send('showDisconnectManagedProfileDialog');
         } else if (cr.isChromeOS) {
           SyncSetupOverlay.showSetupUI();
         } else {
@@ -496,17 +502,24 @@ cr.define('options', function() {
         Preferences.getInstance().addEventListener(
             'settings.accessibility',
             updateAccessibilitySettingsButton);
-        $('accessibility-settings-button').onclick = function(event) {
+        $('accessibility-learn-more').onclick = function(unused_event) {
+          window.open(loadTimeData.getString('accessibilityLearnMoreURL'));
+          chrome.send('coreOptionsUserMetricsAction',
+                      ['Options_AccessibilityLearnMore']);
+        };
+        $('accessibility-settings-button').onclick = function(unused_event) {
           window.open(loadTimeData.getString('accessibilitySettingsURL'));
         };
-        $('accessibility-spoken-feedback-check').onchange = function(event) {
+        $('accessibility-spoken-feedback-check').onchange = function(
+            unused_event) {
           chrome.send('spokenFeedbackChange',
                       [$('accessibility-spoken-feedback-check').checked]);
           updateAccessibilitySettingsButton();
         };
         updateAccessibilitySettingsButton();
 
-        $('accessibility-high-contrast-check').onchange = function(event) {
+        $('accessibility-high-contrast-check').onchange = function(
+            unused_event) {
           chrome.send('highContrastChange',
                       [$('accessibility-high-contrast-check').checked]);
         };

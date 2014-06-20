@@ -95,9 +95,7 @@ class VisitorShim : public QuicConnectionVisitorInterface {
   QuicSession* session_;
 };
 
-QuicSession::QuicSession(QuicConnection* connection,
-                         uint32 max_flow_control_receive_window_bytes,
-                         const QuicConfig& config)
+QuicSession::QuicSession(QuicConnection* connection, const QuicConfig& config)
     : connection_(connection),
       visitor_shim_(new VisitorShim(this)),
       config_(config),
@@ -107,20 +105,11 @@ QuicSession::QuicSession(QuicConnection* connection,
       error_(QUIC_NO_ERROR),
       goaway_received_(false),
       goaway_sent_(false),
-      has_pending_handshake_(false),
-      max_flow_control_receive_window_bytes_(
-          max_flow_control_receive_window_bytes) {
-  if (max_flow_control_receive_window_bytes_ < kDefaultFlowControlSendWindow) {
-    LOG(ERROR) << "Initial receive window ("
-               << max_flow_control_receive_window_bytes_
-               << ") cannot be set lower than default ("
-               << kDefaultFlowControlSendWindow << ").";
-    max_flow_control_receive_window_bytes_ = kDefaultFlowControlSendWindow;
-  }
+      has_pending_handshake_(false) {
   flow_controller_.reset(new QuicFlowController(
       connection_.get(), 0, is_server(), kDefaultFlowControlSendWindow,
-      max_flow_control_receive_window_bytes_,
-      max_flow_control_receive_window_bytes_));
+      config_.GetInitialFlowControlWindowToSend(),
+      config_.GetInitialFlowControlWindowToSend()));
 
   connection_->set_visitor(visitor_shim_.get());
   connection_->SetFromConfig(config_);
@@ -140,14 +129,30 @@ QuicSession::QuicSession(QuicConnection* connection,
 QuicSession::~QuicSession() {
   STLDeleteElements(&closed_streams_);
   STLDeleteValues(&stream_map_);
+
+  DLOG_IF(WARNING,
+          locally_closed_streams_highest_offset_.size() > max_open_streams_)
+      << "Surprisingly high number of locally closed streams still waiting for "
+         "final byte offset: " << locally_closed_streams_highest_offset_.size();
 }
 
 void QuicSession::OnStreamFrames(const vector<QuicStreamFrame>& frames) {
   for (size_t i = 0; i < frames.size(); ++i) {
     // TODO(rch) deal with the error case of stream id 0.
-    QuicStreamId stream_id = frames[i].stream_id;
+    const QuicStreamFrame& frame = frames[i];
+    QuicStreamId stream_id = frame.stream_id;
     ReliableQuicStream* stream = GetStream(stream_id);
     if (!stream) {
+      // The stream no longer exists, but we may still be interested in the
+      // final stream byte offset sent by the peer. A frame with a FIN can give
+      // us this offset.
+      if (frame.fin) {
+        QuicStreamOffset final_byte_offset =
+            frame.offset + frame.data.TotalBufferSize();
+        UpdateFlowControlOnFinalReceivedByteOffset(stream_id,
+                                                   final_byte_offset);
+      }
+
       continue;
     }
     stream->OnStreamFrame(frames[i]);
@@ -198,8 +203,13 @@ void QuicSession::OnRstStream(const QuicRstStreamFrame& frame) {
         "Attempt to reset the headers stream");
     return;
   }
+
   QuicDataStream* stream = GetDataStream(frame.stream_id);
   if (!stream) {
+    // The RST frame contains the final byte offset for the stream: we can now
+    // update the connection level flow controller if needed.
+    UpdateFlowControlOnFinalReceivedByteOffset(frame.stream_id,
+                                               frame.byte_offset);
     return;  // Errors are handled by GetStream.
   }
 
@@ -243,7 +253,7 @@ void QuicSession::OnWindowUpdateFrames(
       DVLOG(1) << ENDPOINT
                << "Received connection level flow control window update with "
                   "byte offset: " << frames[i].byte_offset;
-      if (FLAGS_enable_quic_connection_flow_control &&
+      if (FLAGS_enable_quic_connection_flow_control_2 &&
           flow_controller_->UpdateSendWindowOffset(frames[i].byte_offset)) {
         connection_window_updated = true;
       }
@@ -344,8 +354,9 @@ QuicConsumedData QuicSession::WritevData(
     const IOVector& data,
     QuicStreamOffset offset,
     bool fin,
+    FecProtection fec_protection,
     QuicAckNotifier::DelegateInterface* ack_notifier_delegate) {
-  return connection_->SendStreamData(id, data, offset, fin,
+  return connection_->SendStreamData(id, data, offset, fin, fec_protection,
                                      ack_notifier_delegate);
 }
 
@@ -396,8 +407,48 @@ void QuicSession::CloseStreamInner(QuicStreamId stream_id,
   }
 
   closed_streams_.push_back(it->second);
+
+  // If we haven't received a FIN or RST for this stream, we need to keep track
+  // of the how many bytes the stream's flow controller believes it has
+  // received, for accurate connection level flow control accounting.
+  if (!stream->HasFinalReceivedByteOffset() &&
+      stream->flow_controller()->IsEnabled() &&
+      FLAGS_enable_quic_connection_flow_control_2) {
+    locally_closed_streams_highest_offset_[stream_id] =
+        stream->flow_controller()->highest_received_byte_offset();
+  }
+
   stream_map_.erase(it);
   stream->OnClose();
+}
+
+void QuicSession::UpdateFlowControlOnFinalReceivedByteOffset(
+    QuicStreamId stream_id, QuicStreamOffset final_byte_offset) {
+  if (!FLAGS_enable_quic_connection_flow_control_2) {
+    return;
+  }
+
+  map<QuicStreamId, QuicStreamOffset>::iterator it =
+      locally_closed_streams_highest_offset_.find(stream_id);
+  if (it == locally_closed_streams_highest_offset_.end()) {
+    return;
+  }
+
+  DVLOG(1) << ENDPOINT << "Received final byte offset " << final_byte_offset
+           << " for stream " << stream_id;
+  uint64 offset_diff = final_byte_offset - it->second;
+  if (flow_controller_->UpdateHighestReceivedOffset(
+      flow_controller_->highest_received_byte_offset() + offset_diff)) {
+    // If the final offset violates flow control, close the connection now.
+    if (flow_controller_->FlowControlViolation()) {
+      connection_->SendConnectionClose(
+          QUIC_FLOW_CONTROL_RECEIVED_TOO_MUCH_DATA);
+      return;
+    }
+  }
+
+  flow_controller_->AddBytesConsumed(offset_diff);
+  locally_closed_streams_highest_offset_.erase(it);
 }
 
 bool QuicSession::IsEncryptionEstablished() {
@@ -415,26 +466,41 @@ void QuicSession::OnConfigNegotiated() {
       config_.HasReceivedInitialFlowControlWindowBytes()) {
     // Streams which were created before the SHLO was received (0RTT requests)
     // are now informed of the peer's initial flow control window.
-    uint32 new_flow_control_send_window =
-        config_.ReceivedInitialFlowControlWindowBytes();
-    if (new_flow_control_send_window < kDefaultFlowControlSendWindow) {
-      LOG(ERROR)
-          << "Peer sent us an invalid flow control send window: "
-          << new_flow_control_send_window
-          << ", below default: " << kDefaultFlowControlSendWindow;
-      connection_->SendConnectionClose(QUIC_FLOW_CONTROL_INVALID_WINDOW);
-      return;
-    }
-    DataStreamMap::iterator it = stream_map_.begin();
-    while (it != stream_map_.end()) {
-      it->second->flow_controller()->UpdateSendWindowOffset(
-          new_flow_control_send_window);
-      it++;
-    }
-
-    // Update connection level window.
-    flow_controller_->UpdateSendWindowOffset(new_flow_control_send_window);
+    uint32 new_window = config_.ReceivedInitialFlowControlWindowBytes();
+    OnNewStreamFlowControlWindow(new_window);
+    OnNewSessionFlowControlWindow(new_window);
   }
+}
+
+void QuicSession::OnNewStreamFlowControlWindow(uint32 new_window) {
+  if (new_window < kDefaultFlowControlSendWindow) {
+    LOG(ERROR)
+        << "Peer sent us an invalid stream flow control send window: "
+        << new_window << ", below default: " << kDefaultFlowControlSendWindow;
+    if (connection_->connected()) {
+      connection_->SendConnectionClose(QUIC_FLOW_CONTROL_INVALID_WINDOW);
+    }
+    return;
+  }
+
+  for (DataStreamMap::iterator it = stream_map_.begin();
+       it != stream_map_.end(); ++it) {
+    it->second->flow_controller()->UpdateSendWindowOffset(new_window);
+  }
+}
+
+void QuicSession::OnNewSessionFlowControlWindow(uint32 new_window) {
+  if (new_window < kDefaultFlowControlSendWindow) {
+    LOG(ERROR)
+        << "Peer sent us an invalid session flow control send window: "
+        << new_window << ", below default: " << kDefaultFlowControlSendWindow;
+    if (connection_->connected()) {
+      connection_->SendConnectionClose(QUIC_FLOW_CONTROL_INVALID_WINDOW);
+    }
+    return;
+  }
+
+  flow_controller_->UpdateSendWindowOffset(new_window);
 }
 
 void QuicSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {

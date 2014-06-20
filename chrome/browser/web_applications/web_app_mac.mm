@@ -20,14 +20,17 @@
 #include "base/process/process_handle.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/browser_process.h"
 #import "chrome/browser/mac/dock.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/shell_integration.h"
+#include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -46,6 +49,8 @@
 #import "ui/base/l10n/l10n_util_mac.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image_family.h"
+
+bool g_app_shims_allow_update_and_launch_in_tests = false;
 
 namespace {
 
@@ -212,8 +217,8 @@ bool HasSameUserDataDir(const base::FilePath& bundle_path) {
       true /* case_sensitive */);
 }
 
-void LaunchShimOnFileThread(
-    const web_app::ShortcutInfo& shortcut_info) {
+void LaunchShimOnFileThread(const web_app::ShortcutInfo& shortcut_info,
+                            bool launched_after_rebuild) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
   base::FilePath shim_path = web_app::GetAppInstallPath(shortcut_info);
 
@@ -234,6 +239,8 @@ void LaunchShimOnFileThread(
   command_line.AppendSwitchASCII(
       app_mode::kLaunchedByChromeProcessId,
       base::IntToString(base::GetCurrentProcId()));
+  if (launched_after_rebuild)
+    command_line.AppendSwitch(app_mode::kLaunchedAfterRebuild);
   // Launch without activating (kLSLaunchDontSwitch).
   base::mac::OpenApplicationWithPath(
       shim_path, command_line, kLSLaunchDefaults | kLSLaunchDontSwitch, NULL);
@@ -242,6 +249,53 @@ void LaunchShimOnFileThread(
 base::FilePath GetAppLoaderPath() {
   return base::mac::PathForFrameworkBundleResource(
       base::mac::NSToCFCast(@"app_mode_loader.app"));
+}
+
+void UpdateAndLaunchShimOnFileThread(
+    const web_app::ShortcutInfo& shortcut_info,
+    const extensions::FileHandlersInfo& file_handlers_info) {
+  base::FilePath shortcut_data_dir = web_app::GetWebAppDataDirectory(
+      shortcut_info.profile_path, shortcut_info.extension_id, GURL());
+  web_app::internals::UpdatePlatformShortcuts(
+      shortcut_data_dir, base::string16(), shortcut_info, file_handlers_info);
+  LaunchShimOnFileThread(shortcut_info, true);
+}
+
+void UpdateAndLaunchShim(
+    const web_app::ShortcutInfo& shortcut_info,
+    const extensions::FileHandlersInfo& file_handlers_info) {
+  content::BrowserThread::PostTask(
+      content::BrowserThread::FILE,
+      FROM_HERE,
+      base::Bind(
+          &UpdateAndLaunchShimOnFileThread, shortcut_info, file_handlers_info));
+}
+
+void RebuildAppAndLaunch(const web_app::ShortcutInfo& shortcut_info) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (shortcut_info.extension_id == app_mode::kAppListModeId) {
+    AppListService* app_list_service =
+        AppListService::Get(chrome::HOST_DESKTOP_TYPE_NATIVE);
+    app_list_service->CreateShortcut();
+    app_list_service->Show();
+    return;
+  }
+
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  Profile* profile =
+      profile_manager->GetProfileByPath(shortcut_info.profile_path);
+  if (!profile || !profile_manager->IsValidProfile(profile))
+    return;
+
+  extensions::ExtensionRegistry* registry =
+      extensions::ExtensionRegistry::Get(profile);
+  const extensions::Extension* extension = registry->GetExtensionById(
+      shortcut_info.extension_id, extensions::ExtensionRegistry::ENABLED);
+  if (!extension || !extension->is_platform_app())
+    return;
+
+  web_app::internals::GetInfoForApp(
+      extension, profile, base::Bind(&UpdateAndLaunchShim));
 }
 
 base::FilePath GetLocalizableAppShortcutsSubdirName() {
@@ -564,7 +618,11 @@ size_t WebAppShortcutCreator::CreateShortcutsIn(
       return succeeded;
     }
 
+    // Remove the quarantine attribute from both the bundle and the executable.
     base::mac::RemoveQuarantineAttribute(dst_path.Append(app_name));
+    base::mac::RemoveQuarantineAttribute(
+        dst_path.Append(app_name)
+            .Append("Contents").Append("MacOS").Append("app_mode_loader"));
     ++succeeded;
   }
 
@@ -599,8 +657,13 @@ bool WebAppShortcutCreator::CreateShortcuts(
   } else {
     paths.push_back(app_data_dir_);
   }
-  paths.push_back(applications_dir);
 
+  bool shortcut_visible =
+      creation_locations.applications_menu_location != APP_MENU_LOCATION_HIDDEN;
+  if (shortcut_visible)
+    paths.push_back(applications_dir);
+
+  DCHECK(!paths.empty());
   size_t success_count = CreateShortcutsIn(paths);
   if (success_count == 0)
     return false;
@@ -611,7 +674,8 @@ bool WebAppShortcutCreator::CreateShortcuts(
   if (success_count != paths.size())
     return false;
 
-  if (creation_locations.in_quick_launch_bar && path_to_add_to_dock) {
+  if (creation_locations.in_quick_launch_bar && path_to_add_to_dock &&
+      shortcut_visible) {
     switch (dock::AddIcon(path_to_add_to_dock, nil)) {
       case dock::IconAddFailure:
         // If adding the icon failed, instead reveal the Finder window.
@@ -857,12 +921,28 @@ base::FilePath GetAppInstallPath(const ShortcutInfo& shortcut_info) {
 }
 
 void MaybeLaunchShortcut(const ShortcutInfo& shortcut_info) {
-  if (AppShimsDisabledForTest())
+  if (AppShimsDisabledForTest() &&
+      !g_app_shims_allow_update_and_launch_in_tests) {
     return;
+  }
 
   content::BrowserThread::PostTask(
-      content::BrowserThread::FILE, FROM_HERE,
-      base::Bind(&LaunchShimOnFileThread, shortcut_info));
+      content::BrowserThread::FILE,
+      FROM_HERE,
+      base::Bind(&LaunchShimOnFileThread, shortcut_info, false));
+}
+
+bool MaybeRebuildShortcut(const CommandLine& command_line) {
+  if (!command_line.HasSwitch(app_mode::kAppShimError))
+    return false;
+
+  base::PostTaskAndReplyWithResult(
+      content::BrowserThread::GetBlockingPool(),
+      FROM_HERE,
+      base::Bind(&BuildShortcutInfoFromBundle,
+                 command_line.GetSwitchValuePath(app_mode::kAppShimError)),
+      base::Bind(&RebuildAppAndLaunch));
+  return true;
 }
 
 // Called when the app's ShortcutInfo (with icon) is loaded when creating app
@@ -970,8 +1050,10 @@ void UpdatePlatformShortcuts(
     const ShortcutInfo& shortcut_info,
     const extensions::FileHandlersInfo& file_handlers_info) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
-  if (AppShimsDisabledForTest())
+  if (AppShimsDisabledForTest() &&
+      !g_app_shims_allow_update_and_launch_in_tests) {
     return;
+  }
 
   WebAppShortcutCreator shortcut_creator(
       app_data_path, shortcut_info, file_handlers_info);

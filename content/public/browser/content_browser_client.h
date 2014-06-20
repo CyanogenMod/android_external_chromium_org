@@ -300,7 +300,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual std::string GetAcceptLangs(BrowserContext* context);
 
   // Returns the default favicon.  The callee doesn't own the given bitmap.
-  virtual gfx::ImageSkia* GetDefaultFavicon();
+  virtual const gfx::ImageSkia* GetDefaultFavicon();
 
   // Allow the embedder to control if an AppCache can be used for the given url.
   // This is called on the IO thread.
@@ -468,6 +468,39 @@ class CONTENT_EXPORT ContentBrowserClient {
       DesktopNotificationDelegate* delegate,
       base::Closure* cancel_callback) {}
 
+  // The renderer is requesting permission to use Geolocation. When the answer
+  // to a permission request has been determined, |result_callback| should be
+  // called with the result. If |cancel_callback| is non-null, it's set to a
+  // callback which can be used to cancel the permission request.
+  virtual void RequestGeolocationPermission(
+      WebContents* web_contents,
+      int bridge_id,
+      const GURL& requesting_frame,
+      bool user_gesture,
+      base::Callback<void(bool)> result_callback,
+      base::Closure* cancel_callback);
+
+  // Requests a permission to use system exclusive messages in MIDI events.
+  // |result_callback| will be invoked when the request is resolved. If
+  // |cancel_callback| is non-null, it's set to a callback which can be used to
+  // cancel the permission request.
+  virtual void RequestMidiSysExPermission(
+      WebContents* web_contents,
+      int bridge_id,
+      const GURL& requesting_frame,
+      bool user_gesture,
+      base::Callback<void(bool)> result_callback,
+      base::Closure* cancel_callback);
+
+  // Request permission to access protected media identifier. |result_callback
+  // will tell whether it's permitted. If |cancel_callback| is non-null, it's
+  // set to a callback which can be used to cancel the permission request.
+  virtual void RequestProtectedMediaIdentifierPermission(
+      WebContents* web_contents,
+      const GURL& origin,
+      base::Callback<void(bool)> result_callback,
+      base::Closure* cancel_callback);
+
   // Returns true if the given page is allowed to open a window of the given
   // type. If true is returned, |no_javascript_access| will indicate whether
   // the window that is created should be scriptable/in the same process.
@@ -601,6 +634,21 @@ class CONTENT_EXPORT ContentBrowserClient {
   // It's valid to return NULL.
   virtual DevToolsManagerDelegate* GetDevToolsManagerDelegate();
 
+  // Returns true if plugin referred to by the url can use
+  // pp::FileIO::RequestOSFileHandle.
+  virtual bool IsPluginAllowedToCallRequestOSFileHandle(
+      BrowserContext* browser_context,
+      const GURL& url);
+
+  // Returns true if dev channel APIs are available for plugins.
+  virtual bool IsPluginAllowedToUseDevChannelAPIs();
+
+  // Returns a special cookie store to use for a given render process, or NULL
+  // if the default cookie store should be used
+  // This is called on the IO thread.
+  virtual net::CookieStore* OverrideCookieStoreForRenderProcess(
+      int render_process_id);
+
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   // Populates |mappings| with all files that need to be mapped before launching
   // a child process.
@@ -620,21 +668,6 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual void PreSpawnRenderer(sandbox::TargetPolicy* policy,
                                 bool* success) {}
 #endif
-
-  // Returns true if plugin referred to by the url can use
-  // pp::FileIO::RequestOSFileHandle.
-  virtual bool IsPluginAllowedToCallRequestOSFileHandle(
-      BrowserContext* browser_context,
-      const GURL& url);
-
-  // Returns true if dev channel APIs are available for plugins.
-  virtual bool IsPluginAllowedToUseDevChannelAPIs();
-
-  // Returns a special cookie store to use for a given render process, or NULL
-  // if the default cookie store should be used
-  // This is called on the IO thread.
-  virtual net::CookieStore* OverrideCookieStoreForRenderProcess(
-      int render_process_id);
 
 #if defined(VIDEO_HOLE)
   // Allows an embedder to provide its own ExternalVideoSurfaceContainer

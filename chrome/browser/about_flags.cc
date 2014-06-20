@@ -39,6 +39,11 @@
 #include "ui/native_theme/native_theme_switches.h"
 #include "ui/views/views_switches.h"
 
+#if defined(OS_ANDROID)
+#include "chrome/common/chrome_version_info.h"
+#include "components/data_reduction_proxy/common/data_reduction_proxy_switches.h"
+#endif
+
 #if defined(USE_ASH)
 #include "ash/ash_switches.h"
 #endif
@@ -435,7 +440,23 @@ const Experiment::Choice kEnableFileManagerMTPChoices[] = {
   { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED,
     chromeos::switches::kEnableFileManagerMTP, "false" }
 };
+
+const Experiment::Choice kEnableFileManagerNewGalleryChoices[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", ""},
+  { IDS_GENERIC_EXPERIMENT_CHOICE_ENABLED,
+    chromeos::switches::kFileManagerEnableNewGallery, "true"},
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED,
+    chromeos::switches::kFileManagerEnableNewGallery, "false"}
+};
 #endif
+
+const Experiment::Choice kEnableSettingsWindowChoices[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
+  { IDS_GENERIC_EXPERIMENT_CHOICE_ENABLED,
+    ::switches::kEnableSettingsWindow, "" },
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED,
+    ::switches::kDisableSettingsWindow, "" },
+};
 
 // RECORDING USER METRICS FOR FLAGS:
 // -----------------------------------------------------------------------------
@@ -502,15 +523,6 @@ const Experiment kExperiments[] = {
                                switches::kDisableAcceleratedOverflowScroll)
   },
   {
-    "force-universal-accelerated-composited-scrolling",
-     IDS_FLAGS_FORCE_UNIVERSAL_ACCELERATED_OVERFLOW_SCROLL_MODE_NAME,
-     IDS_FLAGS_FORCE_UNIVERSAL_ACCELERATED_OVERFLOW_SCROLL_MODE_DESCRIPTION,
-     kOsAll,
-     ENABLE_DISABLE_VALUE_TYPE(
-         switches::kEnableUniversalAcceleratedOverflowScroll,
-         switches::kDisableUniversalAcceleratedOverflowScroll)
-  },
-  {
     "disable_layer_squashing",
     IDS_FLAGS_DISABLE_LAYER_SQUASHING_NAME,
     IDS_FLAGS_DISABLE_LAYER_SQUASHING_DESCRIPTION,
@@ -519,11 +531,11 @@ const Experiment kExperiments[] = {
   },
 #if defined(OS_WIN)
   {
-    "enable-direct-write",
-    IDS_FLAGS_ENABLE_DIRECT_WRITE_NAME,
-    IDS_FLAGS_ENABLE_DIRECT_WRITE_DESCRIPTION,
+    "disable-direct-write",
+    IDS_FLAGS_DISABLE_DIRECT_WRITE_NAME,
+    IDS_FLAGS_DISABLE_DIRECT_WRITE_DESCRIPTION,
     kOsWin,
-    SINGLE_VALUE_TYPE(switches::kEnableDirectWrite)
+    SINGLE_VALUE_TYPE(switches::kDisableDirectWrite)
   },
 #endif
   {
@@ -676,13 +688,6 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_FAST_UNLOAD_DESCRIPTION,
     kOsAll,
     SINGLE_VALUE_TYPE(switches::kEnableFastUnload)
-  },
-  {
-    "enable-adview",
-    IDS_FLAGS_ENABLE_ADVIEW_NAME,
-    IDS_FLAGS_ENABLE_ADVIEW_DESCRIPTION,
-    kOsDesktop,
-    SINGLE_VALUE_TYPE(switches::kEnableAdview)
   },
   {
     "enable-app-window-controls",
@@ -1014,6 +1019,13 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(chromeos::switches::kFileManagerEnableNewAudioPlayer)
   },
   {
+    "enable-new-gallery",
+    IDS_FLAGS_FILE_MANAGER_ENABLE_NEW_GALLERY_NAME,
+    IDS_FLAGS_FILE_MANAGER_ENABLE_NEW_GALLERY_DESCRIPTION,
+    kOsCrOS,
+    MULTI_VALUE_TYPE(kEnableFileManagerNewGalleryChoices)
+  },
+  {
     "disable-quickoffice-component-app",
     IDS_FLAGS_DISABLE_QUICKOFFICE_COMPONENT_APP_NAME,
     IDS_FLAGS_DISABLE_QUICKOFFICE_COMPONENT_APP_DESCRIPTION,
@@ -1232,6 +1244,14 @@ const Experiment kExperiments[] = {
                               switches::kDisableOfflineAutoReload)
   },
   {
+    "enable-offline-auto-reload-visible-only",
+    IDS_FLAGS_ENABLE_OFFLINE_AUTO_RELOAD_VISIBLE_ONLY_NAME,
+    IDS_FLAGS_ENABLE_OFFLINE_AUTO_RELOAD_VISIBLE_ONLY_DESCRIPTION,
+    kOsAll,
+    ENABLE_DISABLE_VALUE_TYPE(switches::kEnableOfflineAutoReloadVisibleOnly,
+                              switches::kDisableOfflineAutoReloadVisibleOnly)
+  },
+  {
     "enable-offline-load-stale-cache",
     IDS_FLAGS_ENABLE_OFFLINE_LOAD_STALE_NAME,
     IDS_FLAGS_ENABLE_OFFLINE_LOAD_STALE_DESCRIPTION,
@@ -1414,14 +1434,16 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_NEW_PROFILE_MANAGEMENT_NAME,
     IDS_FLAGS_ENABLE_NEW_PROFILE_MANAGEMENT_DESCRIPTION,
     kOsAndroid | kOsMac | kOsWin | kOsLinux | kOsCrOS,
-    SINGLE_VALUE_TYPE(switches::kNewProfileManagement)
+    ENABLE_DISABLE_VALUE_TYPE(switches::kEnableNewProfileManagement,
+                              switches::kDisableNewProfileManagement)
   },
   {
     "enable-account-consistency",
     IDS_FLAGS_ENABLE_ACCOUNT_CONSISTENCY_NAME,
     IDS_FLAGS_ENABLE_ACCOUNT_CONSISTENCY_DESCRIPTION,
     kOsAndroid | kOsMac | kOsWin | kOsLinux | kOsCrOS,
-    SINGLE_VALUE_TYPE(switches::kEnableAccountConsistency)
+    ENABLE_DISABLE_VALUE_TYPE(switches::kEnableAccountConsistency,
+                              switches::kDisableAccountConsistency)
   },
   {
     "enable-fast-user-switching",
@@ -1472,18 +1494,18 @@ const Experiment kExperiments[] = {
   },
 #endif
   {
+    "disable-app-list-app-info",
+    IDS_FLAGS_DISABLE_APP_INFO_IN_APP_LIST,
+    IDS_FLAGS_DISABLE_APP_INFO_IN_APP_LIST_DESCRIPTION,
+    kOsLinux | kOsWin | kOsCrOS,
+    SINGLE_VALUE_TYPE(app_list::switches::kDisableAppInfo)
+  },
+  {
     "disable-app-list-voice-search",
     IDS_FLAGS_DISABLE_APP_LIST_VOICE_SEARCH,
     IDS_FLAGS_DISABLE_APP_LIST_VOICE_SEARCH_DESCRIPTION,
     kOsCrOS,
     SINGLE_VALUE_TYPE(app_list::switches::kDisableVoiceSearch)
-  },
-  {
-    "enable-app-list-app-info",
-    IDS_FLAGS_ENABLE_APP_INFO_IN_APP_LIST,
-    IDS_FLAGS_ENABLE_APP_INFO_IN_APP_LIST_DESCRIPTION,
-    kOsLinux | kOsWin | kOsCrOS,
-    SINGLE_VALUE_TYPE(app_list::switches::kEnableAppInfo)
   },
 #endif
 #if defined(OS_ANDROID)
@@ -1676,8 +1698,9 @@ const Experiment kExperiments[] = {
     "enable-permissions-bubbles",
     IDS_FLAGS_ENABLE_PERMISSIONS_BUBBLES_NAME,
     IDS_FLAGS_ENABLE_PERMISSIONS_BUBBLES_DESCRIPTION,
-    kOsCrOS | kOsMac | kOsWin,
-    SINGLE_VALUE_TYPE(switches::kEnablePermissionsBubbles)
+    kOsAll,
+    ENABLE_DISABLE_VALUE_TYPE(switches::kEnablePermissionsBubbles,
+                              switches::kDisablePermissionsBubbles)
   },
   {
     "enable-session-crashed-bubble",
@@ -1710,14 +1733,14 @@ const Experiment kExperiments[] = {
     kOsAndroid,
     SINGLE_VALUE_TYPE(switches::kDisableCast)
   },
-#endif
   {
     "prefetch-search-results",
     IDS_FLAGS_PREFETCH_SEARCH_RESULTS_NAME,
     IDS_FLAGS_PREFETCH_SEARCH_RESULTS_DESCRIPTION,
-    kOsDesktop,
+    kOsAndroid,
     SINGLE_VALUE_TYPE(switches::kPrefetchSearchResults)
   },
+#endif
 #if defined(ENABLE_APP_LIST)
   {
     "enable-experimental-app-list",
@@ -1753,7 +1776,7 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_SETTINGS_WINDOW_NAME,
     IDS_FLAGS_ENABLE_SETTINGS_WINDOW_DESCRIPTION,
     kOsDesktop,
-    SINGLE_VALUE_TYPE(switches::kEnableSettingsWindow)
+    MULTI_VALUE_TYPE(kEnableSettingsWindowChoices)
   },
 #if defined(OS_ANDROID)
   {
@@ -1899,6 +1922,17 @@ const Experiment kExperiments[] = {
     kOsAll,
     MULTI_VALUE_TYPE(kMalwareInterstitialVersions)
   },
+#if defined(OS_ANDROID)
+  {
+    "enable-data-reduction-proxy-dev",
+    IDS_FLAGS_ENABLE_DATA_REDUCTION_PROXY_DEV_NAME,
+    IDS_FLAGS_ENABLE_DATA_REDUCTION_PROXY_DEV_DESCRIPTION,
+    kOsAndroid,
+    ENABLE_DISABLE_VALUE_TYPE(
+        data_reduction_proxy::switches::kEnableDataReductionProxyDev,
+        data_reduction_proxy::switches::kDisableDataReductionProxyDev)
+  },
+#endif
 };
 
 const Experiment* experiments = kExperiments;
@@ -2015,6 +2049,14 @@ bool SkipConditionalExperiment(const Experiment& experiment) {
            std::string("manual-enhanced-bookmarks-optout"))) {
     return true;
   }
+
+#if defined(OS_ANDROID)
+  // enable-data-reduction-proxy-dev is only available for the Dev channel.
+  if (!strcmp("enable-data-reduction-proxy-dev", experiment.internal_name) &&
+      chrome::VersionInfo::GetChannel() != chrome::VersionInfo::CHANNEL_DEV) {
+    return true;
+  }
+#endif
 
   return false;
 }

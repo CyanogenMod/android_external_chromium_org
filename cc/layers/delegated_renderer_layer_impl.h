@@ -48,8 +48,6 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
   void SetFrameData(const DelegatedFrameData* frame_data,
                     const gfx::RectF& damage_in_frame);
 
-  void SetDisplaySize(const gfx::Size& size);
-
  protected:
   DelegatedRendererLayerImpl(LayerTreeImpl* tree_impl, int id);
 
@@ -92,7 +90,6 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
   base::hash_map<RenderPass::Id, int> render_passes_index_by_id_;
   ResourceProvider::ResourceIdArray resources_;
 
-  gfx::Size display_size_;
   int child_id_;
   bool own_child_id_;
 

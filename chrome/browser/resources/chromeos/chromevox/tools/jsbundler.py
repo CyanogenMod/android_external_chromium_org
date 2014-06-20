@@ -32,6 +32,7 @@ ways:
 
 import optparse
 import os
+import re
 import shutil
 import sys
 
@@ -92,6 +93,9 @@ class Bundle():
         self._added_paths.add(path)
         self._added_sources.append(source)
 
+  def GetInPaths(self):
+    return (source.GetInPath() for source in self._added_sources)
+
   def GetOutPaths(self):
     return (source.GetOutPath() for source in self._added_sources)
 
@@ -110,7 +114,7 @@ class PathRewriter():
   relative output paths.
   '''
 
-  def __init__(self, specs):
+  def __init__(self, specs=[]):
     '''Args:
       specs: A list of mappings, each consisting of the input prefix and
         the corresponding output prefix separated by colons.
@@ -139,34 +143,49 @@ class PathRewriter():
     return in_path
 
 
-def ReadSources(options, args):
+def ReadSources(roots=[], source_files=[], need_source_text=False,
+                path_rewriter=PathRewriter()):
   '''Reads all source specified on the command line, including sources
   included by --root options.
   '''
 
-  def EnsureSourceLoaded(in_path, sources, path_rewriter):
+  def EnsureSourceLoaded(in_path, sources):
     if in_path not in sources:
       out_path = path_rewriter.RewritePath(in_path)
       sources[in_path] = SourceWithPaths(source.GetFileContents(in_path),
                                          in_path, out_path)
 
   # Only read the actual source file if we will do a dependency analysis or
-  # if we'll need it for the output.
-  need_source_text = (len(options.roots) > 0 or
-                      options.mode in ('bundle', 'compressed_bundle'))
-  path_rewriter = PathRewriter(options.prefix_map)
+  # the caller asks for it.
+  need_source_text = need_source_text or len(roots) > 0
   sources = {}
-  for root in options.roots:
+  for root in roots:
     for name in treescan.ScanTreeForJsFiles(root):
-      EnsureSourceLoaded(name, sources, path_rewriter)
-  for path in args:
+      EnsureSourceLoaded(name, sources)
+  for path in source_files:
     if need_source_text:
-      EnsureSourceLoaded(path, sources, path_rewriter)
+      EnsureSourceLoaded(path, sources)
     else:
       # Just add an empty representation of the source.
       sources[path] = SourceWithPaths(
           '', path, path_rewriter.RewritePath(path))
   return sources
+
+
+def _GetBase(sources):
+  '''Gets the closure base.js file if present among the sources.
+
+  Args:
+    sources: Dictionary with input path names as keys and SourceWithPaths
+      as values.
+  Returns:
+    SourceWithPath: The source file providing the goog namespace.
+  '''
+  for source in sources.itervalues():
+    if (os.path.basename(source.GetInPath()) == 'base.js' and
+        'goog' in source.provides):
+      return source
+  Die('goog.base not provided by any file.')
 
 
 def CalcDeps(bundle, sources, top_level):
@@ -178,22 +197,35 @@ def CalcDeps(bundle, sources, top_level):
     top_level, list: List of top-level input paths to calculate dependencies
       for.
   '''
-  def GetBase(sources):
-    for source in sources.itervalues():
-      if (os.path.basename(source.GetInPath()) == 'base.js' and
-          'goog' in source.provides):
-        return source
-    Die('goog.base not provided by any file')
-
   providers = [s for s in sources.itervalues() if len(s.provides) > 0]
   deps = depstree.DepsTree(providers)
   namespaces = []
   for path in top_level:
     namespaces.extend(sources[path].requires)
   # base.js is an implicit dependency that always goes first.
-  bundle.Add(GetBase(sources))
+  bundle.Add(_GetBase(sources))
   bundle.Add(deps.GetDependencies(namespaces))
 
+
+def _MarkAsCompiled(sources):
+  '''Sets COMPILED to true in the Closure base.js source.
+
+  Args:
+    sources: Dictionary with input paths names as keys and SourcWithPaths
+      objects as values.
+  '''
+  base = _GetBase(sources)
+  new_content, count = re.subn('^var COMPILED = false;$',
+                               'var COMPILED = true;',
+                               base.GetSource(),
+                               count=1,
+                               flags=re.MULTILINE)
+  if count != 1:
+    Die('COMPILED var assignment not found in %s' % base.GetInPath())
+  sources[base.GetInPath()] = SourceWithPaths(
+      new_content,
+      base.GetInPath(),
+      base.GetOutPath())
 
 def LinkOrCopyFiles(sources, dest_dir):
   '''Copies a list of sources to a destination directory.'''
@@ -276,7 +308,12 @@ def main():
   options, args = CreateOptionParser().parse_args()
   if len(args) < 1:
     Die('At least one top-level source file must be specified.')
-  sources = ReadSources(options, args)
+  will_output_source_text = options.mode in ('bundle', 'compressed_bundle')
+  path_rewriter = PathRewriter(options.prefix_map)
+  sources = ReadSources(options.roots, args, will_output_source_text,
+                        path_rewriter)
+  if will_output_source_text:
+    _MarkAsCompiled(sources)
   bundle = Bundle()
   if len(options.roots) > 0:
     CalcDeps(bundle, sources, args)

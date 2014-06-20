@@ -16,30 +16,30 @@
     "256": "common/images/icon256.png"
   },
   "permissions": [
-    "contextMenus",
-    "experimental",
-    "echoPrivate",
-    "storage",
-    "fileBrowserHandler",
-    "fileBrowserPrivate",
-    "fullscreen",
-    "mediaPlayerPrivate",
-    "mediaGalleriesPrivate",
-    "metricsPrivate",
-    "notifications",
-    "commandLinePrivate",
-    "unlimitedStorage",
-    "webview",
     // Comment out chrome:// permissions to debug on a desktop browser.
     "chrome://extension-icon/",
     "chrome://resources/",
     "chrome://theme/",
-    "clipboardWrite",
     "clipboardRead",
-    "power",
-    "https://docs.google.com/",
+    "clipboardWrite",
+    "commandLinePrivate",
+    "contextMenus",
+    "echoPrivate",
+    "experimental",
+    "fileBrowserHandler",
+    "fileBrowserPrivate",
+    "fullscreen",
     "https://*.googleusercontent.com/",
-    "https://drive.google.com/"
+    "https://docs.google.com/",
+    "https://drive.google.com/",
+    "mediaGalleriesPrivate",
+    "mediaPlayerPrivate",
+    "metricsPrivate",
+    "notifications",
+    "power",
+    "storage",
+    "unlimitedStorage",
+    "webview"
   ],
   "file_browser_handlers": [
     {
@@ -92,6 +92,21 @@
         "filesystem:*.mhtml",
         "filesystem:*.svg",
         "filesystem:*.txt"
+      ]
+    },
+    {
+      "id": "gallery",
+      "default_title": "__MSG_OPEN_ACTION__",
+      "default_icon": "common/images/file_types/200/image.png",
+      "file_filters": [
+        // Image formats
+        "filesystem:*.bmp",
+        "filesystem:*.gif",
+        "filesystem:*.ico",
+        "filesystem:*.jpg",
+        "filesystem:*.jpeg",
+        "filesystem:*.png",
+        "filesystem:*.webp"
       ]
     },
     {

@@ -6,6 +6,7 @@
 #include "base/values.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/chrome_bookmark_client.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client_factory.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -14,13 +15,19 @@
 #include "components/bookmarks/common/bookmark_pref_names.h"
 #include "components/bookmarks/test/bookmark_test_helpers.h"
 
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, Bookmarks) {
+// Flaky on Windows and Linux. http://crbug.com/383452
+#if defined(OS_WIN) || defined(OS_LINUX)
+#define MAYBE_Bookmarks DISABLED_Bookmarks
+#else
+#define MAYBE_Bookmarks Bookmarks
+#endif
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MAYBE_Bookmarks) {
   // Add test managed bookmarks to verify that the bookmarks API can read them
   // and can't modify them.
   Profile* profile = browser()->profile();
+  BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile);
   ChromeBookmarkClient* client =
-      BookmarkModelFactory::GetChromeBookmarkClientForProfile(profile);
-  BookmarkModel* model = client->model();
+      ChromeBookmarkClientFactory::GetForProfile(profile);
   test::WaitForBookmarkModelToLoad(model);
 
   base::ListValue list;

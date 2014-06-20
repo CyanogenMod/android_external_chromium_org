@@ -1,6 +1,9 @@
 blundell@chromium.org
 jochen@chromium.org
 
+per-file autocomplete.gypi=pkasting@chromium.org
+per-file autocomplete.gypi=mpearson@chromium.org
+
 per-file autofill*=dhollowa@chromium.org
 per-file autofill*=isherman@chromium.org
 per-file autofill*=kaiwang@chromium.org
@@ -68,6 +71,9 @@ per-file json_schema.gypi=kalman@chromium.org
 per-file json_schema.gypi=koz@chromium.org
 per-file json_schema.gypi=mpcomplete@chromium.org
 
+per-file leveldb_proto*=cjhopman@chromium.org
+per-file leveldb_proto*=mathp@chromium.org
+
 per-file metrics*=asvitkine@chromium.org
 per-file metrics*=mpearson@chromium.org
 per-file metrics*=jar@chromium.org
@@ -122,6 +128,9 @@ per-file query_parser*=droger@chromium.org
 per-file rappor*=asvitkine@chromium.org
 # OWNER-to-be: per-file rappor*=holte@chromium.org
 
+per-file search_engines.gypi=pkasting@chromium.org
+per-file search_engines.gypi=stevet@chromium.org
+
 per-file search_provider_logos*=newt@chromium.org
 per-file search_provider_logos*=justincohen@chromium.org
 
@@ -156,6 +165,9 @@ per-file startup_metric_utils.gypi=jeremy@chromium.org
 per-file usb_service.gypi=pfeldman@chromium.org
 per-file usb_service.gypi=rockot@chromium.org
 per-file usb_service.gypi=rpaquay@chromium.org
+
+per-file url_fixer.gypi=brettw@chromium.org
+per-file url_fixer.gypi=pkasting@chromium.org
 
 per-file user_prefs.gypi=battre@chromium.org
 per-file user_prefs.gypi=bauerb@chromium.org

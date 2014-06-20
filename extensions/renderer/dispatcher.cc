@@ -258,9 +258,10 @@ void Dispatcher::DidCreateScriptContext(
           .release();
   script_context_set_.Add(context);
 
-  if (extension) {
-    InitOriginPermissions(extension, context_type);
-  }
+  // Initialize origin permissions for content scripts, which can't be
+  // initialized in |OnActivateExtension|.
+  if (context_type == Feature::CONTENT_SCRIPT_CONTEXT)
+    InitOriginPermissions(extension);
 
   {
     scoped_ptr<ModuleSystem> module_system(
@@ -391,7 +392,6 @@ void Dispatcher::DispatchEvent(const std::string& extension_id,
   // Needed for Windows compilation, since kEventBindings is declared extern.
   const char* local_event_bindings = kEventBindings;
   script_context_set_.ForEach(extension_id,
-                              NULL,  // all render views
                               base::Bind(&CallModuleMethod,
                                          local_event_bindings,
                                          kEventDispatchFunction,
@@ -496,6 +496,8 @@ void Dispatcher::WebKitInitialized() {
        ++iter) {
     const Extension* extension = extensions_.GetByID(*iter);
     CHECK(extension);
+
+    InitOriginPermissions(extension);
   }
 
   EnableCustomElementWhiteList();
@@ -504,9 +506,10 @@ void Dispatcher::WebKitInitialized() {
 }
 
 void Dispatcher::IdleNotification() {
-  if (is_extension_process_) {
+  if (is_extension_process_ && forced_idle_timer_) {
     // Dampen the forced delay as well if the extension stays idle for long
-    // periods of time.
+    // periods of time. (forced_idle_timer_ can be NULL after
+    // OnRenderProcessShutdown has been called.)
     int64 forced_delay_ms =
         std::max(RenderThread::Get()->GetIdleNotificationDelayInMs(),
                  kMaxExtensionIdleHandlerDelayMs);
@@ -552,6 +555,8 @@ void Dispatcher::OnActivateExtension(const std::string& extension_id) {
   if (is_webkit_initialized_) {
     extensions::DOMActivityLogger::AttachToWorld(
         extensions::DOMActivityLogger::kMainWorldId, extension_id);
+
+    InitOriginPermissions(extension);
   }
 
   UpdateActiveExtensions();
@@ -576,7 +581,7 @@ void Dispatcher::OnDeliverMessage(int target_port_id, const Message& message) {
         new RequestSender::ScopedTabID(request_sender(), it->second));
   }
 
-  MessagingBindings::DeliverMessage(script_context_set_.GetAll(),
+  MessagingBindings::DeliverMessage(script_context_set_,
                                     target_port_id,
                                     message,
                                     NULL);  // All render views.
@@ -594,20 +599,18 @@ void Dispatcher::OnDispatchOnConnect(
   source_tab.GetInteger("id", &sender_tab_id);
   port_to_tab_id_map_[target_port_id] = sender_tab_id;
 
-  MessagingBindings::DispatchOnConnect(script_context_set_.GetAll(),
+  MessagingBindings::DispatchOnConnect(script_context_set_,
                                        target_port_id,
                                        channel_name,
                                        source_tab,
-                                       info.source_id,
-                                       info.target_id,
-                                       info.source_url,
+                                       info,
                                        tls_channel_id,
                                        NULL);  // All render views.
 }
 
 void Dispatcher::OnDispatchOnDisconnect(int port_id,
                                         const std::string& error_message) {
-  MessagingBindings::DispatchOnDisconnect(script_context_set_.GetAll(),
+  MessagingBindings::DispatchOnDisconnect(script_context_set_,
                                           port_id,
                                           error_message,
                                           NULL);  // All render views.
@@ -785,10 +788,8 @@ void Dispatcher::OnUpdateUserScripts(
   UpdateActiveExtensions();
 }
 
-void Dispatcher::OnUsingWebRequestAPI(bool adblock,
-                                      bool adblock_plus,
-                                      bool other_webrequest) {
-  delegate_->HandleWebRequestAPIUsage(adblock, adblock_plus, other_webrequest);
+void Dispatcher::OnUsingWebRequestAPI(bool webrequest_used) {
+  delegate_->HandleWebRequestAPIUsage(webrequest_used);
 }
 
 void Dispatcher::UpdateActiveExtensions() {
@@ -797,9 +798,9 @@ void Dispatcher::UpdateActiveExtensions() {
   delegate_->OnActiveExtensionsUpdated(active_extensions);
 }
 
-void Dispatcher::InitOriginPermissions(const Extension* extension,
-                                       Feature::Context context_type) {
-  delegate_->InitOriginPermissions(extension, context_type);
+void Dispatcher::InitOriginPermissions(const Extension* extension) {
+  delegate_->InitOriginPermissions(extension,
+                                   IsExtensionActive(extension->id()));
   UpdateOriginPermissions(
       UpdatedExtensionPermissionsInfo::ADDED,
       extension,
@@ -835,14 +836,11 @@ void Dispatcher::UpdateOriginPermissions(
 
 void Dispatcher::EnableCustomElementWhiteList() {
   blink::WebCustomElement::addEmbedderCustomElementName("webview");
-  // TODO(fsamuel): Add <adview> to the whitelist once it has been converted
-  // into a custom element.
   blink::WebCustomElement::addEmbedderCustomElementName("browser-plugin");
 }
 
 void Dispatcher::UpdateBindings(const std::string& extension_id) {
   script_context_set().ForEach(extension_id,
-                               NULL,  // all render views
                                base::Bind(&Dispatcher::UpdateBindingsForContext,
                                           base::Unretained(this)));
 }

@@ -642,7 +642,6 @@ TEST(PermissionsTest, PermissionMessages) {
   // These are considered "nuisance" or "trivial" permissions that don't need
   // a prompt.
   skip.insert(APIPermission::kActiveTab);
-  skip.insert(APIPermission::kAdView);
   skip.insert(APIPermission::kAlarms);
   skip.insert(APIPermission::kAlwaysOnTopWindows);
   skip.insert(APIPermission::kAudio);
@@ -732,6 +731,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kFileBrowserHandlerInternal);
   skip.insert(APIPermission::kFileBrowserPrivate);
   skip.insert(APIPermission::kFirstRunPrivate);
+  skip.insert(APIPermission::kGcdPrivate);
   skip.insert(APIPermission::kHotwordPrivate);
   skip.insert(APIPermission::kIdentityPrivate);
   skip.insert(APIPermission::kInfobars);
@@ -824,19 +824,6 @@ TEST(PermissionsTest, SuppressedPermissionMessages) {
   {
     APIPermissionSet api_permissions;
     api_permissions.insert(APIPermission::kTab);
-    api_permissions.insert(APIPermission::kHistory);
-    scoped_refptr<PermissionSet> permissions(
-        new PermissionSet(api_permissions, ManifestPermissionSet(),
-                          URLPatternSet(), URLPatternSet()));
-    PermissionMessages messages =
-        PermissionMessageProvider::Get()->GetPermissionMessages(
-            permissions, Manifest::TYPE_EXTENSION);
-    EXPECT_EQ(1u, messages.size());
-    EXPECT_EQ(PermissionMessage::kBrowsingHistory, messages[0].id());
-  }
-  {
-    APIPermissionSet api_permissions;
-    api_permissions.insert(APIPermission::kTab);
     URLPatternSet hosts;
     hosts.AddPattern(URLPattern(URLPattern::SCHEME_CHROMEUI,
                                 "chrome://favicon/"));
@@ -863,6 +850,50 @@ TEST(PermissionsTest, SuppressedPermissionMessages) {
             permissions, Manifest::TYPE_EXTENSION);
     EXPECT_EQ(1u, messages.size());
     EXPECT_EQ(PermissionMessage::kBrowsingHistory, messages[0].id());
+  }
+  {
+    APIPermissionSet api_permissions;
+    URLPatternSet hosts;
+    hosts.AddPattern(URLPattern(URLPattern::SCHEME_CHROMEUI, "*://*/*"));
+    api_permissions.insert(APIPermission::kTab);
+    scoped_refptr<PermissionSet> permissions(new PermissionSet(
+        api_permissions, ManifestPermissionSet(), hosts, URLPatternSet()));
+    PermissionMessages messages =
+        PermissionMessageProvider::Get()->GetPermissionMessages(
+            permissions, Manifest::TYPE_EXTENSION);
+    EXPECT_EQ(1u, messages.size());
+    EXPECT_EQ(PermissionMessage::kHostsAll, messages[0].id());
+  }
+  {
+    APIPermissionSet api_permissions;
+    api_permissions.insert(APIPermission::kHistory);
+    api_permissions.insert(APIPermission::kTab);
+    api_permissions.insert(APIPermission::kTopSites);
+    api_permissions.insert(APIPermission::kProcesses);
+    api_permissions.insert(APIPermission::kWebNavigation);
+    scoped_refptr<PermissionSet> permissions(
+        new PermissionSet(api_permissions, ManifestPermissionSet(),
+                          URLPatternSet(), URLPatternSet()));
+    PermissionMessages messages =
+        PermissionMessageProvider::Get()->GetPermissionMessages(
+            permissions, Manifest::TYPE_EXTENSION);
+    EXPECT_EQ(1u, messages.size());
+    EXPECT_EQ(PermissionMessage::kBrowsingHistory, messages[0].id());
+  }
+  {
+    APIPermissionSet api_permissions;
+    api_permissions.insert(APIPermission::kTab);
+    api_permissions.insert(APIPermission::kTopSites);
+    api_permissions.insert(APIPermission::kProcesses);
+    api_permissions.insert(APIPermission::kWebNavigation);
+    scoped_refptr<PermissionSet> permissions(
+        new PermissionSet(api_permissions, ManifestPermissionSet(),
+                          URLPatternSet(), URLPatternSet()));
+    PermissionMessages messages =
+        PermissionMessageProvider::Get()->GetPermissionMessages(
+            permissions, Manifest::TYPE_EXTENSION);
+    EXPECT_EQ(1u, messages.size());
+    EXPECT_EQ(PermissionMessage::kTabs, messages[0].id());
   }
 }
 
@@ -973,6 +1004,46 @@ TEST(PermissionsTest, GetWarningMessages_AudioVideo) {
   EXPECT_FALSE(Contains(warnings, "Use your microphone"));
   EXPECT_FALSE(Contains(warnings, "Use your microphone and camera"));
   EXPECT_TRUE(Contains(warnings, "Use your camera"));
+}
+
+TEST(PermissionsTest, GetWarningMessages_CombinedSessions) {
+  {
+    APIPermissionSet api_permissions;
+    api_permissions.insert(APIPermission::kTab);
+    api_permissions.insert(APIPermission::kTopSites);
+    api_permissions.insert(APIPermission::kProcesses);
+    api_permissions.insert(APIPermission::kWebNavigation);
+    api_permissions.insert(APIPermission::kSessions);
+    scoped_refptr<PermissionSet> permissions(
+        new PermissionSet(api_permissions, ManifestPermissionSet(),
+                          URLPatternSet(), URLPatternSet()));
+    std::vector<base::string16> messages =
+        PermissionMessageProvider::Get()->GetWarningMessages(
+            permissions, Manifest::TYPE_EXTENSION);
+    EXPECT_EQ(1u, messages.size());
+    EXPECT_EQ(l10n_util::GetStringUTF16(
+                  IDS_EXTENSION_PROMPT_WARNING_HISTORY_READ_AND_SESSIONS),
+              messages[0]);
+  }
+  {
+    APIPermissionSet api_permissions;
+    api_permissions.insert(APIPermission::kHistory);
+    api_permissions.insert(APIPermission::kTab);
+    api_permissions.insert(APIPermission::kTopSites);
+    api_permissions.insert(APIPermission::kProcesses);
+    api_permissions.insert(APIPermission::kWebNavigation);
+    api_permissions.insert(APIPermission::kSessions);
+    scoped_refptr<PermissionSet> permissions(
+        new PermissionSet(api_permissions, ManifestPermissionSet(),
+                          URLPatternSet(), URLPatternSet()));
+    std::vector<base::string16> messages =
+        PermissionMessageProvider::Get()->GetWarningMessages(
+            permissions, Manifest::TYPE_EXTENSION);
+    EXPECT_EQ(1u, messages.size());
+    EXPECT_EQ(l10n_util::GetStringUTF16(
+                  IDS_EXTENSION_PROMPT_WARNING_HISTORY_WRITE_AND_SESSIONS),
+              messages[0]);
+  }
 }
 
 TEST(PermissionsTest, GetWarningMessages_DeclarativeWebRequest) {

@@ -549,6 +549,10 @@ EVENT_TYPE(SSL_SOCKET_BYTES_RECEIVED)
 EVENT_TYPE(SOCKET_READ_ERROR)
 EVENT_TYPE(SOCKET_WRITE_ERROR)
 
+// The socket was closed locally (The socket may or may not have been closed
+// by the remote side already)
+EVENT_TYPE(SOCKET_CLOSED)
+
 // Certificates were received from the SSL server (during a handshake or
 // renegotiation). This event is only present when logging at LOG_ALL.
 // The following parameters are attached to the event:
@@ -1430,6 +1434,13 @@ EVENT_TYPE(QUIC_SESSION_ACK_FRAME_RECEIVED)
 //   }
 EVENT_TYPE(QUIC_SESSION_ACK_FRAME_SENT)
 
+// Session received a WINDOW_UPDATE frame.
+//   {
+//     "stream_id": <The id of the stream which this data is for>,
+//     "byte_offset": <Byte offset in the stream>,
+//   }
+EVENT_TYPE(QUIC_SESSION_WINDOW_UPDATE_FRAME_RECEIVED)
+
 // Session sent a WINDOW_UPDATE frame.
 //   {
 //     "stream_id": <The id of the stream which this data is for>,
@@ -1437,11 +1448,39 @@ EVENT_TYPE(QUIC_SESSION_ACK_FRAME_SENT)
 //   }
 EVENT_TYPE(QUIC_SESSION_WINDOW_UPDATE_FRAME_SENT)
 
+// Session received a BLOCKED frame.
+//   {
+//     "stream_id": <The id of the stream which this data is for>,
+//   }
+EVENT_TYPE(QUIC_SESSION_BLOCKED_FRAME_RECEIVED)
+
 // Session sent a BLOCKED frame.
 //   {
 //     "stream_id": <The id of the stream which this data is for>,
 //   }
 EVENT_TYPE(QUIC_SESSION_BLOCKED_FRAME_SENT)
+
+// Session received a GOAWAY frame.
+//   {
+//     "quic_error":          <QuicErrorCode in the frame>,
+//     "last_good_stream_id": <Last correctly received stream id by the server>,
+//     "reason_phrase":       <Prose justifying go-away request>,
+//   }
+EVENT_TYPE(QUIC_SESSION_GOAWAY_FRAME_RECEIVED)
+
+// Session sent a GOAWAY frame.
+//   {
+//     "quic_error":          <QuicErrorCode in the frame>,
+//     "last_good_stream_id": <Last correctly received stream id by the server>,
+//     "reason_phrase":       <Prose justifying go-away request>,
+//   }
+EVENT_TYPE(QUIC_SESSION_GOAWAY_FRAME_SENT)
+
+// Session received a PING frame.
+EVENT_TYPE(QUIC_SESSION_PING_FRAME_RECEIVED)
+
+// Session sent a PING frame.
+EVENT_TYPE(QUIC_SESSION_PING_FRAME_SENT)
 
 // Session received a STOP_WAITING frame.
 //   {

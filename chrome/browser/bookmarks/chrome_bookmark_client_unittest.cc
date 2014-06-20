@@ -10,6 +10,7 @@
 #include "base/values.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/chrome_bookmark_client.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client_factory.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/bookmarks/browser/bookmark_model.h"
@@ -50,12 +51,11 @@ class ChromeBookmarkClientTest : public testing::Test {
 
   void ResetModel() {
     profile_.CreateBookmarkModel(false);
-    client_ =
-        BookmarkModelFactory::GetChromeBookmarkClientForProfile(&profile_);
-    ASSERT_TRUE(client_);
-    model_ = client_->model();
+    model_ = BookmarkModelFactory::GetForProfile(&profile_);
     test::WaitForBookmarkModelToLoad(model_);
     model_->AddObserver(&observer_);
+    client_ = ChromeBookmarkClientFactory::GetForProfile(&profile_);
+    DCHECK(client_);
   }
 
   static base::DictionaryValue* CreateBookmark(const std::string& title,
@@ -214,7 +214,7 @@ TEST_F(ChromeBookmarkClientTest, CreateNewNodes) {
   EXPECT_TRUE(NodeMatchesValue(client_->managed_node(), expected.get()));
 }
 
-TEST_F(ChromeBookmarkClientTest, RemoveAll) {
+TEST_F(ChromeBookmarkClientTest, RemoveAllUserBookmarks) {
   // Remove the policy.
   const BookmarkNode* parent = client_->managed_node();
   EXPECT_CALL(observer_, BookmarkNodeRemoved(model_, parent, 0, _, _))
@@ -260,8 +260,8 @@ TEST_F(ChromeBookmarkClientTest, RemoveAllDoesntRemoveManaged) {
   EXPECT_EQ(2, model_->bookmark_bar_node()->child_count());
   Mock::VerifyAndClearExpectations(&observer_);
 
-  EXPECT_CALL(observer_, BookmarkAllNodesRemoved(model_, _));
-  model_->RemoveAll();
+  EXPECT_CALL(observer_, BookmarkAllUserNodesRemoved(model_, _));
+  model_->RemoveAllUserBookmarks();
   EXPECT_EQ(2, client_->managed_node()->child_count());
   EXPECT_EQ(0, model_->bookmark_bar_node()->child_count());
   Mock::VerifyAndClearExpectations(&observer_);

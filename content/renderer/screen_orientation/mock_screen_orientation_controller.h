@@ -8,39 +8,37 @@
 #include "base/lazy_instance.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "content/public/renderer/render_view_observer.h"
 #include "third_party/WebKit/public/platform/WebScreenOrientationLockType.h"
 #include "third_party/WebKit/public/platform/WebScreenOrientationType.h"
 
-namespace blink {
-class WebScreenOrientationListener;
-}
-
 namespace content {
+class RenderView;
+class RenderViewImpl;
 
 class MockScreenOrientationController
-    : public base::RefCountedThreadSafe<MockScreenOrientationController> {
+    : public base::RefCountedThreadSafe<MockScreenOrientationController>,
+      public RenderViewObserver {
  public:
   MockScreenOrientationController();
 
-  void SetListener(blink::WebScreenOrientationListener* listener);
   void ResetData();
-  void UpdateLock(blink::WebScreenOrientationLockType);
-  void ResetLock();
-  void UpdateDeviceOrientation(blink::WebScreenOrientationType);
+  void UpdateDeviceOrientation(RenderView* render_view,
+                               blink::WebScreenOrientationType);
 
  private:
   virtual ~MockScreenOrientationController();
 
-  void UpdateLockSync(blink::WebScreenOrientationLockType);
-  void ResetLockSync();
   void UpdateScreenOrientation(blink::WebScreenOrientationType);
   bool IsOrientationAllowedByCurrentLock(blink::WebScreenOrientationType);
-  blink::WebScreenOrientationType SuitableOrientationForCurrentLock();
+  RenderViewImpl* render_view_impl() const;
+
+  // RenderViewObserver
+  virtual void OnDestruct() OVERRIDE;
 
   blink::WebScreenOrientationLockType current_lock_;
   blink::WebScreenOrientationType device_orientation_;
   blink::WebScreenOrientationType current_orientation_;
-  blink::WebScreenOrientationListener* listener_;
 
   DISALLOW_COPY_AND_ASSIGN(MockScreenOrientationController);
   friend class base::LazyInstance<MockScreenOrientationController>;

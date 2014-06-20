@@ -96,9 +96,9 @@ QuicAckFrame MakeAckFrame(QuicPacketSequenceNumber largest_observed,
 QuicAckFrame MakeAckFrameWithNackRanges(size_t num_nack_ranges,
                                         QuicPacketSequenceNumber least_unacked);
 
-// Returns a SerializedPacket whose |packet| member is owned by the caller,
-// and is populated with the fields in |header| and |frames|, or is NULL if
-// the packet could not be created.
+// Returns a SerializedPacket whose |packet| member is owned by the caller, and
+// is populated with the fields in |header| and |frames|, or is NULL if the
+// packet could not be created.
 SerializedPacket BuildUnsizedDataPacket(QuicFramer* framer,
                                         const QuicPacketHeader& header,
                                         const QuicFrames& frames);
@@ -120,6 +120,25 @@ class ValueRestore {
   SaveType value_;
 
   DISALLOW_COPY_AND_ASSIGN(ValueRestore);
+};
+
+// Simple random number generator used to compute random numbers suitable
+// for pseudo-randomly dropping packets in tests.  It works by computing
+// the sha1 hash of the current seed, and using the first 64 bits as
+// the next random number, and the next seed.
+class SimpleRandom {
+ public:
+  SimpleRandom() : seed_(0) {}
+
+  // Returns a random number in the range [0, kuint64max].
+  uint64 RandUint64();
+
+  void set_seed(uint64 seed) { seed_ = seed; }
+
+ private:
+  uint64 seed_;
+
+  DISALLOW_COPY_AND_ASSIGN(SimpleRandom);
 };
 
 class MockFramerVisitor : public QuicFramerVisitorInterface {
@@ -326,11 +345,12 @@ class MockSession : public QuicSession {
   MOCK_METHOD1(CreateIncomingDataStream, QuicDataStream*(QuicStreamId id));
   MOCK_METHOD0(GetCryptoStream, QuicCryptoStream*());
   MOCK_METHOD0(CreateOutgoingDataStream, QuicDataStream*());
-  MOCK_METHOD5(WritevData,
+  MOCK_METHOD6(WritevData,
                QuicConsumedData(QuicStreamId id,
                                 const IOVector& data,
                                 QuicStreamOffset offset,
                                 bool fin,
+                                FecProtection fec_protection,
                                 QuicAckNotifier::DelegateInterface*));
   MOCK_METHOD2(OnStreamHeaders, void(QuicStreamId stream_id,
                                      base::StringPiece headers_data));

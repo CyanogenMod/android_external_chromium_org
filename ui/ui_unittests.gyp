@@ -66,7 +66,6 @@
         'base/text/bytes_formatting_unittest.cc',
         'base/view_prop_unittest.cc',
         'base/webui/web_ui_util_unittest.cc',
-        'gfx/canvas_unittest.cc',
         'gfx/canvas_unittest_mac.mm',
         'gfx/platform_font_mac_unittest.mm',
         'gfx/render_text_unittest.cc',
@@ -110,6 +109,7 @@
           'sources': [
             'base/dragdrop/os_exchange_data_win_unittest.cc',
             'base/win/hwnd_subclass_unittest.cc',
+            'gfx/color_profile_win_unittest.cc',
             'gfx/font_fallback_win_unittest.cc',
             'gfx/icon_util_unittest.cc',
             'gfx/icon_util_unittests.rc',
@@ -209,7 +209,6 @@
         }],
         ['use_ozone==1 and use_pango==0', {
           'sources!': [
-            'gfx/canvas_unittest.cc',
             'gfx/render_text_unittest.cc',
           ],
         }],
@@ -218,6 +217,7 @@
             '../chromeos/chromeos.gyp:chromeos',
             'aura/aura.gyp:aura_test_support',
             'chromeos/ui_chromeos.gyp:ui_chromeos',
+            'events/events.gyp:gesture_detection',
           ],
           'sources': [
             'chromeos/touch_exploration_controller_unittest.cc'

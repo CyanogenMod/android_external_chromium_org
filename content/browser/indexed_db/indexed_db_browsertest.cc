@@ -125,6 +125,7 @@ class IndexedDBBrowserTest : public ContentBrowserTest {
     base::MessageLoop::current()->RunUntilIdle();
     return disk_usage_;
   }
+
  private:
   virtual void DidGetDiskUsage(int64 bytes) {
     EXPECT_GT(bytes, 0);
@@ -132,6 +133,8 @@ class IndexedDBBrowserTest : public ContentBrowserTest {
   }
 
   int64 disk_usage_;
+
+  DISALLOW_COPY_AND_ASSIGN(IndexedDBBrowserTest);
 };
 
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, CursorTest) {
@@ -208,10 +211,15 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, Bug109187Test) {
 
 class IndexedDBBrowserTestWithLowQuota : public IndexedDBBrowserTest {
  public:
+  IndexedDBBrowserTestWithLowQuota() {}
+
   virtual void SetUpOnMainThread() OVERRIDE {
     const int kInitialQuotaKilobytes = 5000;
     SetQuota(kInitialQuotaKilobytes);
   }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(IndexedDBBrowserTestWithLowQuota);
 };
 
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestWithLowQuota, QuotaTest) {
@@ -220,9 +228,14 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestWithLowQuota, QuotaTest) {
 
 class IndexedDBBrowserTestWithGCExposed : public IndexedDBBrowserTest {
  public:
+  IndexedDBBrowserTestWithGCExposed() {}
+
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     command_line->AppendSwitchASCII(switches::kJavaScriptFlags, "--expose-gc");
   }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(IndexedDBBrowserTestWithGCExposed);
 };
 
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestWithGCExposed,
@@ -250,6 +263,7 @@ static void CopyLevelDBToProfile(Shell* shell,
 
 class IndexedDBBrowserTestWithPreexistingLevelDB : public IndexedDBBrowserTest {
  public:
+  IndexedDBBrowserTestWithPreexistingLevelDB() {}
   virtual void SetUpOnMainThread() OVERRIDE {
     scoped_refptr<IndexedDBContextImpl> context = GetContext();
     context->TaskRunner()->PostTask(
@@ -264,6 +278,8 @@ class IndexedDBBrowserTestWithPreexistingLevelDB : public IndexedDBBrowserTest {
 
   virtual std::string EnclosingLevelDBDir() = 0;
 
+ private:
+  DISALLOW_COPY_AND_ASSIGN(IndexedDBBrowserTestWithPreexistingLevelDB);
 };
 
 class IndexedDBBrowserTestWithVersion0Schema : public
@@ -569,7 +585,7 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, ConnectionsClosedOnTabClose) {
 
   // Start on a different URL to force a new renderer process.
   Shell* new_shell = CreateBrowser();
-  NavigateToURL(new_shell, GURL(kAboutBlankURL));
+  NavigateToURL(new_shell, GURL(url::kAboutBlankURL));
   NavigateAndWaitForTitle(new_shell, "version_change_blocked.html", "#tab2",
                           "setVersion(3) blocked");
 

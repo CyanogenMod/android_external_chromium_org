@@ -17,7 +17,7 @@
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/tab_contents/navigation_metrics_recorder.h"
 #include "chrome/browser/translate/chrome_translate_client.h"
-#include "chrome/browser/ui/autofill/tab_autofill_manager_delegate.h"
+#include "chrome/browser/ui/autofill/chrome_autofill_client.h"
 #include "chrome/browser/ui/blocked_content/popup_blocker_tab_helper.h"
 #include "chrome/browser/ui/bookmarks/bookmark_tab_helper.h"
 #include "chrome/browser/ui/find_bar/find_tab_helper.h"
@@ -64,7 +64,7 @@
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_mode_navigation_observer.h"
+#include "chrome/browser/supervised_user/supervised_user_navigation_observer.h"
 #endif
 
 #if defined(ENABLE_PRINTING)
@@ -112,17 +112,17 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
 
   // --- Common tab helpers ---
 
-  autofill::TabAutofillManagerDelegate::CreateForWebContents(web_contents);
+  autofill::ChromeAutofillClient::CreateForWebContents(web_contents);
   autofill::ContentAutofillDriver::CreateForWebContentsAndDelegate(
       web_contents,
-      autofill::TabAutofillManagerDelegate::FromWebContents(web_contents),
+      autofill::ChromeAutofillClient::FromWebContents(web_contents),
       g_browser_process->GetApplicationLocale(),
       autofill::AutofillManager::ENABLE_AUTOFILL_DOWNLOAD_MANAGER);
   BookmarkTabHelper::CreateForWebContents(web_contents);
   chrome_browser_net::NetErrorTabHelper::CreateForWebContents(web_contents);
-  ChromePasswordManagerClient::CreateForWebContentsWithAutofillManagerDelegate(
+  ChromePasswordManagerClient::CreateForWebContentsWithAutofillClient(
       web_contents,
-      autofill::TabAutofillManagerDelegate::FromWebContents(web_contents));
+      autofill::ChromeAutofillClient::FromWebContents(web_contents));
   CoreTabHelper::CreateForWebContents(web_contents);
   extensions::TabHelper::CreateForWebContents(web_contents);
   FaviconTabHelper::CreateForWebContents(web_contents);
@@ -176,7 +176,7 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)
-  ManagedModeNavigationObserver::CreateForWebContents(web_contents);
+  SupervisedUserNavigationObserver::CreateForWebContents(web_contents);
 #endif
 
 #if defined(ENABLE_PRINTING) && !defined(OS_ANDROID)

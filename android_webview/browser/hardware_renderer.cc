@@ -74,8 +74,7 @@ scoped_refptr<cc::ContextProvider> CreateContext(
 HardwareRenderer::HardwareRenderer(SharedRendererState* state)
     : shared_renderer_state_(state),
       last_egl_context_(eglGetCurrentContext()),
-      view_width_(-1),
-      view_height_(-1),
+      stencil_enabled_(false),
       viewport_clip_valid_for_dcheck_(false),
       root_layer_(cc::Layer::Create()),
       output_surface_(NULL) {
@@ -123,13 +122,13 @@ void HardwareRenderer::DidBeginMainFrame() {
   // starts. We set the draw constraints here.
   DCHECK(output_surface_);
   DCHECK(viewport_clip_valid_for_dcheck_);
+  output_surface_->SetExternalStencilTest(stencil_enabled_);
   output_surface_->SetDrawConstraints(viewport_, clip_);
 }
 
 bool HardwareRenderer::DrawGL(bool stencil_enabled,
                               int framebuffer_binding_ext,
-                              AwDrawGLInfo* draw_info,
-                              DrawGLResult* result) {
+                              AwDrawGLInfo* draw_info) {
   TRACE_EVENT0("android_webview", "HardwareRenderer::DrawGL");
 
   // We need to watch if the current Android context has changed and enforce
@@ -154,10 +153,18 @@ bool HardwareRenderer::DrawGL(bool stencil_enabled,
     DCHECK(!input->frame.gl_frame_data);
     DCHECK(!input->frame.software_frame_data);
 
-    bool size_changed =
-        input->width != view_width_ || input->height != view_height_;
-    view_width_ = input->width;
-    view_height_ = input->height;
+    // DelegatedRendererLayerImpl applies the inverse device_scale_factor of the
+    // renderer frame, assuming that the browser compositor will scale
+    // it back up to device scale.  But on Android we put our browser layers in
+    // physical pixels and set our browser CC device_scale_factor to 1, so this
+    // suppresses the transform.
+    input->frame.delegated_frame_data->device_scale_factor = 1.0f;
+
+    gfx::Size frame_size =
+        input->frame.delegated_frame_data->render_pass_list.back()
+            ->output_rect.size();
+    bool size_changed = frame_size != frame_size_;
+    frame_size_ = frame_size;
     scroll_offset_ = input->scroll_offset;
 
     if (!frame_provider_ || size_changed) {
@@ -169,7 +176,7 @@ bool HardwareRenderer::DrawGL(bool stencil_enabled,
           resource_collection_.get(), input->frame.delegated_frame_data.Pass());
 
       delegated_layer_ = cc::DelegatedRendererLayer::Create(frame_provider_);
-      delegated_layer_->SetBounds(gfx::Size(view_width_, view_height_));
+      delegated_layer_->SetBounds(gfx::Size(input->width, input->height));
       delegated_layer_->SetIsDrawable(true);
 
       root_layer_->AddChild(delegated_layer_);
@@ -184,6 +191,7 @@ bool HardwareRenderer::DrawGL(bool stencil_enabled,
                 draw_info->clip_top,
                 draw_info->clip_right - draw_info->clip_left,
                 draw_info->clip_bottom - draw_info->clip_top);
+  stencil_enabled_ = stencil_enabled;
 
   gfx::Transform transform(gfx::Transform::kSkipInitialization);
   transform.matrix().setColMajorf(draw_info->transform);

@@ -67,7 +67,6 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chromeos/chromeos_switches.h"
@@ -304,8 +303,8 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
       IDS_RESET_PROFILE_SETTINGS_SECTION_TITLE },
     { "safeBrowsingEnableProtection",
       IDS_OPTIONS_SAFEBROWSING_ENABLEPROTECTION },
-    { "safeBrowsingEnableDownloadFeedback",
-      IDS_OPTIONS_SAFEBROWSING_ENABLEDOWNLOADFEEDBACK },
+    { "safeBrowsingEnableExtendedReporting",
+      IDS_OPTIONS_SAFEBROWSING_ENABLE_EXTENDED_REPORTING },
     { "sectionTitleAppearance", IDS_APPEARANCE_GROUP_NAME },
     { "sectionTitleDefaultBrowser", IDS_OPTIONS_DEFAULTBROWSER_GROUP_NAME },
     { "sectionTitleUsers", IDS_PROFILES_OPTIONS_GROUP_NAME },
@@ -414,6 +413,10 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
     { "securityTitle", IDS_OPTIONS_SECURITY_SECTION_TITLE },
     { "syncOverview", IDS_SYNC_OVERVIEW },
     { "syncButtonTextStart", IDS_SYNC_SETUP_BUTTON_LABEL },
+    { "thirdPartyImeConfirmEnable", IDS_OK },
+    { "thirdPartyImeConfirmDisable", IDS_CANCEL },
+    { "thirdPartyImeConfirmMessage",
+      IDS_OPTIONS_SETTINGS_LANGUAGES_THIRD_PARTY_WARNING_MESSAGE },
     { "timezone", IDS_OPTIONS_SETTINGS_TIMEZONE_DESCRIPTION },
     { "use24HourClock", IDS_OPTIONS_SETTINGS_USE_24HOUR_CLOCK_DESCRIPTION },
 #else
@@ -566,7 +569,7 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
     values->Set("profilesInfo", GetProfilesInfoList().release());
 
   values->SetBoolean("profileIsManaged",
-                     Profile::FromWebUI(web_ui())->IsManaged());
+                     Profile::FromWebUI(web_ui())->IsSupervised());
 
 #if !defined(OS_CHROMEOS)
   values->SetBoolean(
@@ -603,6 +606,9 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
       "consumerManagementEnabled",
       CommandLine::ForCurrentProcess()->HasSwitch(
           chromeos::switches::kEnableConsumerManagement));
+
+  RegisterTitle(values, "thirdPartyImeConfirmOverlay",
+                IDS_OPTIONS_SETTINGS_LANGUAGES_THIRD_PARTY_WARNING_TITLE);
 #endif
 }
 
@@ -819,7 +825,7 @@ void BrowserOptionsHandler::InitializeHandler() {
       base::Bind(&BrowserOptionsHandler::SetupFontSizeSelector,
                  base::Unretained(this)));
   profile_pref_registrar_.Add(
-      prefs::kManagedUsers,
+      prefs::kSupervisedUsers,
       base::Bind(&BrowserOptionsHandler::SetupManagingSupervisedUsers,
                  base::Unretained(this)));
   profile_pref_registrar_.Add(
@@ -1090,7 +1096,8 @@ void BrowserOptionsHandler::OnTemplateURLServiceChanged() {
   TemplateURLService::TemplateURLVector model_urls(
       template_url_service_->GetTemplateURLs());
   for (size_t i = 0; i < model_urls.size(); ++i) {
-    if (!model_urls[i]->ShowInDefaultList())
+    if (!model_urls[i]->ShowInDefaultList(
+            template_url_service_->search_terms_data()))
       continue;
 
     base::DictionaryValue* entry = new base::DictionaryValue();
@@ -1218,7 +1225,7 @@ scoped_ptr<base::ListValue> BrowserOptionsHandler::GetProfilesInfoList() {
     profile_value->Set("filePath", base::CreateFilePathValue(profile_path));
     profile_value->SetBoolean("isCurrentProfile",
                               profile_path == current_profile_path);
-    profile_value->SetBoolean("isManaged", cache.ProfileIsManagedAtIndex(i));
+    profile_value->SetBoolean("isManaged", cache.ProfileIsSupervisedAtIndex(i));
 
     bool is_gaia_picture =
         cache.IsUsingGAIAPictureOfProfileAtIndex(i) &&
@@ -1265,10 +1272,10 @@ void BrowserOptionsHandler::ObserveThemeChanged() {
   bool is_system_theme = false;
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
-  bool profile_is_managed = profile->IsManaged();
+  bool profile_is_supervised = profile->IsSupervised();
   is_system_theme = theme_service->UsingSystemTheme();
   base::FundamentalValue native_theme_enabled(!is_system_theme &&
-                                              !profile_is_managed);
+                                              !profile_is_supervised);
   web_ui()->CallJavascriptFunction("BrowserOptions.setNativeThemeButtonEnabled",
                                    native_theme_enabled);
 #endif
@@ -1327,7 +1334,7 @@ BrowserOptionsHandler::GetSyncStateDictionary() {
     return sync_status.Pass();
   }
 
-  sync_status->SetBoolean("supervisedUser", profile->IsManaged());
+  sync_status->SetBoolean("supervisedUser", profile->IsSupervised());
 
   bool signout_prohibited = false;
 #if !defined(OS_CHROMEOS)
@@ -1591,7 +1598,7 @@ void BrowserOptionsHandler::HandleEnrollConsumerManagement(
 void BrowserOptionsHandler::SetupAccessibilityFeatures() {
   PrefService* pref_service = g_browser_process->local_state();
   base::FundamentalValue virtual_keyboard_enabled(
-      pref_service->GetBoolean(prefs::kVirtualKeyboardEnabled));
+      pref_service->GetBoolean(prefs::kAccessibilityVirtualKeyboardEnabled));
   web_ui()->CallJavascriptFunction(
       "BrowserOptions.setVirtualKeyboardCheckboxState",
       virtual_keyboard_enabled);
@@ -1733,7 +1740,7 @@ void BrowserOptionsHandler::SetupManageCertificatesSection() {
 
 void BrowserOptionsHandler::SetupManagingSupervisedUsers() {
   bool has_users = !Profile::FromWebUI(web_ui())->
-      GetPrefs()->GetDictionary(prefs::kManagedUsers)->empty();
+      GetPrefs()->GetDictionary(prefs::kSupervisedUsers)->empty();
   base::FundamentalValue has_users_value(has_users);
   web_ui()->CallJavascriptFunction(
       "BrowserOptions.updateManagesSupervisedUsers",
@@ -1756,17 +1763,17 @@ void BrowserOptionsHandler::SetupExtensionControlledIndicators() {
   // Check if an extension is overriding the Search Engine.
   const extensions::Extension* extension =
       extensions::GetExtensionOverridingSearchEngine(
-          Profile::FromWebUI(web_ui()), NULL);
+          Profile::FromWebUI(web_ui()));
   AppendExtensionData("searchEngine", extension, &extension_controlled);
 
   // Check if an extension is overriding the Home page.
   extension = extensions::GetExtensionOverridingHomepage(
-      Profile::FromWebUI(web_ui()), NULL);
+      Profile::FromWebUI(web_ui()));
   AppendExtensionData("homePage", extension, &extension_controlled);
 
   // Check if an extension is overriding the Startup pages.
   extension = extensions::GetExtensionOverridingStartupPages(
-      Profile::FromWebUI(web_ui()), NULL);
+      Profile::FromWebUI(web_ui()));
   AppendExtensionData("startUpPage", extension, &extension_controlled);
 
   // Check if an extension is overriding the NTP page.

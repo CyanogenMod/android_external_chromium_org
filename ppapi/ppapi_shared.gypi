@@ -17,6 +17,8 @@
           'shared_impl/array_writer.h',
           'shared_impl/callback_tracker.cc',
           'shared_impl/callback_tracker.h',
+          'shared_impl/compositor_layer_data.cc',
+          'shared_impl/compositor_layer_data.h',
           'shared_impl/dictionary_var.cc',
           'shared_impl/dictionary_var.h',
           'shared_impl/file_io_state_manager.cc',
@@ -126,8 +128,6 @@
           'shared_impl/var.h',
           'shared_impl/var_tracker.cc',
           'shared_impl/var_tracker.h',
-          'shared_impl/var_value_conversions.cc',
-          'shared_impl/var_value_conversions.h',
           # TODO(viettrungluu): Split these out; it won't be used in NaCl.
           'shared_impl/private/net_address_private_impl.cc',
           'shared_impl/private/net_address_private_impl_constants.cc',
@@ -140,8 +140,6 @@
 
           'thunk/enter.cc',
           'thunk/enter.h',
-          'thunk/extensions_common_api.h',
-          'thunk/ppb_alarms_dev_thunk.cc',
           'thunk/ppb_audio_api.h',
           'thunk/ppb_audio_config_api.h',
           'thunk/ppb_audio_config_thunk.cc',

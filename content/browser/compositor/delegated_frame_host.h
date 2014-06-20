@@ -42,8 +42,6 @@ class CONTENT_EXPORT DelegatedFrameHostClient {
   virtual ui::Layer* GetLayer() = 0;
   virtual RenderWidgetHostImpl* GetHost() = 0;
   virtual void SchedulePaintInRect(const gfx::Rect& damage_rect_in_dip) = 0;
-  virtual void DelegatedCompositorDidSwapBuffers() = 0;
-  virtual void DelegatedCompositorAbortedSwapBuffers() = 0;
   virtual bool IsVisible() = 0;
   virtual scoped_ptr<ResizeLock> CreateResizeLock(
       bool defer_compositor_lock) = 0;
@@ -274,7 +272,6 @@ class CONTENT_EXPORT DelegatedFrameHost
   // Subscriber that listens to frame presentation events.
   scoped_ptr<RenderWidgetHostViewFrameSubscriber> frame_subscriber_;
   std::vector<scoped_refptr<OwnedMailbox> > idle_frame_subscriber_textures_;
-  std::set<OwnedMailbox*> active_frame_subscriber_textures_;
 
   // YUV readback pipeline.
   scoped_ptr<content::ReadbackYUVInterface>

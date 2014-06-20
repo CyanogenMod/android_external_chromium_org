@@ -223,41 +223,6 @@ net::URLRequestContextGetter* AwBrowserContext::GetMediaRequestContext() {
   return GetRequestContext();
 }
 
-void AwBrowserContext::RequestMidiSysExPermission(
-      int render_process_id,
-      int render_view_id,
-      int bridge_id,
-      const GURL& requesting_frame,
-      bool user_gesture,
-      const MidiSysExPermissionCallback& callback) {
-  // TODO(toyoshim): Android WebView is not supported yet.
-  // See http://crbug.com/339767.
-  callback.Run(false);
-}
-
-void AwBrowserContext::CancelMidiSysExPermissionRequest(
-    int render_process_id,
-    int render_view_id,
-    int bridge_id,
-    const GURL& requesting_frame) {
-}
-
-void AwBrowserContext::RequestProtectedMediaIdentifierPermission(
-    int render_process_id,
-    int render_view_id,
-    const GURL& origin,
-    const ProtectedMediaIdentifierPermissionCallback& callback) {
-  NOTIMPLEMENTED();
-  callback.Run(false);
-}
-
-void AwBrowserContext::CancelProtectedMediaIdentifierPermissionRequests(
-    int render_process_id,
-    int render_view_id,
-    const GURL& origin) {
-  NOTIMPLEMENTED();
-}
-
 net::URLRequestContextGetter*
 AwBrowserContext::GetMediaRequestContextForRenderProcess(
     int renderer_child_id) {
@@ -285,21 +250,17 @@ AwBrowserContext::GetDownloadManagerDelegate() {
   return &download_manager_delegate_;
 }
 
-content::GeolocationPermissionContext*
-AwBrowserContext::GetGeolocationPermissionContext() {
-  if (!geolocation_permission_context_.get()) {
-    geolocation_permission_context_ =
-        native_factory_->CreateGeolocationPermission(this);
-  }
-  return geolocation_permission_context_.get();
-}
-
 content::BrowserPluginGuestManager* AwBrowserContext::GetGuestManager() {
   return NULL;
 }
 
 quota::SpecialStoragePolicy* AwBrowserContext::GetSpecialStoragePolicy() {
   // Intentionally returning NULL as 'Extensions' and 'Apps' not supported.
+  return NULL;
+}
+
+content::PushMessagingService* AwBrowserContext::GetPushMessagingService() {
+  // TODO(johnme): Support push messaging in WebView.
   return NULL;
 }
 

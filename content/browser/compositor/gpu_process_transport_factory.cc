@@ -274,6 +274,12 @@ void GpuProcessTransportFactory::RemoveCompositor(ui::Compositor* compositor) {
     // on the |gl_helper_| variable directly. So instead we call reset() on a
     // local scoped_ptr.
     scoped_ptr<GLHelper> helper = gl_helper_.Pass();
+
+    // If there are any observer left at this point, make sure they clean up
+    // before we destroy the GLHelper.
+    FOR_EACH_OBSERVER(
+        ImageTransportFactoryObserver, observer_list_, OnLostResources());
+
     helper.reset();
     DCHECK(!gl_helper_) << "Destroying the GLHelper should not cause a new "
                            "GLHelper to be created.";
@@ -324,6 +330,15 @@ void GpuProcessTransportFactory::RemoveObserver(
     ImageTransportFactoryObserver* observer) {
   observer_list_.RemoveObserver(observer);
 }
+
+#if defined(OS_MACOSX)
+void GpuProcessTransportFactory::OnSurfaceDisplayed(int surface_id) {
+  BrowserCompositorOutputSurface* surface = output_surface_map_.Lookup(
+      surface_id);
+  if (surface)
+    surface->OnSurfaceDisplayed();
+}
+#endif
 
 scoped_refptr<cc::ContextProvider>
 GpuProcessTransportFactory::SharedMainThreadContextProvider() {

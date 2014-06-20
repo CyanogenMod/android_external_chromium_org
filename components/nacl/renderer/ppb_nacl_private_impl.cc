@@ -38,12 +38,12 @@
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
+#include "native_client/src/public/imc_types.h"
 #include "net/base/data_url.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_util.h"
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/private/pp_file_handle.h"
-#include "ppapi/native_client/src/trusted/plugin/nacl_entry_points.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
 #include "ppapi/shared_impl/ppapi_permissions.h"
 #include "ppapi/shared_impl/ppapi_preferences.h"
@@ -138,49 +138,12 @@ bool IsValidChannelHandle(const IPC::ChannelHandle& channel_handle) {
   return true;
 }
 
-// Callback invoked when an IPC channel connection is established.
-// As we will establish multiple IPC channels, this takes the number
-// of expected invocations and a callback. When all channels are established,
-// the given callback will be invoked on the main thread. Its argument will be
-// PP_OK if all the connections are successfully established. Otherwise,
-// the first error code will be passed, and remaining errors will be ignored.
-// Note that PP_CompletionCallback is designed to be called exactly once.
-class ChannelConnectedCallback {
- public:
-  ChannelConnectedCallback(int num_expect_calls,
-                           PP_CompletionCallback callback)
-      : num_remaining_calls_(num_expect_calls),
-        callback_(callback),
-        result_(PP_OK) {
-  }
-
-  ~ChannelConnectedCallback() {
-  }
-
-  void Run(int32_t result) {
-    if (result_ == PP_OK && result != PP_OK) {
-      // This is the first error, so remember it.
-      result_ = result;
-    }
-
-    --num_remaining_calls_;
-    if (num_remaining_calls_ > 0) {
-      // There still are some pending or on-going tasks. Wait for the results.
-      return;
-    }
-
-    ppapi::PpapiGlobals::Get()->GetMainThreadMessageLoop()->PostTask(
-        FROM_HERE,
-        base::Bind(callback_.func, callback_.user_data, result_));
-  }
-
- private:
-  int num_remaining_calls_;
-  PP_CompletionCallback callback_;
-  int32_t result_;
-
-  DISALLOW_COPY_AND_ASSIGN(ChannelConnectedCallback);
-};
+void PostPPCompletionCallback(PP_CompletionCallback callback,
+                              int32_t status) {
+  ppapi::PpapiGlobals::Get()->GetMainThreadMessageLoop()->PostTask(
+      FROM_HERE,
+      base::Bind(callback.func, callback.user_data, status));
+}
 
 // Thin adapter from PPP_ManifestService to ManifestServiceChannel::Delegate.
 // Note that user_data is managed by the caller of LaunchSelLdr. Please see
@@ -361,6 +324,7 @@ void LaunchSelLdr(PP_Instance instance,
                    static_cast<int32_t>(PP_ERROR_FAILED)));
     return;
   }
+
   if (!error_message_string.empty()) {
     if (PP_ToBool(main_service_runtime)) {
       NexeLoadManager* load_manager = GetNexeLoadManager(instance);
@@ -387,32 +351,25 @@ void LaunchSelLdr(PP_Instance instance,
 
   *(static_cast<NaClHandle*>(imc_handle)) = ToNativeHandle(result_socket);
 
-  // Here after, we starts to establish connections for TrustedPluginChannel
-  // and ManifestServiceChannel in parallel. The invocation of the callback
-  // is delegated to their connection completion callback.
-  base::Callback<void(int32_t)> connected_callback = base::Bind(
-      &ChannelConnectedCallback::Run,
-      base::Owned(new ChannelConnectedCallback(
-          2, // For TrustedPluginChannel and ManifestServiceChannel.
-          callback)));
-
   NexeLoadManager* load_manager = GetNexeLoadManager(instance);
   DCHECK(load_manager);
-
-  // Stash the trusted handle as well.
-  if (load_manager &&
-      IsValidChannelHandle(launch_result.trusted_ipc_channel_handle)) {
-    scoped_ptr<TrustedPluginChannel> trusted_plugin_channel(
-        new TrustedPluginChannel(
-            launch_result.trusted_ipc_channel_handle,
-            connected_callback,
-            content::RenderThread::Get()->GetShutdownEvent()));
-    load_manager->set_trusted_plugin_channel(trusted_plugin_channel.Pass());
-  } else {
-    connected_callback.Run(PP_ERROR_FAILED);
+  if (!load_manager) {
+    PostPPCompletionCallback(callback, PP_ERROR_FAILED);
+    return;
   }
 
-  // Stash the manifest service handle as well.
+  // Create the trusted plugin channel.
+  if (IsValidChannelHandle(launch_result.trusted_ipc_channel_handle)) {
+    scoped_ptr<TrustedPluginChannel> trusted_plugin_channel(
+        new TrustedPluginChannel(
+            launch_result.trusted_ipc_channel_handle));
+    load_manager->set_trusted_plugin_channel(trusted_plugin_channel.Pass());
+  } else {
+    PostPPCompletionCallback(callback, PP_ERROR_FAILED);
+    return;
+  }
+
+  // Create the manifest service handle as well.
   // For security hardening, disable the IPCs for open_resource() when they
   // aren't needed.  PNaCl doesn't expose open_resource(), and the new
   // open_resource() IPCs are currently only used for Non-SFI NaCl so far,
@@ -426,7 +383,7 @@ void LaunchSelLdr(PP_Instance instance,
     scoped_ptr<ManifestServiceChannel> manifest_service_channel(
         new ManifestServiceChannel(
             launch_result.manifest_service_ipc_channel_handle,
-            connected_callback,
+            base::Bind(&PostPPCompletionCallback, callback),
             manifest_service_proxy.Pass(),
             content::RenderThread::Get()->GetShutdownEvent()));
     load_manager->set_manifest_service_channel(
@@ -435,7 +392,7 @@ void LaunchSelLdr(PP_Instance instance,
     // Currently, manifest service works only on linux/non-SFI mode.
     // On other platforms, the socket will not be created, and thus this
     // condition needs to be handled as success.
-    connected_callback.Run(PP_OK);
+    PostPPCompletionCallback(callback, PP_OK);
   }
 }
 
@@ -644,7 +601,31 @@ int32_t GetNexeFd(PP_Instance instance,
   return enter.SetResult(PP_OK_COMPLETIONPENDING);
 }
 
-void ReportTranslationFinished(PP_Instance instance, PP_Bool success) {
+void ReportTranslationFinished(PP_Instance instance,
+                               PP_Bool success,
+                               int32_t opt_level,
+                               int64_t pexe_size,
+                               int64_t compile_time_us,
+                               int64_t total_time_us) {
+  if (success == PP_TRUE) {
+    static const int32_t kUnknownOptLevel = 4;
+    if (opt_level < 0 || opt_level > 3)
+      opt_level = kUnknownOptLevel;
+    HistogramEnumerate("NaCl.Options.PNaCl.OptLevel",
+                       opt_level,
+                       kUnknownOptLevel + 1);
+    HistogramKBPerSec("NaCl.Perf.PNaClLoadTime.CompileKBPerSec",
+                      pexe_size / 1024,
+                      compile_time_us);
+    HistogramSizeKB("NaCl.Perf.Size.Pexe", pexe_size / 1024);
+
+    HistogramTimeTranslation("NaCl.Perf.PNaClLoadTime.TotalUncachedTime",
+                             total_time_us / 1000);
+    HistogramKBPerSec("NaCl.Perf.PNaClLoadTime.TotalUncachedKBPerSec",
+                      pexe_size / 1024,
+                      total_time_us);
+  }
+
   // If the resource host isn't initialized, don't try to do that here.
   // Just return because something is already very wrong.
   if (g_pnacl_resource_host.Get() == NULL)
@@ -1043,39 +1024,48 @@ PP_Bool ManifestGetProgramURL(PP_Instance instance,
   return PP_FALSE;
 }
 
-PP_Bool ManifestResolveKey(PP_Instance instance,
-                           PP_Bool is_helper_process,
-                           const char* key,
-                           PP_Var* pp_full_url,
-                           PP_PNaClOptions* pnacl_options) {
+bool ManifestResolveKey(PP_Instance instance,
+                        bool is_helper_process,
+                        const std::string& key,
+                        std::string* full_url,
+                        PP_PNaClOptions* pnacl_options) {
   // For "helper" processes (llc and ld), we resolve keys manually as there is
   // no existing .nmf file to parse.
-  if (PP_ToBool(is_helper_process)) {
+  if (is_helper_process) {
     pnacl_options->translate = PP_FALSE;
     // We can only resolve keys in the files/ namespace.
     const std::string kFilesPrefix = "files/";
-    std::string key_string(key);
-    if (key_string.find(kFilesPrefix) == std::string::npos) {
+    if (key.find(kFilesPrefix) == std::string::npos) {
       nacl::NexeLoadManager* load_manager = GetNexeLoadManager(instance);
       if (load_manager)
         load_manager->ReportLoadError(PP_NACL_ERROR_MANIFEST_RESOLVE_URL,
                                       "key did not start with files/");
-      return PP_FALSE;
+      return false;
     }
-    std::string key_basename = key_string.substr(kFilesPrefix.length());
-    std::string pnacl_url =
-        std::string(kPNaClTranslatorBaseUrl) + GetSandboxArch() + "/" +
-        key_basename;
-    *pp_full_url = ppapi::StringVar::StringToPPVar(pnacl_url);
-    return PP_TRUE;
+    std::string key_basename = key.substr(kFilesPrefix.length());
+    *full_url = std::string(kPNaClTranslatorBaseUrl) + GetSandboxArch() + "/" +
+                key_basename;
+    return true;
   }
 
   JsonManifest* manifest = GetJsonManifest(instance);
   if (manifest == NULL)
-    return PP_FALSE;
+    return false;
 
+  return manifest->ResolveKey(key, full_url, pnacl_options);
+}
+
+PP_Bool ExternalManifestResolveKey(PP_Instance instance,
+                                   PP_Bool is_helper_process,
+                                   const char* key,
+                                   PP_Var* pp_full_url,
+                                   PP_PNaClOptions* pnacl_options) {
   std::string full_url;
-  bool ok = manifest->ResolveKey(key, &full_url, pnacl_options);
+  bool ok = ManifestResolveKey(instance,
+                               PP_ToBool(is_helper_process),
+                               std::string(key),
+                               &full_url,
+                               pnacl_options);
   if (ok)
     *pp_full_url = ppapi::StringVar::StringToPPVar(full_url);
   return PP_FromBool(ok);
@@ -1509,6 +1499,15 @@ void ReportSelLdrStatus(PP_Instance instance,
   HistogramEnumerate(name, load_status, max_status);
 }
 
+void LogTranslateTime(const char* histogram_name,
+                      int64_t time_in_us) {
+  ppapi::PpapiGlobals::Get()->GetMainThreadMessageLoop()->PostTask(
+      FROM_HERE,
+      base::Bind(&HistogramTimeTranslation,
+                 std::string(histogram_name),
+                 time_in_us / 1000));
+}
+
 const PPB_NaCl_Private nacl_interface = {
   &LaunchSelLdr,
   &StartPpapiProxy,
@@ -1542,13 +1541,14 @@ const PPB_NaCl_Private nacl_interface = {
   &ProcessNaClManifest,
   &DevInterfacesEnabled,
   &ManifestGetProgramURL,
-  &ManifestResolveKey,
+  &ExternalManifestResolveKey,
   &GetPNaClResourceInfo,
   &GetCpuFeatureAttrs,
   &PostMessageToJavaScript,
   &DownloadNexe,
   &DownloadFile,
-  &ReportSelLdrStatus
+  &ReportSelLdrStatus,
+  &LogTranslateTime
 };
 
 }  // namespace

@@ -27,6 +27,7 @@ enum ScaleFactor {
   SCALE_FACTOR_150P,
   SCALE_FACTOR_180P,
   SCALE_FACTOR_200P,
+  SCALE_FACTOR_250P,
   SCALE_FACTOR_300P,
 
   NUM_SCALE_FACTORS  // This always appears last.
@@ -42,14 +43,9 @@ UI_BASE_EXPORT void SetSupportedScaleFactors(
 // platform, in ascending order.
 UI_BASE_EXPORT const std::vector<ScaleFactor>& GetSupportedScaleFactors();
 
-// Returns the actual image scale to be used for the scale factor passed in.
-// On Windows high dpi, this returns the dpi scale for the display.
-UI_BASE_EXPORT float GetImageScale(ScaleFactor scale_factor);
-
 // Returns the supported ScaleFactor which most closely matches |scale|.
 // Converting from float to ScaleFactor is inefficient and should be done as
 // little as possible.
-// TODO(oshima): Make ScaleFactor a class and remove this.
 UI_BASE_EXPORT ScaleFactor GetSupportedScaleFactor(float image_scale);
 
 // Returns the ScaleFactor used by |view|.
