@@ -820,9 +820,14 @@ WRAPPED_INSTANTIATE_TEST_CASE_P(
         TestParameter(NOT_IN_GUEST_MODE, "audioRepeatMultipleFileDrive"),
         TestParameter(NOT_IN_GUEST_MODE, "audioNoRepeatMultipleFileDrive")));
 
-// Disabled due to frequent failure: http://crbug.com/377636
+// Slow tests are disabled on debug build. http://crbug.com/327719
+#if !defined(NDEBUG)
+#define MAYBE_CreateNewFolder DISABLED_CreateNewFolder
+#else
+#define MAYBE_CreateNewFolder CreateNewFolder
+#endif
 INSTANTIATE_TEST_CASE_P(
-    DISABLED_CreateNewFolder,
+    MAYBE_CreateNewFolder,
     FileManagerBrowserTest,
     ::testing::Values(TestParameter(NOT_IN_GUEST_MODE,
                                     "createNewFolderAfterSelectFile"),
@@ -1447,6 +1452,25 @@ IN_PROC_BROWSER_TEST_F(GalleryBrowserTestInGuestMode,
 IN_PROC_BROWSER_TEST_F(GalleryBrowserTest, CropImageOnDrive) {
   AddScript("gallery/photo_editor.js");
   set_test_case_name("cropImageOnDrive");
+  StartTest();
+}
+
+IN_PROC_BROWSER_TEST_F(GalleryBrowserTest, ExposureImageOnDownloads) {
+  AddScript("gallery/photo_editor.js");
+  set_test_case_name("exposureImageOnDownloads");
+  StartTest();
+}
+
+IN_PROC_BROWSER_TEST_F(GalleryBrowserTestInGuestMode,
+                       ExposureImageOnDownloads) {
+  AddScript("gallery/photo_editor.js");
+  set_test_case_name("exposureImageOnDownloads");
+  StartTest();
+}
+
+IN_PROC_BROWSER_TEST_F(GalleryBrowserTest, ExposureImageOnDrive) {
+  AddScript("gallery/photo_editor.js");
+  set_test_case_name("exposureImageOnDrive");
   StartTest();
 }
 

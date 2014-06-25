@@ -31,8 +31,6 @@
 #endif
 
 class TransportDIB;
-struct FrameMsg_BuffersSwapped_Params;
-struct FrameMsg_CompositorFrameSwapped_Params;
 struct FrameMsg_Navigate_Params;
 
 namespace blink {
@@ -309,6 +307,7 @@ class CONTENT_EXPORT RenderFrameImpl
                                      const blink::WebHistoryItem& item,
                                      blink::WebHistoryCommitType commit_type);
   virtual void didUpdateCurrentHistoryItem(blink::WebLocalFrame* frame);
+  virtual void didChangeBrandColor();
   virtual blink::WebNotificationPresenter* notificationPresenter();
   virtual void didChangeSelection(bool is_empty_selection);
   virtual blink::WebColorChooser* createColorChooser(
@@ -432,9 +431,6 @@ class CONTENT_EXPORT RenderFrameImpl
   // content/common/*_messages.h for the message that the function is handling.
   void OnBeforeUnload();
   void OnSwapOut(int proxy_routing_id);
-  void OnChildFrameProcessGone();
-  void OnBuffersSwapped(const FrameMsg_BuffersSwapped_Params& params);
-  void OnCompositorFrameSwapped(const IPC::Message& message);
   void OnShowContextMenu(const gfx::Point& location);
   void OnContextMenuClosed(const CustomContextMenuContext& custom_context);
   void OnCustomContextMenuAction(const CustomContextMenuContext& custom_context,
@@ -462,6 +458,7 @@ class CONTENT_EXPORT RenderFrameImpl
   void OnExtendSelectionAndDelete(int before, int after);
   void OnReload(bool ignore_cache);
   void OnTextSurroundingSelectionRequest(size_t max_length);
+  void OnAddStyleSheetByURL(const std::string& url);
 #if defined(OS_MACOSX)
   void OnCopyToFindPboard();
 #endif

@@ -356,6 +356,16 @@
     },
     {
       "archives": [],
+      "description": "Chrome 36 bundle, revision xxxxx",
+      "name": "pepper_36",
+      "recommended": "no",
+      "repath": "pepper_36",
+      "revision": 0,
+      "stability": "post_stable",
+      "version": 36
+    },
+    {
+      "archives": [],
       "description": "Chrome Canary",
       "name": "pepper_canary",
       "recommended": "no",
@@ -365,23 +375,14 @@
       "version": 0
     },
     {
-      "archives": [
-        {
-          "checksum": {
-            "sha1": "9f6a8fc33df9cfc2b48dc6f017e9de01efd546b9"
-          },
-          "host_os": "linux",
-          "size": 399561504,
-          "url": "https://storage.googleapis.com/nativeclient-mirror/nacl/nacl_sdk/trunk.277747/naclsdk_bionic.tar.bz2"
-        }
-      ],
+      "archives": [],
       "description": "Bionic Canary",
       "name": "bionic_canary",
       "recommended": "no",
-      "repath": "pepper_37",
-      "revision": 277747,
+      "repath": "",
+      "revision": 0,
       "stability": "canary",
-      "version": 37
+      "version": 0
     }
   ],
   "manifest_version": 2

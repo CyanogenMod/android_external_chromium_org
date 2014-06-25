@@ -60,10 +60,17 @@ class VIEWS_EXPORT Label : public View {
   SkColor background_color() const { return background_color_; }
 
   // Set drop shadows underneath the text.
-  void set_shadows(const gfx::ShadowValues& shadows) { shadows_ = shadows; }
+  void set_shadows(const gfx::ShadowValues& shadows) {
+    shadows_ = shadows;
+    text_size_valid_ = false;
+  }
+  const gfx::ShadowValues& shadows() const { return shadows_; }
 
-  // Set the color of a halo on the painted text (use transparent for none).
-  void set_halo_color(SkColor halo_color) { halo_color_ = halo_color; }
+  // Sets whether subpixel rendering is used; the default is true, but this
+  // feature also requires an opaque background color.
+  void set_subpixel_rendering_enabled(bool subpixel_rendering_enabled) {
+    subpixel_rendering_enabled_ = subpixel_rendering_enabled;
+  }
 
   // Sets the horizontal alignment; the argument value is mirrored in RTL UI.
   void SetHorizontalAlignment(gfx::HorizontalAlignment alignment);
@@ -218,6 +225,7 @@ class VIEWS_EXPORT Label : public View {
   bool disabled_color_set_;
   bool background_color_set_;
 
+  bool subpixel_rendering_enabled_;
   bool auto_color_readability_;
   mutable gfx::Size text_size_;
   mutable bool text_size_valid_;
@@ -234,9 +242,6 @@ class VIEWS_EXPORT Label : public View {
   // directionality character or is determined by the application UI's locale.
   gfx::DirectionalityMode directionality_mode_;
   gfx::ShadowValues shadows_;
-
-  // The halo color drawn around the text if it is not transparent.
-  SkColor halo_color_;
 
   // The cached heights to avoid recalculation in GetHeightForWidth().
   mutable std::vector<gfx::Size> cached_heights_;

@@ -17,7 +17,6 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
-#include "base/files/scoped_temp_dir.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/location.h"
@@ -33,7 +32,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/test/scoped_path_override.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -311,15 +309,6 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
                                 PolicyBuilder::kFakeDeviceId);
     ASSERT_TRUE(test_server_.Start());
 
-    ASSERT_TRUE(extension_cache_root_dir_.CreateUniqueTempDir());
-    extension_cache_root_dir_override_.reset(new base::ScopedPathOverride(
-        chromeos::DIR_DEVICE_LOCAL_ACCOUNT_EXTENSIONS,
-        extension_cache_root_dir_.path()));
-    ASSERT_TRUE(external_data_cache_dir_.CreateUniqueTempDir());
-    external_data_cache_dir_override_.reset(new base::ScopedPathOverride(
-        chromeos::DIR_DEVICE_LOCAL_ACCOUNT_EXTERNAL_DATA,
-        external_data_cache_dir_.path()));
-
     BrowserList::AddObserver(this);
 
     DevicePolicyCrosBrowserTest::SetUp();
@@ -432,15 +421,21 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
     EXPECT_EQ(chromeos::User::USER_TYPE_PUBLIC_ACCOUNT, user->GetType());
   }
 
-  base::FilePath GetCacheDirectoryForAccountID(const std::string& account_id) {
-    return extension_cache_root_dir_.path()
-        .Append(base::HexEncode(account_id.c_str(), account_id.size()));
+  base::FilePath GetExtensionCacheDirectoryForAccountID(
+      const std::string& account_id) {
+    base::FilePath extension_cache_root_dir;
+    if (!PathService::Get(chromeos::DIR_DEVICE_LOCAL_ACCOUNT_EXTENSIONS,
+                          &extension_cache_root_dir)) {
+      ADD_FAILURE();
+    }
+    return extension_cache_root_dir.Append(
+        base::HexEncode(account_id.c_str(), account_id.size()));
   }
 
   base::FilePath GetCacheCRXFile(const std::string& account_id,
                                  const std::string& id,
                                  const std::string& version) {
-    return GetCacheDirectoryForAccountID(account_id)
+    return GetExtensionCacheDirectoryForAccountID(account_id)
         .Append(base::StringPrintf("%s-%s.crx", id.c_str(), version.c_str()));
   }
 
@@ -459,11 +454,6 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
   LocalPolicyTestServer test_server_;
 
  private:
-  base::ScopedTempDir extension_cache_root_dir_;
-  base::ScopedTempDir external_data_cache_dir_;
-  scoped_ptr<base::ScopedPathOverride> extension_cache_root_dir_override_;
-  scoped_ptr<base::ScopedPathOverride> external_data_cache_dir_override_;
-
   DISALLOW_COPY_AND_ASSIGN(DeviceLocalAccountTest);
 };
 
@@ -777,7 +767,7 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, ExtensionsCached) {
   // Pre-populate the device local account's extension cache with a hosted app
   // and an extension.
   EXPECT_TRUE(base::CreateDirectory(
-      GetCacheDirectoryForAccountID(kAccountId1)));
+      GetExtensionCacheDirectoryForAccountID(kAccountId1)));
   base::FilePath test_dir;
   ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &test_dir));
   const base::FilePath cached_hosted_app =

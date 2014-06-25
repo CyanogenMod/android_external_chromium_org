@@ -1167,6 +1167,7 @@ IN_PROC_BROWSER_TEST_F(PPAPITest, InputEvent_AcceptTouchEvent) {
   RunTestViaHTTP( \
       LIST_TEST(View_SizeChange) \
       LIST_TEST(View_ClipChange) \
+      LIST_TEST(View_ScrollOffsetChange) \
   )
 
 IN_PROC_BROWSER_TEST_F(PPAPITest, View) {
@@ -1206,6 +1207,19 @@ IN_PROC_BROWSER_TEST_F(PPAPITest, FlashMessageLoop) {
 IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_FlashMessageLoop) {
   RUN_FLASH_MESSAGE_LOOP_SUBTESTS;
 }
+
+#if defined(OS_WIN)
+// This test fails with the test compositor which is what's used by default for
+// browser tests on Windows. Renable when the software compositor is available.
+#define MAYBE_Compositor DISABLED_Compositor
+#elif defined(OS_MACOSX)
+// This test fails when using the legacy software mode. Reenable when the
+// software compositor is enabled crbug.com/286038
+#define MAYBE_Compositor DISABLED_Compositor
+#else
+#define MAYBE_Compositor Compositor
+#endif
+TEST_PPAPI_NACL(MAYBE_Compositor)
 
 TEST_PPAPI_NACL(MediaStreamAudioTrack)
 

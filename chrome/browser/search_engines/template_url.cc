@@ -20,17 +20,17 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/google/google_util.h"
+#include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/chrome_version_info.h"
+#include "components/google/core/browser/google_util.h"
 #include "components/metrics/proto/omnibox_input_type.pb.h"
 #include "components/search_engines/search_terms_data.h"
 #include "extensions/common/constants.h"
 #include "google_apis/google_api_keys.h"
 #include "net/base/escape.h"
 #include "net/base/mime_util.h"
+#include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace {
@@ -168,23 +168,6 @@ std::string FindSearchTermsKey(const std::string& params) {
   return std::string();
 }
 
-// Returns the string to use for replacements of type
-// GOOGLE_IMAGE_SEARCH_SOURCE.
-std::string GetGoogleImageSearchSource() {
-  chrome::VersionInfo version_info;
-  if (version_info.is_valid()) {
-    std::string version(version_info.Name() + " " + version_info.Version());
-    if (version_info.IsOfficialBuild())
-      version += " (Official)";
-    version += " " + version_info.OSType();
-    std::string modifier(version_info.GetVersionStringModifier());
-    if (!modifier.empty())
-      version += " " + modifier;
-    return version;
-  }
-  return "unknown";
-}
-
 bool IsTemplateParameterString(const std::string& param) {
   return (param.length() > 2) && (*(param.begin()) == kStartParameter) &&
       (*(param.rbegin()) == kEndParameter);
@@ -207,7 +190,7 @@ TemplateURLRef::SearchTermsArgs::SearchTermsArgs(
       accepted_suggestion(NO_SUGGESTIONS_AVAILABLE),
       cursor_position(base::string16::npos),
       omnibox_start_margin(-1),
-      page_classification(AutocompleteInput::INVALID_SPEC),
+      page_classification(metrics::OmniboxEventProto::INVALID_SPEC),
       bookmark_bar_pinned(false),
       append_extra_query_params(false),
       force_instant_results(false),
@@ -592,7 +575,8 @@ bool TemplateURLRef::ParseParameter(size_t start,
     replacements->push_back(
         Replacement(TemplateURLRef::GOOGLE_IMAGE_ORIGINAL_WIDTH, start));
   } else if (parameter == kGoogleImageSearchSource) {
-    url->insert(start, GetGoogleImageSearchSource());
+    replacements->push_back(
+        Replacement(TemplateURLRef::GOOGLE_IMAGE_SEARCH_SOURCE, start));
   } else if (parameter == kGoogleImageThumbnailParameter) {
     replacements->push_back(
         Replacement(TemplateURLRef::GOOGLE_IMAGE_THUMBNAIL, start));
@@ -629,8 +613,7 @@ bool TemplateURLRef::ParseParameter(size_t start,
   } else if (parameter == kGoogleSearchFieldtrialParameter) {
     replacements->push_back(Replacement(GOOGLE_SEARCH_FIELDTRIAL_GROUP, start));
   } else if (parameter == kGoogleSearchVersion) {
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kEnableAnswersInSuggest))
+    if (OmniboxFieldTrial::EnableAnswersInSuggest())
       url->insert(start, "gs_rn=42&");
   } else if (parameter == kGoogleSessionToken) {
     replacements->push_back(Replacement(GOOGLE_SESSION_TOKEN, start));
@@ -1010,7 +993,7 @@ std::string TemplateURLRef::HandleReplacements(
 
       case GOOGLE_PAGE_CLASSIFICATION:
         if (search_terms_args.page_classification !=
-            AutocompleteInput::INVALID_SPEC) {
+            metrics::OmniboxEventProto::INVALID_SPEC) {
           HandleReplacement(
               "pgcl", base::IntToString(search_terms_args.page_classification),
               *i, &url);
@@ -1113,6 +1096,12 @@ std::string TemplateURLRef::HandleReplacements(
         }
         break;
 
+      case GOOGLE_IMAGE_SEARCH_SOURCE:
+        HandleReplacement(
+            std::string(), search_terms_data.GoogleImageSearchSource(), *i,
+            &url);
+        break;
+
       default:
         NOTREACHED();
         break;
@@ -1147,6 +1136,18 @@ TemplateURL::TemplateURL(const TemplateURLData& data)
 }
 
 TemplateURL::~TemplateURL() {
+}
+
+// static
+base::string16 TemplateURL::GenerateKeyword(const GURL& url) {
+  DCHECK(url.is_valid());
+  // Strip "www." off the front of the keyword; otherwise the keyword won't work
+  // properly.  See http://code.google.com/p/chromium/issues/detail?id=6984 .
+  // Special case: if the host was exactly "www." (not sure this can happen but
+  // perhaps with some weird intranet and custom DNS server?), ensure we at
+  // least don't return the empty string.
+  base::string16 keyword(net::StripWWWFromHost(url));
+  return keyword.empty() ? base::ASCIIToUTF16("www") : keyword;
 }
 
 // static
@@ -1354,6 +1355,25 @@ void TemplateURL::EncodeSearchTerms(
   NOTREACHED();
 }
 
+GURL TemplateURL::GenerateSearchURL(
+    const SearchTermsData& search_terms_data) const {
+  if (!url_ref_.IsValid(search_terms_data))
+    return GURL();
+
+  if (!url_ref_.SupportsReplacement(search_terms_data))
+    return GURL(url());
+
+  // Use something obscure for the search terms argument so that in the rare
+  // case the term replaces the URL it's unlikely another keyword would have the
+  // same url.
+  // TODO(jnd): Add additional parameters to get post data when the search URL
+  // has post parameters.
+  return GURL(url_ref_.ReplaceSearchTerms(
+      TemplateURLRef::SearchTermsArgs(
+          base::ASCIIToUTF16("blah.blah.blah.blah.blah")),
+      search_terms_data, NULL));
+}
+
 void TemplateURL::CopyFrom(const TemplateURL& other) {
   if (this == &other)
     return;
@@ -1383,9 +1403,9 @@ void TemplateURL::ResetKeywordIfNecessary(
     bool force) {
   if (IsGoogleSearchURLWithReplaceableKeyword(search_terms_data) || force) {
     DCHECK(GetType() != OMNIBOX_API_EXTENSION);
-    GURL url(TemplateURLService::GenerateSearchURL(this, search_terms_data));
+    GURL url(GenerateSearchURL(search_terms_data));
     if (url.is_valid())
-      data_.SetKeyword(TemplateURLService::GenerateKeyword(url));
+      data_.SetKeyword(GenerateKeyword(url));
   }
 }
 

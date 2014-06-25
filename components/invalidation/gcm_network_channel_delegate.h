@@ -30,10 +30,11 @@ class GCMNetworkChannelDelegate {
                               gcm::GCMClient::Result result)> RegisterCallback;
   typedef base::Callback<void(const std::string& message,
                               const std::string& echo_token)> MessageCallback;
+  typedef base::Callback<void(bool online)> ConnectionStateCallback;
 
   virtual ~GCMNetworkChannelDelegate() {}
 
-  virtual void Initialize() = 0;
+  virtual void Initialize(ConnectionStateCallback callback) = 0;
   // Request access token. Callback should be called either with access token or
   // error code.
   virtual void RequestToken(RequestTokenCallback callback) = 0;

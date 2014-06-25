@@ -61,7 +61,7 @@ PictureLayerImpl::PictureLayerImpl(LayerTreeImpl* tree_impl, int id)
       raster_contents_scale_(0.f),
       low_res_raster_contents_scale_(0.f),
       raster_source_scale_is_fixed_(false),
-      was_animating_transform_to_screen_(false),
+      was_screen_space_transform_animating_(false),
       needs_post_commit_initialization_(true),
       should_update_tile_priorities_(false) {
   layer_tree_impl()->RegisterPictureLayerImpl(this);
@@ -157,13 +157,15 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
                             draw_properties().clip_rect,
                             draw_properties().is_clipped,
                             draw_properties().opacity,
-                            blend_mode());
+                            blend_mode(),
+                            sorting_context_id_);
 
   gfx::Rect rect = scaled_visible_content_rect;
 
   if (current_draw_mode_ == DRAW_MODE_RESOURCELESS_SOFTWARE) {
     AppendDebugBorderQuad(
         quad_sink,
+        scaled_content_bounds,
         shared_quad_state,
         append_quads_data,
         DebugColors::DirectPictureBorderColor(),
@@ -196,7 +198,8 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
     return;
   }
 
-  AppendDebugBorderQuad(quad_sink, shared_quad_state, append_quads_data);
+  AppendDebugBorderQuad(
+      quad_sink, scaled_content_bounds, shared_quad_state, append_quads_data);
 
   if (ShowDebugBorders()) {
     for (PictureLayerTilingSet::CoverageIterator iter(
@@ -386,18 +389,10 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
   CleanUpTilingsOnActiveLayer(seen_tilings);
 }
 
-void PictureLayerImpl::UpdateTilePriorities() {
-  TRACE_EVENT0("cc", "PictureLayerImpl::UpdateTilePriorities");
+void PictureLayerImpl::UpdateTiles() {
+  TRACE_EVENT0("cc", "PictureLayerImpl::UpdateTiles");
 
   DoPostCommitInitializationIfNeeded();
-  UpdateIdealScales();
-  // TODO(sohanjg): Avoid needlessly update priorities when syncing to a
-  // non-updated tree which will then be updated immediately afterwards.
-  should_update_tile_priorities_ = true;
-  if (CanHaveTilings()) {
-    ManageTilings(draw_properties().screen_space_transform_is_animating,
-                  draw_properties().maximum_animation_contents_scale);
-  }
 
   if (layer_tree_impl()->device_viewport_valid_for_tile_management()) {
     visible_rect_for_tile_priority_ = visible_content_rect();
@@ -405,8 +400,45 @@ void PictureLayerImpl::UpdateTilePriorities() {
     screen_space_transform_for_tile_priority_ = screen_space_transform();
   }
 
-  if (!tilings_->num_tilings())
+  if (!CanHaveTilings()) {
+    ideal_page_scale_ = 0.f;
+    ideal_device_scale_ = 0.f;
+    ideal_contents_scale_ = 0.f;
+    ideal_source_scale_ = 0.f;
+    SanityCheckTilingState();
     return;
+  }
+
+  UpdateIdealScales();
+
+  DCHECK(tilings_->num_tilings() > 0 || raster_contents_scale_ == 0.f)
+      << "A layer with no tilings shouldn't have valid raster scales";
+  if (!raster_contents_scale_ || ShouldAdjustRasterScale()) {
+    RecalculateRasterScales();
+    AddTilingsForRasterScale();
+  }
+
+  DCHECK(raster_page_scale_);
+  DCHECK(raster_device_scale_);
+  DCHECK(raster_source_scale_);
+  DCHECK(raster_contents_scale_);
+  DCHECK(low_res_raster_contents_scale_);
+
+  was_screen_space_transform_animating_ =
+      draw_properties().screen_space_transform_is_animating;
+
+  // TODO(sohanjg): Avoid needlessly update priorities when syncing to a
+  // non-updated tree which will then be updated immediately afterwards.
+  should_update_tile_priorities_ = true;
+
+  UpdateTilePriorities();
+
+  if (layer_tree_impl()->IsPendingTree())
+    MarkVisibleResourcesAsRequired();
+}
+
+void PictureLayerImpl::UpdateTilePriorities() {
+  TRACE_EVENT0("cc", "PictureLayerImpl::UpdateTilePriorities");
 
   double current_frame_time_in_seconds =
       (layer_tree_impl()->CurrentFrameTimeTicks() -
@@ -441,15 +473,14 @@ void PictureLayerImpl::UpdateTilePriorities() {
       visible_rect_in_content_space, 1.f / contents_scale_x());
   WhichTree tree =
       layer_tree_impl()->IsActiveTree() ? ACTIVE_TREE : PENDING_TREE;
-  // TODO(sohanjg): Passing MaximumContentsScale as layer contents scale
-  // in UpdateTilePriorities is wrong and should be ideal contents scale.
-  tilings_->UpdateTilePriorities(tree,
-                                 visible_layer_rect,
-                                 MaximumTilingContentsScale(),
-                                 current_frame_time_in_seconds);
-
-  if (layer_tree_impl()->IsPendingTree())
-    MarkVisibleResourcesAsRequired();
+  for (size_t i = 0; i < tilings_->num_tilings(); ++i) {
+    // TODO(sohanjg): Passing MaximumContentsScale as layer contents scale
+    // in UpdateTilePriorities is wrong and should be ideal contents scale.
+    tilings_->tiling_at(i)->UpdateTilePriorities(tree,
+                                                 visible_layer_rect,
+                                                 MaximumTilingContentsScale(),
+                                                 current_frame_time_in_seconds);
+  }
 
   // Tile priorities were modified.
   layer_tree_impl()->DidModifyTilePriorities();
@@ -716,7 +747,6 @@ ResourceProvider::ResourceId PictureLayerImpl::ContentsResourceId() const {
 
 void PictureLayerImpl::MarkVisibleResourcesAsRequired() const {
   DCHECK(layer_tree_impl()->IsPendingTree());
-  DCHECK(!layer_tree_impl()->needs_update_draw_properties());
   DCHECK(ideal_contents_scale_);
   DCHECK_GT(tilings_->num_tilings(), 0u);
 
@@ -930,38 +960,7 @@ inline float PositiveRatio(float float1, float float2) {
 
 }  // namespace
 
-void PictureLayerImpl::ManageTilings(bool animating_transform_to_screen,
-                                     float maximum_animation_contents_scale) {
-  DCHECK(ideal_contents_scale_);
-  DCHECK(ideal_page_scale_);
-  DCHECK(ideal_device_scale_);
-  DCHECK(ideal_source_scale_);
-  DCHECK(CanHaveTilings());
-  DCHECK(!needs_post_commit_initialization_);
-
-  bool change_target_tiling =
-      raster_page_scale_ == 0.f ||
-      raster_device_scale_ == 0.f ||
-      raster_source_scale_ == 0.f ||
-      raster_contents_scale_ == 0.f ||
-      low_res_raster_contents_scale_ == 0.f ||
-      ShouldAdjustRasterScale(animating_transform_to_screen);
-
-  if (tilings_->num_tilings() == 0) {
-    DCHECK(change_target_tiling)
-        << "A layer with no tilings shouldn't have valid raster scales";
-  }
-
-  if (change_target_tiling) {
-    RecalculateRasterScales(animating_transform_to_screen,
-                            maximum_animation_contents_scale);
-  }
-
-  was_animating_transform_to_screen_ = animating_transform_to_screen;
-
-  if (!change_target_tiling)
-    return;
-
+void PictureLayerImpl::AddTilingsForRasterScale() {
   PictureLayerTiling* high_res = NULL;
   PictureLayerTiling* low_res = NULL;
 
@@ -990,7 +989,8 @@ void PictureLayerImpl::ManageTilings(bool animating_transform_to_screen,
   // tiling during a pinch or a CSS animation.
   bool is_pinching = layer_tree_impl()->PinchGestureActive();
   if (layer_tree_impl()->create_low_res_tiling() && !is_pinching &&
-      !animating_transform_to_screen && !low_res && low_res != high_res)
+      !draw_properties().screen_space_transform_is_animating && !low_res &&
+      low_res != high_res)
     low_res = AddTiling(low_res_raster_contents_scale_);
 
   // Set low-res if we have one.
@@ -1005,9 +1005,9 @@ void PictureLayerImpl::ManageTilings(bool animating_transform_to_screen,
   SanityCheckTilingState();
 }
 
-bool PictureLayerImpl::ShouldAdjustRasterScale(
-    bool animating_transform_to_screen) const {
-  if (was_animating_transform_to_screen_ != animating_transform_to_screen)
+bool PictureLayerImpl::ShouldAdjustRasterScale() const {
+  if (was_screen_space_transform_animating_ !=
+      draw_properties().screen_space_transform_is_animating)
     return true;
 
   bool is_pinching = layer_tree_impl()->PinchGestureActive();
@@ -1033,7 +1033,8 @@ bool PictureLayerImpl::ShouldAdjustRasterScale(
 
   // When the source scale changes we want to match it, but not when animating
   // or when we've fixed the scale in place.
-  if (!animating_transform_to_screen && !raster_source_scale_is_fixed_ &&
+  if (!draw_properties().screen_space_transform_is_animating &&
+      !raster_source_scale_is_fixed_ &&
       raster_source_scale_ != ideal_source_scale_)
     return true;
 
@@ -1055,9 +1056,7 @@ float PictureLayerImpl::SnappedContentsScale(float scale) {
   return snapped_contents_scale;
 }
 
-void PictureLayerImpl::RecalculateRasterScales(
-    bool animating_transform_to_screen,
-    float maximum_animation_contents_scale) {
+void PictureLayerImpl::RecalculateRasterScales() {
   float old_raster_contents_scale = raster_contents_scale_;
   float old_raster_page_scale = raster_page_scale_;
   float old_raster_source_scale = raster_source_scale_;
@@ -1070,8 +1069,9 @@ void PictureLayerImpl::RecalculateRasterScales(
   // If we're not animating, or leaving an animation, and the
   // ideal_source_scale_ changes, then things are unpredictable, and we fix
   // the raster_source_scale_ in place.
-  if (old_raster_source_scale && !animating_transform_to_screen &&
-      !was_animating_transform_to_screen_ &&
+  if (old_raster_source_scale &&
+      !draw_properties().screen_space_transform_is_animating &&
+      !was_screen_space_transform_animating_ &&
       old_raster_source_scale != ideal_source_scale_)
     raster_source_scale_is_fixed_ = true;
 
@@ -1107,10 +1107,11 @@ void PictureLayerImpl::RecalculateRasterScales(
   // Since we're not re-rasterizing during animation, rasterize at the maximum
   // scale that will occur during the animation, if the maximum scale is
   // known.
-  if (animating_transform_to_screen) {
-    if (maximum_animation_contents_scale > 0.f) {
+  if (draw_properties().screen_space_transform_is_animating) {
+    if (draw_properties().maximum_animation_contents_scale > 0.f) {
       raster_contents_scale_ =
-          std::max(raster_contents_scale_, maximum_animation_contents_scale);
+          std::max(raster_contents_scale_,
+                   draw_properties().maximum_animation_contents_scale);
     } else {
       raster_contents_scale_ =
           std::max(raster_contents_scale_,
@@ -1149,7 +1150,7 @@ void PictureLayerImpl::CleanUpTilingsOnActiveLayer(
   float twin_low_res_scale = 0.f;
 
   PictureLayerImpl* twin = twin_layer_;
-  if (twin) {
+  if (twin && twin->CanHaveTilings()) {
     min_acceptable_high_res_scale = std::min(
         min_acceptable_high_res_scale,
         std::min(twin->raster_contents_scale_, twin->ideal_contents_scale_));
@@ -1272,14 +1273,7 @@ float PictureLayerImpl::MaximumTilingContentsScale() const {
 }
 
 void PictureLayerImpl::UpdateIdealScales() {
-  if (!CanHaveTilings()) {
-    ideal_page_scale_ = draw_properties().page_scale_factor;
-    ideal_device_scale_ = draw_properties().device_scale_factor;
-    ideal_contents_scale_ = draw_properties().ideal_contents_scale;
-    ideal_source_scale_ =
-        ideal_contents_scale_ / ideal_page_scale_ / ideal_device_scale_;
-    return;
-  }
+  DCHECK(CanHaveTilings());
 
   float min_contents_scale = MinimumContentsScale();
   DCHECK_GT(min_contents_scale, 0.f);

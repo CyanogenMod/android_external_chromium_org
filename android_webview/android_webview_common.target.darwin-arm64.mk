@@ -46,6 +46,7 @@ LOCAL_SRC_FILES := \
 	android_webview/browser/aw_request_interceptor.cc \
 	android_webview/browser/aw_resource_context.cc \
 	android_webview/browser/aw_web_preferences_populater.cc \
+	android_webview/browser/aw_web_resource_response.cc \
 	android_webview/browser/browser_view_renderer.cc \
 	android_webview/browser/deferred_gpu_command_service.cc \
 	android_webview/browser/find_helper.cc \
@@ -53,7 +54,6 @@ LOCAL_SRC_FILES := \
 	android_webview/browser/gpu_memory_buffer_factory_impl.cc \
 	android_webview/browser/hardware_renderer.cc \
 	android_webview/browser/icon_helper.cc \
-	android_webview/browser/intercepted_request_data.cc \
 	android_webview/browser/gl_view_renderer_manager.cc \
 	android_webview/browser/net/android_stream_reader_url_request_job.cc \
 	android_webview/browser/net/aw_network_delegate.cc \
@@ -139,6 +139,7 @@ MY_DEFS_Debug := \
 	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
 	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
 	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
+	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
 	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DLIBPEERCONNECTION_LIB=1' \
@@ -156,6 +157,7 @@ MY_DEFS_Debug := \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
 	'-DSK_SUPPORT_LEGACY_SETCONFIG' \
 	'-DSK_IGNORE_ETC1_SUPPORT' \
+	'-DSK_IGNORE_GPU_DITHER' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
@@ -287,6 +289,7 @@ MY_DEFS_Release := \
 	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
 	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
 	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
+	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
 	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DLIBPEERCONNECTION_LIB=1' \
@@ -304,6 +307,7 @@ MY_DEFS_Release := \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
 	'-DSK_SUPPORT_LEGACY_SETCONFIG' \
 	'-DSK_IGNORE_ETC1_SUPPORT' \
+	'-DSK_IGNORE_GPU_DITHER' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \

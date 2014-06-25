@@ -37,7 +37,7 @@ LOCAL_SRC_FILES := \
 	ui/gfx/geometry/rect.cc \
 	ui/gfx/geometry/rect_conversions.cc \
 	ui/gfx/geometry/rect_f.cc \
-	ui/gfx/geometry/r_tree.cc \
+	ui/gfx/geometry/r_tree_base.cc \
 	ui/gfx/geometry/size.cc \
 	ui/gfx/geometry/size_conversions.cc \
 	ui/gfx/geometry/size_f.cc \
@@ -100,6 +100,7 @@ MY_DEFS_Debug := \
 	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
 	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
 	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
+	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
 	'-DGFX_IMPLEMENTATION' \
 	'-DUSE_OPENSSL=1' \
@@ -189,6 +190,7 @@ MY_DEFS_Release := \
 	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
 	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
 	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
+	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
 	'-DGFX_IMPLEMENTATION' \
 	'-DUSE_OPENSSL=1' \

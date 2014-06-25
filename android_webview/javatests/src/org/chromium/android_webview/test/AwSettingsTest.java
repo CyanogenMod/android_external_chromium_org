@@ -21,9 +21,10 @@ import static org.chromium.base.test.util.ScalableTimeout.scaleTimeout;
 import org.apache.http.Header;
 import org.apache.http.HttpRequest;
 import org.chromium.android_webview.AwContents;
+import org.chromium.android_webview.AwContentsClient.ShouldInterceptRequestParams;
 import org.chromium.android_webview.AwSettings;
 import org.chromium.android_webview.AwSettings.LayoutAlgorithm;
-import org.chromium.android_webview.InterceptedRequestData;
+import org.chromium.android_webview.AwWebResourceResponse;
 import org.chromium.android_webview.test.util.CommonResources;
 import org.chromium.android_webview.test.util.ImagePageGenerator;
 import org.chromium.android_webview.test.util.VideoTestUtil;
@@ -1782,8 +1783,10 @@ public class AwSettingsTest extends AwTestBase {
                     views.getContainer1(), views.getClient1(), 1));
     }
 
-    @SmallTest
-    @Feature({"AndroidWebView", "Preferences"})
+    // @SmallTest
+    // @Feature({"AndroidWebView", "Preferences"})
+    // http://crbug.com/387101
+    @DisabledTest
     public void testBlockNetworkImagesDoesNotBlockDataUrlImage() throws Throwable {
         final TestAwContentsClient contentClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =
@@ -2568,8 +2571,9 @@ public class AwSettingsTest extends AwTestBase {
         final String DEFAULT_VIDEO_POSTER_URL = "http://default_video_poster/";
         TestAwContentsClient client = new TestAwContentsClient() {
             @Override
-            public InterceptedRequestData shouldInterceptRequest(String url) {
-                if (url.equals(DEFAULT_VIDEO_POSTER_URL)) {
+            public AwWebResourceResponse shouldInterceptRequest(
+                    ShouldInterceptRequestParams params) {
+                if (params.url.equals(DEFAULT_VIDEO_POSTER_URL)) {
                     videoPosterAccessedCallbackHelper.notifyCalled();
                 }
                 return null;

@@ -3,8 +3,7 @@
 include $(CLEAR_VARS)
 
 LOCAL_MODULE_CLASS := GYP
-LOCAL_MODULE := ui_android_ui_strings_grd_gyp
-LOCAL_MODULE_STEM := ui_strings_grd
+LOCAL_MODULE := ui_strings_grd
 LOCAL_MODULE_SUFFIX := .stamp
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_TARGET_ARCH := $(TARGET_$(GYP_VAR_PREFIX)ARCH)
@@ -133,11 +132,7 @@ LOCAL_ADDITIONAL_DEPENDENCIES := $(GYP_TARGET_DEPENDENCIES) $(GYP_GENERATED_OUTP
 ### Rules for final target.
 # Add target alias to "gyp_all_modules" target.
 .PHONY: gyp_all_modules
-gyp_all_modules: ui_android_ui_strings_grd_gyp
-
-# Alias gyp target name.
-.PHONY: ui_strings_grd
-ui_strings_grd: ui_android_ui_strings_grd_gyp
+gyp_all_modules: ui_strings_grd
 
 LOCAL_MODULE_PATH := $(PRODUCT_OUT)/gyp_stamp
 LOCAL_UNINSTALLABLE_MODULE := true

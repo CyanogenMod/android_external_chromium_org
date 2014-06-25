@@ -23,8 +23,8 @@ using base::StringPiece;
 using std::max;
 using std::min;
 using std::string;
-using testing::_;
 using testing::AnyNumber;
+using testing::_;
 
 namespace net {
 namespace test {
@@ -586,7 +586,12 @@ MockEntropyCalculator::~MockEntropyCalculator() {}
 QuicConfig DefaultQuicConfig() {
   QuicConfig config;
   config.SetDefaults();
-  config.SetInitialFlowControlWindowToSend(kInitialFlowControlWindowForTest);
+  config.SetInitialFlowControlWindowToSend(
+      kInitialSessionFlowControlWindowForTest);
+  config.SetInitialStreamFlowControlWindowToSend(
+      kInitialStreamFlowControlWindowForTest);
+  config.SetInitialSessionFlowControlWindowToSend(
+      kInitialSessionFlowControlWindowForTest);
   return config;
 }
 

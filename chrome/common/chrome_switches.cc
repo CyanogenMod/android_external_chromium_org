@@ -206,6 +206,9 @@ const char kDiagnosticsFormat[]             = "diagnostics-format";
 // Tells the diagnostics mode to do the requested recovery step(s).
 const char kDiagnosticsRecovery[]           = "diagnostics-recovery";
 
+// Disables the experimental Answers in Suggest feature.
+const char kDisableAnswersInSuggest[]       = "disable-answers-in-suggest";
+
 // Disables the experimental asynchronous DNS client.
 const char kDisableAsyncDns[]               = "disable-async-dns";
 
@@ -420,7 +423,7 @@ extern const char kEasyUnlockAppPath[]      = "easy-unlock-app-path";
 extern const char kEnableAccessRequestNotifications[] =
     "enable-access-request-notifications";
 
-// Enable Answers in Suggest.
+// Enables the experimental Answers in Suggest feature.
 const char kEnableAnswersInSuggest[]        = "enable-answers-in-suggest";
 
 // If set, the app list will be enabled as if enabled from CWS.
@@ -809,8 +812,13 @@ const char kLoadComponentExtension[]        = "load-component-extension";
 const char kLoadExtension[]                 = "load-extension";
 
 // Controls which version of the malware and phishing interstitials is shown.
-const char kMalwareInterstitialVersionV2[]  = "malware-interstitial-v2";
-const char kMalwareInterstitialVersionV3[]  = "malware-interstitial-v3";
+const char kMalwareInterstitialV2[]         = "malware-interstitial-v2";
+const char kMalwareInterstitialV3[]         = "malware-interstitial-v3";
+const char kMalwareInterstitialV3Advice[]   = "malware-interstitial-v3-advice";
+const char kMalwareInterstitialV3Social[]   = "malware-interstitial-v3-social";
+const char kMalwareInterstitialV3NotRecommend[] =
+    "malware-interstitial-v3-not-recommend";
+const char kMalwareInterstitialV3History[]  = "malware-interstitial-v3-history";
 
 // Makes Chrome default browser
 const char kMakeDefaultBrowser[]            = "make-default-browser";
@@ -831,10 +839,6 @@ const char kManualEnhancedBookmarksOptout[] =
 
 // Forces the maximum disk space to be used by the media cache, in bytes.
 const char kMediaCacheSize[]                = "media-cache-size";
-
-// Enables dynamic loading of the Memory Profiler DLL, which will trace all
-// memory allocations during the run.
-const char kMemoryProfiling[]               = "memory-profile";
 
 // Enables histograming of tasks served by MessageLoop. See
 // about:histograms/Loop for results, which show frequency of messages on each

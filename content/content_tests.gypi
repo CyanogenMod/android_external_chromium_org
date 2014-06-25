@@ -915,7 +915,7 @@
         }],
         ['use_ozone==1', {
           'dependencies': [
-            '../ui/gfx/ozone/gfx_ozone.gyp:gfx_ozone',
+            '../ui/ozone/ozone.gyp:ozone_base',
           ],
         }],
       ],
@@ -1102,6 +1102,8 @@
             'browser/gpu/compositor_util_browsertest.cc',
             'browser/gpu/gpu_ipc_browsertests.cc',
             'browser/indexed_db/indexed_db_browsertest.cc',
+            'browser/indexed_db/mock_browsertest_indexed_db_class_factory.cc',
+            'browser/indexed_db/mock_browsertest_indexed_db_class_factory.h',
             'browser/loader/resource_dispatcher_host_browsertest.cc',
             'browser/media/encrypted_media_browsertest.cc',
             'browser/media/media_browsertest.cc',

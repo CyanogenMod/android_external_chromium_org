@@ -39,6 +39,7 @@ LOCAL_SRC_FILES := \
 	google_apis/drive/request_util.cc \
 	google_apis/drive/task_util.cc \
 	google_apis/drive/time_util.cc \
+	google_apis/gaia/account_tracker.cc \
 	google_apis/gaia/gaia_auth_consumer.cc \
 	google_apis/gaia/gaia_auth_fetcher.cc \
 	google_apis/gaia/gaia_auth_util.cc \
@@ -123,6 +124,7 @@ MY_DEFS_Debug := \
 	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
 	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
 	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
+	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DLIBXML_STATIC' \
@@ -232,6 +234,7 @@ MY_DEFS_Release := \
 	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
 	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
 	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
+	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DLIBXML_STATIC' \

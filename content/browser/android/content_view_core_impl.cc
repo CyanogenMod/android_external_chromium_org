@@ -37,6 +37,7 @@
 #include "content/browser/screen_orientation/screen_orientation_dispatcher_host.h"
 #include "content/browser/ssl/ssl_host_state.h"
 #include "content/browser/web_contents/web_contents_view_android.h"
+#include "content/common/frame_messages.h"
 #include "content/common/input/web_input_event_traits.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
@@ -393,11 +394,8 @@ void ContentViewCoreImpl::UpdateFrameInfo(
     return;
 
   if (window_android_) {
-    gfx::Vector2dF window_offset(
-        Java_ContentViewCore_getLocationInWindowX(env, obj.obj()),
-        Java_ContentViewCore_getLocationInWindowY(env, obj.obj()));
     window_android_->set_content_offset(
-        gfx::ScaleVector2d(content_offset, dpi_scale_) + window_offset);
+        gfx::ScaleVector2d(content_offset, dpi_scale_));
   }
 
   Java_ContentViewCore_updateFrameInfo(
@@ -1210,6 +1208,16 @@ void ContentViewCoreImpl::ClearHistory(JNIEnv* env, jobject obj) {
     web_contents_->GetController().PruneAllButLastCommitted();
 }
 
+void ContentViewCoreImpl::AddStyleSheetByURL(
+    JNIEnv* env, jobject obj, jstring url) {
+  if (!web_contents_)
+    return;
+
+  web_contents_->GetMainFrame()->Send(new FrameMsg_AddStyleSheetByURL(
+      web_contents_->GetMainFrame()->GetRoutingID(),
+      ConvertJavaStringToUTF8(env, url)));
+}
+
 void ContentViewCoreImpl::SetAllowJavascriptInterfacesInspection(
     JNIEnv* env,
     jobject obj,
@@ -1570,6 +1578,23 @@ void ContentViewCoreImpl::SetBackgroundOpaque(JNIEnv* env, jobject jobj,
     jboolean opaque) {
   if (GetRenderWidgetHostViewAndroid())
     GetRenderWidgetHostViewAndroid()->SetBackgroundOpaque(opaque);
+}
+
+void ContentViewCoreImpl::RequestTextSurroundingSelection(
+    int max_length,
+    const base::Callback<
+        void(const base::string16& content, int start_offset, int end_offset)>&
+        callback) {
+  DCHECK(!callback.is_null());
+  RenderFrameHost* focused_frame = web_contents_->GetFocusedFrame();
+  if (!focused_frame)
+    return;
+  if (GetRenderWidgetHostViewAndroid()) {
+    GetRenderWidgetHostViewAndroid()->SetTextSurroundingSelectionCallback(
+        callback);
+    focused_frame->Send(new FrameMsg_TextSurroundingSelectionRequest(
+        focused_frame->GetRoutingID(), max_length));
+  }
 }
 
 void ContentViewCoreImpl::OnSmartClipDataExtracted(

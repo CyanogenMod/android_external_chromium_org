@@ -9,14 +9,16 @@
 #include "base/files/file_path.h"
 #include "base/path_service.h"
 #include "library_loaders/libeglplatform_shim.h"
-#include "ui/base/cursor/ozone/cursor_factory_ozone.h"
 #include "ui/events/ozone/device/device_manager.h"
 #include "ui/events/ozone/evdev/event_factory_evdev.h"
-#include "ui/gfx/ozone/impl/file_surface_factory.h"
-#include "ui/gfx/ozone/surface_ozone_egl.h"
 #include "ui/gfx/vsync_provider.h"
 #include "ui/ozone/ozone_platform.h"
 #include "ui/ozone/ozone_switches.h"
+#include "ui/ozone/platform/test/file_surface_factory.h"
+#include "ui/ozone/public/cursor_factory_ozone.h"
+#include "ui/ozone/public/gpu_platform_support.h"
+#include "ui/ozone/public/gpu_platform_support_host.h"
+#include "ui/ozone/public/surface_ozone_egl.h"
 
 #if defined(OS_CHROMEOS)
 #include "ui/ozone/common/chromeos/native_display_delegate_ozone.h"
@@ -47,7 +49,7 @@ std::string GetShimLibraryName() {
 //
 // This just manages the native window lifetime using
 // ShimGetNativeWindow & ShimReleaseNativeWindow.
-class SurfaceOzoneEgltest : public gfx::SurfaceOzoneEGL {
+class SurfaceOzoneEgltest : public SurfaceOzoneEGL {
  public:
   SurfaceOzoneEgltest(ShimNativeWindowId window_id,
                       LibeglplatformShimLoader* eglplatform_shim)
@@ -80,7 +82,7 @@ class SurfaceOzoneEgltest : public gfx::SurfaceOzoneEGL {
 // This finds the right EGL/GLES2 libraries for loading, and creates
 // a single native window via ShimCreateWindow for drawing
 // into.
-class SurfaceFactoryEgltest : public gfx::SurfaceFactoryOzone {
+class SurfaceFactoryEgltest : public ui::SurfaceFactoryOzone {
  public:
   SurfaceFactoryEgltest(LibeglplatformShimLoader* eglplatform_shim)
       : eglplatform_shim_(eglplatform_shim), window_id_(SHIM_NO_WINDOW_ID) {}
@@ -95,7 +97,7 @@ class SurfaceFactoryEgltest : public gfx::SurfaceFactoryOzone {
   virtual void ShutdownHardware() OVERRIDE;
   virtual intptr_t GetNativeDisplay() OVERRIDE;
   virtual gfx::AcceleratedWidget GetAcceleratedWidget() OVERRIDE;
-  virtual scoped_ptr<gfx::SurfaceOzoneEGL> CreateEGLSurfaceForWidget(
+  virtual scoped_ptr<SurfaceOzoneEGL> CreateEGLSurfaceForWidget(
       gfx::AcceleratedWidget widget) OVERRIDE;
   virtual const int32* GetEGLSurfaceProperties(
       const int32* desired_list) OVERRIDE;
@@ -138,10 +140,9 @@ gfx::AcceleratedWidget SurfaceFactoryEgltest::GetAcceleratedWidget() {
   return window_id_;
 }
 
-scoped_ptr<gfx::SurfaceOzoneEGL>
-SurfaceFactoryEgltest::CreateEGLSurfaceForWidget(
+scoped_ptr<SurfaceOzoneEGL> SurfaceFactoryEgltest::CreateEGLSurfaceForWidget(
     gfx::AcceleratedWidget widget) {
-  return make_scoped_ptr<gfx::SurfaceOzoneEGL>(
+  return make_scoped_ptr<SurfaceOzoneEGL>(
       new SurfaceOzoneEgltest(widget, eglplatform_shim_));
 }
 
@@ -236,7 +237,7 @@ class OzonePlatformEgltest : public OzonePlatform {
   }
 
   // OzonePlatform:
-  virtual gfx::SurfaceFactoryOzone* GetSurfaceFactoryOzone() OVERRIDE {
+  virtual ui::SurfaceFactoryOzone* GetSurfaceFactoryOzone() OVERRIDE {
     return surface_factory_ozone_.get();
   }
   virtual EventFactoryOzone* GetEventFactoryOzone() OVERRIDE {
@@ -244,6 +245,12 @@ class OzonePlatformEgltest : public OzonePlatform {
   }
   virtual CursorFactoryOzone* GetCursorFactoryOzone() OVERRIDE {
     return cursor_factory_ozone_.get();
+  }
+  virtual GpuPlatformSupport* GetGpuPlatformSupport() OVERRIDE {
+    return gpu_platform_support_.get();
+  }
+  virtual GpuPlatformSupportHost* GetGpuPlatformSupportHost() OVERRIDE {
+    return gpu_platform_support_host_.get();
   }
 
 #if defined(OS_CHROMEOS)
@@ -264,10 +271,12 @@ class OzonePlatformEgltest : public OzonePlatform {
     event_factory_ozone_.reset(
         new EventFactoryEvdev(NULL, device_manager_.get()));
     cursor_factory_ozone_.reset(new CursorFactoryOzone());
+    gpu_platform_support_host_.reset(CreateStubGpuPlatformSupportHost());
   }
 
   virtual void InitializeGPU() OVERRIDE {
     surface_factory_ozone_.reset(new SurfaceFactoryEgltest(&eglplatform_shim_));
+    gpu_platform_support_.reset(CreateStubGpuPlatformSupport());
   }
 
  private:
@@ -276,6 +285,8 @@ class OzonePlatformEgltest : public OzonePlatform {
   scoped_ptr<SurfaceFactoryEgltest> surface_factory_ozone_;
   scoped_ptr<EventFactoryEvdev> event_factory_ozone_;
   scoped_ptr<CursorFactoryOzone> cursor_factory_ozone_;
+  scoped_ptr<GpuPlatformSupport> gpu_platform_support_;
+  scoped_ptr<GpuPlatformSupportHost> gpu_platform_support_host_;
 
   bool shim_initialized_;
 

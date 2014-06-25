@@ -4,6 +4,7 @@
 
 #include "media/cast/transport/rtp_sender/rtp_sender.h"
 
+#include "base/big_endian.h"
 #include "base/logging.h"
 #include "base/rand_util.h"
 #include "media/cast/transport/cast_transport_defines.h"
@@ -75,7 +76,8 @@ void RtpSender::SendFrame(const EncodedFrame& frame) {
 
 void RtpSender::ResendPackets(
     const MissingFramesAndPacketsMap& missing_frames_and_packets,
-    bool cancel_rtx_if_not_in_list) {
+    bool cancel_rtx_if_not_in_list,
+    base::TimeDelta dedupe_window) {
   DCHECK(storage_);
   // Iterate over all frames in the list.
   for (MissingFramesAndPacketsMap::const_iterator it =
@@ -129,15 +131,18 @@ void RtpSender::ResendPackets(
         transport_->CancelSendingPacket(it->first);
       }
     }
-    transport_->ResendPackets(packets_to_resend);
+    transport_->ResendPackets(packets_to_resend, dedupe_window);
   }
 }
 
 void RtpSender::UpdateSequenceNumber(Packet* packet) {
-  uint16 new_sequence_number = packetizer_->NextSequenceNumber();
-  int index = 2;
-  (*packet)[index] = (static_cast<uint8>(new_sequence_number));
-  (*packet)[index + 1] = (static_cast<uint8>(new_sequence_number >> 8));
+  // TODO(miu): This is an abstraction violation.  This needs to be a part of
+  // the overall packet (de)serialization consolidation.
+  static const int kByteOffsetToSequenceNumber = 2;
+  base::BigEndianWriter big_endian_writer(
+      reinterpret_cast<char*>((&packet->front()) + kByteOffsetToSequenceNumber),
+      sizeof(uint16));
+  big_endian_writer.WriteU16(packetizer_->NextSequenceNumber());
 }
 
 }  // namespace transport

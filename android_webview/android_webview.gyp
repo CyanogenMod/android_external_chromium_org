@@ -154,6 +154,8 @@
         'browser/aw_result_codes.h',
         'browser/aw_web_preferences_populater.cc',
         'browser/aw_web_preferences_populater.h',
+        'browser/aw_web_resource_response.cc',
+        'browser/aw_web_resource_response.h',
         'browser/browser_view_renderer.cc',
         'browser/browser_view_renderer.h',
         'browser/browser_view_renderer_client.h',
@@ -171,8 +173,6 @@
         'browser/icon_helper.cc',
         'browser/icon_helper.h',
         'browser/input_stream.h',
-        'browser/intercepted_request_data.cc',
-        'browser/intercepted_request_data.h',
         'browser/jni_dependency_factory.h',
         'browser/gl_view_renderer_manager.cc',
         'browser/gl_view_renderer_manager.h',
@@ -266,12 +266,34 @@
      }, { # android_webview_build==1
       'targets': [
         {
-          'target_name': 'android_webview_strings',
+          'target_name': 'android_webview_jarjar_ui_resources',
+          'android_unmangled_name': 1,
+          'type': 'none',
+          'variables': {
+            'res_dir': '../ui/android/java/res',
+            'rules_file': '../android_webview/build/jarjar-rules.txt',
+          },
+          'includes': ['../android_webview/build/jarjar_resources.gypi'],
+        },
+        {
+          'target_name': 'android_webview_jarjar_content_resources',
+          'android_unmangled_name': 1,
+          'type': 'none',
+          'variables': {
+            'res_dir': '../content/public/android/java/res',
+            'rules_file': '../android_webview/build/jarjar-rules.txt',
+          },
+          'includes': ['../android_webview/build/jarjar_resources.gypi'],
+        },
+        {
+          'target_name': 'android_webview_resources',
           'type': 'none',
           'android_unmangled_name': 1,
           'dependencies': [
             '../content/content.gyp:content_strings_grd',
             '../ui/android/ui_android.gyp:ui_strings_grd',
+            'android_webview_jarjar_ui_resources',
+            'android_webview_jarjar_content_resources'
           ],
         },
       ],

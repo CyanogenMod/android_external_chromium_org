@@ -1533,6 +1533,10 @@ bool PrerenderManager::DoesRateLimitAllowPrerender(Origin origin) const {
   histograms_->RecordTimeBetweenPrerenderRequests(origin, elapsed_time);
   if (!config_.rate_limit_enabled)
     return true;
+  // The LocalPredictor may issue multiple prerenders simultaneously (if so
+  // configured), so no throttling.
+  if (origin == ORIGIN_LOCAL_PREDICTOR)
+    return true;
   return elapsed_time >=
       base::TimeDelta::FromMilliseconds(kMinTimeBetweenPrerendersMs);
 }
@@ -1624,21 +1628,6 @@ void PrerenderManager::RecordFinalStatusWithoutCreatingPrerenderContents(
       origin, experiment_id,
       PrerenderContents::MATCH_COMPLETE_DEFAULT,
       final_status);
-}
-
-bool PrerenderManager::IsEnabled() const {
-  DCHECK(CalledOnValidThread());
-  if (!enabled_)
-    return false;
-  for (std::list<const PrerenderCondition*>::const_iterator it =
-           prerender_conditions_.begin();
-       it != prerender_conditions_.end();
-       ++it) {
-    const PrerenderCondition* condition = *it;
-    if (!condition->CanPrerender())
-      return false;
-  }
-  return true;
 }
 
 void PrerenderManager::Observe(int type,
@@ -1874,6 +1863,21 @@ void PrerenderManager::RecordNetworkBytes(Origin origin,
   DCHECK_GE(recent_profile_bytes, 0);
   histograms_->RecordNetworkBytes(
       origin, used, prerender_bytes, recent_profile_bytes);
+}
+
+bool PrerenderManager::IsEnabled() const {
+  DCHECK(CalledOnValidThread());
+  if (!enabled_)
+    return false;
+  for (std::list<const PrerenderCondition*>::const_iterator it =
+           prerender_conditions_.begin();
+       it != prerender_conditions_.end();
+       ++it) {
+    const PrerenderCondition* condition = *it;
+    if (!condition->CanPrerender())
+      return false;
+  }
+  return true;
 }
 
 void PrerenderManager::AddProfileNetworkBytesIfEnabled(int64 bytes) {

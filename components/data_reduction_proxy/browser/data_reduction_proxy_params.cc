@@ -137,13 +137,6 @@ bool DataReductionProxyParams::Init(
     return false;
   }
 
-  if (allowed || alt_allowed) {
-    if (key_.empty()) {
-      DVLOG(1) << "Invalid key: <empty>";
-      return false;
-    }
-  }
-
   if (fallback_allowed_ && !allowed_) {
     DVLOG(1) << "The data reduction proxy fallback cannot be allowed if "
         << "the data reduction proxy is not allowed";
@@ -199,6 +192,8 @@ void DataReductionProxyParams::InitWithoutChecks() {
 
   std::string probe_url = command_line.GetSwitchValueASCII(
       switches::kDataReductionProxyProbeURL);
+  std::string warmup_url = command_line.GetSwitchValueASCII(
+      switches::kDataReductionProxyWarmupURL);
 
   // Set from preprocessor constants those params that are not specified on the
   // command line.
@@ -216,6 +211,8 @@ void DataReductionProxyParams::InitWithoutChecks() {
     alt_fallback_origin = GetDefaultAltFallbackOrigin();
   if (probe_url.empty())
     probe_url = GetDefaultProbeURL();
+  if (warmup_url.empty())
+    warmup_url = GetDefaultWarmupURL();
 
   origin_ = GURL(origin);
   fallback_origin_ = GURL(fallback_origin);
@@ -223,6 +220,7 @@ void DataReductionProxyParams::InitWithoutChecks() {
   alt_origin_ = GURL(alt_origin);
   alt_fallback_origin_ = GURL(alt_fallback_origin);
   probe_url_ = GURL(probe_url);
+  warmup_url_ = GURL(warmup_url);
 
 }
 
@@ -338,6 +336,13 @@ std::string DataReductionProxyParams::GetDefaultAltFallbackOrigin() const {
 std::string DataReductionProxyParams::GetDefaultProbeURL() const {
 #if defined(DATA_REDUCTION_PROXY_PROBE_URL)
   return DATA_REDUCTION_PROXY_PROBE_URL;
+#endif
+  return std::string();
+}
+
+std::string DataReductionProxyParams::GetDefaultWarmupURL() const {
+#if defined(DATA_REDUCTION_PROXY_WARMUP_URL)
+  return DATA_REDUCTION_PROXY_WARMUP_URL;
 #endif
   return std::string();
 }

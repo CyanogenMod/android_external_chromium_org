@@ -55,7 +55,6 @@
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/first_run/upgrade_util.h"
 #include "chrome/browser/google/google_search_counter.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/gpu/gl_string_manager.h"
 #include "chrome/browser/gpu/three_d_api_observer.h"
 #include "chrome/browser/jankometer.h"
@@ -105,6 +104,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/profiling.h"
 #include "chrome/installer/util/google_update_settings.h"
+#include "components/google/core/browser/google_util.h"
 #include "components/language_usage_metrics/language_usage_metrics.h"
 #include "components/metrics/metrics_service.h"
 #include "components/nacl/browser/nacl_browser.h"
@@ -165,6 +165,7 @@
 #include "base/win/windows_version.h"
 #include "chrome/browser/browser_util_win.h"
 #include "chrome/browser/chrome_browser_main_win.h"
+#include "chrome/browser/component_updater/sw_reporter_installer_win.h"
 #include "chrome/browser/first_run/try_chrome_dialog_view.h"
 #include "chrome/browser/first_run/upgrade_util_win.h"
 #include "chrome/browser/ui/network_profile_bubble.h"
@@ -405,6 +406,10 @@ void RegisterComponentsForUpdate(const CommandLine& command_line) {
 
 #if defined(CLD2_DYNAMIC_MODE) && defined(CLD2_IS_COMPONENT)
   RegisterCldComponent(cus);
+#endif
+
+#if defined(OS_WIN)
+  ExecutePendingSwReporter(cus, g_browser_process->local_state());
 #endif
 
   cus->Start();

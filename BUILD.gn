@@ -21,20 +21,8 @@ group("root") {
 
     "//apps/common/api:apps_api",
     "//cc",
-    "//chrome:resources",
-    "//components/favicon_base",
-    "//components/language_usage_metrics",
-    "//components/metrics",
-    "//components/navigation_metrics",
-    "//components/onc",
-    "//components/os_crypt",
-    "//components/query_parser",
-    "//components/resources:components_resources",
-    "//components/startup_metric_utils",
-    "//components/tracing",
-    "//components/translate:translate_core_browser",
-    "//components/translate:translate_core_common",
-    "//components/url_matcher",
+    "//chrome/common",
+    "//components:all_components",
     "//content",
     "//crypto",
     "//extensions/common/api:extensions_api",
@@ -58,6 +46,7 @@ group("root") {
     "//sql",
     "//third_party/angle:translator",
     "//third_party/brotli",
+    "//third_party/ffmpeg",
     "//third_party/flac",
     "//third_party/harfbuzz-ng",
     "//third_party/iccjpeg",
@@ -79,8 +68,8 @@ group("root") {
     "//third_party/smhasher:murmurhash3",
     "//third_party/smhasher:pmurhash",
     "//third_party/speex",
-    "//third_party/WebKit/public:blink_headers",
-    "//third_party/WebKit/Source/wtf",
+    "//third_party/WebKit/public:all_blink",
+    "//third_party/widevine/cdm:version_h",
     "//third_party/zlib",
     "//third_party:jpeg",
     "//tools/gn",
@@ -102,8 +91,7 @@ group("root") {
   ]
 
   if (!is_win) {
-    # TODO(brettw) re-enable once this compiles reliably.
-    #deps += [ "//breakpad:symupload" ]
+    deps += [ "//breakpad:symupload" ]
   }
 
   if (is_linux) {
@@ -135,6 +123,7 @@ group("root") {
   if (is_android) {
     deps -= [
       "//cc",
+      "//chrome/common",  # Blocked on content.
       "//content",
       "//extensions/common/api:extensions_api",
       "//pdf",  # Not compiled on Android in GYP yet, either.
@@ -150,12 +139,13 @@ group("root") {
 
       # Fails on Android for unknown reasons.
       "//third_party/flac",
+      "//breakpad:symupload",
 
       # TODO(brettw) make Blink work on Android.
-      "//third_party/WebKit/public:blink_headers",
-      "//third_party/WebKit/Source/wtf",
+      "//third_party/WebKit/public:all_blink",
 
       # Not tested on Android yet:
+      "//third_party/ffmpeg",
       "//webkit/browser:storage",
       "//webkit/child",
     ]

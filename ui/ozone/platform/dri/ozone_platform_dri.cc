@@ -62,7 +62,7 @@ class OzonePlatformDri : public OzonePlatform {
   virtual ~OzonePlatformDri() {}
 
   // OzonePlatform:
-  virtual gfx::SurfaceFactoryOzone* GetSurfaceFactoryOzone() OVERRIDE {
+  virtual ui::SurfaceFactoryOzone* GetSurfaceFactoryOzone() OVERRIDE {
     return surface_factory_ozone_.get();
   }
   virtual EventFactoryOzone* GetEventFactoryOzone() OVERRIDE {
@@ -70,6 +70,12 @@ class OzonePlatformDri : public OzonePlatform {
   }
   virtual CursorFactoryOzone* GetCursorFactoryOzone() OVERRIDE {
     return cursor_factory_ozone_.get();
+  }
+  virtual GpuPlatformSupport* GetGpuPlatformSupport() OVERRIDE {
+    return NULL;  // no GPU support
+  }
+  virtual GpuPlatformSupportHost* GetGpuPlatformSupportHost() OVERRIDE {
+    return NULL;  // no GPU support
   }
 #if defined(OS_CHROMEOS)
   virtual scoped_ptr<NativeDisplayDelegate> CreateNativeDisplayDelegate()

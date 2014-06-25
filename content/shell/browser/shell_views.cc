@@ -423,8 +423,8 @@ void Shell::PlatformInitialize(const gfx::Size& default_window_size) {
 #endif
 #if defined(OS_CHROMEOS)
   chromeos::DBusThreadManager::Initialize();
-  gfx::Screen::SetScreenInstance(
-      gfx::SCREEN_TYPE_NATIVE, aura::TestScreen::Create());
+  gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE,
+                                 aura::TestScreen::Create(gfx::Size()));
   wm_test_helper_ = new wm::WMTestHelper(default_window_size,
                                          GetContextFactory());
 #else
@@ -437,6 +437,7 @@ void Shell::PlatformInitialize(const gfx::Size& default_window_size) {
 void Shell::PlatformExit() {
 #if defined(OS_CHROMEOS)
   delete wm_test_helper_;
+  wm_test_helper_ = NULL;
 #endif
   delete views_delegate_;
   views_delegate_ = NULL;

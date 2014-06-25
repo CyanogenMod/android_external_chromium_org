@@ -43,6 +43,7 @@
 #include "content/renderer/input/input_handler_manager.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/render_frame_impl.h"
+#include "content/renderer/render_frame_proxy.h"
 #include "content/renderer/render_process.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
@@ -262,14 +263,12 @@ void RenderWidget::ScreenMetricsEmulator::Apply(
     applied_widget_rect_.set_height(original_size_.height());
 
   if (params_.fitToView && !original_size_.IsEmpty()) {
-    int width_with_gutter =
-        std::max(original_size_.width() - 2 * params_.viewInsets.width, 1);
-    int height_with_gutter =
-        std::max(original_size_.height() - 2 * params_.viewInsets.height, 1);
+    int original_width = std::max(original_size_.width(), 1);
+    int original_height = std::max(original_size_.height(), 1);
     float width_ratio =
-        static_cast<float>(applied_widget_rect_.width()) / width_with_gutter;
+        static_cast<float>(applied_widget_rect_.width()) / original_width;
     float height_ratio =
-        static_cast<float>(applied_widget_rect_.height()) / height_with_gutter;
+        static_cast<float>(applied_widget_rect_.height()) / original_height;
     float ratio = std::max(1.0f, std::max(width_ratio, height_ratio));
     scale_ = 1.f / ratio;
 
@@ -279,8 +278,8 @@ void RenderWidget::ScreenMetricsEmulator::Apply(
     offset_.set_y(
         (original_size_.height() - scale_ * applied_widget_rect_.height()) / 2);
   } else {
-    scale_ = 1.f;
-    offset_.SetPoint(0, 0);
+    scale_ = params_.scale;
+    offset_.SetPoint(params_.offset.x, params_.offset.y);
   }
 
   if (params_.screenPosition == WebDeviceEmulationParams::Desktop) {
@@ -1201,20 +1200,11 @@ void RenderWidget::didBecomeReadyForAdditionalInput() {
 }
 
 void RenderWidget::DidCommitCompositorFrame() {
-  FOR_EACH_OBSERVER(RenderFrameImpl, swapped_out_frames_,
+  FOR_EACH_OBSERVER(RenderFrameProxy, render_frame_proxies_,
                     DidCommitCompositorFrame());
 #if defined(VIDEO_HOLE)
-  // Not using FOR_EACH_OBSERVER because |swapped_out_frames_| and
-  // |video_hole_frames_| may have common frames.
-  if (!video_hole_frames_.might_have_observers())
-    return;
-  ObserverListBase<RenderFrameImpl>::Iterator iter(video_hole_frames_);
-  RenderFrameImpl* frame;
-  while ((frame = iter.GetNext()) != NULL) {
-    // Prevent duplicate notification of DidCommitCompositorFrame().
-    if (!swapped_out_frames_.HasObserver(frame))
-      frame->DidCommitCompositorFrame();
-  }
+  FOR_EACH_OBSERVER(RenderFrameImpl, video_hole_frames_,
+                    DidCommitCompositorFrame());
 #endif  // defined(VIDEO_HOLE)
 }
 
@@ -2050,12 +2040,12 @@ RenderWidget::CreateGraphicsContext3D() {
   return context.Pass();
 }
 
-void RenderWidget::RegisterSwappedOutChildFrame(RenderFrameImpl* frame) {
-  swapped_out_frames_.AddObserver(frame);
+void RenderWidget::RegisterRenderFrameProxy(RenderFrameProxy* proxy) {
+  render_frame_proxies_.AddObserver(proxy);
 }
 
-void RenderWidget::UnregisterSwappedOutChildFrame(RenderFrameImpl* frame) {
-  swapped_out_frames_.RemoveObserver(frame);
+void RenderWidget::UnregisterRenderFrameProxy(RenderFrameProxy* proxy) {
+  render_frame_proxies_.RemoveObserver(proxy);
 }
 
 void RenderWidget::RegisterRenderFrame(RenderFrameImpl* frame) {

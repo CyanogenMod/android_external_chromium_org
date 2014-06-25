@@ -408,6 +408,16 @@ const Experiment::Choice kExtensionContentVerificationChoices[] = {
     extensions::switches::kExtensionContentVerificationEnforceStrict },
 };
 
+#if defined(OS_ANDROID)
+const Experiment::Choice kAnswersInSuggestChoices[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
+  { IDS_GENERIC_EXPERIMENT_CHOICE_ENABLED,
+    switches::kEnableAnswersInSuggest, ""},
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED,
+    switches::kDisableAnswersInSuggest, ""}
+};
+#endif
+
 // Using independent flags (instead of flag=value flags) to be able to
 // associate the version with a FieldTrial. FieldTrials don't currently support
 // flag=value flags.
@@ -427,9 +437,17 @@ const Experiment::Choice kSSLInterstitialVersions[] = {
 const Experiment::Choice kMalwareInterstitialVersions[] = {
   { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
   { IDS_FLAGS_MALWARE_INTERSTITIAL_VERSION_V2,
-    switches::kMalwareInterstitialVersionV2, "" },
+    switches::kMalwareInterstitialV2, "" },
   { IDS_FLAGS_MALWARE_INTERSTITIAL_VERSION_V3,
-    switches::kMalwareInterstitialVersionV3, "" },
+    switches::kMalwareInterstitialV3, "" },
+  { IDS_FLAGS_MALWARE_INTERSTITIAL_VERSION_V3_ADVICE,
+    switches::kMalwareInterstitialV3Advice, "" },
+  { IDS_FLAGS_MALWARE_INTERSTITIAL_VERSION_V3_SOCIAL,
+    switches::kMalwareInterstitialV3Social, "" },
+  { IDS_FLAGS_MALWARE_INTERSTITIAL_VERSION_V3_NOTRECOMMEND,
+    switches::kMalwareInterstitialV3NotRecommend, "" },
+  { IDS_FLAGS_MALWARE_INTERSTITIAL_VERSION_V3_HISTORY,
+    switches::kMalwareInterstitialV3History, "" },
 };
 
 #if defined(OS_CHROMEOS)
@@ -1507,6 +1525,13 @@ const Experiment kExperiments[] = {
     kOsCrOS,
     SINGLE_VALUE_TYPE(app_list::switches::kDisableVoiceSearch)
   },
+  {
+    "enable-drive-apps-in-app-list",
+    IDS_FLAGS_ENABLE_DRIVE_APPS_IN_APP_LIST_NAME,
+    IDS_FLAGS_ENABLE_DRIVE_APPS_IN_APP_LIST_DESCRIPTION,
+    kOsDesktop,
+    SINGLE_VALUE_TYPE(app_list::switches::kEnableDriveAppsInAppList)
+  },
 #endif
 #if defined(OS_ANDROID)
   {
@@ -1901,11 +1926,11 @@ const Experiment kExperiments[] = {
   },
 #if defined(OS_ANDROID)
   {
-    "enable-answers-in-suggest",
+    "answers-in-suggest",
     IDS_FLAGS_ENABLE_ANSWERS_IN_SUGGEST_NAME,
     IDS_FLAGS_ENABLE_ANSWERS_IN_SUGGEST_DESCRIPTION,
     kOsAndroid,
-    SINGLE_VALUE_TYPE(switches::kEnableAnswersInSuggest)
+    MULTI_VALUE_TYPE(kAnswersInSuggestChoices)
   },
 #endif
   {

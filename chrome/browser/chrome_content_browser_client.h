@@ -76,10 +76,6 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       content::WebContents* opener_web_contents,
       content::BrowserPluginGuestDelegate** guest_delegate,
       scoped_ptr<base::DictionaryValue> extra_params) OVERRIDE;
-  virtual void GuestWebContentsAttached(
-      content::WebContents* guest_web_contents,
-      content::WebContents* embedder_web_contents,
-      const base::DictionaryValue& extra_params) OVERRIDE;
   virtual void RenderProcessWillLaunch(
       content::RenderProcessHost* host) OVERRIDE;
   virtual bool ShouldUseProcessPerSite(content::BrowserContext* browser_context,
@@ -286,7 +282,9 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   virtual bool IsPluginAllowedToCallRequestOSFileHandle(
       content::BrowserContext* browser_context,
       const GURL& url) OVERRIDE;
-  virtual bool IsPluginAllowedToUseDevChannelAPIs() OVERRIDE;
+  virtual bool IsPluginAllowedToUseDevChannelAPIs(
+      content::BrowserContext* browser_context,
+      const GURL& url) OVERRIDE;
   virtual net::CookieStore* OverrideCookieStoreForRenderProcess(
       int render_process_id) OVERRIDE;
 
@@ -316,6 +314,9 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   std::set<std::string> allowed_socket_origins_;
   // Set of origins that can get a handle for FileIO from NaCl.
   std::set<std::string> allowed_file_handle_origins_;
+  // Set of origins that can use "dev chanel" APIs from NaCl, even on stable
+  // versions of Chrome.
+  std::set<std::string> allowed_dev_channel_origins_;
 #endif
   scoped_ptr<extensions::BrowserPermissionsPolicyDelegate>
       permissions_policy_delegate_;

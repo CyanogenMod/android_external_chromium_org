@@ -166,6 +166,11 @@ GURL GetSearchResultPrefetchBaseURL(Profile* profile);
 // prefetch high-confidence search suggestions.
 bool ShouldPrefetchSearchResults();
 
+// Returns true if 'allow_prefetch_non_default_match' flag is enabled in field
+// trials to allow prefetching the suggestion marked to be prefetched by the
+// suggest server even if it is not the default match.
+bool ShouldAllowPrefetchNonDefaultMatch();
+
 // Returns true if 'prerender_instant_url_on_omnibox_focus' flag is enabled in
 // field trials to prerender Instant search base page when the omnibox is
 // focused.
@@ -283,6 +288,11 @@ bool GetBoolValueForFlagWithDefault(const std::string& flag,
 
 // Returns the Cacheable New Tab Page URL for the given |profile|.
 GURL GetNewTabPageURL(Profile* profile);
+
+// Returns true if 'use_alternate_instant_url' flag is set to true in field
+// trials to use an alternate Instant search base page URL for prefetching
+// search results. This allows experimentation of Instant search.
+bool ShouldUseAltInstantURL();
 
 }  // namespace chrome
 

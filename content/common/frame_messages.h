@@ -363,6 +363,10 @@ IPC_MESSAGE_ROUTED0(FrameMsg_DeleteProxy)
 IPC_MESSAGE_ROUTED1(FrameMsg_TextSurroundingSelectionRequest,
                     size_t /* max_length */)
 
+// Tells the renderer to insert a link to the specified stylesheet. This is
+// needed to support navigation transitions.
+IPC_MESSAGE_ROUTED1(FrameMsg_AddStyleSheetByURL, std::string)
+
 // -----------------------------------------------------------------------------
 // Messages sent from the renderer to the browser.
 
@@ -612,6 +616,10 @@ IPC_MESSAGE_ROUTED3(FrameHostMsg_MediaPlayingNotification,
 
 IPC_MESSAGE_ROUTED1(FrameHostMsg_MediaPausedNotification,
                     int64 /* player_cookie, distinguishes instances */)
+
+// Notify browser the brand color has been changed.
+IPC_MESSAGE_ROUTED1(FrameHostMsg_DidChangeBrandColor,
+                    SkColor /* brand_color */)
 
 // Response for FrameMsg_TextSurroundingSelectionRequest, |startOffset| and
 // |endOffset| are the offsets of the selection in the returned |content|.

@@ -292,20 +292,20 @@ void OpusAudioDecoder::Stop() {
   CloseDecoder();
 }
 
-OpusAudioDecoder::~OpusAudioDecoder() {}
+OpusAudioDecoder::~OpusAudioDecoder() {
+  DCHECK(!opus_decoder_);
+}
 
 void OpusAudioDecoder::DecodeBuffer(
     const scoped_refptr<DecoderBuffer>& input,
     const DecodeCB& decode_cb) {
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(!decode_cb.is_null());
-
-  DCHECK(input.get());
+  DCHECK(input);
 
   // Libopus does not buffer output. Decoding is complete when an end of stream
   // input buffer is received.
   if (input->end_of_stream()) {
-    output_cb_.Run(AudioBuffer::CreateEOSBuffer());
     decode_cb.Run(kOk);
     return;
   }

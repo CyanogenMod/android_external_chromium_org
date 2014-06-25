@@ -13,6 +13,8 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
+#include "chrome/browser/bitmap_fetcher/bitmap_fetcher_service.h"
+#include "chrome/browser/bitmap_fetcher/bitmap_fetcher_service_factory.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
@@ -29,6 +31,7 @@
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/common/pref_names.h"
 #include "components/autocomplete/url_prefix.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
 #include "components/metrics/proto/omnibox_input_type.pb.h"
 #include "components/sync_driver/sync_prefs.h"
 #include "components/url_fixer/url_fixer.h"
@@ -40,6 +43,8 @@
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "url/gurl.h"
+
+using metrics::OmniboxEventProto;
 
 namespace {
 
@@ -466,8 +471,7 @@ void BaseSearchProvider::SetDeletionURL(const std::string& deletion_url,
       TemplateURLServiceFactory::GetForProfile(profile_);
   if (!template_service)
     return;
-  GURL url = TemplateURLService::GenerateSearchURL(
-      template_service->GetDefaultSearchProvider(),
+  GURL url = template_service->GetDefaultSearchProvider()->GenerateSearchURL(
       template_service->search_terms_data());
   url = url.GetOrigin().Resolve(deletion_url);
   if (url.is_valid()) {
@@ -586,7 +590,7 @@ scoped_ptr<base::Value> BaseSearchProvider::DeserializeJsonData(
 bool BaseSearchProvider::ZeroSuggestEnabled(
     const GURL& suggest_url,
     const TemplateURL* template_url,
-    AutocompleteInput::PageClassification page_classification,
+    OmniboxEventProto::PageClassification page_classification,
     Profile* profile) {
   if (!OmniboxFieldTrial::InZeroSuggestFieldTrial())
     return false;
@@ -600,9 +604,9 @@ bool BaseSearchProvider::ZeroSuggestEnabled(
   // TODO(hfung): Experiment with showing MostVisited zero suggest on NTP
   // under the conditions described in crbug.com/305366.
   if ((page_classification ==
-       AutocompleteInput::INSTANT_NTP_WITH_FAKEBOX_AS_STARTING_FOCUS) ||
+       OmniboxEventProto::INSTANT_NTP_WITH_FAKEBOX_AS_STARTING_FOCUS) ||
       (page_classification ==
-       AutocompleteInput::INSTANT_NTP_WITH_OMNIBOX_AS_STARTING_FOCUS))
+       OmniboxEventProto::INSTANT_NTP_WITH_OMNIBOX_AS_STARTING_FOCUS))
     return false;
 
   // Don't run if there's no profile or in incognito mode.
@@ -631,7 +635,7 @@ bool BaseSearchProvider::CanSendURL(
     const GURL& current_page_url,
     const GURL& suggest_url,
     const TemplateURL* template_url,
-    AutocompleteInput::PageClassification page_classification,
+    OmniboxEventProto::PageClassification page_classification,
     Profile* profile) {
   if (!ZeroSuggestEnabled(suggest_url, template_url, page_classification,
                           profile))
@@ -924,6 +928,7 @@ bool BaseSearchProvider::ParseSuggestResults(const base::Value& root_val,
           const base::DictionaryValue* answer_json = NULL;
           if (suggestion_detail->GetDictionary("ansa", &answer_json)) {
             match_type = AutocompleteMatchType::SEARCH_SUGGEST_ANSWER;
+            PrefetchAnswersImages(answer_json);
             std::string contents;
             base::JSONWriter::Write(answer_json, &contents);
             answer_contents = base::UTF8ToUTF16(contents);
@@ -944,6 +949,33 @@ bool BaseSearchProvider::ParseSuggestResults(const base::Value& root_val,
   }
   SortResults(is_keyword_result, relevances, results);
   return true;
+}
+
+void BaseSearchProvider::PrefetchAnswersImages(
+    const base::DictionaryValue* answer_json) {
+  DCHECK(answer_json);
+  const base::ListValue* lines = NULL;
+  answer_json->GetList("l", &lines);
+  if (!lines || lines->GetSize() == 0)
+    return;
+
+  BitmapFetcherService* image_service =
+      BitmapFetcherServiceFactory::GetForBrowserContext(profile_);
+  DCHECK(image_service);
+
+  for (size_t line = 0; line < lines->GetSize(); ++line) {
+    const base::DictionaryValue* imageLine = NULL;
+    lines->GetDictionary(line, &imageLine);
+    if (!imageLine)
+      continue;
+    const base::DictionaryValue* imageData = NULL;
+    imageLine->GetDictionary("i", &imageData);
+    if (!imageData)
+      continue;
+    std::string imageUrl;
+    imageData->GetString("d", &imageUrl);
+    image_service->Prefetch(GURL(imageUrl));
+  }
 }
 
 void BaseSearchProvider::SortResults(bool is_keyword,

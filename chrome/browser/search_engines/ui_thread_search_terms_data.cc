@@ -11,14 +11,16 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/google/google_brand.h"
 #include "chrome/browser/google/google_profile_helper.h"
-#include "chrome/browser/google/google_util.h"
+#include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/sync/glue/device_info.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
+#include "components/google/core/browser/google_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "sync/protocol/sync.pb.h"
 #include "url/gurl.h"
@@ -114,12 +116,8 @@ std::string UIThreadSearchTermsData::GetSuggestRequestIdentifier() const {
   sync_pb::SyncEnums::DeviceType device_type =
       browser_sync::DeviceInfo::GetLocalDeviceType();
   if (device_type == sync_pb::SyncEnums_DeviceType_TYPE_PHONE) {
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kEnableAnswersInSuggest)) {
-      return "chrome-mobile-ext-ansg";
-    } else {
-      return "chrome-mobile-ext";
-    }
+    return OmniboxFieldTrial::EnableAnswersInSuggest() ?
+        "chrome-mobile-ext-ansg" : "chrome-mobile-ext";
   }
   return "chrome-ext";
 #else
@@ -144,6 +142,24 @@ std::string UIThreadSearchTermsData::NTPIsThemedParam() const {
 #endif  // defined(ENABLE_THEMES)
 
   return std::string();
+}
+
+// It's acutally OK to call this method on any thread, but it's currently placed
+// in UIThreadSearchTermsData since SearchTermsData cannot depend on
+// VersionInfo.
+std::string UIThreadSearchTermsData::GoogleImageSearchSource() const {
+  chrome::VersionInfo version_info;
+  if (version_info.is_valid()) {
+    std::string version(version_info.Name() + " " + version_info.Version());
+    if (version_info.IsOfficialBuild())
+      version += " (Official)";
+    version += " " + version_info.OSType();
+    std::string modifier(version_info.GetVersionStringModifier());
+    if (!modifier.empty())
+      version += " " + modifier;
+    return version;
+  }
+  return "unknown";
 }
 
 // static

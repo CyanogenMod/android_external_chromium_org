@@ -12,6 +12,7 @@
 #include "base/debug/trace_event.h"
 #include "base/file_util.h"
 #include "base/hash.h"
+#include "base/metrics/field_trial.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
 #include "base/strings/string_util.h"
@@ -28,6 +29,7 @@
 #include "sandbox/win/src/sandbox.h"
 #include "sandbox/win/src/sandbox_nt_util.h"
 #include "sandbox/win/src/win_utils.h"
+#include "ui/gfx/win/dpi.h"
 
 static sandbox::BrokerServices* g_broker_services = NULL;
 static sandbox::TargetServices* g_target_services = NULL;
@@ -564,11 +566,33 @@ bool InitTargetServices(sandbox::TargetServices* target_services) {
 bool ShouldUseDirectWrite() {
   // If the flag is currently on, and we're on Win7 or above, we enable
   // DirectWrite. Skia does not require the additions to DirectWrite in QFE
-  // 2670838, so a Win7 check is sufficient. We do not currently attempt to
-  // support Vista, where SP2 and the Platform Update are required.
+  // 2670838, but a simple 'better than XP' check is not enough.
+  if (base::win::GetVersion() < base::win::VERSION_WIN7)
+    return false;
+
+  base::win::OSInfo::VersionNumber os_version =
+      base::win::OSInfo::GetInstance()->version_number();
+  if ((os_version.major == 6) && (os_version.minor == 1)) {
+    // We can't use DirectWrite for pre-release versions of Windows 7.
+    if (os_version.build < 7600)
+      return false;
+  }
+
+  // If forced off, don't use it.
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  return !command_line.HasSwitch(switches::kDisableDirectWrite) &&
-         base::win::GetVersion() >= base::win::VERSION_WIN7;
+  if (command_line.HasSwitch(switches::kDisableDirectWrite))
+    return false;
+
+#if !defined(NACL_WIN64)
+  // Can't use GDI on HiDPI.
+  if (gfx::GetDPIScale() > 1.0f)
+    return true;
+#endif
+
+  // Otherwise, check the field trial.
+  const std::string group_name =
+      base::FieldTrialList::FindFullName("DirectWrite");
+  return group_name != "Disabled";
 }
 
 base::ProcessHandle StartSandboxedProcess(

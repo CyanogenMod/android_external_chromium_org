@@ -589,6 +589,13 @@ TEST_F(SearchTest, GetInstantURL) {
   // Disable suggest. No Instant URL.
   profile()->GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, false);
   EXPECT_EQ(GURL(), GetInstantURL(profile(), kDisableStartMargin, false));
+
+  // Use alternate Instant search base URL.
+  profile()->GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, true);
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 espv:8 use_alternate_instant_url:1"));
+  EXPECT_EQ(GURL("https://foo.com/search?foo=foo&qbp=1#foo=foo&strk"),
+            GetInstantURL(profile(), kDisableStartMargin, false));
 }
 
 TEST_F(SearchTest, StartMarginCGI) {
@@ -689,6 +696,53 @@ TEST_F(SearchTest, ShouldPrefetchSearchResults_EnabledViaFieldTrial) {
   EXPECT_EQ(80ul, EmbeddedSearchPageVersion());
 }
 
+TEST_F(SearchTest, ShouldPrefetchSearchResults_EnabledViaCommandLine) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kPrefetchSearchResults);
+  // Command-line enable should override Finch.
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 espv:80 prefetch_results:0"));
+  EXPECT_TRUE(ShouldPrefetchSearchResults());
+  EXPECT_EQ(80ul, EmbeddedSearchPageVersion());
+}
+
+TEST_F(SearchTest,
+       ShouldAllowPrefetchNonDefaultMatch_PrefetchResultsFlagDisabled) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch",
+      "Group1 espv:80 prefetch_results:0 allow_prefetch_non_default_match:1"));
+  EXPECT_FALSE(ShouldAllowPrefetchNonDefaultMatch());
+  EXPECT_EQ(80ul, EmbeddedSearchPageVersion());
+}
+
+TEST_F(SearchTest, ShouldAllowPrefetchNonDefaultMatch_DisabledViaFieldTrial) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch",
+      "Group1 espv:89 prefetch_results:1 allow_prefetch_non_default_match:0"));
+  EXPECT_FALSE(ShouldAllowPrefetchNonDefaultMatch());
+  EXPECT_EQ(89ul, EmbeddedSearchPageVersion());
+}
+
+TEST_F(SearchTest, ShouldAllowPrefetchNonDefaultMatch_EnabledViaFieldTrial) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch",
+      "Group1 espv:80 prefetch_results:1 allow_prefetch_non_default_match:1"));
+  EXPECT_TRUE(ShouldAllowPrefetchNonDefaultMatch());
+  EXPECT_EQ(80ul, EmbeddedSearchPageVersion());
+}
+
+TEST_F(SearchTest, ShouldUseAltInstantURL_DisabledViaFieldTrial) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 espv:8 use_alternate_instant_url:0"));
+  EXPECT_FALSE(ShouldUseAltInstantURL());
+}
+
+TEST_F(SearchTest, ShouldUseAltInstantURL_EnabledViaFieldTrial) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 espv:8 use_alternate_instant_url:1"));
+  EXPECT_TRUE(ShouldUseAltInstantURL());
+}
+
 TEST_F(SearchTest,
        ShouldPrerenderInstantUrlOnOmniboxFocus_PrefetchResultsFlagDisabled) {
   ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
@@ -716,17 +770,6 @@ TEST_F(SearchTest,
       "Group1 espv:80 prefetch_results:1 "
       "prerender_instant_url_on_omnibox_focus:1"));
   EXPECT_TRUE(ShouldPrerenderInstantUrlOnOmniboxFocus());
-  EXPECT_EQ(80ul, EmbeddedSearchPageVersion());
-}
-
-TEST_F(SearchTest, ShouldPrefetchSearchResults_EnabledViaCommandLine) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kPrefetchSearchResults);
-  // Command-line enable should override Finch.
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "EmbeddedSearch",
-      "Group1 espv:80 prefetch_results:0"));
-  EXPECT_TRUE(ShouldPrefetchSearchResults());
   EXPECT_EQ(80ul, EmbeddedSearchPageVersion());
 }
 

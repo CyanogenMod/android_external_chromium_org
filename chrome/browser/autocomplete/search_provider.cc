@@ -24,7 +24,6 @@
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
 #include "chrome/browser/autocomplete/keyword_provider.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/in_memory_database.h"
@@ -39,6 +38,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "components/autocomplete/url_prefix.h"
+#include "components/google/core/browser/google_util.h"
 #include "components/metrics/proto/omnibox_input_type.pb.h"
 #include "content/public/browser/user_metrics.h"
 #include "grit/generated_resources.h"
@@ -163,7 +163,7 @@ void SearchProvider::UpdateMatchContentsClass(const base::string16& input_text,
 
 // static
 int SearchProvider::CalculateRelevanceForKeywordVerbatim(
-    AutocompleteInput::Type type,
+    metrics::OmniboxInputType::Type type,
     bool prefer_keyword) {
   // This function is responsible for scoring verbatim query matches
   // for non-extension keywords.  KeywordProvider::CalculateRelevance()
@@ -647,8 +647,7 @@ net::URLFetcher* SearchProvider::CreateSuggestFetcher(
   search_term_args.input_type = input.type();
   search_term_args.cursor_position = input.cursor_position();
   search_term_args.page_classification = input.current_page_classification();
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableAnswersInSuggest))
+  if (OmniboxFieldTrial::EnableAnswersInSuggest())
     search_term_args.session_token = GetSessionToken();
   GURL suggest_url(template_url->suggestions_url_ref().ReplaceSearchTerms(
       search_term_args,

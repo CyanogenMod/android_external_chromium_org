@@ -109,12 +109,15 @@ AppListMainView::AppListMainView(AppListViewDelegate* delegate,
 }
 
 void AppListMainView::AddContentsViews() {
-  contents_view_ = new ContentsView(this, model_, delegate_);
-  AddChildView(contents_view_);
+  contents_view_ = new ContentsView(this);
   if (app_list::switches::IsExperimentalAppListEnabled()) {
     contents_switcher_view_ = new ContentsSwitcherView(contents_view_);
-    AddChildView(contents_switcher_view_);
+    contents_view_->set_contents_switcher_view(contents_switcher_view_);
   }
+  contents_view_->InitNamedPages(model_, delegate_);
+  AddChildView(contents_view_);
+  if (contents_switcher_view_)
+    AddChildView(contents_switcher_view_);
 
   search_box_view_->set_contents_view(contents_view_);
 
@@ -174,15 +177,19 @@ void AppListMainView::ModelChanged() {
 }
 
 void AppListMainView::UpdateSearchBoxVisibility() {
-  search_box_view_->SetVisible(
+  bool visible =
       !contents_view_->IsNamedPageActive(ContentsView::NAMED_PAGE_START) ||
-      contents_view_->IsShowingSearchResults());
+      contents_view_->IsShowingSearchResults();
+  search_box_view_->SetVisible(visible);
+  if (visible)
+    search_box_view_->search_box()->RequestFocus();
 }
 
-void AppListMainView::OnStartPageSearchButtonPressed() {
+void AppListMainView::OnStartPageSearchTextfieldChanged(
+    const base::string16& new_contents) {
   search_box_view_->SetVisible(true);
-  search_box_view_->search_box()->SetText(base::string16());
-  search_box_view_->RequestFocus();
+  search_box_view_->search_box()->SetText(new_contents);
+  search_box_view_->search_box()->RequestFocus();
 }
 
 void AppListMainView::SetDragAndDropHostOfCurrentAppList(

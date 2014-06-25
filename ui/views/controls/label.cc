@@ -321,11 +321,6 @@ void Label::PaintText(gfx::Canvas* canvas,
   } else {
     canvas->DrawStringRectWithShadows(text, font_list_, color, text_bounds,
                                       line_height_, flags, shadows_);
-
-    if (SkColorGetA(halo_color_) != SK_AlphaTRANSPARENT) {
-      canvas->DrawStringRectWithHalo(text, font_list_, color, halo_color_,
-                                     text_bounds, flags);
-    }
   }
 
   if (HasFocus()) {
@@ -352,6 +347,8 @@ gfx::Size Label::GetTextSize() const {
     gfx::Canvas::SizeStringInt(
         layout_text(), font_list_, &w, &h, line_height_, flags);
     text_size_.SetSize(w, h);
+    const gfx::Insets shadow_margin = -gfx::ShadowValue::GetMargin(shadows_);
+    text_size_.Enlarge(shadow_margin.width(), shadow_margin.height());
     text_size_valid_ = true;
   }
 
@@ -383,6 +380,7 @@ void Label::OnNativeThemeChanged(const ui::NativeTheme* theme) {
 void Label::Init(const base::string16& text, const gfx::FontList& font_list) {
   font_list_ = font_list;
   enabled_color_set_ = disabled_color_set_ = background_color_set_ = false;
+  subpixel_rendering_enabled_ = true;
   auto_color_readability_ = true;
   UpdateColorsFromTheme(ui::NativeTheme::instance());
   horizontal_alignment_ = gfx::ALIGN_CENTER;
@@ -393,7 +391,6 @@ void Label::Init(const base::string16& text, const gfx::FontList& font_list) {
   elide_behavior_ = gfx::ELIDE_TAIL;
   collapse_when_hidden_ = false;
   directionality_mode_ = gfx::DIRECTIONALITY_FROM_UI;
-  halo_color_ = SK_ColorTRANSPARENT;
   cached_heights_.resize(kCachedSizeLimit);
   ResetCachedSize();
 
@@ -439,7 +436,7 @@ int Label::ComputeDrawStringFlags() const {
   int flags = 0;
 
   // We can't use subpixel rendering if the background is non-opaque.
-  if (SkColorGetA(background_color_) != 0xFF)
+  if (SkColorGetA(background_color_) != 0xFF || !subpixel_rendering_enabled_)
     flags |= gfx::Canvas::NO_SUBPIXEL_RENDERING;
 
   if (directionality_mode_ == gfx::DIRECTIONALITY_FORCE_LTR) {

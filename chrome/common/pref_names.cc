@@ -311,6 +311,10 @@ const char kSafeBrowsingReportingEnabled[] =
 const char kSafeBrowsingProceedAnywayDisabled[] =
     "safebrowsing.proceed_anyway_disabled";
 
+// Boolean that is true when SafeBrowsing has sent an incident report.
+const char kSafeBrowsingIncidentReportSent[] =
+    "safebrowsing.incident_report_sent";
+
 // Enum that specifies whether Incognito mode is:
 // 0 - Enabled. Default behaviour. Default mode is available on demand.
 // 1 - Disabled. Used cannot browse pages in Incognito mode.
@@ -503,7 +507,16 @@ const char kMultipleProfilePrefMigration[] =
 // of web pages, and resource prefetching.
 // NOTE: The "dns_prefetching.enabled" value is used so that historical user
 // preferences are not lost.
+// TODO(bnc): Remove kNetworkPredictionEnabled once kAllowNetworkPrediction is
+// functioning as per crbug.com/334602.
 const char kNetworkPredictionEnabled[] = "dns_prefetching.enabled";
+
+// A preference of enum chrome_browser_net::NetworkPredictionOptions shows
+// if prediction of network actions is allowed, depending on network type.
+// Actions include DNS prefetching, TCP and SSL preconnection, prerendering
+// of web pages, and resource prefetching.
+// TODO(bnc): Implement this preference as per crbug.com/334602.
+const char kAllowNetworkPrediction[] = "net.allow_network_prediction";
 
 // An integer representing the state of the default apps installation process.
 // This value is persisted in the profile's user preferences because the process
@@ -884,6 +897,10 @@ const char kCurrentWallpaperAppName[] = "wallpaper.app.name";
 // List of mounted file systems via the File System Provider API. Used to
 // restore them after a reboot.
 const char kFileSystemProviderMounted[] = "file_system_provider.mounted";
+
+// A boolean pref set to true if the virtual keyboard should be enabled.
+const char kTouchVirtualKeyboardEnabled[] = "ui.touch_virtual_keyboard_enabled";
+
 #endif  // defined(OS_CHROMEOS)
 
 // The disabled messages in IPC logging.
@@ -1134,6 +1151,9 @@ const char kMediaDeviceIdSalt[] = "media.device_id_salt";
 
 // Preference to disable 3D APIs (WebGL, Pepper 3D).
 const char kDisable3DAPIs[] = "disable_3d_apis";
+
+const char kEnableDeprecatedWebPlatformFeatures[] =
+    "enable_deprecated_web_platform_features";
 
 // Whether to enable hyperlink auditing ("<a ping>").
 const char kEnableHyperlinkAuditing[] = "enable_a_ping";
@@ -1859,6 +1879,11 @@ const char kHotwordSearchEnabled[] = "hotword.search_enabled_2";
 // seconds of audio data before is sent back to improve voice search.
 const char kHotwordAudioLoggingEnabled[] = "hotword.audio_logging_enabled";
 
+// A string holding the locale information under which Hotword was installed.
+// It is used for comparison since the hotword voice search trigger must be
+// reinstalled to handle a new language.
+const char kHotwordPreviousLanguage[] = "hotword.previous_language";
+
 #if defined(OS_ANDROID)
 // Boolean that controls the global enabled-state of protected media identifier.
 const char kProtectedMediaIdentifierEnabled[] =
@@ -2199,6 +2224,13 @@ const char kComponentUpdaterState[] = "component_updater.state";
 const char kAttemptedToEnableAutoupdate[] =
     "browser.attempted_to_enable_autoupdate";
 
+#if defined(OS_WIN)
+// The number of attempts left to execute the SwReporter. This starts at the max
+// number of retries allowed, and goes down as attempts are made and is cleared
+// back to 0 when it successfully completes.
+const char kSwReporterExecuteTryCount[] = "software_reporter.execute_try_count";
+#endif
+
 // The next media gallery ID to assign.
 const char kMediaGalleriesUniqueId[] = "media_galleries.gallery_id";
 
@@ -2341,6 +2373,12 @@ const char kAppLauncherShortcutVersion[] = "apps.app_launcher.shortcut_version";
 
 // A boolean identifying if we should show the app launcher promo or not.
 const char kShowAppLauncherPromo[] = "app_launcher.show_promo";
+
+// A dictionary that tracks the Drive app to Chrome app mapping. The key is
+// a Drive app id and the value is the corresponding Chrome app id. The pref
+// is unsynable and used to track local mappings only.
+const char kAppLauncherDriveAppMapping[] =
+    "apps.app_launcher.drive_app_mapping";
 #endif
 
 // If set, the user requested to launch the app with this extension id while

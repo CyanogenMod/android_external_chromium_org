@@ -8,13 +8,13 @@
 #include "base/strings/string_number_conversions.h"
 #include "mojo/examples/window_manager/window_manager.mojom.h"
 #include "mojo/public/cpp/application/application.h"
-#include "mojo/services/navigation/navigation.mojom.h"
 #include "mojo/services/public/cpp/view_manager/node.h"
 #include "mojo/services/public/cpp/view_manager/node_observer.h"
 #include "mojo/services/public/cpp/view_manager/view.h"
 #include "mojo/services/public/cpp/view_manager/view_manager.h"
 #include "mojo/services/public/cpp/view_manager/view_manager_delegate.h"
 #include "mojo/services/public/cpp/view_manager/view_observer.h"
+#include "mojo/services/public/interfaces/navigation/navigation.mojom.h"
 #include "ui/events/event_constants.h"
 #include "url/gurl.h"
 #include "url/url_util.h"
@@ -49,9 +49,11 @@ class EmbeddedApp : public Application,
    public:
     explicit Navigator(EmbeddedApp* app) : app_(app) {}
    private:
-    virtual void Navigate(uint32 node_id,
-                          navigation::NavigationDetailsPtr details) OVERRIDE {
-      GURL url(details->url.To<std::string>());
+    virtual void Navigate(
+        uint32 node_id,
+        navigation::NavigationDetailsPtr navigation_details,
+        navigation::ResponseDetailsPtr response_details) OVERRIDE {
+      GURL url(navigation_details->url.To<std::string>());
       if (!url.is_valid()) {
         LOG(ERROR) << "URL is invalid.";
         return;

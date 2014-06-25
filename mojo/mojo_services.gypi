@@ -186,7 +186,7 @@
       'target_name': 'mojo_navigation_bindings',
       'type': 'static_library',
       'sources': [
-        'services/navigation/navigation.mojom',
+        'services/public/interfaces/navigation/navigation.mojom',
       ],
       'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'export_dependent_settings': [
@@ -194,6 +194,7 @@
       ],
       'dependencies': [
         'mojo_cpp_bindings',
+        'mojo_network_bindings',
       ],
     },
     {
@@ -257,7 +258,7 @@
       ],
       'dependencies': [
         'mojo_cpp_bindings',
-        'mojo_network_bindings',
+        'mojo_navigation_bindings',
       ],
     },
     {
@@ -265,6 +266,7 @@
       'type': 'shared_library',
       'dependencies': [
         '../base/base.gyp:base',
+        '../url/url.gyp:url_lib',
         'mojo_application',
         'mojo_cpp_bindings',
         'mojo_environment_chromium',
@@ -430,7 +432,7 @@
             '../ui/gl/gl.gyp:gl',
             '../webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
             'mojo_application',
-            'mojo_aura_support',
+            'mojo_cc_support',
             'mojo_common_lib',
             'mojo_environment_chromium',
             'mojo_geometry_bindings',
@@ -455,6 +457,8 @@
             'services/view_manager/root_view_manager.cc',
             'services/view_manager/root_view_manager.h',
             'services/view_manager/root_view_manager_delegate.h',
+            'services/view_manager/screen_impl.cc',
+            'services/view_manager/screen_impl.h',
             'services/view_manager/view.cc',
             'services/view_manager/view.h',
             'services/view_manager/view_manager_export.h',

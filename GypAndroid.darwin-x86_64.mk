@@ -8,8 +8,10 @@ GYP_HOST_VAR_PREFIX ?=
 GYP_HOST_MULTILIB ?=
 
 include $(LOCAL_PATH)/android_webview/android_webview_common.target.darwin-x86_64.mk
+include $(LOCAL_PATH)/android_webview/android_webview_jarjar_content_resources.target.darwin-x86_64.mk
+include $(LOCAL_PATH)/android_webview/android_webview_jarjar_ui_resources.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/android_webview/android_webview_pak.target.darwin-x86_64.mk
-include $(LOCAL_PATH)/android_webview/android_webview_strings.target.darwin-x86_64.mk
+include $(LOCAL_PATH)/android_webview/android_webview_resources.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/android_webview/libwebviewchromium.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/android_webview/native/android_webview_native_jni.target.darwin-x86_64.mk
 include $(LOCAL_PATH)/android_webview/native/cancellation_signal_android_jar_jni_headers.target.darwin-x86_64.mk

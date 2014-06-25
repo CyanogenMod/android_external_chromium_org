@@ -257,8 +257,6 @@ public class ContentViewCore
     private int mOverdrawBottomHeightPix;
     private int mViewportSizeOffsetWidthPix;
     private int mViewportSizeOffsetHeightPix;
-    private int mLocationInWindowX;
-    private int mLocationInWindowY;
 
     // Cached copy of all positions and scales as reported by the renderer.
     private final RenderCoordinates mRenderCoordinates;
@@ -1297,6 +1295,14 @@ public class ContentViewCore
         }
     }
 
+    /**
+     * Requests the renderer insert a link to the specified stylesheet in the
+     * main frame's document.
+     */
+    void addStyleSheetByURL(String url) {
+        nativeAddStyleSheetByURL(mNativeContentViewCore, url);
+    }
+
     /** Callback interface for evaluateJavaScript(). */
     public interface JavaScriptCallback {
         void handleJavaScriptResult(String jsonResult);
@@ -1491,15 +1497,6 @@ public class ContentViewCore
         }
 
         updateAfterSizeChanged();
-    }
-
-    /**
-     * Called when the ContentView's position in the activity window changed. This information is
-     * used for cropping screenshots.
-     */
-    public void onLocationInWindowChanged(int x, int y) {
-        mLocationInWindowX = x;
-        mLocationInWindowY = y;
     }
 
     /**
@@ -2996,16 +2993,6 @@ public class ContentViewCore
     }
 
     @CalledByNative
-    private int getLocationInWindowX() {
-        return mLocationInWindowX;
-    }
-
-    @CalledByNative
-    private int getLocationInWindowY() {
-        return mLocationInWindowY;
-    }
-
-    @CalledByNative
     private static Rect createRect(int x, int y, int right, int bottom) {
         return new Rect(x, y, right, bottom);
     }
@@ -3195,6 +3182,9 @@ public class ContentViewCore
     private native void nativeSelectWordAroundCaret(long nativeContentViewCoreImpl);
 
     private native void nativeClearHistory(long nativeContentViewCoreImpl);
+
+    private native void nativeAddStyleSheetByURL(long nativeContentViewCoreImpl,
+            String stylesheetUrl);
 
     private native void nativeEvaluateJavaScript(long nativeContentViewCoreImpl,
             String script, JavaScriptCallback callback, boolean startRenderer);

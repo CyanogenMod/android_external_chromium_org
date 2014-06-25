@@ -7,8 +7,10 @@ static_library("chromium") {
   output_name = "mojo_environment_chromium"
 
   sources = [
-    "default_async_waiter.cc",
     "environment.cc",
+    # TODO(vtl): This is kind of ugly. (See TODO in logging.h.)
+    "../public/cpp/environment/logging.h",
+    "../public/cpp/environment/lib/logging.cc",
   ]
 
   deps = [
@@ -29,6 +31,8 @@ component("chromium_impl") {
   sources = [
     "default_async_waiter_impl.cc",
     "default_async_waiter_impl.h",
+    "default_logger_impl.cc",
+    "default_logger_impl.h",
   ]
 
   defines = [

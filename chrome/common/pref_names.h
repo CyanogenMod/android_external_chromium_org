@@ -136,6 +136,7 @@ extern const char kSafeBrowsingExtendedReportingEnabled[];
 extern const char kSafeBrowsingDownloadFeedbackEnabled[];
 extern const char kSafeBrowsingReportingEnabled[];
 extern const char kSafeBrowsingProceedAnywayDisabled[];
+extern const char kSafeBrowsingIncidentReportSent[];
 extern const char kIncognitoModeAvailability[];
 extern const char kSearchSuggestEnabled[];
 #if defined(OS_ANDROID)
@@ -181,6 +182,7 @@ extern const char kLastPolicyCheckTime[];
 extern const char kInstantUIZeroSuggestUrlPrefix[];
 extern const char kMultipleProfilePrefMigration[];
 extern const char kNetworkPredictionEnabled[];
+extern const char kAllowNetworkPrediction[];
 extern const char kDefaultAppsInstallState[];
 extern const char kHideWebStoreIcon[];
 #if defined(OS_CHROMEOS)
@@ -279,6 +281,7 @@ extern const char kSAMLLastGAIASignInTime[];
 extern const char kTimeOnOobe[];
 extern const char kCurrentWallpaperAppName[];
 extern const char kFileSystemProviderMounted[];
+extern const char kTouchVirtualKeyboardEnabled[];
 #endif  // defined(OS_CHROMEOS)
 extern const char kIpcDisabledMessages[];
 extern const char kShowHomeButton[];
@@ -354,6 +357,7 @@ extern const char kAutofillDialogDefaults[];
 extern const char kPinnedTabs[];
 
 extern const char kDisable3DAPIs[];
+extern const char kEnableDeprecatedWebPlatformFeatures[];
 extern const char kEnableHyperlinkAuditing[];
 extern const char kEnableReferrers[];
 extern const char kEnableDoNotTrack[];
@@ -656,6 +660,7 @@ extern const char kVideoCaptureAllowedUrls[];
 
 extern const char kHotwordSearchEnabled[];
 extern const char kHotwordAudioLoggingEnabled[];
+extern const char kHotwordPreviousLanguage[];
 
 #if defined(OS_ANDROID)
 extern const char kProtectedMediaIdentifierEnabled[];
@@ -750,6 +755,10 @@ extern const char kRecoveryComponentVersion[];
 extern const char kComponentUpdaterState[];
 extern const char kAttemptedToEnableAutoupdate[];
 
+#if defined(OS_WIN)
+extern const char kSwReporterExecuteTryCount[];
+#endif
+
 extern const char kMediaGalleriesUniqueId[];
 extern const char kMediaGalleriesRememberedGalleries[];
 extern const char kMediaGalleriesLastScanTime[];
@@ -812,6 +821,7 @@ extern const char kAppListEnableTime[];
 extern const char kAppLauncherIsEnabled[];
 extern const char kAppLauncherShortcutVersion[];
 extern const char kShowAppLauncherPromo[];
+extern const char kAppLauncherDriveAppMapping[];
 #endif
 
 extern const char kAppLaunchForMetroRestart[];

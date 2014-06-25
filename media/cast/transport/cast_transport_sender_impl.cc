@@ -7,6 +7,7 @@
 #include "base/single_thread_task_runner.h"
 #include "media/cast/transport/cast_transport_config.h"
 #include "media/cast/transport/cast_transport_defines.h"
+#include "net/base/net_util.h"
 
 namespace media {
 namespace cast {
@@ -65,6 +66,11 @@ CastTransportSenderImpl::CastTransportSenderImpl(
                             raw_events_callback_interval,
                             this,
                             &CastTransportSenderImpl::SendRawEvents);
+  }
+  if (transport_) {
+    // The default DSCP value for cast is AF41. Which gives it a higher
+    // priority over other traffic.
+    transport_->SetDscp(net::DSCP_AF41);
   }
 }
 
@@ -178,15 +184,18 @@ void CastTransportSenderImpl::SendRtcpFromRtpSender(
 void CastTransportSenderImpl::ResendPackets(
     bool is_audio,
     const MissingFramesAndPacketsMap& missing_packets,
-    bool cancel_rtx_if_not_in_list) {
+    bool cancel_rtx_if_not_in_list,
+    base::TimeDelta dedupe_window) {
   if (is_audio) {
     DCHECK(audio_sender_) << "Audio sender uninitialized";
     audio_sender_->ResendPackets(missing_packets,
-                                 cancel_rtx_if_not_in_list);
+                                 cancel_rtx_if_not_in_list,
+                                 dedupe_window);
   } else {
     DCHECK(video_sender_) << "Video sender uninitialized";
     video_sender_->ResendPackets(missing_packets,
-                                 cancel_rtx_if_not_in_list);
+                                 cancel_rtx_if_not_in_list,
+                                 dedupe_window);
   }
 }
 

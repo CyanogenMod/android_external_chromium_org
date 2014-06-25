@@ -14,6 +14,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 using ::testing::_;
+using ::testing::AnyNumber;
 using ::testing::Assign;
 using ::testing::Invoke;
 using ::testing::NiceMock;
@@ -85,6 +86,7 @@ class VideoFrameStreamTest
     EXPECT_FALSE(is_initialized_);
   }
 
+  MOCK_METHOD1(OnNewSpliceBuffer, void(base::TimeDelta));
   MOCK_METHOD1(SetDecryptorReadyCallback, void(const media::DecryptorReadyCB&));
 
   void OnStatistics(const PipelineStatistics& statistics) {
@@ -177,6 +179,15 @@ class VideoFrameStreamTest
     do {
       ReadOneFrame();
     } while (!pending_read_);
+  }
+
+  void ReadAllFrames() {
+    do {
+      ReadOneFrame();
+    } while (frame_read_.get() && !frame_read_->end_of_stream());
+
+    const int total_num_frames = kNumConfigs * kNumBuffersInOneConfig;
+    DCHECK_EQ(num_decoded_frames_, total_num_frames);
   }
 
   enum PendingState {
@@ -371,12 +382,7 @@ TEST_P(VideoFrameStreamTest, ReadOneFrame) {
 
 TEST_P(VideoFrameStreamTest, ReadAllFrames) {
   Initialize();
-  do {
-    Read();
-  } while (frame_read_.get() && !frame_read_->end_of_stream());
-
-  const int total_num_frames = kNumConfigs * kNumBuffersInOneConfig;
-  DCHECK_EQ(num_decoded_frames_, total_num_frames);
+  ReadAllFrames();
 }
 
 TEST_P(VideoFrameStreamTest, Read_AfterReset) {
@@ -528,12 +534,41 @@ TEST_P(VideoFrameStreamTest, Reset_AfterNormalRead) {
   Read();
 }
 
+TEST_P(VideoFrameStreamTest, Reset_AfterNormalReadWithActiveSplice) {
+  video_frame_stream_->set_splice_observer(base::Bind(
+      &VideoFrameStreamTest::OnNewSpliceBuffer, base::Unretained(this)));
+  Initialize();
+
+  // Send buffers with a splice timestamp, which sets the active splice flag.
+  const base::TimeDelta splice_timestamp = base::TimeDelta();
+  demuxer_stream_->set_splice_timestamp(splice_timestamp);
+  EXPECT_CALL(*this, OnNewSpliceBuffer(splice_timestamp)).Times(AnyNumber());
+  Read();
+
+  // Issue an explicit Reset() and clear the splice timestamp.
+  Reset();
+  demuxer_stream_->set_splice_timestamp(kNoTimestamp());
+
+  // Ensure none of the upcoming calls indicate they have a splice timestamp.
+  EXPECT_CALL(*this, OnNewSpliceBuffer(_)).Times(0);
+  Read();
+}
+
 TEST_P(VideoFrameStreamTest, Reset_AfterDemuxerRead_ConfigChange) {
   Initialize();
   EnterPendingState(DEMUXER_READ_CONFIG_CHANGE);
   SatisfyPendingCallback(DEMUXER_READ_CONFIG_CHANGE);
   Reset();
   Read();
+}
+
+TEST_P(VideoFrameStreamTest, Reset_AfterEndOfStream) {
+  Initialize();
+  ReadAllFrames();
+  Reset();
+  num_decoded_frames_ = 0;
+  demuxer_stream_->SeekToStart();
+  ReadAllFrames();
 }
 
 TEST_P(VideoFrameStreamTest, Reset_DuringNoKeyRead) {

@@ -159,12 +159,11 @@ void DeviceLocalAccountPolicyServiceTestBase::CreatePolicyService() {
       &device_settings_test_helper_,
       &device_settings_service_,
       &cros_settings_,
-      loop_.message_loop_proxy(),
+      base::MessageLoopProxy::current(),
       extension_cache_task_runner_,
-      loop_.message_loop_proxy(),
-      loop_.message_loop_proxy(),
-      new net::TestURLRequestContextGetter(
-          base::MessageLoop::current()->message_loop_proxy())));
+      base::MessageLoopProxy::current(),
+      base::MessageLoopProxy::current(),
+      new net::TestURLRequestContextGetter(base::MessageLoopProxy::current())));
 }
 
 void DeviceLocalAccountPolicyServiceTestBase::
@@ -406,7 +405,9 @@ TEST_F(DeviceLocalAccountPolicyServiceTest, FetchPolicy) {
                        device_policy_.policy_data().device_id(),
                        _))
       .WillOnce(SaveArg<6>(&request));
-  EXPECT_CALL(service_observer_, OnPolicyUpdated(account_1_user_id_));
+  // This will be called twice, because the ComponentCloudPolicyService will
+  // also become ready after flushing all the pending tasks.
+  EXPECT_CALL(service_observer_, OnPolicyUpdated(account_1_user_id_)).Times(2);
   broker->core()->client()->FetchPolicy();
   FlushDeviceSettings();
   Mock::VerifyAndClearExpectations(&service_observer_);
@@ -450,7 +451,9 @@ TEST_F(DeviceLocalAccountPolicyServiceTest, RefreshPolicy) {
       .WillOnce(mock_device_management_service_.SucceedJob(response));
   EXPECT_CALL(mock_device_management_service_, StartJob(_, _, _, _, _, _, _));
   EXPECT_CALL(*this, OnRefreshDone(true)).Times(1);
-  EXPECT_CALL(service_observer_, OnPolicyUpdated(account_1_user_id_));
+  // This will be called twice, because the ComponentCloudPolicyService will
+  // also become ready after flushing all the pending tasks.
+  EXPECT_CALL(service_observer_, OnPolicyUpdated(account_1_user_id_)).Times(2);
   broker->core()->service()->RefreshPolicy(
       base::Bind(&DeviceLocalAccountPolicyServiceTest::OnRefreshDone,
                  base::Unretained(this)));

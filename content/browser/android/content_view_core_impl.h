@@ -9,7 +9,6 @@
 
 #include "base/android/jni_android.h"
 #include "base/android/jni_weak_ref.h"
-#include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/i18n/rtl.h"
 #include "base/memory/scoped_ptr.h"
@@ -62,6 +61,11 @@ class ContentViewCoreImpl : public ContentViewCore,
   virtual float GetDpiScale() const OVERRIDE;
   virtual void PauseVideo() OVERRIDE;
   virtual void PauseOrResumeGeolocation(bool should_pause) OVERRIDE;
+  virtual void RequestTextSurroundingSelection(
+      int max_length,
+      const base::Callback<void(const base::string16& content,
+                                int start_offset,
+                                int end_offset)>& callback) OVERRIDE;
 
   // --------------------------------------------------------------------------
   // Methods called from Java via JNI
@@ -157,6 +161,7 @@ class ContentViewCoreImpl : public ContentViewCore,
   void ReloadIgnoringCache(JNIEnv* env, jobject obj, jboolean check_for_repost);
   void CancelPendingReload(JNIEnv* env, jobject obj);
   void ContinuePendingReload(JNIEnv* env, jobject obj);
+  void AddStyleSheetByURL(JNIEnv* env, jobject obj, jstring url);
   void ClearHistory(JNIEnv* env, jobject obj);
   void EvaluateJavaScript(JNIEnv* env,
                           jobject obj,

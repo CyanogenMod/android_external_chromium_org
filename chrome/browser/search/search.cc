@@ -12,7 +12,6 @@
 #include "base/strings/string_split.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search/instant_service.h"
@@ -28,6 +27,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/search_urls.h"
 #include "chrome/common/url_constants.h"
+#include "components/google/core/browser/google_util.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/sessions/serialized_navigation_entry.h"
 #include "content/public/browser/navigation_entry.h"
@@ -67,12 +67,19 @@ const uint64 kEmbeddedPageVersionDefault = 2;
 const char kHideVerbatimFlagName[] = "hide_verbatim";
 const char kPrefetchSearchResultsFlagName[] = "prefetch_results";
 const char kPrefetchSearchResultsOnSRP[] = "prefetch_results_srp";
+const char kAllowPrefetchNonDefaultMatch[] = "allow_prefetch_non_default_match";
 const char kPrerenderInstantUrlOnOmniboxFocus[] =
     "prerender_instant_url_on_omnibox_focus";
 
 // Controls whether to reuse prerendered Instant Search base page to commit any
 // search query.
 const char kReuseInstantSearchBasePage[] = "reuse_instant_search_base_page";
+
+// Controls whether to use the alternate Instant search base URL. This allows
+// experimentation of Instant search.
+const char kUseAltInstantURL[] = "use_alternate_instant_url";
+const char kAltInstantURLPath[] = "search";
+const char kAltInstantURLQueryParams[] = "&qbp=1";
 
 const char kDisplaySearchButtonFlagName[] = "display_search_button";
 const char kOriginChipFlagName[] = "origin_chip";
@@ -550,6 +557,15 @@ GURL GetInstantURL(Profile* profile, int start_margin,
   if (!IsURLAllowedForSupervisedUser(instant_url, profile))
     return GURL();
 
+  if (ShouldUseAltInstantURL()) {
+    GURL::Replacements replacements;
+    const std::string path(kAltInstantURLPath);
+    replacements.SetPathStr(path);
+    const std::string query(
+        instant_url.query() + std::string(kAltInstantURLQueryParams));
+    replacements.SetQueryStr(query);
+    instant_url = instant_url.ReplaceComponents(replacements);
+  }
   return instant_url;
 }
 
@@ -588,6 +604,15 @@ bool ShouldPrefetchSearchResults() {
   FieldTrialFlags flags;
   return GetFieldTrialInfo(&flags) && GetBoolValueForFlagWithDefault(
       kPrefetchSearchResultsFlagName, false, flags);
+}
+
+bool ShouldAllowPrefetchNonDefaultMatch() {
+  if (!ShouldPrefetchSearchResults())
+    return false;
+
+  FieldTrialFlags flags;
+  return GetFieldTrialInfo(&flags) && GetBoolValueForFlagWithDefault(
+      kAllowPrefetchNonDefaultMatch, false, flags);
 }
 
 bool ShouldPrerenderInstantUrlOnOmniboxFocus() {
@@ -832,6 +857,12 @@ bool GetBoolValueForFlagWithDefault(const std::string& flag,
                                     bool default_value,
                                     const FieldTrialFlags& flags) {
   return !!GetUInt64ValueForFlagWithDefault(flag, default_value ? 1 : 0, flags);
+}
+
+bool ShouldUseAltInstantURL() {
+  FieldTrialFlags flags;
+  return GetFieldTrialInfo(&flags) && GetBoolValueForFlagWithDefault(
+      kUseAltInstantURL, false, flags);
 }
 
 }  // namespace chrome

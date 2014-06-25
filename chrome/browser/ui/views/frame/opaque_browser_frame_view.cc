@@ -141,9 +141,7 @@ OpaqueBrowserFrameView::OpaqueBrowserFrameView(BrowserFrame* frame,
       gfx::FontList(BrowserFrame::GetTitleFontList()));
   window_title_->SetVisible(browser_view->ShouldShowWindowTitle());
   window_title_->SetEnabledColor(SK_ColorWHITE);
-  // TODO(msw): Use a transparent background color as a workaround to use the
-  // gfx::Canvas::NO_SUBPIXEL_RENDERING flag and avoid some visual artifacts.
-  window_title_->SetBackgroundColor(0x00000000);
+  window_title_->set_subpixel_rendering_enabled(false);
   window_title_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   window_title_->set_id(VIEW_ID_WINDOW_TITLE);
   AddChildView(window_title_);
@@ -353,7 +351,7 @@ void OpaqueBrowserFrameView::ButtonPressed(views::Button* sender,
   } else if (sender == new_avatar_button()) {
     browser_view()->ShowAvatarBubbleFromAvatarButton(
         BrowserWindow::AVATAR_BUBBLE_MODE_DEFAULT,
-        signin::GAIA_SERVICE_TYPE_NONE);
+        signin::ManageAccountsParams());
   }
 }
 

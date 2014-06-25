@@ -78,16 +78,11 @@ class LocalToRemoteSyncer : public SyncTask {
       scoped_ptr<SyncTaskToken> token,
       SyncStatusCode status);
   void UpdateRemoteMetadata(const std::string& file_id,
-                            const SyncStatusCallback& callback);
+                            scoped_ptr<SyncTaskToken> token);
   void DidGetRemoteMetadata(const std::string& file_id,
-                            const SyncStatusCallback& callback,
+                            scoped_ptr<SyncTaskToken> token,
                             google_apis::GDataErrorCode error,
                             scoped_ptr<google_apis::FileResource> entry);
-
-  void DidDeleteForUploadNewFile(scoped_ptr<SyncTaskToken> token,
-                                 SyncStatusCode status);
-  void DidDeleteForCreateFolder(scoped_ptr<SyncTaskToken> token,
-                                SyncStatusCode status);
 
   void UploadNewFile(scoped_ptr<SyncTaskToken> token);
   void DidUploadNewFile(scoped_ptr<SyncTaskToken> token,
@@ -106,6 +101,9 @@ class LocalToRemoteSyncer : public SyncTask {
   drive::DriveServiceInterface* drive_service();
   drive::DriveUploaderInterface* drive_uploader();
   MetadataDatabase* metadata_database();
+
+  void CompleteWithRetryStatus(scoped_ptr<SyncTaskToken> token,
+                               SyncStatusCode status);
 
   SyncEngineContext* sync_context_;  // Not owned.
 

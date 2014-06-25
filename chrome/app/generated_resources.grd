@@ -2386,6 +2386,9 @@ Even if you have downloaded files from this website before, the website might ha
       <message name="IDS_BLOCKED_POPUPS_EXPLANATORY_TEXT" desc="Explanatory animated text that appears (and then disappears) in the address line when popup is blocked">
         Pop-up blocked
       </message>
+      <message name="IDS_BLOCKED_PLUGIN_EXPLANATORY_TEXT" desc="Explanatory animated text that appears (and then disappears) in the address line when plugin is blocked">
+        Plug-in blocked
+      </message>
       <message name="IDS_BLOCKED_JAVASCRIPT_TITLE" desc="Tooltip and bubble info header text when a page is not allowed to run JavaScript.">
         JavaScript was blocked on this page.
       </message>
@@ -4416,6 +4419,9 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_PROMPT_WARNING_ACCESSIBILITY_FEATURES_READ" desc="Permission string for modifying acccessibility settings via extension API shown when a extension utilizing the API is installed.">
         Read your accessibility settings
       </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_ACCESSIBILITY_FEATURES_READ_MODIFY" desc="Permission string for reading and modifying acccessibility settings via extension API shown when an extension utilizing the API is installed.">
+        Read and change your accessibility settings
+      </message>
 
       <!-- Extension/App error messages -->
       <message name="IDS_EXTENSION_CANT_GET_ABSOLUTE_PATH" desc="Warning displayed in pack dialog when the absolute path to the extension directory can not be found.">
@@ -5526,7 +5532,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
           Enable XPS in Google Cloud Print
         </message>
         <message name="IDS_FLAGS_ENABLE_CLOUD_PRINT_XPS_DESCRIPTION">
-          Fallback to XPS. By default Google Cloud Print uses CDD.
+          XPS enables advanced options for classic printers connected to the Cloud Print with Chrome. Printers must be re-connected after changing this flag.
         </message>
       </if>
       <message name="IDS_FLAGS_ENABLE_PRINT_PREVIEW_REGISTER_PROMOS_NAME">
@@ -6332,6 +6338,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
         <message name="IDS_FLAGS_ENABLE_CENTERED_APP_LIST_DESCRIPTION" desc="Description of the flag to center the app launcher and make it wide instead of tall.">
           Positions the App Launcher in the center of the screen with a landscape aspect.
         </message>
+        <message name="IDS_FLAGS_ENABLE_DRIVE_APPS_IN_APP_LIST_NAME" desc="Name of the flag to enable Drive apps in app launcher.">
+          Enable Drive apps in App Launcher.
+        </message>
+        <message name="IDS_FLAGS_ENABLE_DRIVE_APPS_IN_APP_LIST_DESCRIPTION" desc="Description of the flag to enable Drive apps in app launcher.">
+          Shows Drive apps side by side with Chrome apps in App Launcher.
+        </message>
       </if>
       <if expr="chromeos">
         <message name="IDS_FLAGS_ENABLE_FIRST_RUN_UI_TRANSITIONS_NAME" desc="Name of the flag to enable animated transitions for the first-run tutorial.">
@@ -6504,7 +6516,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <if expr="is_android">
         <message name="IDS_FLAGS_ENABLE_ANSWERS_IN_SUGGEST_NAME" desc="Name of the about:flags Answers in Suggest experiment.">
-          Enable Answers in Suggest
+          Answers in Suggest
         </message>
         <message name="IDS_FLAGS_ENABLE_ANSWERS_IN_SUGGEST_DESCRIPTION" desc="Description of the about:flags Answers in Suggest experiment.">
          If enabled, responses to certain types of queries will appear directly in the Omnibox suggestion list.
@@ -9229,17 +9241,17 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <if expr="is_android or is_ios">
         <message name="IDS_MALWARE_V3_PRIMARY_PARAGRAPH" desc="Mobile: The primary explanatory paragraph for the malware interstitial.">
-          Attackers might be trying to install dangerous programs on your device that steal or delete your information (for example, photos, passwords, messages, and credit cards).
+          Attackers currently on <ph name="BEGIN_BOLD">&lt;strong&gt;</ph><ph name="SITE">$1<ex>example.com</ex></ph><ph name="END_BOLD">&lt;/strong&gt;</ph> might attempt to install dangerous programs on your device that steal or delete your information (for example, photos, passwords, messages, and credit cards).
         </message>
       </if>
       <if expr="is_macosx">
         <message name="IDS_MALWARE_V3_PRIMARY_PARAGRAPH" desc="Mac: The primary explanatory paragraph for the malware interstitial.">
-          Attackers might be trying to install dangerous programs on your Mac that steal or delete your information (for example, photos, passwords, messages, and credit cards).
+          Attackers currently on <ph name="BEGIN_BOLD">&lt;strong&gt;</ph><ph name="SITE">$1<ex>example.com</ex></ph><ph name="END_BOLD">&lt;/strong&gt;</ph> might attempt to install dangerous programs on your Mac that steal or delete your information (for example, photos, passwords, messages, and credit cards).
         </message>
       </if>
       <if expr="not is_android and not is_macosx and not is_ios">
         <message name="IDS_MALWARE_V3_PRIMARY_PARAGRAPH" desc="The primary explanatory paragraph for the malware interstitial.">
-          Attackers might be trying to install dangerous programs on your computer that steal or delete your information (for example, photos, passwords, messages, and credit cards).
+          Attackers currently on <ph name="BEGIN_BOLD">&lt;strong&gt;</ph><ph name="SITE">$1<ex>example.com</ex></ph><ph name="END_BOLD">&lt;/strong&gt;</ph> might attempt to install dangerous programs on your computer that steal or delete your information (for example, photos, passwords, messages, and credit cards).
         </message>
       </if>
       <message name="IDS_MALWARE_V3_EXPLANATION_PARAGRAPH" desc="The explanation of why Safe Browsing has blocked the page.">
@@ -9248,8 +9260,29 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_MALWARE_V3_EXPLANATION_PARAGRAPH_SUBRESOURCE" desc="The explanation of why Safe Browsing has blocked the page.">
         Google Safe Browsing recently <ph name="BEGIN_LINK">&lt;a href="#" id="help-link"&gt;</ph>detected malware<ph name="END_LINK">&lt;/a&gt;</ph> on <ph name="SITE">$1<ex>example.com</ex></ph>. Websites that are normally safe are sometimes infected with malware. The malicious content comes from <ph name="SUBRESOURCE_HOST">$2<ex>evil.com</ex></ph>, a known malware distributor.
       </message>
+      <message name="IDS_MALWARE_V3_ADVICE_HEADING" desc="A header for the IDS_MALWARE_V3_EXPLANATION_PARAGRAPH_ADVICE paragraph.">
+        What should you do?
+      </message>
+      <message name="IDS_MALWARE_V3_EXPLANATION_PARAGRAPH_ADVICE" desc="The explanation of why Safe Browsing has blocked the page, with additional advice.">
+        You should come back to this website in a few hours. Google Safe Browsing recently <ph name="BEGIN_LINK">&lt;a href="#" id="help-link"&gt;</ph>detected malware<ph name="END_LINK">&lt;/a&gt;</ph> on <ph name="SITE">$1<ex>example.com</ex></ph>. Websites that are normally safe are sometimes infected with malware.
+      </message>
+      <message name="IDS_MALWARE_V3_EXPLANATION_PARAGRAPH_SUBRESOURCE_ADVICE" desc="The explanation of why Safe Browsing has blocked the page, with additional advice.">
+        Google Safe Browsing recently <ph name="BEGIN_LINK">&lt;a href="#" id="help-link"&gt;</ph>detected malware<ph name="END_LINK">&lt;/a&gt;</ph> on <ph name="SITE">$1<ex>example.com</ex></ph>. Websites that are normally safe are sometimes infected with malware. The malicious content comes from <ph name="SUBRESOURCE_HOST">$2<ex>evil.com</ex></ph>, a known malware distributor. You should come back in a few hours.
+      </message>
+      <message name="IDS_MALWARE_V3_EXPLANATION_PARAGRAPH_HISTORY" desc="The explanation of why Safe Browsing has blocked the page, with additional text about history.">
+        Even if you have visited this website before, it is not safe right now. Google Safe Browsing recently <ph name="BEGIN_LINK">&lt;a href="#" id="help-link"&gt;</ph>detected malware<ph name="END_LINK">&lt;/a&gt;</ph> on <ph name="SITE">$1<ex>example.com</ex></ph>. Websites that are normally safe are sometimes infected with malware.
+      </message>
+      <message name="IDS_MALWARE_V3_EXPLANATION_PARAGRAPH_SUBRESOURCE_HISTORY" desc="The explanation of why Safe Browsing has blocked the page, with additional text about history.">
+        Even if you have visited this website before, it is not safe right now. Google Safe Browsing recently <ph name="BEGIN_LINK">&lt;a href="#" id="help-link"&gt;</ph>detected malware<ph name="END_LINK">&lt;/a&gt;</ph> on <ph name="SITE">$1<ex>example.com</ex></ph>. Websites that are normally safe are sometimes infected with malware. The malicious content comes from <ph name="SUBRESOURCE_HOST">$2<ex>evil.com</ex></ph>, a known malware distributor.
+      </message>
       <message name="IDS_MALWARE_V3_PROCEED_PARAGRAPH" desc="The paragraph that lets the user skip the warning.">
         If you understand the risks to your security, you may <ph name="BEGIN_LINK">&lt;a href="#" id="proceed-link"&gt;</ph>visit this unsafe site<ph name="END_LINK">&lt;/a&gt;</ph> before the dangerous programs have been removed.
+      </message>
+      <message name="IDS_MALWARE_V3_PROCEED_PARAGRAPH_NOT_RECOMMEND" desc="The paragraph that lets the user skip the warning, with the additional anti-recommendation string.">
+        If you understand the risks to your security, you may <ph name="BEGIN_LINK">&lt;a href="#" id="proceed-link"&gt;</ph>visit this unsafe site<ph name="END_LINK">&lt;/a&gt;</ph> (not recommended) before the dangerous programs have been removed.
+      </message>
+      <message name="IDS_MALWARE_V3_PROCEED_PARAGRAPH_SOCIAL" desc="The paragraph that lets the user skip the warning, with the additional anti-recommendation string.">
+        More than 80% of people who see this warning go back to safety instead of risking malware. However, if you understand the risks to your security, you may <ph name="BEGIN_LINK">&lt;a href="#" id="proceed-link"&gt;</ph>visit this unsafe site<ph name="END_LINK">&lt;/a&gt;</ph> before the dangerous programs have been removed.
       </message>
 
       <!-- Phishing interstitial V3 -->
@@ -9257,13 +9290,13 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Phishing attack ahead
       </message>
       <message name="IDS_PHISHING_V3_PRIMARY_PARAGRAPH" desc="The primary explanatory paragraph for the malware interstitial.">
-        Attackers on <ph name="SITE">$1<ex>example.com</ex></ph> might be trying to trick you to steal your information (for example, login passwords and credit cards).
+        Attackers on <ph name="BEGIN_BOLD">&lt;strong&gt;</ph><ph name="SITE">$1<ex>example.com</ex></ph><ph name="END_BOLD">&lt;/strong&gt;</ph> might try to trick you to steal your information (for example, passwords, messages, or credit cards).
       </message>
       <message name="IDS_PHISHING_V3_EXPLANATION_PARAGRAPH" desc="The explanation of why Safe Browsing has blocked the page.">
       Google Safe Browsing recently detected phishing on <ph name="SITE">$1<ex>example.com</ex></ph>. <ph name="BEGIN_LINK">&lt;a href="#" id="help-link"&gt;</ph>Phishing sites<ph name="END_LINK">&lt;/a&gt;</ph> pretend to be other websites to trick you.
       </message>
       <message name="IDS_PHISHING_V3_PROCEED_PARAGRAPH" desc="The paragraph that lets the user skip the warning.">
-        If you understand the risks to your security, you may <ph name="BEGIN_LINK">&lt;a href="#" id="proceed-link"&gt;</ph>visit this unsafe site<ph name="END_LINK">&lt;/a&gt;</ph>.
+        If you understand the risks to your security, you may <ph name="BEGIN_LINK">&lt;a href="#" id="proceed-link"&gt;</ph>visit this infected site<ph name="END_LINK">&lt;/a&gt;</ph>.
       </message>
 
       <!-- SSL Interstitial V2 -->
@@ -11414,7 +11447,7 @@ Chrome ran out of memory.
         Privacy policy
       </message>
       <message name="IDS_SAFE_BROWSING_PRIVACY_POLICY_URL" translateable="false">
-        http://www.google.com/chrome/intl/[GRITLANGCODE]/chrome/browser/privacy/whitepaper.html#malware
+        http://www.google.com/chrome/browser/privacy/whitepaper.html#malware
       </message>
       <message name="IDS_SAFE_BROWSING_MALWARE_V2_REPORTING_AGREE" desc="SafeBrowsing Malware v2 Details label next to checkbox">
         Automatically report details of possible security incidents to Google. <ph name="PRIVACY_PAGE_LINK">$1</ph>
@@ -12896,6 +12929,16 @@ Some features may be unavailable.  Please check that the profile exists and you 
     <message name="IDS_MANAGE_PASSWORDS_BLACKLISTED_TITLE" desc="The title text that is used in the manage passwords bubble when the current site is blacklisted.">
       Passwords won't be saved
     </message>
+    <message name="IDS_MANAGE_PASSWORDS_BLACKLIST_CONFIRMATION_TITLE" desc="The title text that is used in the manage passwords bubble when confirming blacklisting a site.">
+      Delete existing saved passwords
+    </message>
+    <message name="IDS_MANAGE_PASSWORDS_BLACKLIST_CONFIRMATION_TEXT" desc="The confirmation text that is used in the manage passwords bubble when confirming blacklisting a site.">
+      Choosing to never save passwords will delete all passwords currently saved for this site.
+    </message>
+    <message name="IDS_MANAGE_PASSWORDS_BLACKLIST_CONFIRMATION_BUTTON" desc="The confirmation button that is used in the manage passwords bubble when confirming blacklisting a site.">
+      Delete saved passwords
+    </message>
+    
     <message name="IDS_MANAGE_PASSWORDS_NO_PASSWORDS" desc="The text that is used in the manage passwords bubble when all passwords have been deleted.">
       No passwords saved.
     </message>
@@ -14379,11 +14422,23 @@ Do you accept?
     <message name="IDS_FLAGS_MALWARE_INTERSTITIAL_TRIAL_DESCRIPTION" desc="Description of the about:flags malware interstitial v3 experiment">
       Switch between different versions of the malware and phishing interstitials.
     </message>
-    <message name="IDS_FLAGS_MALWARE_INTERSTITIAL_VERSION_V2" desc="Go back to the old (V1) version">
-      Last version
+    <message name="IDS_FLAGS_MALWARE_INTERSTITIAL_VERSION_V2" desc="Go back to the old (V2) version">
+      Old version
     </message>
-    <message name="IDS_FLAGS_MALWARE_INTERSTITIAL_VERSION_V3" desc="The new interstitial, with a gray background (also default)">
-      Newest version
+    <message name="IDS_FLAGS_MALWARE_INTERSTITIAL_VERSION_V3" desc="The new interstitial (also default)">
+      New version
+    </message>
+    <message name="IDS_FLAGS_MALWARE_INTERSTITIAL_VERSION_V3_ADVICE" desc="The new interstitial plus an advice string">
+      New version plus advice
+    </message>
+    <message name="IDS_FLAGS_MALWARE_INTERSTITIAL_VERSION_V3_SOCIAL" desc="The new interstitial plus a social string">
+      New version plus social string
+    </message>
+    <message name="IDS_FLAGS_MALWARE_INTERSTITIAL_VERSION_V3_NOTRECOMMEND" desc="The new interstitial plus an anti-recommendation string">
+      New version plus anti-recommendation string
+    </message>
+    <message name="IDS_FLAGS_MALWARE_INTERSTITIAL_VERSION_V3_HISTORY" desc="The new interstitial (also default)">
+      New version plus history string
     </message>
 
   </messages>

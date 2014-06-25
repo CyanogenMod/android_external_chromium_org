@@ -136,8 +136,6 @@
         'cursor/image_cursors.h',
         'cursor/ozone/bitmap_cursor_factory_ozone.cc',
         'cursor/ozone/bitmap_cursor_factory_ozone.h',
-        'cursor/ozone/cursor_factory_ozone.cc',
-        'cursor/ozone/cursor_factory_ozone.h',
         'default_theme_provider.cc',
         'default_theme_provider.h',
         'default_theme_provider_mac.mm',
@@ -210,6 +208,8 @@
         'models/menu_model.h',
         'models/menu_model_delegate.h',
         'models/menu_separator_types.h',
+        'models/simple_combobox_model.cc',
+        'models/simple_combobox_model.h',
         'models/simple_menu_model.cc',
         'models/simple_menu_model.h',
         'models/table_model.cc',
@@ -369,6 +369,11 @@
         ['use_aura==0 or OS!="linux"', {
           'sources!': [
             'resource/resource_bundle_auralinux.cc',
+          ],
+        }],
+        ['use_ozone==1', {
+          'dependencies': [
+            '../ozone/ozone.gyp:ozone_base',
           ],
         }],
         ['use_aura==1 and OS=="win"', {

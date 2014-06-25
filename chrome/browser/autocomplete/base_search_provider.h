@@ -19,6 +19,7 @@
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
 #include "net/url_request/url_fetcher_delegate.h"
 
 class AutocompleteProviderListener;
@@ -28,6 +29,7 @@ class SuggestionDeletionHandler;
 class TemplateURL;
 
 namespace base {
+class DictionaryValue;
 class ListValue;
 class Value;
 }
@@ -378,7 +380,7 @@ class BaseSearchProvider : public AutocompleteProvider,
   static bool ZeroSuggestEnabled(
      const GURL& suggest_url,
      const TemplateURL* template_url,
-     AutocompleteInput::PageClassification page_classification,
+     metrics::OmniboxEventProto::PageClassification page_classification,
      Profile* profile);
 
   // Returns whether we can send the URL of the current page in any suggest
@@ -401,7 +403,7 @@ class BaseSearchProvider : public AutocompleteProvider,
       const GURL& current_page_url,
       const GURL& suggest_url,
       const TemplateURL* template_url,
-      AutocompleteInput::PageClassification page_classification,
+      metrics::OmniboxEventProto::PageClassification page_classification,
       Profile* profile);
 
   // net::URLFetcherDelegate:
@@ -433,6 +435,9 @@ class BaseSearchProvider : public AutocompleteProvider,
   bool ParseSuggestResults(const base::Value& root_val,
                            bool is_keyword_result,
                            Results* results);
+
+  // Prefetches any images in Answers results.
+  void PrefetchAnswersImages(const base::DictionaryValue* answers_json);
 
   // Called at the end of ParseSuggestResults to rank the |results|.
   virtual void SortResults(bool is_keyword,

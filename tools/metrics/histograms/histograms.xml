@@ -1574,6 +1574,16 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Autofill.AddressBook.AccessSkipped" enum="BooleanSkipped">
+  <owner>erikchen@chromium.org</owner>
+  <summary>
+    Whether an attempt to access the Mac AddressBook was skipped because doing
+    so would incorrectly cause the appearance of the permissions dialog. This
+    happens when Chrome auto-update changes the binary on disk before the first
+    AddressBook access attempt.
+  </summary>
+</histogram>
+
 <histogram name="Autofill.AddressBookAvailable" enum="BooleanAvailable">
   <owner>isherman@chromium.org</owner>
   <summary>
@@ -2703,9 +2713,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 
 <histogram name="CloudPrint.XmppPingTry">
   <owner>vitalybuka@chromium.org</owner>
-  <summary>
-    Number of tries before successfull ping. 99 means giving up.
-  </summary>
+  <summary>Number of tries before successful ping. 99 means giving up.</summary>
 </histogram>
 
 <histogram name="Compositing.CopyFromSurfaceTime" units="ms">
@@ -8170,6 +8178,13 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="GoogleSearch.AccessPoint" enum="SearchAccessPoint">
+  <owner>kmadhusu@chromium.org</owner>
+  <summary>
+    Counts number of Google searches from various access points in the browser.
+  </summary>
+</histogram>
+
 <histogram name="GoogleUpdate.EffectivePolicy" enum="UpdatePolicy">
   <owner>gab@chromium.org</owner>
   <summary>
@@ -13498,10 +13513,19 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Net.FtpServerTypeCount" enum="FtpServerType">
+  <obsolete>
+    Replaced by Net.FtpServerTypeCount2 on 2012-11-03.
+  </obsolete>
   <owner>phajdan.jr@chromium.org</owner>
   <summary>
-    Each bucket is the number of FTP server types the user has encountered
-    during the session.
+    Each bucket is the number of times the FTP server type was encountered.
+  </summary>
+</histogram>
+
+<histogram name="Net.FtpServerTypeCount2" enum="FtpServerType2">
+  <owner>phajdan.jr@chromium.org</owner>
+  <summary>
+    Each bucket is the number of times the FTP server type was encountered.
   </summary>
 </histogram>
 
@@ -13562,10 +13586,21 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Net.HadFtpServerType" enum="FtpServerType">
+  <obsolete>
+    Replaced by Net.HadFtpServerType2 on 2012-11-13.
+  </obsolete>
   <owner>phajdan.jr@chromium.org</owner>
   <summary>
-    Each bucket is a boolean (0 or 1) indicating whether the user has had a
-    connection with an FTP server of that type during the session.
+    Each bucket is the number of sessions that encountered a given FTP server
+    type. Each session reports a given server type at most once.
+  </summary>
+</histogram>
+
+<histogram name="Net.HadFtpServerType2" enum="FtpServerType2">
+  <owner>phajdan.jr@chromium.org</owner>
+  <summary>
+    Each bucket is the number of sessions that encountered a given FTP server
+    type. Each session reports a given server type at most once.
   </summary>
 </histogram>
 
@@ -15842,6 +15877,15 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Net.WebSocket.ErrorCodes" enum="NetErrorCodes">
+  <owner>yhirano@chromium.org</owner>
+  <owner>ricea@chromium.org</owner>
+  <owner>tyoshino@chromium.org</owner>
+  <summary>
+    Positive net error codes that WebSockets end with, including OK and ABORTED.
+  </summary>
+</histogram>
+
 <histogram name="Net.WebSocket.HandshakeResult"
     enum="WebSocketNewHandshakeResult">
   <owner>yhirano@chromium.org</owner>
@@ -15851,6 +15895,13 @@ Therefore, the affected-histogram name has to have at least one dot in it.
     Results of WebSocket handshakes. Use this histogram as a baseline for
     investigating feature usage counters.
   </summary>
+</histogram>
+
+<histogram name="Net.WebSocket.ResponseCode" enum="HttpResponseCode">
+  <owner>yhirano@chromium.org</owner>
+  <owner>ricea@chromium.org</owner>
+  <owner>tyoshino@chromium.org</owner>
+  <summary>All HTTP status codes seen during WebSocket handshakes.</summary>
 </histogram>
 
 <histogram name="Net.Wifi.InterfaceCount">
@@ -22413,6 +22464,17 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Profile.Delete" enum="BooleanProfileSignedIn">
+  <owner>mlerman@chromium.org</owner>
+  <summary>
+    The user used the settings page to delete a profile. Please note this
+    histogram tracks the user interaction, and not the actual delete of the
+    profile, which can happen much later. The parameter indicates if the profile
+    was signed in or not; true means the profile was signed in, false means the
+    profile was not signed in.
+  </summary>
+</histogram>
+
 <histogram name="Profile.DesktopMenu" enum="ProfileDesktopMenu">
   <owner>mlerman@chromium.org</owner>
   <summary>
@@ -25003,6 +25065,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="SBIRS.DroppedIncident" enum="IncidentType">
+  <owner>grt@google.com</owner>
+  <summary>
+    The type of incident given to the safe browsing incident reporting service
+    but dropped as a result of not participating in safe browsing.
+  </summary>
+</histogram>
+
 <histogram name="SBIRS.EnvCollectionTime" units="milliseconds">
   <owner>grt@google.com</owner>
   <summary>
@@ -25634,11 +25704,12 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
-<histogram name="Signin.Reconciler.DifferentPrimaryAccounts">
+<histogram name="Signin.Reconciler.DifferentPrimaryAccounts"
+    enum="DifferentPrimaryAccounts">
   <owner>mlerman@chromium.org</owner>
   <summary>
-    After the first execution of the account reconciler, true if the token
-    service and cookie jar contained different primary accounts.
+    After execution of the account reconcilor, compares the primary account in
+    the token service to the primary GAIA account of the cookie jar.
   </summary>
 </histogram>
 
@@ -28451,6 +28522,18 @@ Therefore, the affected-histogram name has to have at least one dot in it.
     The count of responses that may be parsed as JavaScript among not blocked
     responses with an XML content type. Sampled with value 1 when the first
     network packet of a response of this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SoftwareReporter.ExitCode" enum="SwReporterExitCode">
+  <owner>mad@chromium.org</owner>
+  <summary>The exit code from the execution of the software reporter.</summary>
+</histogram>
+
+<histogram name="SoftwareReporter.Step" enum="SwReporterStep">
+  <owner>mad@chromium.org</owner>
+  <summary>
+    The registration and execution steps for the software reporter.
   </summary>
 </histogram>
 
@@ -33846,6 +33929,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="1" label="Orphan"/>
 </enum>
 
+<enum name="BooleanProfileSignedIn" type="int">
+  <int value="0" label="Profile was not Signed In"/>
+  <int value="1" label="Profile was Signed In"/>
+</enum>
+
 <enum name="BooleanRaced" type="int">
   <int value="0" label="Did Not Race"/>
   <int value="1" label="Raced"/>
@@ -33864,6 +33952,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 <enum name="BooleanSelected" type="int">
   <int value="0" label="No selection"/>
   <int value="1" label="Selected"/>
+</enum>
+
+<enum name="BooleanSkipped" type="int">
+  <int value="0" label="Not skipped"/>
+  <int value="1" label="Skipped"/>
 </enum>
 
 <enum name="BooleanStale" type="int">
@@ -34489,6 +34582,13 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="18" label="SQLite Integrity Nss Key Test"/>
   <int value="19" label="SQLite Integrity Thumbnails Test"/>
   <int value="20" label="SQLite Integrity Web Data Test"/>
+</enum>
+
+<enum name="DifferentPrimaryAccounts" type="int">
+  <int value="0" label="Primary Accounts the same"/>
+  <int value="1" label="(obsolete) Primary Accounts different"/>
+  <int value="2" label="No GAIA account in cookie jar"/>
+  <int value="3" label="Primary accounts present but different"/>
 </enum>
 
 <enum name="DllHash" type="int">
@@ -35491,6 +35591,8 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="266" label="Block developer mode"/>
   <int value="267" label="Show the apps shortcut in the bookmark bar"/>
   <int value="268" label="Register protocol handlers"/>
+  <int value="269" label="Enable virtual keyboard"/>
+  <int value="270" label="Enable deprecated web platform features"/>
 </enum>
 
 <enum name="EnterprisePolicyInvalidations" type="int">
@@ -36544,6 +36646,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="789" label="INPUTMETHODPRIVATE_SETCURRENTINPUTMETHOD"/>
   <int value="790" label="INPUTMETHODPRIVATE_GETINPUTMETHODS"/>
   <int value="791" label="IDENTITY_GETPROFILEUSERINFO"/>
+  <int value="792" label="VIRTUALKEYBOARDPRIVATE_OPENSETTINGS"/>
+  <int value="793" label="BLUETOOTHLOWENERGY_CONNECT"/>
+  <int value="794" label="BLUETOOTHLOWENERGY_DISCONNECT"/>
 </enum>
 
 <enum name="ExtensionInstallCause" type="int">
@@ -37315,6 +37420,13 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="462" label="EditingAppleTabSpanClass"/>
   <int value="463" label="HTMLImportsAsyncAttribute"/>
   <int value="464" label="FontFaceSetReady"/>
+  <int value="465" label="XMLHttpRequestSynchronous"/>
+  <int value="466" label="CSSSelectorPseudoUnresolved"/>
+  <int value="467" label="CSSSelectorPseudoShadow"/>
+  <int value="468" label="CSSSelectorPseudoContent"/>
+  <int value="469" label="CSSSelectorPseudoHost"/>
+  <int value="470" label="CSSSelectorPseudoHostContext"/>
+  <int value="471" label="CSSDeepCombinator"/>
 </enum>
 
 <enum name="FFmpegCodecs" type="int">
@@ -37771,8 +37883,12 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </enum>
 
 <enum name="FtpServerType" type="int">
+  <obsolete>
+    Deprecated 2012-11-13. No longer generated.
+  </obsolete>
   <summary>
-    FTP server type as defined in net/ftp/ftp_server_type_histograms.h
+    Old FTP server type as previously defined in
+    net/ftp/ftp_server_type_histograms.h
   </summary>
   <int value="0" label="Unknown">
     Unknown (could be a server we don't support, a broken server, or a security
@@ -37790,6 +37906,18 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="8" label="win16">
     win16 hosts: SuperTCP or NetManage Chameleon
   </int>
+</enum>
+
+<enum name="FtpServerType2" type="int">
+  <summary>
+    FTP server type as defined in net/ftp/ftp_server_type_histograms.h
+  </summary>
+  <int value="0" label="Unknown"/>
+  <int value="1" label="/bin/ls"/>
+  <int value="2" label="Windows"/>
+  <int value="3" label="VMS"/>
+  <int value="4" label="Netware"/>
+  <int value="5" label="OS/2"/>
 </enum>
 
 <enum name="GaiaSessionRestoreOutcome" type="int">
@@ -43464,6 +43592,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="20" label="APK"/>
   <int value="21" label="DMG"/>
   <int value="22" label="PKG"/>
+  <int value="23" label="TORRENT"/>
 </enum>
 
 <enum name="SBClientDownloadIsSignedBinary" type="int">
@@ -43532,6 +43661,19 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="1" label="SCT_STATUS_LOG_UNKNOWN"/>
   <int value="2" label="SCT_STATUS_INVALID"/>
   <int value="3" label="SCT_STATUS_OK"/>
+</enum>
+
+<enum name="SearchAccessPoint" type="int">
+  <int value="0" label="Omnibox"/>
+  <int value="1" label="Omnibox Instant"/>
+  <int value="2" label="Direct Navigation"/>
+  <int value="3" label="Direct Navigation Instant"/>
+  <int value="4" label="Home Page"/>
+  <int value="5" label="Home Page Instant"/>
+  <int value="6" label="Search App"/>
+  <int value="7" label="Search App Instant"/>
+  <int value="8" label="Other"/>
+  <int value="9" label="Other Instant"/>
 </enum>
 
 <enum name="SearchEngine" type="int">
@@ -44726,6 +44868,21 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="3" label="Attempted"/>
 </enum>
 
+<enum name="SwReporterExitCode" type="int">
+  <int value="0" label="Success / Found"/>
+  <int value="1" label="Failed"/>
+  <int value="2" label="Nothing Found"/>
+</enum>
+
+<enum name="SwReporterStep" type="int">
+  <int value="0" label="Explicit request"/>
+  <int value="1" label="Startup retry"/>
+  <int value="2" label="Retried too many times"/>
+  <int value="3" label="Start execution"/>
+  <int value="4" label="Failed to start"/>
+  <int value="5" label="Registry exit code"/>
+</enum>
+
 <enum name="SyncAuthError" type="int">
   <int value="0"
       label="Number of times clients have encountered an Auth error."/>
@@ -45059,6 +45216,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="14"
       label="DefaultSearchManager::kDefaultSearchProviderDataPrefName"/>
   <int value="15" label="prefs::kPreferenceResetTime"/>
+  <int value="16" label="prefs::kSafeBrowsingIncidentReportSent"/>
 </enum>
 
 <enum name="TranslateError" type="int">
@@ -46245,6 +46403,21 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <affected-histogram name="PLT.PT_RequestToStart"/>
   <affected-histogram name="PLT.PT_StartToCommit"/>
   <affected-histogram name="PLT.PT_StartToFinish"/>
+</histogram_suffixes>
+
+<histogram_suffixes name="GoogleSearchVariations">
+  <owner>kmadhusu@chromium.org</owner>
+  <suffix name="_PrerenderDisabled"
+      label="Counts number of Google searches from various access points in
+             the Android Chrome browser when prerendering is disabled via
+             &quot;Bandwidth management&quot; settings or &quot;Privacy&quot;
+             settings. Only recorded on Android."/>
+  <suffix name="_PrerenderEnabled"
+      label="Counts number of Google searches from various access points in
+             the Android Chrome browser when prerendering is enabled via
+             &quot;Bandwidth management&quot; settings or &quot;Privacy&quot;
+             settings. Only recorded on Android."/>
+  <affected-histogram name="GoogleSearch.AccessPoint"/>
 </histogram_suffixes>
 
 <histogram_suffixes name="GWSChromeJointExperiment">

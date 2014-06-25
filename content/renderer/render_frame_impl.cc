@@ -683,10 +683,6 @@ bool RenderFrameImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(FrameMsg_Navigate, OnNavigate)
     IPC_MESSAGE_HANDLER(FrameMsg_BeforeUnload, OnBeforeUnload)
     IPC_MESSAGE_HANDLER(FrameMsg_SwapOut, OnSwapOut)
-    IPC_MESSAGE_HANDLER(FrameMsg_BuffersSwapped, OnBuffersSwapped)
-    IPC_MESSAGE_HANDLER_GENERIC(FrameMsg_CompositorFrameSwapped,
-                                OnCompositorFrameSwapped(msg))
-    IPC_MESSAGE_HANDLER(FrameMsg_ChildFrameProcessGone, OnChildFrameProcessGone)
     IPC_MESSAGE_HANDLER(FrameMsg_ContextMenuClosed, OnContextMenuClosed)
     IPC_MESSAGE_HANDLER(FrameMsg_CustomContextMenuAction,
                         OnCustomContextMenuAction)
@@ -714,6 +710,8 @@ bool RenderFrameImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(FrameMsg_Reload, OnReload)
     IPC_MESSAGE_HANDLER(FrameMsg_TextSurroundingSelectionRequest,
                         OnTextSurroundingSelectionRequest)
+    IPC_MESSAGE_HANDLER(FrameMsg_AddStyleSheetByURL,
+                        OnAddStyleSheetByURL)
 #if defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER(InputMsg_CopyToFindPboard, OnCopyToFindPboard)
 #endif
@@ -969,9 +967,6 @@ void RenderFrameImpl::OnSwapOut(int proxy_routing_id) {
     // beforeunload handler. For now, we just run it a second time silently.
     render_view_->NavigateToSwappedOutURL(frame_);
 
-    if (frame_->parent())
-      render_view_->RegisterSwappedOutChildFrame(this);
-
     // Let WebKit know that this view is hidden so it can drop resources and
     // stop compositing.
     // TODO(creis): Support this for subframes as well.
@@ -992,42 +987,6 @@ void RenderFrameImpl::OnSwapOut(int proxy_routing_id) {
   // start using the RenderFrameProxy, if one is created.
   if (proxy)
     set_render_frame_proxy(proxy);
-}
-
-void RenderFrameImpl::OnBuffersSwapped(
-    const FrameMsg_BuffersSwapped_Params& params) {
-  if (!compositing_helper_.get()) {
-    compositing_helper_ =
-        ChildFrameCompositingHelper::CreateCompositingHelperForRenderFrame(
-            frame_, this, routing_id_);
-    compositing_helper_->EnableCompositing(true);
-  }
-  compositing_helper_->OnBuffersSwapped(
-      params.size,
-      params.mailbox,
-      params.gpu_route_id,
-      params.gpu_host_id,
-      render_view_->GetWebView()->deviceScaleFactor());
-}
-
-void RenderFrameImpl::OnCompositorFrameSwapped(const IPC::Message& message) {
-  FrameMsg_CompositorFrameSwapped::Param param;
-  if (!FrameMsg_CompositorFrameSwapped::Read(&message, &param))
-    return;
-  scoped_ptr<cc::CompositorFrame> frame(new cc::CompositorFrame);
-  param.a.frame.AssignTo(frame.get());
-
-  if (!compositing_helper_.get()) {
-    compositing_helper_ =
-        ChildFrameCompositingHelper::CreateCompositingHelperForRenderFrame(
-            frame_, this, routing_id_);
-    compositing_helper_->EnableCompositing(true);
-  }
-  compositing_helper_->OnCompositorFrameSwapped(frame.Pass(),
-                                                param.a.producing_route_id,
-                                                param.a.output_surface_id,
-                                                param.a.producing_host_id,
-                                                param.a.shared_memory_handle);
 }
 
 void RenderFrameImpl::OnContextMenuClosed(
@@ -1220,6 +1179,10 @@ void RenderFrameImpl::OnTextSurroundingSelectionRequest(size_t max_length) {
       surroundingText.endOffsetInTextContent()));
 }
 
+void RenderFrameImpl::OnAddStyleSheetByURL(const std::string& url) {
+  frame_->addStyleSheetByURL(WebString::fromUTF8(url));
+}
+
 bool RenderFrameImpl::ShouldUpdateSelectionTextFromContextMenuParams(
     const base::string16& selection_text,
     size_t selection_text_offset,
@@ -1277,8 +1240,6 @@ void RenderFrameImpl::LoadNavigationErrorPage(
 }
 
 void RenderFrameImpl::DidCommitCompositorFrame() {
-  if (compositing_helper_)
-    compositing_helper_->DidCommitCompositorFrame();
   FOR_EACH_OBSERVER(
       RenderFrameObserver, observers_, DidCommitCompositorFrame());
 }
@@ -1353,11 +1314,6 @@ void RenderFrameImpl::LoadURLExternally(blink::WebLocalFrame* frame,
 
 void RenderFrameImpl::ExecuteJavaScript(const base::string16& javascript) {
   OnJavaScriptExecuteRequest(javascript, 0, false);
-}
-
-void RenderFrameImpl::OnChildFrameProcessGone() {
-  if (compositing_helper_)
-    compositing_helper_->ChildFrameGone();
 }
 
 // blink::WebFrameClient implementation ----------------------------------------
@@ -1553,8 +1509,6 @@ void RenderFrameImpl::frameDetached(blink::WebFrame* frame) {
   bool is_subframe = !!frame->parent();
 
   Send(new FrameHostMsg_Detach(routing_id_));
-
-  render_view_->UnregisterSwappedOutChildFrame(this);
 
   // The |is_detaching_| flag disables Send(). FrameHostMsg_Detach must be
   // sent before setting |is_detaching_| to true. In contrast, Observers
@@ -2205,6 +2159,14 @@ void RenderFrameImpl::didUpdateCurrentHistoryItem(blink::WebLocalFrame* frame) {
   // TODO(nasko): Move implementation here. Needed methods:
   // * StartNavStateSyncTimerIfNecessary
   render_view_->didUpdateCurrentHistoryItem(frame);
+}
+
+void RenderFrameImpl::didChangeBrandColor() {
+  if (frame_->parent())
+    return;
+
+  Send(new FrameHostMsg_DidChangeBrandColor(
+      routing_id_, frame_->document().brandColor()));
 }
 
 blink::WebNotificationPresenter* RenderFrameImpl::notificationPresenter() {

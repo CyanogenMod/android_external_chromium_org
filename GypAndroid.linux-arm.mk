@@ -8,8 +8,10 @@ GYP_HOST_VAR_PREFIX ?=
 GYP_HOST_MULTILIB ?=
 
 include $(LOCAL_PATH)/android_webview/android_webview_common.target.linux-arm.mk
+include $(LOCAL_PATH)/android_webview/android_webview_jarjar_content_resources.target.linux-arm.mk
+include $(LOCAL_PATH)/android_webview/android_webview_jarjar_ui_resources.target.linux-arm.mk
 include $(LOCAL_PATH)/android_webview/android_webview_pak.target.linux-arm.mk
-include $(LOCAL_PATH)/android_webview/android_webview_strings.target.linux-arm.mk
+include $(LOCAL_PATH)/android_webview/android_webview_resources.target.linux-arm.mk
 include $(LOCAL_PATH)/android_webview/libwebviewchromium.target.linux-arm.mk
 include $(LOCAL_PATH)/android_webview/native/android_webview_native_jni.target.linux-arm.mk
 include $(LOCAL_PATH)/android_webview/native/cancellation_signal_android_jar_jni_headers.target.linux-arm.mk

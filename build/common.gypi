@@ -418,6 +418,9 @@
       # Whether one-click signin is enabled or not.
       'enable_one_click_signin%': 0,
 
+      # Whether to back up data before sync.
+      'enable_pre_sync_backup%': 0,
+
       # Enable Chrome browser extensions
       'enable_extensions%': 1,
 
@@ -562,6 +565,7 @@
       'spdy_proxy_auth_property%' : '',
       'spdy_proxy_auth_value%' : '',
       'data_reduction_proxy_probe_url%' : '',
+      'data_reduction_proxy_warmup_url%' : '',
       'data_reduction_proxy_ssl_origin%' : '',
       'data_reduction_proxy_alt_origin%' : '',
       'data_reduction_proxy_alt_fallback_origin%' : '',
@@ -678,6 +682,7 @@
 
         ['OS=="win" or OS=="mac" or (OS=="linux" and chromeos==0)', {
           'enable_one_click_signin%': 1,
+          'enable_pre_sync_backup%': 1,
         }],
 
         ['OS=="android"', {
@@ -925,12 +930,14 @@
           'icu_use_data_file_flag%' : 1,
           'spdy_proxy_auth_origin%': '',
           'data_reduction_proxy_probe_url%': '',
+          'data_reduction_proxy_warmup_url%': '',
           'data_reduction_dev_host%': '',
           'data_reduction_fallback_host%': '',
         }, {
           'icu_use_data_file_flag%' : 0,
           'spdy_proxy_auth_origin%': 'https://proxy.googlezip.net:443/',
           'data_reduction_proxy_probe_url%': 'http://check.googlezip.net/connect',
+          'data_reduction_proxy_warmup_url%': 'http://www.gstatic.com/generate_204',
           'data_reduction_dev_host%': 'http://proxy-dev.googlezip.net:80/',
           'data_reduction_fallback_host%': 'http://compress.googlezip.net:80/',
         }],
@@ -1042,6 +1049,7 @@
     'use_third_party_translations%': '<(use_third_party_translations)',
     'remoting%': '<(remoting)',
     'enable_one_click_signin%': '<(enable_one_click_signin)',
+    'enable_pre_sync_backup%': '<(enable_pre_sync_backup)',
     'enable_webrtc%': '<(enable_webrtc)',
     'chromium_win_pch%': '<(chromium_win_pch)',
     'configuration_policy%': '<(configuration_policy)',
@@ -1118,6 +1126,7 @@
     'spdy_proxy_auth_property%': '<(spdy_proxy_auth_property)',
     'spdy_proxy_auth_value%': '<(spdy_proxy_auth_value)',
     'data_reduction_proxy_probe_url%': '<(data_reduction_proxy_probe_url)',
+    'data_reduction_proxy_warmup_url%': '<(data_reduction_proxy_warmup_url)',
     'data_reduction_proxy_ssl_origin%' : '<(data_reduction_proxy_ssl_origin)',
     'data_reduction_proxy_alt_origin%' : '<(data_reduction_proxy_alt_origin)',
     'data_reduction_proxy_alt_fallback_origin%' : '<(data_reduction_proxy_alt_fallback_origin)',
@@ -2459,6 +2468,9 @@
       ['enable_one_click_signin==1', {
         'defines': ['ENABLE_ONE_CLICK_SIGNIN'],
       }],
+      ['enable_pre_sync_backup==1', {
+        'defines': ['ENABLE_PRE_SYNC_BACKUP'],
+      }],
       ['use_xi2_mt!=0 and use_x11==1', {
         'defines': ['USE_XI2_MT=<(use_xi2_mt)'],
       }],
@@ -2751,6 +2763,10 @@
       ['data_reduction_proxy_probe_url != ""', {
         'defines': [
           'DATA_REDUCTION_PROXY_PROBE_URL="<(data_reduction_proxy_probe_url)"'],
+      }],
+      ['data_reduction_proxy_warmup_url != ""', {
+        'defines': [
+          'DATA_REDUCTION_PROXY_WARMUP_URL="<(data_reduction_proxy_warmup_url)"'],
       }],
       ['data_reduction_proxy_ssl_origin != ""', {
         'defines': [

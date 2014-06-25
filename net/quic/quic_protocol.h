@@ -64,7 +64,7 @@ const QuicByteCount kDefaultTCPMSS = 1460;
 const size_t kDefaultInitialWindow = 10;
 const uint32 kMaxInitialWindow = 100;
 
-// Default size of initial flow control window.
+// Default size of initial flow control window, for both stream and session.
 const uint32 kDefaultFlowControlSendWindow = 16 * 1024;  // 16 KB
 
 // Maximum size of the congestion window, in packets, for TCP congestion control
@@ -161,7 +161,7 @@ enum FecProtection {
   MAY_FEC_PROTECT    // Callee does not have to but may FEC protect this data.
 };
 
-// Indicates FEC policy
+// Indicates FEC policy.
 enum FecPolicy {
   FEC_PROTECT_ALWAYS,   // All data in the stream should be FEC protected.
   FEC_PROTECT_OPTIONAL  // Data in the stream does not need FEC protection.
@@ -279,7 +279,8 @@ enum QuicVersion {
   QUIC_VERSION_16 = 16,
   QUIC_VERSION_17 = 17,
   QUIC_VERSION_18 = 18,
-  QUIC_VERSION_19 = 19,  // Current version.
+  QUIC_VERSION_19 = 19,
+  QUIC_VERSION_20 = 20,  // Current version.
 };
 
 // This vector contains QUIC versions which we currently support.
@@ -289,7 +290,8 @@ enum QuicVersion {
 //
 // IMPORTANT: if you are addding to this list, follow the instructions at
 // http://sites/quic/adding-and-removing-versions
-static const QuicVersion kSupportedQuicVersions[] = {QUIC_VERSION_19,
+static const QuicVersion kSupportedQuicVersions[] = {QUIC_VERSION_20,
+                                                     QUIC_VERSION_19,
                                                      QUIC_VERSION_18,
                                                      QUIC_VERSION_17,
                                                      QUIC_VERSION_16,

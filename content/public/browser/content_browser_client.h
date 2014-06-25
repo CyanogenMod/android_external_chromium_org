@@ -159,16 +159,6 @@ class CONTENT_EXPORT ContentBrowserClient {
       BrowserPluginGuestDelegate** guest_delegate,
       scoped_ptr<base::DictionaryValue> extra_params) {}
 
-  // Notifies that a guest WebContents has been attached to a BrowserPlugin.
-  // A guest is attached to a BrowserPlugin when the guest has acquired an
-  // embedder WebContents. This happens on initial navigation or when a new
-  // window is attached to a BrowserPlugin. |extra_params| are params sent
-  // from javascript.
-  virtual void GuestWebContentsAttached(
-      WebContents* guest_web_contents,
-      WebContents* embedder_web_contents,
-      const base::DictionaryValue& extra_params) {}
-
   // Notifies that a render process will be created. This is called before
   // the content layer adds its own BrowserMessageFilters, so that the
   // embedder's IPC filters have priority.
@@ -641,7 +631,9 @@ class CONTENT_EXPORT ContentBrowserClient {
       const GURL& url);
 
   // Returns true if dev channel APIs are available for plugins.
-  virtual bool IsPluginAllowedToUseDevChannelAPIs();
+  virtual bool IsPluginAllowedToUseDevChannelAPIs(
+      BrowserContext* browser_context,
+      const GURL& url);
 
   // Returns a special cookie store to use for a given render process, or NULL
   // if the default cookie store should be used

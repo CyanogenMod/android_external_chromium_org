@@ -28,24 +28,24 @@ vars = {
   "libcxxabi_revision": "206024",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "176426",
+  "webkit_revision": "176561",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "pdfium_git": "https://pdfium.googlesource.com",
   "skia_git": "https://skia.googlesource.com",
   "swig_revision": "230490",
-  "nacl_revision": "13371",
+  "nacl_revision": "13377",
   # After changing nacl_revision, run 'glient sync' and check native_client/DEPS
   # to update other nacl_*_revision's.
   "nacl_tools_revision": "13077",  # native_client/DEPS: tools_rev
   "google_toolbox_for_mac_revision": "662",
-  "libaddressinput_revision": "282",
+  "libaddressinput_revision": "293",
   "libphonenumber_revision": "621",
-  "libvpx_revision": "269083",
+  "libvpx_revision": "278497",
   "lss_revision": "26",
   "sfntly_revision": "239",
   "lighttpd_revision": "33737",
-  "skia_revision": "b59161f0000eb4aca3dcef29f27ffd0fb5a568e5",
+  "skia_revision": "6b8f1ba1ef71a762e961c3a8bc8b344c88990a04",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
@@ -54,13 +54,13 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
-  "webrtc_revision": "6449",
+  "webrtc_revision": "6496",
   "jsoncpp_revision": "248",
   "nss_revision": "277057",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling swarming_client
   # and whatever else without interference from each other.
-  "swarming_revision": "aea50658a1fb5078dbf9406991d7f6d8ec34d465",
+  "swarming_revision": "c333224ef8cf5cc41ab91f6ee9cb1fdbe3689f19",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling openssl
   # and whatever else without interference from each other.
@@ -77,6 +77,10 @@ vars = {
   # the commit queue can handle CLs rolling PDFIum
   # and whatever else without interference from each other.
   "pdfium_revision": "9e16edd0ffb834e87da76fe6b0fe4aef39312685",
+  # Three lines of non-changing comments so that
+  # the commit queue can handle CLs rolling openmax_dl
+  # and whatever else without interference from each other.
+  "openmax_dl_revision": "6483",
 }
 
 deps = {
@@ -148,7 +152,7 @@ deps = {
     (Var("googlecode_url") % "snappy") + "/trunk@80",
 
   "src/tools/grit":
-    (Var("googlecode_url") % "grit-i18n") + "/trunk@168",
+    (Var("googlecode_url") % "grit-i18n") + "/trunk@169",
 
   "src/tools/gyp":
     (Var("googlecode_url") % "gyp") + "/trunk@1944",
@@ -225,7 +229,7 @@ deps = {
     "/trunk/deps/third_party/libsrtp@261337",
 
   "src/third_party/speex":
-    "/trunk/deps/third_party/speex@198168",
+    "/trunk/deps/third_party/speex@272757",
 
   "src/third_party/yasm/source/patched-yasm":
     "/trunk/deps/third_party/yasm/patched-yasm@167605",
@@ -247,7 +251,7 @@ deps = {
     (Var("googlecode_url") % "webrtc") + "/trunk/webrtc@" + Var("webrtc_revision"),
 
   "src/third_party/openmax_dl":
-    (Var("googlecode_url") % "webrtc") + "/deps/third_party/openmax@6024",
+    (Var("googlecode_url") % "webrtc") + "/deps/third_party/openmax@" + Var("openmax_dl_revision"),
 
   "src/third_party/jsoncpp/source/include":
     (Var("sourceforge_url") % {"repo": "jsoncpp"}) +
@@ -480,7 +484,7 @@ deps_os = {
     # Build tools for targeting ChromeOS.
     "src/third_party/chromite":
       Var("chromiumos_git") + "/chromite.git" +
-      "@ff441bf434f22888b09cd65daa86d9aa2982f650",
+      "@df22fd72b22d1905af6e69d23ec373b69c9c75f6",
 
     # Dependency of chromite.git.
     "src/third_party/pyelftools":
