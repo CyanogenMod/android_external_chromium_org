@@ -238,8 +238,12 @@ public class MediaDrmBridge {
             Log.e(TAG, "Cannot open a new session", e);
             release();
             return null;
+        } catch (android.media.ResourceBusyException e) {
+            Log.e(TAG, "Cannot open a new session", e);
+            release();
+            return null;
         }
-    }
+   }
 
     /**
      * Close a session.
