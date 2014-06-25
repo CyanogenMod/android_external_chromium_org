@@ -97,6 +97,8 @@ LOCAL_SRC_FILES := \
 	ui/gl/gl_context_stub.cc \
 	ui/gl/gl_context_stub_with_extensions.cc \
 	ui/gl/gl_fence.cc \
+	ui/gl/gl_fence_arb.cc \
+	ui/gl/gl_fence_nv.cc \
 	ui/gl/gl_gl_api_implementation.cc \
 	ui/gl/gl_image.cc \
 	ui/gl/gl_image_android.cc \
@@ -119,6 +121,7 @@ LOCAL_SRC_FILES := \
 	ui/gl/sync_control_vsync_provider.cc \
 	ui/gl/egl_util.cc \
 	ui/gl/gl_context_egl.cc \
+	ui/gl/gl_fence_egl.cc \
 	ui/gl/gl_image_egl.cc \
 	ui/gl/gl_surface_egl.cc \
 	ui/gl/gl_egl_api_implementation.cc \
